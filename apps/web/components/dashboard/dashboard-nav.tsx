@@ -6,11 +6,9 @@ import { SignoutButton } from "@/components/dashboard/signout-button";
 import { StoreSwitcher, type StoreOption } from "@/components/dashboard/store-switcher";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { GlobalUserRole, StoreRecord } from "@/types/database";
+import type { GlobalUserRole } from "@/types/database";
 
 type DashboardNavProps = {
-  storeStatus: StoreRecord["status"] | null;
-  storeSlug: string | null;
   activeStoreSlug: string | null;
   stores: StoreOption[];
   globalRole: GlobalUserRole;
@@ -46,9 +44,8 @@ const marketingLinks = [
   { href: "/dashboard/marketing/subscribers", label: "Email Subscribers" }
 ] as const;
 
-export function DashboardNav({ storeStatus, storeSlug, activeStoreSlug, stores, globalRole }: DashboardNavProps) {
+export function DashboardNav({ activeStoreSlug, stores, globalRole }: DashboardNavProps) {
   const pathname = usePathname();
-  const storefrontLabel = storeStatus === "active" ? "View storefront" : "Preview storefront";
   const normalizedPath = pathname?.replace(/\/$/, "") ?? "";
   const hasStoreAccess = stores.length > 0 && Boolean(activeStoreSlug);
   const canAccessPlatform = globalRole === "support" || globalRole === "admin";
@@ -173,11 +170,6 @@ export function DashboardNav({ storeStatus, storeSlug, activeStoreSlug, stores, 
         >
           Profile & Account
         </Link>
-        {storeSlug ? (
-          <Link href={`/s/${storeSlug}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "w-full justify-start")}>
-            {storefrontLabel}
-          </Link>
-        ) : null}
         <SignoutButton />
       </div>
     </nav>
