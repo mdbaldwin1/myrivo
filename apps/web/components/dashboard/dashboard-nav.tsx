@@ -12,6 +12,9 @@ type DashboardNavProps = {
   activeStoreSlug: string | null;
   stores: StoreOption[];
   globalRole: GlobalUserRole;
+  mode?: "desktop" | "mobile";
+  className?: string;
+  onNavigate?: () => void;
 };
 
 const links = [
@@ -44,14 +47,15 @@ const marketingLinks = [
   { href: "/dashboard/marketing/subscribers", label: "Email Subscribers" }
 ] as const;
 
-export function DashboardNav({ activeStoreSlug, stores, globalRole }: DashboardNavProps) {
+export function DashboardNav({ activeStoreSlug, stores, globalRole, mode = "desktop", className, onNavigate }: DashboardNavProps) {
   const pathname = usePathname();
   const normalizedPath = pathname?.replace(/\/$/, "") ?? "";
   const hasStoreAccess = stores.length > 0 && Boolean(activeStoreSlug);
   const canAccessPlatform = globalRole === "support" || globalRole === "admin";
+  const isMobile = mode === "mobile";
 
   return (
-    <nav className="h-full min-h-0 rounded-lg border border-border bg-card p-3 lg:flex lg:flex-col">
+    <nav className={cn("rounded-lg border border-border bg-card p-3", isMobile ? "h-full min-h-0 flex flex-col" : "h-full min-h-0 lg:flex lg:flex-col", className)}>
       {hasStoreAccess ? (
         <div className="mb-3 shrink-0 border-b border-border px-2 pb-3">
           <StoreSwitcher activeStoreSlug={activeStoreSlug!} stores={stores} />
@@ -71,6 +75,7 @@ export function DashboardNav({ activeStoreSlug, stores, globalRole }: DashboardN
               <Link
                 key={link.href}
                 href={link.href}
+                onClick={onNavigate}
                 className={cn(buttonVariants({ variant: isActive ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
               >
                 {link.label}
@@ -88,6 +93,7 @@ export function DashboardNav({ activeStoreSlug, stores, globalRole }: DashboardN
                   <Link
                     key={link.href}
                     href={link.href}
+                    onClick={onNavigate}
                     className={cn(
                       buttonVariants({ variant: isActive ? "default" : "ghost", size: "sm" }),
                       "w-full justify-start"
@@ -110,6 +116,7 @@ export function DashboardNav({ activeStoreSlug, stores, globalRole }: DashboardN
                   <Link
                     key={link.href}
                     href={link.href}
+                    onClick={onNavigate}
                     className={cn(
                       buttonVariants({ variant: isActive ? "default" : "ghost", size: "sm" }),
                       "w-full justify-start"
@@ -132,6 +139,7 @@ export function DashboardNav({ activeStoreSlug, stores, globalRole }: DashboardN
                   <Link
                     key={link.href}
                     href={link.href}
+                    onClick={onNavigate}
                     className={cn(
                       buttonVariants({ variant: isActive ? "default" : "ghost", size: "sm" }),
                       "w-full justify-start"
@@ -150,6 +158,7 @@ export function DashboardNav({ activeStoreSlug, stores, globalRole }: DashboardN
               <div className="space-y-1 pl-2">
                 <Link
                   href="/dashboard/platform"
+                  onClick={onNavigate}
                   className={cn(
                     buttonVariants({ variant: normalizedPath === "/dashboard/platform" ? "default" : "ghost", size: "sm" }),
                     "w-full justify-start"
@@ -165,6 +174,7 @@ export function DashboardNav({ activeStoreSlug, stores, globalRole }: DashboardN
       <div className="mt-4 shrink-0 space-y-2 border-t border-border pt-3">
         <Link
           href="/dashboard/account"
+          onClick={onNavigate}
           className={cn(
             buttonVariants({ variant: normalizedPath === "/dashboard/account" ? "default" : "ghost", size: "sm" }),
             "w-full justify-start"
