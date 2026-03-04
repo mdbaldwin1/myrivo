@@ -1,0 +1,11 @@
+<svg width="920" height="280" viewBox="0 0 920 280" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="920" height="280" rx="36" fill="#F7FBFB"/>
+  <g transform="translate(34 30)">
+    <rect width="220" height="220" rx="52" fill="#F2FBFA"/>
+    <circle cx="110" cy="70" r="30" fill="#FFFFFF" stroke="#0F7B84" stroke-width="10"/>
+    <circle cx="76" cy="126" r="30" fill="#FFFFFF" stroke="#0F7B84" stroke-width="10"/>
+    <circle cx="144" cy="126" r="30" fill="#FFFFFF" stroke="#0F7B84" stroke-width="10"/>
+    <path d="M62 153L78 108L110 66L142 108L158 153" stroke="#0F7B84" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="292" y="164" fill="#123D40" font-size="118" font-weight="650" font-family="Avenir Next, Nunito Sans, Poppins, sans-serif" letter-spacing="0.5">Myrivo</text>
+</svg>

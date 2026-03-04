@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 type InventoryMovement = {
   id: string;
@@ -25,10 +25,27 @@ export function InventoryMovementsPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const loadMovements = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    const response = await fetch("/api/inventory/movements");
+    const payload = (await response.json()) as InventoryMovementsResponse;
+
+    setLoading(false);
+
+    if (!response.ok || !payload.movements) {
+      setError(payload.error ?? "Unable to load inventory movements.");
+      return;
+    }
+
+    setMovements(payload.movements);
+  }, []);
+
   useEffect(() => {
     let active = true;
 
-    async function loadMovements() {
+    async function loadInitial() {
       setLoading(true);
       setError(null);
 
@@ -49,18 +66,27 @@ export function InventoryMovementsPanel() {
       setMovements(payload.movements);
     }
 
-    void loadMovements();
+    const handleInventoryChanged = () => {
+      if (!active) {
+        return;
+      }
+      void loadMovements();
+    };
+
+    window.addEventListener("inventory:changed", handleInventoryChanged);
+    void loadInitial();
 
     return () => {
       active = false;
+      window.removeEventListener("inventory:changed", handleInventoryChanged);
     };
-  }, []);
+  }, [loadMovements]);
 
   return (
-    <Card className="bg-muted/30">
+    <Card className="bg-card">
       <CardHeader className="pb-3">
         <CardTitle className="text-lg">Inventory Ledger</CardTitle>
-        <p className="text-xs text-muted-foreground">Last 50 inventory movements for audit and support workflows.</p>
+        <CardDescription>Last 50 inventory movements for audit and support workflows.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
 

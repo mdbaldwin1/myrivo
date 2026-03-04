@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,22 +40,24 @@ export function LoginForm() {
     <Card>
       <CardHeader>
         <CardTitle>Log in</CardTitle>
-        <CardDescription>Access your Myrivo merchant workspace.</CardDescription>
+        <CardDescription>Owner access only. Contact admin if you need an invitation.</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <FormField label="Email">
+          <FormField label="Email" description="Use the owner or team account email for this store.">
             <Input
               type="email"
               required
+              placeholder="owner@yourshop.com"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
             />
           </FormField>
-          <FormField label="Password">
+          <FormField label="Password" description="Passwords are case-sensitive.">
             <Input
               type="password"
               required
+              placeholder="Enter your password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
             />
@@ -63,6 +66,12 @@ export function LoginForm() {
           <Button type="submit" disabled={loading} className="w-full">
             {loading ? "Signing in..." : "Sign in"}
           </Button>
+          <p className="text-center text-sm text-muted-foreground">
+            Need an account?{" "}
+            <Link href="/signup" className="font-medium text-foreground underline-offset-4 hover:underline">
+              Create account
+            </Link>
+          </p>
         </form>
       </CardContent>
     </Card>

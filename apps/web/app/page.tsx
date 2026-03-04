@@ -1,102 +1,30 @@
-import { headers } from "next/headers";
-import { HeroSection } from "@/components/home/hero-section";
-import { PricingPreview } from "@/components/home/pricing-preview";
-import { ValueGrid } from "@/components/home/value-grid";
-import { PageShell } from "@/components/layout/page-shell";
+import { notFound } from "next/navigation";
 import { StorefrontPage } from "@/components/storefront/storefront-page";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { resolveTenantLookup } from "@/lib/tenant/resolve";
+import { loadStorefrontData } from "@/lib/storefront/load-storefront-data";
 
 export const dynamic = "force-dynamic";
 
-async function resolveTenantStore() {
-  const hostHeader = (await headers()).get("host");
-  const lookup = resolveTenantLookup(hostHeader);
+type HomePageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
 
-  if (lookup.type === "platform" || lookup.type === "missing") {
-    return null;
-  }
+export default async function HomePage({ searchParams }: HomePageProps) {
+  const resolvedSearchParams = await searchParams;
+  const requestedStoreSlug = typeof resolvedSearchParams.store === "string" ? resolvedSearchParams.store : null;
+  const data = await loadStorefrontData(requestedStoreSlug);
 
-  const supabase = await createSupabaseServerClient();
-
-  if (lookup.type === "slug") {
-    const { data: store } = await supabase
-      .from("stores")
-      .select("id,name,slug,status")
-      .eq("slug", lookup.key)
-      .eq("status", "active")
-      .maybeSingle();
-    return store;
-  }
-
-  const { data: domain } = await supabase
-    .from("store_domains")
-    .select("store_id")
-    .eq("domain", lookup.key)
-    .eq("verification_status", "verified")
-    .maybeSingle();
-
-  if (!domain) {
-    return null;
-  }
-
-  const { data: store } = await supabase
-    .from("stores")
-    .select("id,name,slug,status")
-    .eq("id", domain.store_id)
-    .eq("status", "active")
-    .maybeSingle();
-
-  return store;
-}
-
-export default async function HomePage() {
-  const store = await resolveTenantStore();
-
-  if (store) {
-    const supabase = await createSupabaseServerClient();
-    const [{ data: branding }, { data: settings }, { data: contentBlocks }, { data: products }] = await Promise.all([
-      supabase
-        .from("store_branding")
-        .select("logo_path,primary_color,accent_color")
-        .eq("store_id", store.id)
-        .maybeSingle(),
-      supabase
-        .from("store_settings")
-        .select("support_email,fulfillment_message,shipping_policy,return_policy,announcement")
-        .eq("store_id", store.id)
-        .maybeSingle(),
-      supabase
-        .from("store_content_blocks")
-        .select("id,sort_order,eyebrow,title,body,cta_label,cta_url,is_active")
-        .eq("store_id", store.id)
-        .order("sort_order", { ascending: true }),
-      supabase
-        .from("products")
-        .select("id,title,description,image_url,price_cents,inventory_qty")
-        .eq("store_id", store.id)
-        .eq("status", "active")
-        .order("created_at", { ascending: false })
-    ]);
-
-    return (
-      <StorefrontPage
-        store={store}
-        branding={branding}
-        settings={settings}
-        contentBlocks={contentBlocks ?? []}
-        products={products ?? []}
-      />
-    );
+  if (!data) {
+    notFound();
   }
 
   return (
-    <PageShell maxWidthClassName="max-w-4xl">
-      <div className="space-y-6">
-        <HeroSection />
-        <ValueGrid />
-        <PricingPreview />
-      </div>
-    </PageShell>
+    <StorefrontPage
+      store={data.store}
+      branding={data.branding}
+      settings={data.settings}
+      contentBlocks={data.contentBlocks}
+      products={data.products}
+      view="home"
+    />
   );
 }

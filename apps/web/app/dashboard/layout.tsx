@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
+import Image from "next/image";
 import { DashboardNav } from "@/components/dashboard/dashboard-nav";
 import { PageShell } from "@/components/layout/page-shell";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
@@ -20,14 +21,21 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const bundle = await getOwnedStoreBundle(user.id);
 
   if (!bundle) {
-    redirect("/onboarding");
+    redirect("/login");
+  }
+
+  if (bundle.role === "customer") {
+    redirect("/account");
   }
 
   return (
     <PageShell maxWidthClassName="max-w-7xl">
       <div className="space-y-5">
-        <header className="rounded-lg border border-border bg-card px-4 py-4 sm:px-5">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Myrivo</p>
+        <header className="rounded-xl border border-border/70 bg-card px-4 py-4 shadow-sm sm:px-5">
+          <div className="flex items-center gap-2">
+            <Image src="/brand/myrivo-mark.svg" alt="Myrivo logo" width={20} height={20} className="h-5 w-5 rounded-sm" />
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Myrivo</p>
+          </div>
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
             <h1 className="text-xl font-semibold">{bundle.store.name}</h1>
             <p className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -36,7 +44,12 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           </div>
         </header>
         <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
-          <DashboardNav storeSlug={bundle.store.slug} storeStatus={bundle.store.status} />
+          <DashboardNav
+            storeStatus={bundle.store.status}
+            storeSlug={bundle.store.slug}
+            activeStoreSlug={bundle.store.slug}
+            stores={bundle.availableStores}
+          />
           <div className="min-w-0">{children}</div>
         </div>
       </div>

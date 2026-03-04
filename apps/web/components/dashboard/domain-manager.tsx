@@ -1,170 +1,186 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { Input } from "@/components/ui/input";
-import { RowActionButton, RowActions } from "@/components/ui/row-actions";
-import { StatusChip } from "@/components/ui/status-chip";
-import { FEATURES } from "@/config/features";
-import type { StoreDomainRecord } from "@/types/database";
+import { SectionCard } from "@/components/ui/section-card";
 
-type DomainManagerProps = {
-  initialDomains: Array<Pick<StoreDomainRecord, "id" | "domain" | "is_primary" | "verification_status">>;
+type DomainRecord = {
+  id: string;
+  domain: string;
+  is_primary: boolean;
+  verification_status: "pending" | "verified" | "failed";
+  verification_token: string | null;
+  last_verification_at: string | null;
+  verified_at: string | null;
 };
 
-type DomainResponse = {
-  domain?: Pick<StoreDomainRecord, "id" | "domain" | "is_primary" | "verification_status">;
-  deleted?: boolean;
-  error?: string;
-};
-
-export function DomainManager({ initialDomains }: DomainManagerProps) {
-  const manualVerifyEnabled = FEATURES.manualDomainVerification;
-  const [domains, setDomains] = useState(initialDomains);
-  const [domainInput, setDomainInput] = useState("");
+export function DomainManager() {
+  const [domains, setDomains] = useState<DomainRecord[]>([]);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [newDomain, setNewDomain] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  function verificationTone(status: StoreDomainRecord["verification_status"]) {
-    if (status === "verified") return "success" as const;
-    if (status === "failed") return "danger" as const;
-    return "warning" as const;
+  async function fetchDomains() {
+    const response = await fetch("/api/stores/domains", { cache: "no-store" });
+    const payload = (await response.json()) as { domains?: DomainRecord[]; error?: string };
+    return { ok: response.ok, payload };
   }
 
-  async function addDomain(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const result = await fetchDomains();
+      if (cancelled) {
+        return;
+      }
+      if (!result.ok) {
+        setError(result.payload.error ?? "Unable to load domains.");
+        setLoading(false);
+        return;
+      }
+      setDomains(result.payload.domains ?? []);
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function addDomain() {
+    if (!newDomain.trim()) {
+      return;
+    }
+
     setSaving(true);
     setError(null);
 
     const response = await fetch("/api/stores/domains", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ domain: domainInput, isPrimary: domains.length === 0 })
+      body: JSON.stringify({ domain: newDomain.trim() })
     });
 
-    const payload = (await response.json()) as DomainResponse;
-
-    setSaving(false);
+    const payload = (await response.json()) as { domain?: DomainRecord; error?: string };
 
     if (!response.ok || !payload.domain) {
       setError(payload.error ?? "Unable to add domain.");
+      setSaving(false);
       return;
     }
 
-    setDomains((current) => [payload.domain!, ...current]);
-    setDomainInput("");
+    setDomains((current) => [...current, payload.domain!]);
+    setNewDomain("");
+    setSaving(false);
   }
 
-  async function makePrimary(domainId: string) {
+  async function verifyDomain(id: string) {
+    setSaving(true);
     setError(null);
 
-    const response = await fetch("/api/stores/domains", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ domainId, isPrimary: true })
-    });
-
-    const payload = (await response.json()) as DomainResponse;
-
-    if (!response.ok || !payload.domain) {
-      setError(payload.error ?? "Unable to set primary domain.");
-      return;
-    }
-
-    setDomains((current) => current.map((domain) => ({ ...domain, is_primary: domain.id === domainId })));
-  }
-
-  async function markVerified(domainId: string) {
-    setError(null);
-
-    const response = await fetch("/api/stores/domains", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ domainId, verificationStatus: "verified" })
-    });
-
-    const payload = (await response.json()) as DomainResponse;
+    const response = await fetch(`/api/stores/domains/${id}/verify`, { method: "POST" });
+    const payload = (await response.json()) as { domain?: DomainRecord; error?: string };
 
     if (!response.ok || !payload.domain) {
       setError(payload.error ?? "Unable to verify domain.");
+      setSaving(false);
       return;
     }
 
-    setDomains((current) =>
-      current.map((domain) => (domain.id === domainId ? { ...domain, verification_status: "verified" } : domain))
-    );
+    setDomains((current) => current.map((entry) => (entry.id === id ? payload.domain! : entry)));
+    setSaving(false);
   }
 
-  async function removeDomain(domainId: string) {
+  async function setPrimary(id: string) {
+    setSaving(true);
     setError(null);
 
-    const response = await fetch("/api/stores/domains", {
-      method: "DELETE",
+    const response = await fetch(`/api/stores/domains/${id}`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ domainId })
+      body: JSON.stringify({ isPrimary: true })
     });
 
-    const payload = (await response.json()) as DomainResponse;
+    const payload = (await response.json()) as { domain?: DomainRecord; error?: string };
 
-    if (!response.ok || !payload.deleted) {
-      setError(payload.error ?? "Unable to remove domain.");
+    if (!response.ok || !payload.domain) {
+      setError(payload.error ?? "Unable to update primary domain.");
+      setSaving(false);
       return;
     }
 
-    setDomains((current) => current.filter((domain) => domain.id !== domainId));
+    setDomains((current) => current.map((entry) => ({ ...entry, is_primary: entry.id === id })));
+    setSaving(false);
+  }
+
+  async function deleteDomain(id: string) {
+    setSaving(true);
+    setError(null);
+
+    const response = await fetch(`/api/stores/domains/${id}`, { method: "DELETE" });
+    const payload = (await response.json()) as { ok?: boolean; error?: string };
+
+    if (!response.ok) {
+      setError(payload.error ?? "Unable to remove domain.");
+      setSaving(false);
+      return;
+    }
+
+    setDomains((current) => current.filter((entry) => entry.id !== id));
+    setSaving(false);
   }
 
   return (
-    <Card className="bg-muted/30">
-      <CardHeader className="pb-4">
-        <CardTitle className="text-lg">Domains</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="rounded-md border border-border bg-background p-3 text-xs text-muted-foreground">
-          <p>Add a custom domain, then create a CNAME record pointing `www` to `cname.myrivo.app`.</p>
-          <p className="mt-1">Root domain: create an ALIAS/ANAME to `myrivo.app` if your DNS provider supports it.</p>
-          {!manualVerifyEnabled ? (
-            <p className="mt-1">Verification is DNS-automated in production. Manual verify is disabled for safety.</p>
-          ) : (
-            <p className="mt-1">Manual verify is enabled for local/dev testing only.</p>
-          )}
+    <SectionCard title="Custom Domains">
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Add your domain and create TXT record `_myrivo-verification.yourdomain.com` with the token shown below, then click Verify.
+        </p>
+
+        <div className="flex gap-2">
+          <Input value={newDomain} onChange={(event) => setNewDomain(event.target.value)} placeholder="shop.example.com" />
+          <Button type="button" variant="outline" onClick={() => void addDomain()} disabled={saving || !newDomain.trim()}>
+            Add
+          </Button>
         </div>
-        <form onSubmit={addDomain} className="flex flex-col gap-2 sm:flex-row">
-          <Input required placeholder="athomeapothacary.com" value={domainInput} onChange={(event) => setDomainInput(event.target.value)} />
-          <Button type="submit" disabled={saving}>{saving ? "Adding..." : "Add domain"}</Button>
-        </form>
-        <FeedbackMessage type="error" message={error} />
+
+        {loading ? <p className="text-sm text-muted-foreground">Loading domains...</p> : null}
+
         <ul className="space-y-2">
-          {domains.length === 0 ? (
-            <li className="rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground">No domains connected yet.</li>
-          ) : (
-            domains.map((domain) => (
-              <li key={domain.id} className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm">
-                <span className="font-medium">{domain.domain}</span>
-                <StatusChip label={domain.verification_status} tone={verificationTone(domain.verification_status)} />
-                {domain.is_primary ? <StatusChip label="primary" tone="info" /> : null}
-                <RowActions>
-                  {!domain.is_primary ? (
-                    <RowActionButton type="button" onClick={() => void makePrimary(domain.id)}>
-                      Set primary
-                    </RowActionButton>
-                  ) : null}
-                  {manualVerifyEnabled && domain.verification_status !== "verified" ? (
-                    <RowActionButton type="button" onClick={() => void markVerified(domain.id)}>
-                      Mark verified
-                    </RowActionButton>
-                  ) : null}
-                  <RowActionButton type="button" onClick={() => void removeDomain(domain.id)}>
+          {domains.length === 0 ? <li className="text-sm text-muted-foreground">No domains configured.</li> : null}
+          {domains.map((domain) => (
+            <li key={domain.id} className="space-y-2 rounded-md border border-border/60 p-3 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium">{domain.domain}</p>
+                  <p className="text-muted-foreground">
+                    Status: {domain.verification_status}
+                    {domain.is_primary ? " · Primary" : ""}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="ghost" size="sm" onClick={() => void verifyDomain(domain.id)} disabled={saving}>
+                    Verify
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => void setPrimary(domain.id)} disabled={saving || domain.verification_status !== "verified"}>
+                    Set primary
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => void deleteDomain(domain.id)} disabled={saving}>
                     Remove
-                  </RowActionButton>
-                </RowActions>
-              </li>
-            ))
-          )}
+                  </Button>
+                </div>
+              </div>
+
+              {domain.verification_token ? (
+                <p className="break-all text-muted-foreground">TXT token: {domain.verification_token}</p>
+              ) : null}
+            </li>
+          ))}
         </ul>
-      </CardContent>
-    </Card>
+
+        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      </div>
+    </SectionCard>
   );
 }

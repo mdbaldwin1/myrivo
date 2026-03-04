@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,7 +27,7 @@ export function SignupForm() {
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=/onboarding`
+        emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard`
       }
     });
 
@@ -37,7 +38,7 @@ export function SignupForm() {
       return;
     }
 
-    router.push("/onboarding");
+    router.push("/dashboard");
     router.refresh();
   }
 
@@ -45,20 +46,33 @@ export function SignupForm() {
     <Card>
       <CardHeader>
         <CardTitle>Create account</CardTitle>
-        <CardDescription>Start your merchant workspace and storefront onboarding.</CardDescription>
+        <CardDescription>Create the owner account for At Home Apothecary.</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <FormField label="Email">
-            <Input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
+          <FormField label="Email" description="This becomes the primary owner login for your store.">
+            <Input type="email" required placeholder="owner@yourshop.com" value={email} onChange={(event) => setEmail(event.target.value)} />
           </FormField>
-          <FormField label="Password">
-            <Input type="password" minLength={8} required value={password} onChange={(event) => setPassword(event.target.value)} />
+          <FormField label="Password" description="Use at least 8 characters and keep it secure.">
+            <Input
+              type="password"
+              minLength={8}
+              required
+              placeholder="At least 8 characters"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
           </FormField>
           <FeedbackMessage type="error" message={error} />
           <Button type="submit" disabled={loading} className="w-full">
             {loading ? "Creating account..." : "Create account"}
           </Button>
+          <p className="text-center text-sm text-muted-foreground">
+            Already have an account?{" "}
+            <Link href="/login" className="font-medium text-foreground underline-offset-4 hover:underline">
+              Sign in
+            </Link>
+          </p>
         </form>
       </CardContent>
     </Card>

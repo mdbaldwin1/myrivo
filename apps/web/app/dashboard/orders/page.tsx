@@ -23,7 +23,7 @@ export default async function DashboardOrdersPage() {
   const { data: orders, error } = await supabase
     .from("orders")
     .select(
-      "id,customer_email,subtotal_cents,total_cents,status,fulfillment_status,discount_cents,promo_code,platform_fee_cents,created_at"
+      "id,customer_email,subtotal_cents,total_cents,status,fulfillment_status,discount_cents,promo_code,carrier,tracking_number,tracking_url,shipment_status,created_at"
     )
     .eq("store_id", bundle.store.id)
     .order("created_at", { ascending: false });

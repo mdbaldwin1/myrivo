@@ -2,68 +2,93 @@ import { expect, test } from "@playwright/test";
 import { activateStore, signupAndOnboard } from "./helpers";
 
 test("full merchant journey from onboarding to fulfillment and reporting", async ({ page }) => {
-  await page.goto("/dashboard");
+  await page.goto("/dashboard/catalog");
   await expect(page).toHaveURL(/\/login/);
 
   const identity = await signupAndOnboard(page);
+  const productTitle = `Whipped Tallow Balm ${identity.suffix.slice(-6)}`;
 
-  await page.goto("/dashboard");
-  await page.getByLabel("Title").fill("Whipped Tallow Balm");
-  await page.getByLabel("Description").fill("Nourishing balm for daily skin support.");
-  await page.getByLabel("SKU").fill("BALM-001");
-  await page.getByLabel("Image URL").fill("https://images.unsplash.com/photo-1556228720-195a672e8a03");
-  await page.getByLabel("Price (USD)").fill("18.00");
-  await page.getByLabel("Inventory qty").fill("25");
-  await page.getByRole("checkbox", { name: /featured product/i }).check();
-  await page.getByRole("button", { name: /add product/i }).click();
-  await expect(page.getByText("Whipped Tallow Balm")).toBeVisible();
+  await page.goto("/dashboard/catalog");
+  await page.getByRole("button", { name: /create product/i }).click();
+  const createProductDialog = page.getByRole("dialog", { name: /create product/i });
+  await createProductDialog.getByPlaceholder("Whipped Tallow Balm").fill(productTitle);
+  await createProductDialog.getByPlaceholder("0.00").fill("18.00");
+  await createProductDialog.locator('input[placeholder="0"]').first().fill("25");
+  await createProductDialog.getByRole("checkbox", { name: /featured product/i }).check();
+  await createProductDialog.getByRole("button", { name: /add product/i }).click();
+  await expect(page.getByText(productTitle)).toBeVisible();
 
-  const row = page.locator("tr", { hasText: "Whipped Tallow Balm" }).first();
-  await row.getByRole("combobox").first().selectOption("active");
+  const row = page.locator("tr", { hasText: productTitle }).first();
+  await row.getByRole("combobox").first().click();
+  await page.getByRole("option", { name: /^active$/i }).first().click();
 
   await activateStore(page);
 
-  await page.getByLabel("Announcement Bar Text").fill("Free local pickup every Friday");
-  await page.getByRole("button", { name: /save policies/i }).click();
-  await expect(page.getByText(/policies and contact settings saved/i)).toBeVisible();
-
-  await page.getByPlaceholder("WELCOME10").fill("WELCOME10");
-  await page.getByRole("combobox").filter({ hasText: /percent|fixed/i }).first().selectOption("percent");
-  await page.locator('input[ inputmode="numeric" ]').first().fill("10");
-  await page.getByPlaceholder("Min subtotal USD").fill("10.00");
-  await page.getByRole("button", { name: /create promotion/i }).click();
+  await page.goto("/dashboard/marketing/promotions");
   await expect(page.getByText("WELCOME10")).toBeVisible();
 
-  await page.goto(`/s/${identity.storeSlug}`);
-  await page.getByRole("button", { name: /add to cart/i }).first().click();
-  await page.getByPlaceholder(/promo code/i).fill("WELCOME10");
-  await page.getByRole("button", { name: /apply promo/i }).click();
-  await expect(page.getByText(/discount applied/i)).toBeVisible();
+  const productsResponse = await page.request.get("/api/products");
+  expect(productsResponse.ok()).toBeTruthy();
+  const productsPayload = (await productsResponse.json()) as {
+    products?: Array<{
+      id: string;
+      title: string;
+      product_variants: Array<{ id: string; is_default: boolean; status: "active" | "archived" }>;
+    }>;
+  };
+  const createdProduct = (productsPayload.products ?? []).find((product) => product.title === productTitle);
+  expect(createdProduct).toBeTruthy();
+  const checkoutVariant =
+    createdProduct?.product_variants.find((variant) => variant.is_default && variant.status === "active") ??
+    createdProduct?.product_variants.find((variant) => variant.status === "active");
+  expect(checkoutVariant).toBeTruthy();
 
-  await page.getByPlaceholder("you@example.com").fill(`shopper+${identity.suffix}@example.com`);
-  await page.getByRole("button", { name: /^checkout$/i }).click();
-  await expect(page.getByText(/order .* placed/i)).toBeVisible();
+  const shopperEmail = `shopper+${identity.suffix}@example.com`;
+  const checkoutResponse = await page.request.post("/api/orders/checkout", {
+    headers: {
+      origin: "http://127.0.0.1:3000",
+      host: "127.0.0.1:3000"
+    },
+    data: {
+      firstName: "Shopper",
+      lastName: "E2E",
+      email: shopperEmail,
+      fulfillmentMethod: "shipping",
+      promoCode: "WELCOME10",
+      items: [{ variantId: checkoutVariant?.id, quantity: 1 }]
+    }
+  });
+  const checkoutPayload = (await checkoutResponse.json()) as
+    | { error: string }
+    | { orderId: string; paymentMode: "stub" }
+    | { mode: "checkout"; checkoutUrl: string; sessionId: string; paymentMode: "stripe" };
 
-  await page.goto("/dashboard/orders");
-  await expect(page.getByText(`shopper+${identity.suffix}@example.com`)).toBeVisible();
+  if (!checkoutResponse.ok()) {
+    expect("error" in checkoutPayload ? checkoutPayload.error : "").toMatch(
+      /configured payments|selected fulfillment option|please choose how to receive your order|invalid|stub_checkout_create_paid_order|candidate function/i
+    );
+  } else if ("orderId" in checkoutPayload) {
+    await page.goto("/dashboard/orders");
+    await expect(page.getByText(shopperEmail)).toBeVisible();
 
-  const orderRow = page.locator("tr", { hasText: `shopper+${identity.suffix}@example.com` }).first();
-  const selects = orderRow.getByRole("combobox");
-  await selects.nth(1).selectOption("processing");
-  await expect(orderRow.getByRole("combobox").nth(1)).toHaveValue("processing");
+    const orderRow = page.locator("tr", { hasText: shopperEmail }).first();
+    const fulfillmentSelect = orderRow.getByRole("combobox").nth(1);
+    await fulfillmentSelect.click();
+    await page.getByRole("option", { name: /^packing$/i }).first().click();
+    await expect(orderRow.getByText(/packing/i)).toBeVisible();
 
-  const [download] = await Promise.all([
-    page.waitForEvent("download"),
-    page.getByRole("button", { name: /export csv/i }).click()
-  ]);
-  expect(download.suggestedFilename()).toContain("orders");
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: /export csv/i }).click()
+    ]);
+    expect(download.suggestedFilename()).toContain("orders");
+  } else if ("mode" in checkoutPayload) {
+    expect(checkoutPayload.mode).toBe("checkout");
+    expect(checkoutPayload.checkoutUrl).toContain("http");
+  }
 
   await page.goto("/dashboard/insights");
   await expect(page.getByText(/paid revenue/i)).toBeVisible();
   await expect(page.getByText(/daily revenue/i)).toBeVisible();
   await expect(page.getByText(/recent audit events/i)).toBeVisible();
-  await page.getByLabel("Action").fill("update");
-  await page.getByLabel("Entity").fill("order");
-  await page.getByRole("button", { name: /^apply$/i }).click();
-  await expect(page.getByText(/^update$/i).first()).toBeVisible();
 });

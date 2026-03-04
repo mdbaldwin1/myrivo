@@ -3,10 +3,10 @@ import { z } from "zod";
 import { calculateDiscountCents } from "@/lib/promotions/calculate-discount";
 import { checkRateLimit } from "@/lib/security/rate-limit";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
+import { resolveStoreSlugFromRequest } from "@/lib/stores/active-store";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const payloadSchema = z.object({
-  storeSlug: z.string().min(3),
   promoCode: z.string().trim().min(3).max(40),
   subtotalCents: z.number().int().nonnegative()
 });
@@ -35,7 +35,8 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = createSupabaseAdminClient();
-  const { storeSlug, promoCode, subtotalCents } = payload.data;
+  const { promoCode, subtotalCents } = payload.data;
+  const storeSlug = resolveStoreSlugFromRequest(request);
 
   const { data: store, error: storeError } = await supabase
     .from("stores")

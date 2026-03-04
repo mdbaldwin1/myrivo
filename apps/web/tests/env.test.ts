@@ -1,12 +1,11 @@
 import { describe, expect, test } from "vitest";
-import { envSchema, publicEnvSchema, serverEnvSchema, stripeEnvSchema, stripeModeEnvSchema } from "@/lib/env";
+import { envSchema, publicEnvSchema, serverEnvSchema, shippingEnvSchema, stripeEnvSchema, stripeModeEnvSchema } from "@/lib/env";
 
 describe("env schema", () => {
   test("public env validates browser-safe keys", () => {
     const parsed = publicEnvSchema.safeParse({
       NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon",
-      NEXT_PUBLIC_ENABLE_MANUAL_DOMAIN_VERIFY: "true"
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon"
     });
 
     expect(parsed.success).toBe(true);
@@ -20,13 +19,20 @@ describe("env schema", () => {
     expect(parsed.success).toBe(true);
   });
 
-  test("stripe env validates billing keys", () => {
+  test("stripe env validates checkout keys", () => {
     const parsed = stripeEnvSchema.safeParse({
       STRIPE_SECRET_KEY: "sk_test_123",
-      STRIPE_WEBHOOK_SECRET: "whsec_123",
-      STRIPE_STARTER_PRICE_ID: "price_1",
-      STRIPE_GROWTH_PRICE_ID: "price_2",
-      STRIPE_SCALE_PRICE_ID: "price_3"
+      STRIPE_WEBHOOK_SECRET: "whsec_123"
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
+  test("shipping env validates provider keys", () => {
+    const parsed = shippingEnvSchema.safeParse({
+      SHIPPING_PROVIDER: "easypost",
+      EASYPOST_API_KEY: "EZAK_test",
+      SHIPPING_WEBHOOK_SECRET: "webhook_secret"
     });
 
     expect(parsed.success).toBe(true);
@@ -44,14 +50,13 @@ describe("env schema", () => {
     const parsed = envSchema.safeParse({
       NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
       NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon",
-      NEXT_PUBLIC_ENABLE_MANUAL_DOMAIN_VERIFY: "false",
       SUPABASE_SERVICE_ROLE_KEY: "service-role",
       STRIPE_STUB_MODE: "false",
       STRIPE_SECRET_KEY: "sk_test_123",
       STRIPE_WEBHOOK_SECRET: "whsec_123",
-      STRIPE_STARTER_PRICE_ID: "price_1",
-      STRIPE_GROWTH_PRICE_ID: "price_2",
-      STRIPE_SCALE_PRICE_ID: "price_3",
+      SHIPPING_PROVIDER: "easypost",
+      EASYPOST_API_KEY: "EZAK_test",
+      SHIPPING_WEBHOOK_SECRET: "webhook_secret",
       VERCEL_PROJECT_PRODUCTION_URL: "myrivo.vercel.app"
     });
 
@@ -62,7 +67,6 @@ describe("env schema", () => {
     const parsed = envSchema.safeParse({
       NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
       NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon",
-      NEXT_PUBLIC_ENABLE_MANUAL_DOMAIN_VERIFY: "true",
       SUPABASE_SERVICE_ROLE_KEY: "service-role",
       STRIPE_STUB_MODE: "true",
       NEXT_PUBLIC_APP_URL: "http://localhost:3000"

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { AuditEventRecord } from "@/types/database";
@@ -63,9 +63,9 @@ export function AuditEventsPanel({ initialEvents }: AuditEventsPanelProps) {
     <Card>
       <CardHeader className="space-y-1">
         <CardTitle className="text-xl">Recent Audit Events</CardTitle>
-        <p className="text-sm text-muted-foreground">
+        <CardDescription>
           Track sensitive merchant actions for support investigations and operational confidence.
-        </p>
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
 
@@ -79,6 +79,7 @@ export function AuditEventsPanel({ initialEvents }: AuditEventsPanelProps) {
             onChange={(event) => setActionFilter(event.target.value)}
             placeholder="promotion.created"
           />
+          <p className="text-xs text-muted-foreground">Example actions: `promotion.created`, `order.shipped`, `product.updated`.</p>
           <datalist id="audit-actions">
             {commonActions.map((action) => (
               <option key={action} value={action} />
@@ -94,6 +95,7 @@ export function AuditEventsPanel({ initialEvents }: AuditEventsPanelProps) {
             onChange={(event) => setEntityFilter(event.target.value)}
             placeholder="order"
           />
+          <p className="text-xs text-muted-foreground">Filter by resource type such as `order`, `product`, or `store`.</p>
         </div>
 
         <Button type="button" onClick={() => void applyFilters()} disabled={loading} className="h-fit self-end">
