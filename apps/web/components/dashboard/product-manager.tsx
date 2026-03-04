@@ -3,11 +3,10 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, MoreHorizontal, Pencil, Plus, RotateCcw, Star, X } from "lucide-react";
+import { MoreHorizontal, Pencil, Plus, RotateCcw, Star, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { DataStat } from "@/components/ui/data-stat";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { Flyout } from "@/components/ui/flyout";
@@ -601,6 +600,16 @@ function resolveTierNamesForProduct(product: ProductListItem) {
     .slice(0, 2);
 }
 
+function normalizeTierDisplayLabel(label: string) {
+  const trimmed = label.normalize("NFKC").trim();
+  if (!trimmed) {
+    return "";
+  }
+  const strippedLeading = trimmed.replace(/^[^\p{L}\p{N}]+/u, "");
+  const strippedTrailing = strippedLeading.replace(/[^\p{L}\p{N}\s]+$/u, "").trim();
+  return strippedTrailing;
+}
+
 function sortVariants(variants: ProductVariantListItem[]) {
   return [...variants].sort((left, right) => {
     if (left.sort_order === right.sort_order) {
@@ -675,7 +684,9 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   const [deleteConfirmDescription, setDeleteConfirmDescription] = useState("Are you sure you want to continue?");
   const [deleteConfirmLabel, setDeleteConfirmLabel] = useState("Delete");
   const [catalogError, setCatalogError] = useState<string | null>(null);
-  const [expandedProductIds, setExpandedProductIds] = useState<Set<string>>(new Set());
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(initialProducts[0]?.id ?? null);
+  const [catalogInspectorTab, setCatalogInspectorTab] = useState<"overview" | "variants" | "inventory" | "media">("overview");
+  const [variantInspectorMode, setVariantInspectorMode] = useState<"flat" | "grouped">("flat");
   const [inventoryAdjustDraft, setInventoryAdjustDraft] = useState<{
     productId: string;
     variantId: string;
@@ -712,13 +723,6 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditFlyoutOpen]);
 
-
-  const stats = useMemo(() => {
-    const activeCount = products.filter((product) => product.status === "active").length;
-    const lowStockCount = products.filter((product) => product.inventory_qty < 10).length;
-    return { activeCount, lowStockCount, total: products.length };
-  }, [products]);
-
   const visibleProducts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
@@ -737,6 +741,24 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       );
     });
   }, [products, query, statusFilter]);
+
+  const selectedProduct = useMemo(
+    () => visibleProducts.find((product) => product.id === selectedProductId) ?? visibleProducts[0] ?? null,
+    [selectedProductId, visibleProducts]
+  );
+
+  useEffect(() => {
+    if (visibleProducts.length === 0) {
+      if (selectedProductId !== null) {
+        setSelectedProductId(null);
+      }
+      return;
+    }
+
+    if (!selectedProductId || !visibleProducts.some((product) => product.id === selectedProductId)) {
+      setSelectedProductId(visibleProducts[0]?.id ?? null);
+    }
+  }, [selectedProductId, visibleProducts]);
 
   const flowStepOrder = { product: 0, variant: 1, option: 2 } as const;
 
@@ -2363,18 +2385,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   }
 
   return (
-    <div className="space-y-6">
-      <section className="space-y-3 rounded-lg border border-border bg-card p-5">
-        <div className="space-y-1.5">
-          <h3 className="text-lg font-semibold">Summary</h3>
-          <p className="text-xs text-muted-foreground">At-a-glance product and inventory counts.</p>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <DataStat label="Total products" value={String(stats.total)} />
-          <DataStat label="Active" value={String(stats.activeCount)} />
-          <DataStat label="Low stock (<10)" value={String(stats.lowStockCount)} />
-        </div>
-      </section>
+    <div className="space-y-4">
       <section className="space-y-4 rounded-lg border border-border bg-card p-5">
       <header className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
@@ -2435,34 +2446,206 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
         <FeedbackMessage type="error" message={catalogError} />
       </header>
 
-      <div className="overflow-visible rounded-md border border-border">
-        <Table>
-          <TableHeader className="bg-muted/45">
-            <TableRow>
-              <TableHead className="w-10" />
-              <TableHead>Title</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Price</TableHead>
-              <TableHead>Inventory</TableHead>
-              <TableHead>Variants</TableHead>
-              <TableHead className="sticky right-0 z-20 bg-muted/35 text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {visibleProducts.length === 0 ? (
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+        <section className="space-y-3 rounded-md border border-border">
+          <div className="px-3 pt-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Products</p>
+          </div>
+          <Table>
+            <TableHeader className="bg-muted/45">
               <TableRow>
-                <TableCell className="py-3 text-muted-foreground" colSpan={7}>
-                  No products match this filter.
-                </TableCell>
+                <TableHead>Title</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Price</TableHead>
+                <TableHead>Inventory</TableHead>
+                <TableHead>Variants</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
-            ) : (
-              visibleProducts.map((product) => {
-                const sortedVariants = sortVariants(product.product_variants ?? []);
-                const productPreviewImage = product.image_urls?.[0] ?? null;
-                const variantProduct = hasStructuredVariants(product);
-                const isExpanded = expandedProductIds.has(product.id);
-                const tierNames = resolveTierNamesForProduct(product);
+            </TableHeader>
+            <TableBody>
+              {visibleProducts.length === 0 ? (
+                <TableRow>
+                  <TableCell className="py-3 text-muted-foreground" colSpan={6}>
+                    No products match this filter.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                visibleProducts.map((product) => {
+                  const sortedVariants = sortVariants(product.product_variants ?? []);
+                  const productPreviewImage = product.image_urls?.[0] ?? null;
+                  const variantProduct = hasStructuredVariants(product);
+                  const isSelected = selectedProduct?.id === product.id;
+                  const singleVariantForInventory = !variantProduct ? sortedVariants[0] : null;
+
+                  return (
+                    <TableRow
+                      key={product.id}
+                      className={isSelected ? "bg-primary/5" : undefined}
+                      onClick={() => setSelectedProductId(product.id)}
+                    >
+                      <TableCell>
+                        <div className="flex items-stretch gap-2">
+                          {productPreviewImage ? (
+                            <div className="relative w-12 min-h-12 min-w-12 overflow-hidden rounded-md border border-border">
+                              <Image src={productPreviewImage} alt={`${product.title} preview`} fill unoptimized className="object-cover" />
+                            </div>
+                          ) : null}
+                          <div className="min-w-0">
+                            <p className="font-medium">{product.title}</p>
+                            <p className="mt-0.5 text-xs text-muted-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden">
+                              {richTextToPlainText(product.description).replace(/\s+/g, " ").trim()}
+                            </p>
+                            {product.is_featured ? (
+                              <Badge className="mt-1 bg-amber-100 text-amber-800 hover:bg-amber-100">featured</Badge>
+                            ) : null}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Select
+                          value={product.status}
+                          onChange={(event) =>
+                            void updateProduct(product.id, { status: event.target.value as ProductRecord["status"] })
+                          }
+                        >
+                          {statusOptions.map((status) => (
+                            <option key={`${product.id}-${status}`} value={status}>
+                              {status}
+                            </option>
+                          ))}
+                        </Select>
+                      </TableCell>
+                      <TableCell>{resolvePriceRange(sortedVariants)}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <span className="w-10 text-center tabular-nums">{product.inventory_qty}</span>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-6 px-2"
+                            aria-label={`Adjust inventory for ${product.title}`}
+                            disabled={!singleVariantForInventory}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              if (singleVariantForInventory) {
+                                openInventoryAdjustModal(product.id, singleVariantForInventory, singleVariantForInventory.title?.trim() || product.title);
+                              }
+                            }}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <p className="text-xs text-muted-foreground">
+                          {sortedVariants.length} variant{sortedVariants.length === 1 ? "" : "s"}
+                        </p>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="ml-auto h-7 w-7 p-0"
+                              aria-label={`Open actions for ${product.title}`}
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => openEditFlyout(product)}>Edit</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => void updateProduct(product.id, { isFeatured: !product.is_featured })}>
+                              {product.is_featured ? "Unfeature" : "Feature"}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              disabled={deletePendingProductId === product.id}
+                              className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                              onClick={() => void deleteProduct(product)}
+                            >
+                              {deletePendingProductId === product.id ? "Deleting..." : "Delete"}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </section>
+
+        <section className="space-y-3 rounded-md border border-border bg-card p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Inspector</p>
+              <h3 className="text-lg font-semibold">{selectedProduct?.title ?? "No product selected"}</h3>
+            </div>
+            {selectedProduct ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => openEditFlyout(selectedProduct)}>
+                  Edit
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void updateProduct(selectedProduct.id, { isFeatured: !selectedProduct.is_featured })}
+                >
+                  {selectedProduct.is_featured ? "Unfeature" : "Feature"}
+                </Button>
+              </div>
+            ) : null}
+          </div>
+
+          {selectedProduct ? (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                {(["overview", "variants", "inventory", "media"] as const).map((tab) => (
+                  <Button
+                    key={tab}
+                    type="button"
+                    size="sm"
+                    variant={catalogInspectorTab === tab ? "default" : "outline"}
+                    onClick={() => setCatalogInspectorTab(tab)}
+                  >
+                    {tab.charAt(0).toUpperCase()}
+                    {tab.slice(1)}
+                  </Button>
+                ))}
+              </div>
+
+              {catalogInspectorTab === "overview" ? (
+                <div className="space-y-3 text-sm">
+                  <p className="text-muted-foreground">
+                    {richTextToPlainText(selectedProduct.description).replace(/\s+/g, " ").trim() || "No description yet."}
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <p>
+                      <span className="font-medium">Status:</span> {selectedProduct.status}
+                    </p>
+                    <p>
+                      <span className="font-medium">SKU:</span> {selectedProduct.sku ?? "—"}
+                    </p>
+                    <p>
+                      <span className="font-medium">Price range:</span> {resolvePriceRange(sortVariants(selectedProduct.product_variants ?? []))}
+                    </p>
+                    <p>
+                      <span className="font-medium">Inventory:</span> {selectedProduct.inventory_qty}
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+
+              {catalogInspectorTab === "variants" ? (() => {
+                const sortedVariants = sortVariants(selectedProduct.product_variants ?? []);
+                const tierNames = resolveTierNamesForProduct(selectedProduct);
                 const tierOneName = tierNames[0] ?? "";
+                const tierOneDisplayName = normalizeTierDisplayLabel(tierOneName) || "first option";
                 const tierTwoName = tierNames[1] ?? "";
                 const groupedVariants = (() => {
                   const groups = new Map<string, { label: string; variants: ProductVariantListItem[] }>();
@@ -2476,280 +2659,211 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                   }
                   return [...groups.values()];
                 })();
-                const singleVariantForInventory = !variantProduct ? sortedVariants[0] : null;
-                const toggleExpanded = () =>
-                  setExpandedProductIds((current) => {
-                    const next = new Set(current);
-                    if (next.has(product.id)) {
-                      next.delete(product.id);
-                    } else {
-                      next.add(product.id);
-                    }
-                    return next;
-                  });
 
-                return [
-                  <TableRow key={`${product.id}-main`}>
-                    <TableCell>
-                      {variantProduct ? (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          aria-label={isExpanded ? "Collapse variants" : "Expand variants"}
-                          onClick={toggleExpanded}
-                        >
-                          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                        </Button>
-                      ) : null}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-stretch gap-2">
-                        {productPreviewImage ? (
-                          <div className="relative w-12 min-h-12 min-w-12 overflow-hidden rounded-md border border-border">
-                            <Image src={productPreviewImage} alt={`${product.title} preview`} fill unoptimized className="object-cover" />
-                          </div>
-                        ) : null}
-                        <div className="min-w-0">
-                          <p className="font-medium">{product.title}</p>
-                          <p className="mt-0.5 text-xs text-muted-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden">
-                            {richTextToPlainText(product.description).replace(/\s+/g, " ").trim()}
-                          </p>
-                          {product.is_featured ? (
-                            <Badge className="mt-1 bg-amber-100 text-amber-800 hover:bg-amber-100">featured</Badge>
-                          ) : null}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Select
-                        value={product.status}
-                        onChange={(event) =>
-                          void updateProduct(product.id, { status: event.target.value as ProductRecord["status"] })
-                        }
-                      >
-                        {statusOptions.map((status) => (
-                          <option key={`${product.id}-${status}`} value={status}>
-                            {status}
-                          </option>
-                        ))}
+                return (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs text-muted-foreground">Manage variant-level pricing, stock, and status.</p>
+                      <Select value={variantInspectorMode} onChange={(event) => setVariantInspectorMode(event.target.value as "flat" | "grouped")}>
+                        <option value="flat">Flat list</option>
+                        <option value="grouped">Grouped by {tierOneDisplayName}</option>
                       </Select>
-                    </TableCell>
-                    <TableCell>{variantProduct ? "N/A" : resolvePriceRange(sortedVariants)}</TableCell>
-                    <TableCell>
-                      {variantProduct ? (
-                        "N/A"
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <span className="w-10 text-center tabular-nums">{product.inventory_qty}</span>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-6 px-2"
-                            aria-label={`Adjust inventory for ${product.title}`}
-                            disabled={!singleVariantForInventory}
-                            onClick={() =>
-                              singleVariantForInventory
-                                ? openInventoryAdjustModal(
-                                    product.id,
-                                    singleVariantForInventory,
-                                    singleVariantForInventory.title?.trim() || product.title
-                                  )
-                                : undefined
-                            }
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <p className="text-xs text-muted-foreground">
-                        {variantProduct ? `${sortedVariants.length} variant${sortedVariants.length === 1 ? "" : "s"}` : "No variants"}
-                      </p>
-                    </TableCell>
-                    <TableCell className="sticky right-0 z-10 bg-card text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button type="button" variant="outline" size="sm" className="ml-auto h-7 w-7 p-0" aria-label={`Open actions for ${product.title}`}>
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openEditFlyout(product)}>Edit</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => void updateProduct(product.id, { isFeatured: !product.is_featured })}>
-                            {product.is_featured ? "Unfeature" : "Feature"}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            disabled={deletePendingProductId === product.id}
-                            className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-                            onClick={() => void deleteProduct(product)}
-                          >
-                            {deletePendingProductId === product.id ? "Deleting..." : "Delete"}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>,
-                  variantProduct && isExpanded ? (
-                    <TableRow key={`${product.id}-expanded`}>
-                      <TableCell colSpan={7} className="bg-muted/10">
-                        <div className="space-y-3 rounded-md border border-border bg-card p-3">
-                          {groupedVariants.map((group) => {
-                            return (
-                            <div key={`${product.id}-group-${group.label}`} className="space-y-2">
-                              <div className="flex items-center justify-between gap-2">
-                                <p className="text-sm font-medium">{tierOneName ? `${tierOneName}: ${group.label}` : group.label}</p>
-                                <div className="relative">
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button type="button" variant="outline" size="sm" className="h-7 w-7 p-0" aria-label={`Open actions for ${group.label}`}>
-                                        <MoreHorizontal className="h-4 w-4" />
-                                      </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                      <DropdownMenuItem
-                                        onClick={() =>
-                                          openEditFlyout(product, {
-                                            step: "variant",
-                                            variantId: group.variants[0]?.id
-                                          })
-                                        }
-                                      >
-                                        Edit
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem
-                                        className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-                                        onClick={() =>
-                                          void deleteCatalogVariantGroup(
-                                            product,
-                                            group.variants.map((variant) => variant.id),
-                                            group.label
-                                          )
-                                        }
-                                      >
-                                        Delete
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                </div>
-                              </div>
-                              <div className="rounded-md border border-border">
-                                <div className="overflow-x-auto overflow-y-visible">
-                                <table className="w-full text-sm">
-                                  <thead className="bg-muted/35 text-xs text-muted-foreground">
-                                    <tr>
-                                      <th className="px-3 py-2 text-left">{tierTwoName || "Variant"}</th>
-                                      <th className="px-3 py-2 text-left">SKU</th>
-                                      <th className="px-3 py-2 text-left">Price</th>
-                                      <th className="px-3 py-2 text-left">Inventory</th>
-                                      <th className="px-3 py-2 text-left">Status</th>
-                                      <th className="sticky right-0 z-20 bg-muted/35 px-3 py-2 text-right">Actions</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {group.variants.map((variant) => {
-                                      const tierTwoValue = tierTwoName
-                                        ? variant.option_values?.[tierTwoName] ?? formatVariantLabel(variant)
-                                        : formatVariantLabel(variant);
-                                      const variantLabel = formatVariantLabel(variant);
-                                      const variantPreviewImage = variant.image_urls?.[0] ?? variant.group_image_urls?.[0] ?? null;
-                                      return (
-                                        <tr key={`${product.id}-${group.label}-${variant.id}`} className="border-t border-border">
-                                          <td className="px-3 py-2">
-                                            <div className="flex items-center gap-2">
-                                              {variantPreviewImage ? (
-                                                <div className="relative h-7 w-7 overflow-hidden rounded-md border border-border bg-muted/15">
-                                                  <Image src={variantPreviewImage} alt={`${tierTwoValue} preview`} fill unoptimized className="object-cover" />
-                                                </div>
-                                              ) : null}
-                                              <span>{tierTwoValue}</span>
-                                            </div>
-                                          </td>
-                                          <td className="px-3 py-2">{variant.sku ?? "—"}</td>
-                                          <td className="px-3 py-2">${((variant.price_cents ?? 0) / 100).toFixed(2)}</td>
-                                          <td className="px-3 py-2">
-                                            <div className="flex items-center gap-2">
-                                              <span className="w-10 text-center tabular-nums">{variant.inventory_qty}</span>
-                                              <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                className="h-6 px-2"
-                                                aria-label={`Adjust inventory for ${variantLabel}`}
-                                                onClick={() => openInventoryAdjustModal(product.id, variant, variantLabel)}
-                                              >
-                                                <Pencil className="h-3.5 w-3.5" />
-                                              </Button>
-                                            </div>
-                                          </td>
-                                          <td className="px-3 py-2">
-                                            <Select
-                                              value={variant.status}
-                                              onChange={(event) =>
-                                                void setCatalogVariantStatus(
-                                                  product,
-                                                  variant.id,
-                                                  event.target.value as ProductVariantListItem["status"]
-                                                )
-                                              }
-                                            >
-                                              {variantStatusOptions.map((status) => (
-                                                <option key={`${variant.id}-status-${status}`} value={status}>
-                                                  {status}
-                                                </option>
-                                              ))}
-                                            </Select>
-                                          </td>
-                                          <td className="sticky right-0 z-10 bg-card px-3 py-2 text-right">
-                                            <div className="relative ml-auto w-fit">
-                                              <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                  <Button type="button" variant="outline" size="sm" className="h-7 w-7 p-0" aria-label={`Open actions for ${variantLabel}`}>
-                                                    <MoreHorizontal className="h-4 w-4" />
-                                                  </Button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end">
-                                                  <DropdownMenuItem
-                                                    onClick={() =>
-                                                      openEditFlyout(product, {
-                                                        step: tierTwoName ? "option" : "variant",
-                                                        variantId: variant.id
-                                                      })
-                                                    }
-                                                  >
-                                                    Edit
-                                                  </DropdownMenuItem>
-                                                  <DropdownMenuItem
-                                                    className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-                                                    onClick={() => void deleteCatalogVariant(product, variant.id, variantLabel)}
-                                                  >
-                                                    Delete
-                                                  </DropdownMenuItem>
-                                                </DropdownMenuContent>
-                                              </DropdownMenu>
-                                            </div>
-                                          </td>
-                                        </tr>
-                                      );
-                                    })}
-                                  </tbody>
-                                </table>
-                                </div>
+                    </div>
+
+                    {variantInspectorMode === "grouped" && tierOneName ? (
+                      <div className="space-y-2">
+                        {groupedVariants.map((group) => (
+                          <div key={`${selectedProduct.id}-group-${group.label}`} className="rounded-md border border-border p-3">
+                            <div className="mb-2 flex items-center justify-between gap-2">
+                              <p className="text-sm font-medium">
+                                {tierOneDisplayName}: {group.label}
+                              </p>
+                              <div className="flex gap-2">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() =>
+                                    openEditFlyout(selectedProduct, {
+                                      step: "variant",
+                                      variantId: group.variants[0]?.id
+                                    })
+                                  }
+                                >
+                                  Edit group
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-destructive"
+                                  onClick={() =>
+                                    void deleteCatalogVariantGroup(
+                                      selectedProduct,
+                                      group.variants.map((variant) => variant.id),
+                                      group.label
+                                    )
+                                  }
+                                >
+                                  Delete group
+                                </Button>
                               </div>
                             </div>
-                          )})}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ) : null
-                ];
-              })
-            )}
-          </TableBody>
-        </Table>
+                            <div className="space-y-1.5">
+                              {group.variants.map((variant) => (
+                                <div key={variant.id} className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-2 py-1.5 text-xs">
+                                  <span>{tierTwoName ? variant.option_values?.[tierTwoName] ?? formatVariantLabel(variant) : formatVariantLabel(variant)}</span>
+                                  <span className="text-muted-foreground">
+                                    {variant.inventory_qty} in stock • {variant.status}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto rounded-md border border-border">
+                        <table className="w-full text-sm">
+                          <thead className="bg-muted/35 text-xs text-muted-foreground">
+                            <tr>
+                              <th className="px-3 py-2 text-left">Variant</th>
+                              <th className="px-3 py-2 text-left">Price</th>
+                              <th className="px-3 py-2 text-left">Inventory</th>
+                              <th className="px-3 py-2 text-left">Status</th>
+                              <th className="px-3 py-2 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sortedVariants.map((variant) => {
+                              const variantLabel = formatVariantLabel(variant);
+                              return (
+                                <tr key={`${selectedProduct.id}-${variant.id}`} className="border-t border-border">
+                                  <td className="px-3 py-2">{variantLabel}</td>
+                                  <td className="px-3 py-2">${((variant.price_cents ?? 0) / 100).toFixed(2)}</td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-10 text-center tabular-nums">{variant.inventory_qty}</span>
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-6 px-2"
+                                        onClick={() => openInventoryAdjustModal(selectedProduct.id, variant, variantLabel)}
+                                      >
+                                        <Pencil className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <Select
+                                      value={variant.status}
+                                      onChange={(event) =>
+                                        void setCatalogVariantStatus(
+                                          selectedProduct,
+                                          variant.id,
+                                          event.target.value as ProductVariantListItem["status"]
+                                        )
+                                      }
+                                    >
+                                      {variantStatusOptions.map((status) => (
+                                        <option key={`${variant.id}-status-${status}`} value={status}>
+                                          {status}
+                                        </option>
+                                      ))}
+                                    </Select>
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button type="button" variant="outline" size="sm" className="h-7 w-7 p-0">
+                                          <MoreHorizontal className="h-4 w-4" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuItem
+                                          onClick={() =>
+                                            openEditFlyout(selectedProduct, {
+                                              step: tierTwoName ? "option" : "variant",
+                                              variantId: variant.id
+                                            })
+                                          }
+                                        >
+                                          Edit
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                          className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                                          onClick={() => void deleteCatalogVariant(selectedProduct, variant.id, variantLabel)}
+                                        >
+                                          Delete
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })() : null}
+
+              {catalogInspectorTab === "inventory" ? (() => {
+                const sortedVariants = sortVariants(selectedProduct.product_variants ?? []);
+                return (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">Inventory totals roll up from variant rows.</p>
+                    <div className="rounded-md border border-border p-3 text-sm">
+                      <span className="font-medium">Product inventory total:</span> {selectedProduct.inventory_qty}
+                    </div>
+                    <div className="space-y-2">
+                      {sortedVariants.map((variant) => {
+                        const variantLabel = formatVariantLabel(variant);
+                        return (
+                          <div key={`${selectedProduct.id}-inventory-${variant.id}`} className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm">
+                            <span>{variantLabel}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="tabular-nums">{variant.inventory_qty}</span>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openInventoryAdjustModal(selectedProduct.id, variant, variantLabel)}
+                              >
+                                Adjust
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })() : null}
+
+              {catalogInspectorTab === "media" ? (
+                <div className="space-y-3">
+                  <p className="text-xs text-muted-foreground">Product-level media and variant image coverage.</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(selectedProduct.image_urls ?? []).slice(0, 6).map((imageUrl) => (
+                      <div key={`${selectedProduct.id}-media-${imageUrl}`} className="relative aspect-square overflow-hidden rounded-md border border-border">
+                        <Image src={imageUrl} alt={`${selectedProduct.title} image`} fill unoptimized className="object-cover" />
+                      </div>
+                    ))}
+                    {(selectedProduct.image_urls ?? []).length === 0 ? (
+                      <p className="col-span-3 text-sm text-muted-foreground">No product images uploaded.</p>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">Select a product to inspect and edit details.</p>
+          )}
+        </section>
       </div>
       </section>
 

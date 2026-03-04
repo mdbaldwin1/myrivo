@@ -1,6 +1,5 @@
 import { BrandingSettingsForm } from "@/components/dashboard/branding-settings-form";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
-import { Button } from "@/components/ui/button";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -23,22 +22,8 @@ export default async function DashboardStoreSettingsBrandingPage() {
 
   return (
     <section className="space-y-4">
-      <DashboardPageHeader
-        title="Branding"
-        description="Global design tokens and storefront structural styling."
-        action={
-          <div className="flex items-center gap-2">
-            <Button type="submit" form="branding-form" name="intent" value="discard" variant="outline">
-              Discard
-            </Button>
-            <Button type="submit" form="branding-form" name="intent" value="save">
-              Save
-            </Button>
-          </div>
-        }
-      />
+      <DashboardPageHeader title="Branding" description="Global design tokens and storefront structural styling." />
       <BrandingSettingsForm initialBranding={bundle.branding} />
     </section>
   );
 }
-

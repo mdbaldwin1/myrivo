@@ -55,11 +55,11 @@ describe("orders export route", () => {
                   tracking_url: null,
                   shipment_status: null,
                   order_fee_breakdowns: {
-                    platform_fee_cents: 175,
-                    net_payout_cents: 4825,
-                    fee_bps: 350,
-                    fee_fixed_cents: 0,
-                    plan_key: "starter"
+                    platform_fee_cents: 88,
+                    net_payout_cents: 4912,
+                    fee_bps: 125,
+                    fee_fixed_cents: 25,
+                    plan_key: "standard"
                   }
                 }
               ],
@@ -76,6 +76,6 @@ describe("orders export route", () => {
 
     expect(response.status).toBe(200);
     expect(csv).toContain("platform_fee_cents,net_payout_cents,fee_bps,fee_fixed_cents,fee_plan_key");
-    expect(csv).toContain("175,4825,350,0,starter");
+    expect(csv).toContain("88,4912,125,25,standard");
   });
 });

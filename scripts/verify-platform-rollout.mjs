@@ -210,7 +210,7 @@ async function ensureStoreOwnerMembershipIntegrity() {
 async function ensureBillingProfileCoverage() {
   const [{ data: stores, error: storesError }, { data: billingProfiles, error: billingError }] = await Promise.all([
     supabase.from("stores").select("id"),
-    supabase.from("store_billing_profiles").select("store_id,billing_mode,test_mode_enabled")
+    supabase.from("store_billing_profiles").select("store_id,test_mode_enabled")
   ]);
 
   if (storesError) {

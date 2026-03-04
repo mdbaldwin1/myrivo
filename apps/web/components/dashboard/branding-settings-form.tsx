@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { DashboardFormActionBar } from "@/components/dashboard/dashboard-form-action-bar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { FormField } from "@/components/ui/form-field";
@@ -60,6 +61,7 @@ function resolveContrastingForeground(hex: string): string {
 }
 
 export function BrandingSettingsForm({ initialBranding }: BrandingSettingsFormProps) {
+  const formId = "branding-form";
   const initialTheme = resolveStorefrontThemeConfig(initialBranding?.theme_json ?? {});
 
   const [primaryColor, setPrimaryColor] = useState(initialBranding?.primary_color ?? "#0F7B84");
@@ -114,6 +116,7 @@ export function BrandingSettingsForm({ initialBranding }: BrandingSettingsFormPr
 
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const snapshot = useMemo(
     () =>
@@ -251,6 +254,8 @@ export function BrandingSettingsForm({ initialBranding }: BrandingSettingsFormPr
     setError(null);
   }
 
+  const isDirty = snapshot !== baseline;
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
@@ -261,6 +266,7 @@ export function BrandingSettingsForm({ initialBranding }: BrandingSettingsFormPr
 
     setError(null);
     setMessage(null);
+    setSaving(true);
 
     const parsedPrimary = normalizeHex(primaryColor);
     const parsedAccent = normalizeHex(accentColor);
@@ -284,6 +290,7 @@ export function BrandingSettingsForm({ initialBranding }: BrandingSettingsFormPr
       !parsedHeaderForeground
     ) {
       setError("All colors must be valid 6-digit hex values.");
+      setSaving(false);
       return;
     }
 
@@ -293,16 +300,19 @@ export function BrandingSettingsForm({ initialBranding }: BrandingSettingsFormPr
 
     if (!Number.isInteger(parsedProductGridColumns) || ![2, 3, 4].includes(parsedProductGridColumns)) {
       setError("Product grid columns must be 2, 3, or 4.");
+      setSaving(false);
       return;
     }
 
     if (!Number.isInteger(parsedHomeFeaturedProductsLimit) || parsedHomeFeaturedProductsLimit < 1 || parsedHomeFeaturedProductsLimit > 24) {
       setError("Featured products limit must be between 1 and 24.");
+      setSaving(false);
       return;
     }
 
     if (!Number.isInteger(parsedProductCardDescriptionLines) || parsedProductCardDescriptionLines < 1 || parsedProductCardDescriptionLines > 4) {
       setError("Description line clamp must be between 1 and 4.");
+      setSaving(false);
       return;
     }
 
@@ -373,15 +383,17 @@ export function BrandingSettingsForm({ initialBranding }: BrandingSettingsFormPr
 
     if (!response.ok || !payload.branding) {
       setError(payload.error ?? "Unable to save branding settings.");
+      setSaving(false);
       return;
     }
 
     setBaseline(snapshot);
     setMessage("Branding settings saved.");
+    setSaving(false);
   }
 
   return (
-    <form id="branding-form" onSubmit={handleSubmit} className="space-y-4">
+    <form id={formId} onSubmit={handleSubmit} className="space-y-4">
       <SectionCard title="Color System">
         <div className="grid gap-3 sm:grid-cols-2">
           <FormField label="Primary">
@@ -591,6 +603,15 @@ export function BrandingSettingsForm({ initialBranding }: BrandingSettingsFormPr
         </div>
       </SectionCard>
 
+      <DashboardFormActionBar
+        formId={formId}
+        saveLabel="Save branding"
+        savePendingLabel="Saving..."
+        savePending={saving}
+        discardLabel="Discard changes"
+        saveDisabled={!isDirty || saving}
+        discardDisabled={!isDirty || saving}
+      />
       <FeedbackMessage type="error" message={error} />
       <FeedbackMessage type="success" message={message} />
     </form>

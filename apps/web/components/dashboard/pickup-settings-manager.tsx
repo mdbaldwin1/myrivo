@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { DashboardFormActionBar } from "@/components/dashboard/dashboard-form-action-bar";
+import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
@@ -50,10 +52,13 @@ type PickupBlackoutRow = {
 };
 
 export function PickupSettingsManager() {
+  const formId = "pickup-config-form";
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [settings, setSettings] = useState<PickupSettings | null>(null);
+  const [savedSettings, setSavedSettings] = useState<PickupSettings | null>(null);
   const [locations, setLocations] = useState<PickupLocation[]>([]);
   const [hours, setHours] = useState<PickupHoursRow[]>([]);
   const [blackouts, setBlackouts] = useState<PickupBlackoutRow[]>([]);
@@ -71,10 +76,16 @@ export function PickupSettingsManager() {
   const [newLocationPostal, setNewLocationPostal] = useState("");
   const [newLocationLat, setNewLocationLat] = useState("");
   const [newLocationLng, setNewLocationLng] = useState("");
+  const isConfigDirty = Boolean(
+    settings &&
+      savedSettings &&
+      JSON.stringify(settings) !== JSON.stringify(savedSettings)
+  );
 
   async function loadData() {
     setLoading(true);
     setError(null);
+    setSuccessMessage(null);
 
     const [settingsResponse, locationsResponse, hoursResponse, blackoutsResponse] = await Promise.all([
       fetch("/api/stores/pickup/settings", { cache: "no-store" }),
@@ -113,6 +124,7 @@ export function PickupSettingsManager() {
     }
 
     setSettings(settingsPayload.settings ?? null);
+    setSavedSettings(settingsPayload.settings ?? null);
     const nextLocations = locationsPayload.locations ?? [];
     setLocations(nextLocations);
     setHours(hoursPayload.hours ?? []);
@@ -145,6 +157,7 @@ export function PickupSettingsManager() {
 
     setSaving(true);
     setError(null);
+    setSuccessMessage(null);
 
     const response = await fetch("/api/stores/pickup/settings", {
       method: "PUT",
@@ -171,13 +184,17 @@ export function PickupSettingsManager() {
       return;
     }
 
-    setSettings(payload.settings ?? settings);
+    const nextSettings = payload.settings ?? settings;
+    setSettings(nextSettings);
+    setSavedSettings(nextSettings);
+    setSuccessMessage("Pickup configuration saved.");
     setSaving(false);
   }
 
   async function addLocation() {
     setSaving(true);
     setError(null);
+    setSuccessMessage(null);
 
     const response = await fetch("/api/stores/pickup/locations", {
       method: "POST",
@@ -216,6 +233,7 @@ export function PickupSettingsManager() {
   async function removeLocation(id: string) {
     setSaving(true);
     setError(null);
+    setSuccessMessage(null);
 
     const response = await fetch(`/api/stores/pickup/locations/${id}`, { method: "DELETE" });
     const payload = (await response.json()) as { ok?: boolean; error?: string };
@@ -238,6 +256,7 @@ export function PickupSettingsManager() {
 
     setSaving(true);
     setError(null);
+    setSuccessMessage(null);
 
     let parsedHours: Array<{ dayOfWeek: number; opensAt: string; closesAt: string }> = [];
     try {
@@ -280,6 +299,7 @@ export function PickupSettingsManager() {
 
     setSaving(true);
     setError(null);
+    setSuccessMessage(null);
 
     const response = await fetch("/api/stores/pickup/blackouts", {
       method: "POST",
@@ -309,6 +329,7 @@ export function PickupSettingsManager() {
   async function removeBlackout(id: string) {
     setSaving(true);
     setError(null);
+    setSuccessMessage(null);
 
     const response = await fetch(`/api/stores/pickup/blackouts/${id}`, { method: "DELETE" });
     const payload = (await response.json()) as { ok?: boolean; error?: string };
@@ -322,133 +343,183 @@ export function PickupSettingsManager() {
     setSaving(false);
   }
 
+  function discardConfigChanges() {
+    if (!savedSettings) {
+      return;
+    }
+    setSettings(savedSettings);
+    setError(null);
+    setSuccessMessage(null);
+  }
+
+  async function handleConfigSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    if (submitter?.value === "discard") {
+      discardConfigChanges();
+      return;
+    }
+    await saveSettings();
+  }
+
   return (
-    <SectionCard
-      title="Pickup Locations & Rules"
-      action={
-        <Button type="button" variant="outline" size="sm" onClick={() => void saveSettings()} disabled={saving || loading || !settings}>
-          {saving ? "Saving..." : "Save pickup config"}
-        </Button>
-      }
-    >
+    <SectionCard title="Pickup Locations & Rules">
       {loading ? <p className="text-sm text-muted-foreground">Loading pickup configuration...</p> : null}
       {settings ? (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <FormField label="Pickup Enabled" description="Turn pickup on or off for checkout.">
-            <Select
-              value={settings.pickup_enabled ? "true" : "false"}
-              onChange={(event) => setSettings((current) => (current ? { ...current, pickup_enabled: event.target.value === "true" } : current))}
-            >
-              <option value="false">Disabled</option>
-              <option value="true">Enabled</option>
-            </Select>
-          </FormField>
-          <FormField label="Selection Mode" description="Hide options and auto-select nearest, or allow buyer choice.">
-            <Select
-              value={settings.selection_mode}
-              onChange={(event) =>
-                setSettings((current) =>
-                  current ? { ...current, selection_mode: event.target.value as "buyer_select" | "hidden_nearest" } : current
-                )
-              }
-            >
-              <option value="buyer_select">Buyer selects</option>
-              <option value="hidden_nearest">Hidden nearest</option>
-            </Select>
-          </FormField>
-          <FormField label="Eligibility Radius (miles)" description="Hide pickup if buyer is outside this radius.">
-            <Input
-              type="number"
-              min={1}
-              max={1000}
-              value={settings.eligibility_radius_miles}
-              onChange={(event) =>
-                setSettings((current) => (current ? { ...current, eligibility_radius_miles: Number.parseInt(event.target.value || "100", 10) } : current))
-              }
-            />
-          </FormField>
-          <FormField label="No Geolocation Behavior" description="Control pickup behavior when buyer location is unavailable.">
-            <Select
-              value={settings.geolocation_fallback_mode}
-              onChange={(event) =>
-                setSettings((current) =>
-                  current
-                    ? {
-                        ...current,
-                        geolocation_fallback_mode: event.target.value as "allow_without_distance" | "disable_pickup"
-                      }
-                    : current
-                )
-              }
-            >
-              <option value="allow_without_distance">Allow pickup without distance checks</option>
-              <option value="disable_pickup">Disable pickup until location is shared</option>
-            </Select>
-          </FormField>
-          <FormField label="Outside Radius Behavior" description="Control pickup behavior when no location falls within the radius.">
-            <Select
-              value={settings.out_of_radius_behavior}
-              onChange={(event) =>
-                setSettings((current) =>
-                  current
-                    ? {
-                        ...current,
-                        out_of_radius_behavior: event.target.value as "disable_pickup" | "allow_all_locations"
-                      }
-                    : current
-                )
-              }
-            >
-              <option value="disable_pickup">Disable pickup</option>
-              <option value="allow_all_locations">Allow all pickup locations</option>
-            </Select>
-          </FormField>
-          <FormField label="Lead Time (hours)" description="Minimum prep time before the first available slot.">
-            <Input
-              type="number"
-              min={0}
-              max={720}
-              value={settings.lead_time_hours}
-              onChange={(event) =>
-                setSettings((current) => (current ? { ...current, lead_time_hours: Number.parseInt(event.target.value || "48", 10) } : current))
-              }
-            />
-          </FormField>
-          <FormField label="Slot Interval" description="Time slot duration shown to buyers.">
-            <Select
-              value={String(settings.slot_interval_minutes)}
-              onChange={(event) =>
-                setSettings((current) =>
-                  current
-                    ? {
-                        ...current,
-                        slot_interval_minutes: Number.parseInt(event.target.value, 10) as 15 | 30 | 60 | 120
-                      }
-                    : current
-                )
-              }
-            >
-              <option value="15">15 minutes</option>
-              <option value="30">30 minutes</option>
-              <option value="60">60 minutes</option>
-              <option value="120">120 minutes</option>
-            </Select>
-          </FormField>
-          <FormField label="Timezone" description="Used for pickup slot display and order confirmations.">
-            <Input value={settings.timezone} onChange={(event) => setSettings((current) => (current ? { ...current, timezone: event.target.value } : current))} />
-          </FormField>
-          <FormField label="Instructions" className="sm:col-span-2" description="Shown in checkout and confirmation email.">
-            <Input
-              value={settings.instructions ?? ""}
-              onChange={(event) => setSettings((current) => (current ? { ...current, instructions: event.target.value } : current))}
-              placeholder="Bring order confirmation and photo ID to pickup."
-            />
-          </FormField>
-        </div>
+        <form
+          id={formId}
+          className="space-y-4"
+          onSubmit={handleConfigSubmit}
+        >
+          <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
+            <p className="text-sm font-medium">Pickup Rules</p>
+            <p className="mt-1 text-xs text-muted-foreground">Set when pickup appears at checkout and how buyer availability is calculated.</p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <FormField label="Pickup Enabled" description="Turn pickup on or off for checkout.">
+                <Select
+                  value={settings.pickup_enabled ? "true" : "false"}
+                  onChange={(event) => setSettings((current) => (current ? { ...current, pickup_enabled: event.target.value === "true" } : current))}
+                >
+                  <option value="false">Disabled</option>
+                  <option value="true">Enabled</option>
+                </Select>
+              </FormField>
+              <FormField label="Selection Mode" description="Hide options and auto-select nearest, or allow buyer choice.">
+                <Select
+                  value={settings.selection_mode}
+                  onChange={(event) =>
+                    setSettings((current) =>
+                      current ? { ...current, selection_mode: event.target.value as "buyer_select" | "hidden_nearest" } : current
+                    )
+                  }
+                >
+                  <option value="buyer_select">Buyer selects</option>
+                  <option value="hidden_nearest">Hidden nearest</option>
+                </Select>
+              </FormField>
+              <FormField label="Eligibility Radius (miles)" description="Hide pickup if buyer is outside this radius.">
+                <Input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={settings.eligibility_radius_miles}
+                  onChange={(event) =>
+                    setSettings((current) =>
+                      current
+                        ? {
+                            ...current,
+                            eligibility_radius_miles: Number.parseInt(event.target.value || "100", 10)
+                          }
+                        : current
+                    )
+                  }
+                />
+              </FormField>
+              <FormField label="No Geolocation Behavior" description="Control pickup behavior when buyer location is unavailable.">
+                <Select
+                  value={settings.geolocation_fallback_mode}
+                  onChange={(event) =>
+                    setSettings((current) =>
+                      current
+                        ? {
+                            ...current,
+                            geolocation_fallback_mode: event.target.value as "allow_without_distance" | "disable_pickup"
+                          }
+                        : current
+                    )
+                  }
+                >
+                  <option value="allow_without_distance">Allow pickup without distance checks</option>
+                  <option value="disable_pickup">Disable pickup until location is shared</option>
+                </Select>
+              </FormField>
+              <FormField label="Outside Radius Behavior" description="Control pickup behavior when no location falls within the radius.">
+                <Select
+                  value={settings.out_of_radius_behavior}
+                  onChange={(event) =>
+                    setSettings((current) =>
+                      current
+                        ? {
+                            ...current,
+                            out_of_radius_behavior: event.target.value as "disable_pickup" | "allow_all_locations"
+                          }
+                        : current
+                    )
+                  }
+                >
+                  <option value="disable_pickup">Disable pickup</option>
+                  <option value="allow_all_locations">Allow all pickup locations</option>
+                </Select>
+              </FormField>
+              <FormField label="Lead Time (hours)" description="Minimum prep time before the first available slot.">
+                <Input
+                  type="number"
+                  min={0}
+                  max={720}
+                  value={settings.lead_time_hours}
+                  onChange={(event) =>
+                    setSettings((current) =>
+                      current
+                        ? {
+                            ...current,
+                            lead_time_hours: Number.parseInt(event.target.value || "48", 10)
+                          }
+                        : current
+                    )
+                  }
+                />
+              </FormField>
+              <FormField label="Slot Interval" description="Time slot duration shown to buyers.">
+                <Select
+                  value={String(settings.slot_interval_minutes)}
+                  onChange={(event) =>
+                    setSettings((current) =>
+                      current
+                        ? {
+                            ...current,
+                            slot_interval_minutes: Number.parseInt(event.target.value, 10) as 15 | 30 | 60 | 120
+                          }
+                        : current
+                    )
+                  }
+                >
+                  <option value="15">15 minutes</option>
+                  <option value="30">30 minutes</option>
+                  <option value="60">60 minutes</option>
+                  <option value="120">120 minutes</option>
+                </Select>
+              </FormField>
+              <FormField label="Timezone" description="Used for pickup slot display and order confirmations.">
+                <Input
+                  value={settings.timezone}
+                  onChange={(event) => setSettings((current) => (current ? { ...current, timezone: event.target.value } : current))}
+                />
+              </FormField>
+              <FormField label="Instructions" className="sm:col-span-2" description="Shown in checkout and confirmation email.">
+                <Input
+                  value={settings.instructions ?? ""}
+                  onChange={(event) => setSettings((current) => (current ? { ...current, instructions: event.target.value } : current))}
+                  placeholder="Bring order confirmation and photo ID to pickup."
+                />
+              </FormField>
+            </div>
+          </div>
+          <DashboardFormActionBar
+            formId={formId}
+            saveLabel="Save pickup config"
+            savePendingLabel="Saving..."
+            savePending={saving}
+            saveDisabled={!isConfigDirty || loading || saving}
+            discardDisabled={!isConfigDirty || saving}
+          />
+        </form>
       ) : null}
 
-      <div className="mt-4 space-y-3 border-t border-border pt-4">
-        <p className="text-sm font-medium">Pickup Locations</p>
+      <div className="mt-4 space-y-3 rounded-lg border border-border/70 bg-muted/20 p-4">
+        <div>
+          <p className="text-sm font-medium">Pickup Locations</p>
+          <p className="mt-1 text-xs text-muted-foreground">Add and manage physical pickup addresses available to buyers.</p>
+        </div>
         <div className="grid gap-2 sm:grid-cols-2">
           <Input value={newLocationName} onChange={(event) => setNewLocationName(event.target.value)} placeholder="Location name" />
           <Input value={newLocationAddress} onChange={(event) => setNewLocationAddress(event.target.value)} placeholder="Address line 1" />
@@ -480,8 +551,11 @@ export function PickupSettingsManager() {
         </ul>
       </div>
 
-      <div className="mt-4 space-y-3 border-t border-border pt-4">
-        <p className="text-sm font-medium">Pickup Hours (per location)</p>
+      <div className="mt-4 space-y-3 rounded-lg border border-border/70 bg-muted/20 p-4">
+        <div>
+          <p className="text-sm font-medium">Pickup Hours</p>
+          <p className="mt-1 text-xs text-muted-foreground">Define open windows for each location using structured JSON.</p>
+        </div>
         <div className="grid gap-2 sm:grid-cols-2">
           <Select
             value={hoursLocationId}
@@ -523,8 +597,11 @@ export function PickupSettingsManager() {
         </p>
       </div>
 
-      <div className="mt-4 space-y-3 border-t border-border pt-4">
-        <p className="text-sm font-medium">Pickup Blackout Windows</p>
+      <div className="mt-4 space-y-3 rounded-lg border border-border/70 bg-muted/20 p-4">
+        <div>
+          <p className="text-sm font-medium">Pickup Blackout Windows</p>
+          <p className="mt-1 text-xs text-muted-foreground">Block pickup during holidays, closures, or custom unavailable windows.</p>
+        </div>
         <div className="grid gap-2 sm:grid-cols-2">
           <Select value={blackoutLocationId} onChange={(event) => setBlackoutLocationId(event.target.value)}>
             <option value="all">All pickup locations</option>
@@ -556,7 +633,10 @@ export function PickupSettingsManager() {
           ))}
         </ul>
       </div>
-      {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+      <div className="mt-2 space-y-2">
+        <FeedbackMessage type="error" message={error} />
+        <FeedbackMessage type="success" message={successMessage} />
+      </div>
     </SectionCard>
   );
 }

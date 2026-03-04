@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { CustomerProfileSettings } from "@/components/customer/customer-profile-settings";
 import { PageShell } from "@/components/layout/page-shell";
 import { SectionCard } from "@/components/ui/section-card";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -16,7 +17,8 @@ export default async function CustomerAccountPage() {
     redirect("/login");
   }
 
-  const [{ data: savedStores }, { data: savedItems }, { data: carts }, { data: orders }] = await Promise.all([
+  const [{ data: profile }, { data: savedStores }, { data: savedItems }, { data: carts }, { data: orders }] = await Promise.all([
+    supabase.from("user_profiles").select("display_name,avatar_path").eq("id", user.id).maybeSingle<{ display_name: string | null; avatar_path: string | null }>(),
     supabase
       .from("customer_saved_stores")
       .select("id,stores(id,name,slug,status)")
@@ -43,6 +45,10 @@ export default async function CustomerAccountPage() {
       <section className="space-y-4">
         <SectionCard title="Customer Dashboard">
           <p className="text-sm text-muted-foreground">Signed in as {user.email}</p>
+        </SectionCard>
+
+        <SectionCard title="Profile">
+          <CustomerProfileSettings email={user.email ?? null} displayName={profile?.display_name ?? null} initialAvatarPath={profile?.avatar_path ?? null} />
         </SectionCard>
 
         <div className="grid gap-4 md:grid-cols-2">

@@ -7,7 +7,6 @@ import { Flyout } from "@/components/ui/flyout";
 import { OrderDetailPanel } from "@/components/dashboard/order-detail-panel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { DataStat } from "@/components/ui/data-stat";
 import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
@@ -99,20 +98,6 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
   const [pageError, setPageError] = useState<string | null>(null);
   const [shippingError, setShippingError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-
-  const totals = useMemo(() => {
-    const gross = orders.reduce((sum, order) => sum + order.total_cents, 0);
-    const platformFees = orders.reduce((sum, order) => sum + (getFeeBreakdown(order)?.platform_fee_cents ?? 0), 0);
-    const netPayout = orders.reduce((sum, order) => sum + (getFeeBreakdown(order)?.net_payout_cents ?? 0), 0);
-    return { gross, count: orders.length, platformFees, netPayout };
-  }, [orders]);
-
-  const fulfillmentStats = useMemo(() => {
-    const pending = orders.filter((order) => order.fulfillment_status === "pending_fulfillment").length;
-    const packing = orders.filter((order) => order.fulfillment_status === "packing").length;
-    const shipped = orders.filter((order) => order.fulfillment_status === "shipped").length;
-    return { pending, packing, shipped };
-  }, [orders]);
 
   const visibleOrders = useMemo(
     () => (statusFilter === "all" ? orders : orders.filter((order) => order.status === statusFilter)),
@@ -278,41 +263,28 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
       />
 
       <Card>
-        <CardHeader className="space-y-2">
-          <CardTitle className="text-lg">Order Snapshot</CardTitle>
-          <CardDescription>Filter and review fulfillment workload and gross order activity.</CardDescription>
-          <FormField
-            label="Filter status"
-            className="block max-w-52"
-            labelClassName="text-xs uppercase tracking-wide text-muted-foreground"
-            description="Use this to focus on one status without changing order data."
-          >
-            <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}>
-              <option value="all">All statuses</option>
-              {statusOptions.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </Select>
-          </FormField>
-          <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-8">
-            <DataStat label="Orders" value={String(totals.count)} />
-            <DataStat label="Gross" value={`$${(totals.gross / 100).toFixed(2)}`} />
-            <DataStat label="Avg Order" value={totals.count ? `$${(totals.gross / totals.count / 100).toFixed(2)}` : "$0.00"} />
-            <DataStat label="Platform Fees" value={`$${(totals.platformFees / 100).toFixed(2)}`} />
-            <DataStat label="Net Payout" value={`$${(totals.netPayout / 100).toFixed(2)}`} />
-            <DataStat label="To Fulfill" value={String(fulfillmentStats.pending)} />
-            <DataStat label="Packing" value={String(fulfillmentStats.packing)} />
-            <DataStat label="In Transit" value={String(fulfillmentStats.shipped)} />
-          </div>
-        </CardHeader>
-      </Card>
-
-      <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Order List</CardTitle>
-          <CardDescription>Update payment and fulfillment status, then manage shipping details per order.</CardDescription>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <CardTitle className="text-lg">Order List</CardTitle>
+              <CardDescription>Update payment and fulfillment status, then manage shipping details per order.</CardDescription>
+            </div>
+            <FormField
+              label="Filter status"
+              className="block w-full max-w-52"
+              labelClassName="text-xs uppercase tracking-wide text-muted-foreground"
+              description="Filter visible rows without changing order data."
+            >
+              <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}>
+                <option value="all">All statuses</option>
+                {statusOptions.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <FeedbackMessage type="error" message={pageError} />

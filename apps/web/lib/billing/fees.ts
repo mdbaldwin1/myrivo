@@ -25,7 +25,7 @@ async function resolveDefaultFeeProfile() {
   const { data, error } = await admin
     .from("billing_plans")
     .select("key,transaction_fee_bps,transaction_fee_fixed_cents")
-    .eq("key", "starter")
+    .eq("key", "standard")
     .eq("active", true)
     .maybeSingle<{
       key: string;
@@ -49,11 +49,9 @@ export async function resolveStoreFeeProfile(storeId: string): Promise<FeeProfil
 
   const { data, error } = await admin
     .from("store_billing_profiles")
-    .select("fee_override_bps,fee_override_fixed_cents,billing_plans(key,transaction_fee_bps,transaction_fee_fixed_cents)")
+    .select("billing_plans(key,transaction_fee_bps,transaction_fee_fixed_cents)")
     .eq("store_id", storeId)
     .maybeSingle<{
-      fee_override_bps: number | null;
-      fee_override_fixed_cents: number | null;
       billing_plans:
         | {
             key: string;
@@ -75,8 +73,8 @@ export async function resolveStoreFeeProfile(storeId: string): Promise<FeeProfil
   const plan = Array.isArray(data.billing_plans) ? data.billing_plans[0] : data.billing_plans;
   return normalizeFeeProfile({
     planKey: plan?.key ?? null,
-    feeBps: data.fee_override_bps ?? plan?.transaction_fee_bps ?? 0,
-    feeFixedCents: data.fee_override_fixed_cents ?? plan?.transaction_fee_fixed_cents ?? 0
+    feeBps: plan?.transaction_fee_bps ?? 0,
+    feeFixedCents: plan?.transaction_fee_fixed_cents ?? 0
   });
 }
 

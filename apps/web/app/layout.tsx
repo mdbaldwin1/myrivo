@@ -32,22 +32,27 @@ export async function generateMetadata(): Promise<Metadata> {
   const admin = createSupabaseAdminClient();
   const { data: store, error } = await admin
     .from("stores")
-    .select("name,status,white_label_enabled,white_label_brand_name,white_label_favicon_path")
+    .select("id,name,status,white_label_enabled")
     .eq("slug", storeSlug)
     .maybeSingle<{
+      id: string;
       name: string;
       status: "draft" | "active" | "suspended";
       white_label_enabled: boolean;
-      white_label_brand_name: string | null;
-      white_label_favicon_path: string | null;
     }>();
 
   if (error || !store || store.status !== "active" || !store.white_label_enabled) {
     return defaultMetadata();
   }
 
-  const favicon = store.white_label_favicon_path?.trim() || "/brand/myrivo-favicon.svg";
-  const title = store.white_label_brand_name?.trim() || store.name || "Myrivo";
+  const { data: branding } = await admin
+    .from("store_branding")
+    .select("logo_path")
+    .eq("store_id", store.id)
+    .maybeSingle<{ logo_path: string | null }>();
+
+  const favicon = branding?.logo_path?.trim() || "/brand/myrivo-favicon.svg";
+  const title = store.name || "Myrivo";
 
   return {
     title,
