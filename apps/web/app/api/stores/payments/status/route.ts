@@ -20,24 +20,17 @@ export async function GET() {
     return NextResponse.json({ error: "No store found for account" }, { status: 404 });
   }
 
-  const [{ data: storeModeRow, error: storeModeError }, { data: billingProfile, error: billingProfileError }] = await Promise.all([
-    supabase.from("stores").select("mode").eq("id", bundle.store.id).maybeSingle<{ mode: "sandbox" | "live" }>(),
-    supabase
+  const { data: billingProfile, error: billingProfileError } = await supabase
       .from("store_billing_profiles")
       .select("test_mode_enabled")
       .eq("store_id", bundle.store.id)
-      .maybeSingle<{ test_mode_enabled: boolean }>()
-  ]);
-
-  if (storeModeError) {
-    return NextResponse.json({ error: storeModeError.message }, { status: 500 });
-  }
+      .maybeSingle<{ test_mode_enabled: boolean }>();
 
   if (billingProfileError) {
     return NextResponse.json({ error: billingProfileError.message }, { status: 500 });
   }
 
-  const effectiveStubMode = isStripeStubMode() || storeModeRow?.mode === "sandbox" || Boolean(billingProfile?.test_mode_enabled);
+  const effectiveStubMode = isStripeStubMode() || Boolean(billingProfile?.test_mode_enabled);
 
   if (!bundle.store.stripe_account_id) {
     const hasStripeEnv = stripeEnvSchema.safeParse({

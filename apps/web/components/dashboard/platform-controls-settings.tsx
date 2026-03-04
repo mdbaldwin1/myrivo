@@ -9,7 +9,6 @@ import { SectionCard } from "@/components/ui/section-card";
 
 type PlatformConfigResponse = {
   store?: {
-    mode: "sandbox" | "live";
     white_label_enabled: boolean;
     white_label_brand_name: string | null;
     white_label_favicon_path: string | null;
@@ -21,6 +20,7 @@ type PlatformConfigResponse = {
     billing_plans?: { key: string; name: string; transaction_fee_bps: number; transaction_fee_fixed_cents: number } | null;
   };
   plans?: Array<{ key: string; name: string; monthly_price_cents: number; transaction_fee_bps: number; transaction_fee_fixed_cents: number }>;
+  canManageFeeOverrides?: boolean;
   error?: string;
 };
 
@@ -28,7 +28,6 @@ export function PlatformControlsSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<"sandbox" | "live">("live");
   const [testModeEnabled, setTestModeEnabled] = useState(false);
   const [whiteLabelEnabled, setWhiteLabelEnabled] = useState(false);
   const [whiteLabelBrandName, setWhiteLabelBrandName] = useState("");
@@ -37,6 +36,7 @@ export function PlatformControlsSettings() {
   const [feeOverrideBps, setFeeOverrideBps] = useState("");
   const [feeOverrideFixedCents, setFeeOverrideFixedCents] = useState("");
   const [plans, setPlans] = useState<PlatformConfigResponse["plans"]>([]);
+  const [canManageFeeOverrides, setCanManageFeeOverrides] = useState(false);
 
   const billingHelper = useMemo(() => {
     const selected = plans?.find((plan) => plan.key === billingPlanKey);
@@ -67,7 +67,6 @@ export function PlatformControlsSettings() {
         setLoading(false);
         return;
       }
-      setMode(result.payload.store.mode);
       setTestModeEnabled(result.payload.billing?.test_mode_enabled ?? false);
       setWhiteLabelEnabled(result.payload.store.white_label_enabled);
       setWhiteLabelBrandName(result.payload.store.white_label_brand_name ?? "");
@@ -76,6 +75,7 @@ export function PlatformControlsSettings() {
       setFeeOverrideBps(result.payload.billing?.fee_override_bps?.toString() ?? "");
       setFeeOverrideFixedCents(result.payload.billing?.fee_override_fixed_cents?.toString() ?? "");
       setPlans(result.payload.plans ?? []);
+      setCanManageFeeOverrides(Boolean(result.payload.canManageFeeOverrides));
       setLoading(false);
     })();
     return () => {
@@ -87,19 +87,31 @@ export function PlatformControlsSettings() {
     setSaving(true);
     setError(null);
 
+    const body: {
+      testModeEnabled: boolean;
+      whiteLabelEnabled: boolean;
+      whiteLabelBrandName: string | null;
+      whiteLabelFaviconPath: string | null;
+      billingPlanKey: string;
+      feeOverrideBps?: number | null;
+      feeOverrideFixedCents?: number | null;
+    } = {
+      testModeEnabled,
+      whiteLabelEnabled,
+      whiteLabelBrandName: whiteLabelBrandName.trim() || null,
+      whiteLabelFaviconPath: whiteLabelFaviconPath.trim() || null,
+      billingPlanKey
+    };
+
+    if (canManageFeeOverrides) {
+      body.feeOverrideBps = feeOverrideBps.trim() ? Number.parseInt(feeOverrideBps, 10) : null;
+      body.feeOverrideFixedCents = feeOverrideFixedCents.trim() ? Number.parseInt(feeOverrideFixedCents, 10) : null;
+    }
+
     const response = await fetch("/api/stores/platform-config", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        mode,
-        testModeEnabled,
-        whiteLabelEnabled,
-        whiteLabelBrandName: whiteLabelBrandName.trim() || null,
-        whiteLabelFaviconPath: whiteLabelFaviconPath.trim() || null,
-        billingPlanKey,
-        feeOverrideBps: feeOverrideBps.trim() ? Number.parseInt(feeOverrideBps, 10) : null,
-        feeOverrideFixedCents: feeOverrideFixedCents.trim() ? Number.parseInt(feeOverrideFixedCents, 10) : null
-      })
+      body: JSON.stringify(body)
     });
 
     const payload = (await response.json()) as PlatformConfigResponse;
@@ -118,7 +130,6 @@ export function PlatformControlsSettings() {
       setSaving(false);
       return;
     }
-    setMode(refreshed.payload.store.mode);
     setTestModeEnabled(refreshed.payload.billing?.test_mode_enabled ?? false);
     setWhiteLabelEnabled(refreshed.payload.store.white_label_enabled);
     setWhiteLabelBrandName(refreshed.payload.store.white_label_brand_name ?? "");
@@ -127,6 +138,7 @@ export function PlatformControlsSettings() {
     setFeeOverrideBps(refreshed.payload.billing?.fee_override_bps?.toString() ?? "");
     setFeeOverrideFixedCents(refreshed.payload.billing?.fee_override_fixed_cents?.toString() ?? "");
     setPlans(refreshed.payload.plans ?? []);
+    setCanManageFeeOverrides(Boolean(refreshed.payload.canManageFeeOverrides));
     setLoading(false);
     setSaving(false);
   }
@@ -142,13 +154,6 @@ export function PlatformControlsSettings() {
     >
       {loading ? <p className="text-sm text-muted-foreground">Loading platform settings...</p> : null}
       <div className="grid gap-3 sm:grid-cols-2">
-        <FormField label="Store Mode" description="Sandbox blocks live operations until you switch to live.">
-          <Select value={mode} onChange={(event) => setMode(event.target.value as "sandbox" | "live")}>
-            <option value="live">Live</option>
-            <option value="sandbox">Sandbox</option>
-          </Select>
-        </FormField>
-
         <FormField label="Test Mode" description="Use test credentials and isolated billing behaviors.">
           <Select value={testModeEnabled ? "true" : "false"} onChange={(event) => setTestModeEnabled(event.target.value === "true")}>
             <option value="false">Disabled</option>
@@ -166,13 +171,25 @@ export function PlatformControlsSettings() {
           </Select>
         </FormField>
 
-        <FormField label="Fee Override (BPS)" description="Optional percentage override, e.g. 250 = 2.5%.">
-          <Input type="number" min={0} max={10000} value={feeOverrideBps} onChange={(event) => setFeeOverrideBps(event.target.value)} />
-        </FormField>
+        {canManageFeeOverrides ? (
+          <>
+            <FormField label="Fee Override (BPS)" description="Platform admin only. Optional percentage override, e.g. 250 = 2.5%.">
+              <Input type="number" min={0} max={10000} value={feeOverrideBps} onChange={(event) => setFeeOverrideBps(event.target.value)} />
+            </FormField>
 
-        <FormField label="Fee Override Fixed (cents)" description="Optional fixed cents override per order.">
-          <Input type="number" min={0} value={feeOverrideFixedCents} onChange={(event) => setFeeOverrideFixedCents(event.target.value)} />
-        </FormField>
+            <FormField label="Fee Override Fixed (cents)" description="Platform admin only. Optional fixed cents override per order.">
+              <Input type="number" min={0} value={feeOverrideFixedCents} onChange={(event) => setFeeOverrideFixedCents(event.target.value)} />
+            </FormField>
+          </>
+        ) : (
+          <FormField
+            label="Fee Overrides"
+            description="Only platform admins can configure non-standard fee overrides. Your store currently follows plan-based fees."
+            className="sm:col-span-2"
+          >
+            <Input value="Managed by platform admin" readOnly disabled />
+          </FormField>
+        )}
 
         <FormField label="White Label Enabled" description="Enable custom domain and branding assets.">
           <Select value={whiteLabelEnabled ? "true" : "false"} onChange={(event) => setWhiteLabelEnabled(event.target.value === "true")}>

@@ -54,7 +54,7 @@ export function DashboardPageHeader({ title, description, className, action }: D
     <header
       ref={headerRef}
       className={cn(
-        "sticky top-6 z-20 rounded-xl border border-border/70 bg-card p-5 transition-shadow duration-300 ease-in-out",
+        "sticky top-6 z-40 rounded-xl border border-border/70 bg-card p-5 transition-shadow duration-300 ease-in-out",
         isStuck ? "shadow-[0_10px_30px_-16px_rgba(0,0,0,0.45)]" : "shadow-none",
         className
       )}

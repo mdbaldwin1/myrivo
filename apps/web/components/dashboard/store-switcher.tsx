@@ -57,7 +57,7 @@ export function StoreSwitcher({ activeStoreSlug, stores }: StoreSwitcherProps) {
   return (
     <div className="w-full min-w-0 space-y-1">
       <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Active Store</p>
-      <Select value={value} disabled={isPending} onChange={(event) => void onStoreChange(event.target.value)}>
+      <Select value={value} icon="up-down" disabled={isPending} onChange={(event) => void onStoreChange(event.target.value)}>
         {sortedStores.map((store) => (
           <option key={store.id} value={store.slug}>
             {store.name}
