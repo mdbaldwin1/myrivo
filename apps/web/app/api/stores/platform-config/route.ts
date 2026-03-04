@@ -17,8 +17,11 @@ const updateSchema = z.object({
 
 export async function GET() {
   const auth = await requireStoreRole("admin");
-  if (auth.response || !auth.context) {
+  if (auth.response) {
     return auth.response;
+  }
+  if (!auth.context) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const supabase = await createSupabaseServerClient();
@@ -63,8 +66,11 @@ export async function PUT(request: NextRequest) {
   }
 
   const auth = await requireStoreRole("admin");
-  if (auth.response || !auth.context) {
+  if (auth.response) {
     return auth.response;
+  }
+  if (!auth.context) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const payload = updateSchema.safeParse(await request.json());

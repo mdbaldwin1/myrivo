@@ -25,8 +25,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   }
 
   const auth = await requireStoreRole("staff");
-  if (auth.response || !auth.context) {
+  if (auth.response) {
     return auth.response;
+  }
+  if (!auth.context) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const payload = updateSchema.safeParse(await request.json());
@@ -74,8 +77,11 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   }
 
   const auth = await requireStoreRole("staff");
-  if (auth.response || !auth.context) {
+  if (auth.response) {
     return auth.response;
+  }
+  if (!auth.context) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { locationId } = await params;

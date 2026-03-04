@@ -4,6 +4,7 @@ import { getAppUrl, isStripeStubMode } from "@/lib/env";
 import { calculatePlatformFeeCents, resolveStoreFeeProfile, writeOrderFeeBreakdown } from "@/lib/billing/fees";
 import { sendOrderCreatedNotifications } from "@/lib/notifications/order-emails";
 import { resolveEligiblePickupLocations } from "@/lib/pickup/distance";
+import { buildPickupSlots } from "@/lib/pickup/scheduling";
 import { formatVariantLabel } from "@/lib/products/variants";
 import { calculateDiscountCents } from "@/lib/promotions/calculate-discount";
 import { checkRateLimit } from "@/lib/security/rate-limit";
@@ -108,7 +109,7 @@ export async function POST(request: NextRequest) {
 
   const { data: store, error: storeError } = await supabase
     .from("stores")
-    .select("id,name,slug,status,stripe_account_id")
+    .select("id,name,slug,status,mode,stripe_account_id")
     .eq("slug", storeSlug)
     .eq("status", "active")
     .maybeSingle<{
@@ -116,6 +117,7 @@ export async function POST(request: NextRequest) {
       name: string;
       slug: string;
       status: string;
+      mode: "sandbox" | "live";
       stripe_account_id: string | null;
     }>();
 
@@ -125,6 +127,16 @@ export async function POST(request: NextRequest) {
 
   if (!store) {
     return NextResponse.json({ error: "Store not found or inactive." }, { status: 404 });
+  }
+
+  const { data: billingProfile, error: billingProfileError } = await supabase
+    .from("store_billing_profiles")
+    .select("test_mode_enabled")
+    .eq("store_id", store.id)
+    .maybeSingle<{ test_mode_enabled: boolean }>();
+
+  if (billingProfileError) {
+    return NextResponse.json({ error: billingProfileError.message }, { status: 500 });
   }
 
   const { data: checkoutSettings, error: checkoutSettingsError } = await supabase
@@ -149,12 +161,15 @@ export async function POST(request: NextRequest) {
 
   const { data: pickupSettings, error: pickupSettingsError } = await supabase
     .from("store_pickup_settings")
-    .select("pickup_enabled,selection_mode,eligibility_radius_miles,timezone")
+    .select("pickup_enabled,selection_mode,eligibility_radius_miles,lead_time_hours,slot_interval_minutes,show_pickup_times,timezone")
     .eq("store_id", store.id)
     .maybeSingle<{
       pickup_enabled: boolean;
       selection_mode: "buyer_select" | "hidden_nearest";
       eligibility_radius_miles: number;
+      lead_time_hours: number;
+      slot_interval_minutes: number;
+      show_pickup_times: boolean;
       timezone: string;
     }>();
 
@@ -293,12 +308,72 @@ export async function POST(request: NextRequest) {
       countryCode: chosenLocation.country_code
     };
 
-    if (pickupWindowStartAt && pickupWindowEndAt) {
+    const [{ data: pickupLocationHours, error: pickupLocationHoursError }, { data: pickupBlackouts, error: pickupBlackoutsError }] =
+      await Promise.all([
+        supabase
+          .from("pickup_location_hours")
+          .select("pickup_location_id,day_of_week,opens_at,closes_at")
+          .eq("pickup_location_id", resolvedPickupLocationId)
+          .returns<Array<{ pickup_location_id: string; day_of_week: number; opens_at: string; closes_at: string }>>(),
+        supabase
+          .from("pickup_blackout_dates")
+          .select("pickup_location_id,starts_at,ends_at")
+          .eq("store_id", store.id)
+          .or(`pickup_location_id.is.null,pickup_location_id.eq.${resolvedPickupLocationId}`)
+          .returns<Array<{ pickup_location_id: string | null; starts_at: string; ends_at: string }>>()
+      ]);
+
+    if (pickupLocationHoursError) {
+      return NextResponse.json({ error: pickupLocationHoursError.message }, { status: 500 });
+    }
+
+    if (pickupBlackoutsError) {
+      return NextResponse.json({ error: pickupBlackoutsError.message }, { status: 500 });
+    }
+
+    const dayHours = (pickupLocationHours ?? []).reduce<Record<number, Array<{ opensAt: string; closesAt: string }>>>((acc, entry) => {
+      const bucket = acc[entry.day_of_week] ?? [];
+      bucket.push({ opensAt: entry.opens_at, closesAt: entry.closes_at });
+      acc[entry.day_of_week] = bucket;
+      return acc;
+    }, {});
+
+    const validSlots = buildPickupSlots({
+      now: new Date(),
+      leadTimeHours: pickupSettings.lead_time_hours,
+      slotIntervalMinutes:  pickupSettings.slot_interval_minutes,
+      timezone: pickupSettings.timezone,
+      dayHours,
+      blackoutWindows: (pickupBlackouts ?? []).map((entry) => ({
+        startsAt: new Date(entry.starts_at),
+        endsAt: new Date(entry.ends_at)
+      })),
+      maxSlots: 300
+    });
+
+    if (pickupSettings.show_pickup_times && validSlots.length === 0) {
+      return NextResponse.json({ error: "No pickup times are currently available for the selected location." }, { status: 400 });
+    }
+
+    if (pickupSettings.show_pickup_times && (!pickupWindowStartAt || !pickupWindowEndAt)) {
+      return NextResponse.json({ error: "Select a pickup time window." }, { status: 400 });
+    }
+
+    if (!pickupSettings.show_pickup_times) {
+      resolvedPickupWindowStartAt = null;
+      resolvedPickupWindowEndAt = null;
+    } else if (pickupWindowStartAt && pickupWindowEndAt) {
       const startAt = new Date(pickupWindowStartAt);
       const endAt = new Date(pickupWindowEndAt);
       if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime()) || startAt >= endAt) {
         return NextResponse.json({ error: "Pickup window is invalid." }, { status: 400 });
       }
+
+      const isValidSlot = validSlots.some((slot) => slot.startsAt === startAt.toISOString() && slot.endsAt === endAt.toISOString());
+      if (!isValidSlot) {
+        return NextResponse.json({ error: "Selected pickup time is no longer available. Please choose another slot." }, { status: 400 });
+      }
+
       resolvedPickupWindowStartAt = startAt.toISOString();
       resolvedPickupWindowEndAt = endAt.toISOString();
     }
@@ -500,7 +575,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Order total must be greater than $0.00." }, { status: 400 });
   }
 
-  if (isStripeStubMode()) {
+  const shouldUseStubMode = isStripeStubMode() || store.mode === "sandbox" || Boolean(billingProfile?.test_mode_enabled);
+
+  if (shouldUseStubMode) {
     const { data, error } = await supabase.rpc("stub_checkout_create_paid_order", {
       p_store_slug: storeSlug,
       p_customer_email: email,

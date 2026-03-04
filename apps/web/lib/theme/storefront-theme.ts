@@ -94,10 +94,10 @@ export type StorefrontThemeInput = {
 };
 
 export const DEFAULT_STOREFRONT_THEME_CONFIG: StorefrontThemeConfig = {
-  pageWidth: "wide",
+  pageWidth: "standard",
   heroLayout: "split",
   heroBrandDisplay: "title",
-  productGridColumns: 3,
+  productGridColumns: 2,
   radiusScale: "sharp",
   cardStyle: "integrated",
   buttonStyle: "rounded",

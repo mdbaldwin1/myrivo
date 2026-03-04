@@ -5,17 +5,10 @@ import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const createSchema = z.object({
-  name: z.string().trim().min(1).max(120),
-  addressLine1: z.string().trim().min(1).max(200),
-  addressLine2: z.string().trim().max(200).nullable().optional(),
-  city: z.string().trim().min(1).max(120),
-  stateRegion: z.string().trim().min(1).max(120),
-  postalCode: z.string().trim().min(2).max(20),
-  countryCode: z.string().trim().min(2).max(3).default("US"),
-  latitude: z.number().min(-90).max(90).nullable().optional(),
-  longitude: z.number().min(-180).max(180).nullable().optional(),
-  notes: z.string().trim().max(2000).nullable().optional(),
-  isActive: z.boolean().default(true)
+  pickupLocationId: z.string().uuid().nullable().optional(),
+  startsAt: z.string().datetime(),
+  endsAt: z.string().datetime(),
+  reason: z.string().trim().max(240).nullable().optional()
 });
 
 export async function GET() {
@@ -29,16 +22,16 @@ export async function GET() {
 
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
-    .from("pickup_locations")
-    .select("id,store_id,name,address_line1,address_line2,city,state_region,postal_code,country_code,latitude,longitude,notes,is_active")
+    .from("pickup_blackout_dates")
+    .select("id,store_id,pickup_location_id,starts_at,ends_at,reason")
     .eq("store_id", auth.context.storeId)
-    .order("created_at", { ascending: true });
+    .order("starts_at", { ascending: true });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ locations: data ?? [] });
+  return NextResponse.json({ blackouts: data ?? [] });
 }
 
 export async function POST(request: NextRequest) {
@@ -60,29 +53,46 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid payload", details: payload.error.flatten() }, { status: 400 });
   }
 
+  const startsAt = new Date(payload.data.startsAt);
+  const endsAt = new Date(payload.data.endsAt);
+  if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime()) || startsAt >= endsAt) {
+    return NextResponse.json({ error: "Blackout window is invalid" }, { status: 400 });
+  }
+
   const supabase = await createSupabaseServerClient();
+
+  if (payload.data.pickupLocationId) {
+    const { data: location, error: locationError } = await supabase
+      .from("pickup_locations")
+      .select("id")
+      .eq("id", payload.data.pickupLocationId)
+      .eq("store_id", auth.context.storeId)
+      .maybeSingle<{ id: string }>();
+
+    if (locationError) {
+      return NextResponse.json({ error: locationError.message }, { status: 500 });
+    }
+
+    if (!location) {
+      return NextResponse.json({ error: "Pickup location not found" }, { status: 404 });
+    }
+  }
+
   const { data, error } = await supabase
-    .from("pickup_locations")
+    .from("pickup_blackout_dates")
     .insert({
       store_id: auth.context.storeId,
-      name: payload.data.name,
-      address_line1: payload.data.addressLine1,
-      address_line2: payload.data.addressLine2 ?? null,
-      city: payload.data.city,
-      state_region: payload.data.stateRegion,
-      postal_code: payload.data.postalCode,
-      country_code: payload.data.countryCode,
-      latitude: payload.data.latitude ?? null,
-      longitude: payload.data.longitude ?? null,
-      notes: payload.data.notes ?? null,
-      is_active: payload.data.isActive
+      pickup_location_id: payload.data.pickupLocationId ?? null,
+      starts_at: startsAt.toISOString(),
+      ends_at: endsAt.toISOString(),
+      reason: payload.data.reason ?? null
     })
-    .select("id,store_id,name,address_line1,address_line2,city,state_region,postal_code,country_code,latitude,longitude,notes,is_active")
+    .select("id,store_id,pickup_location_id,starts_at,ends_at,reason")
     .single();
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ location: data }, { status: 201 });
+  return NextResponse.json({ blackout: data }, { status: 201 });
 }

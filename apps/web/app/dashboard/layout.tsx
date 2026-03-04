@@ -24,6 +24,10 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     redirect("/login");
   }
 
+  if (bundle.role === "customer") {
+    redirect("/account");
+  }
+
   return (
     <PageShell maxWidthClassName="max-w-7xl">
       <div className="space-y-5">

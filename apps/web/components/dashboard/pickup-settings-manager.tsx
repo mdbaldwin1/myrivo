@@ -6,6 +6,7 @@ import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
 import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 
 type PickupSettings = {
   pickup_enabled: boolean;
@@ -30,12 +31,36 @@ type PickupLocation = {
   is_active: boolean;
 };
 
+type PickupHoursRow = {
+  id: string;
+  pickup_location_id: string;
+  day_of_week: number;
+  opens_at: string;
+  closes_at: string;
+};
+
+type PickupBlackoutRow = {
+  id: string;
+  pickup_location_id: string | null;
+  starts_at: string;
+  ends_at: string;
+  reason: string | null;
+};
+
 export function PickupSettingsManager() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [settings, setSettings] = useState<PickupSettings | null>(null);
   const [locations, setLocations] = useState<PickupLocation[]>([]);
+  const [hours, setHours] = useState<PickupHoursRow[]>([]);
+  const [blackouts, setBlackouts] = useState<PickupBlackoutRow[]>([]);
+  const [hoursLocationId, setHoursLocationId] = useState<string>("");
+  const [hoursText, setHoursText] = useState<string>("[]");
+  const [blackoutLocationId, setBlackoutLocationId] = useState<string>("all");
+  const [blackoutStartAt, setBlackoutStartAt] = useState<string>("");
+  const [blackoutEndAt, setBlackoutEndAt] = useState<string>("");
+  const [blackoutReason, setBlackoutReason] = useState<string>("");
 
   const [newLocationName, setNewLocationName] = useState("");
   const [newLocationAddress, setNewLocationAddress] = useState("");
@@ -49,13 +74,17 @@ export function PickupSettingsManager() {
     setLoading(true);
     setError(null);
 
-    const [settingsResponse, locationsResponse] = await Promise.all([
+    const [settingsResponse, locationsResponse, hoursResponse, blackoutsResponse] = await Promise.all([
       fetch("/api/stores/pickup/settings", { cache: "no-store" }),
-      fetch("/api/stores/pickup/locations", { cache: "no-store" })
+      fetch("/api/stores/pickup/locations", { cache: "no-store" }),
+      fetch("/api/stores/pickup/hours", { cache: "no-store" }),
+      fetch("/api/stores/pickup/blackouts", { cache: "no-store" })
     ]);
 
     const settingsPayload = (await settingsResponse.json()) as { settings?: PickupSettings; error?: string };
     const locationsPayload = (await locationsResponse.json()) as { locations?: PickupLocation[]; error?: string };
+    const hoursPayload = (await hoursResponse.json()) as { hours?: PickupHoursRow[]; error?: string };
+    const blackoutsPayload = (await blackoutsResponse.json()) as { blackouts?: PickupBlackoutRow[]; error?: string };
 
     if (!settingsResponse.ok) {
       setError(settingsPayload.error ?? "Unable to load pickup settings.");
@@ -69,8 +98,37 @@ export function PickupSettingsManager() {
       return;
     }
 
+    if (!hoursResponse.ok) {
+      setError(hoursPayload.error ?? "Unable to load pickup hours.");
+      setLoading(false);
+      return;
+    }
+
+    if (!blackoutsResponse.ok) {
+      setError(blackoutsPayload.error ?? "Unable to load pickup blackouts.");
+      setLoading(false);
+      return;
+    }
+
     setSettings(settingsPayload.settings ?? null);
-    setLocations(locationsPayload.locations ?? []);
+    const nextLocations = locationsPayload.locations ?? [];
+    setLocations(nextLocations);
+    setHours(hoursPayload.hours ?? []);
+    setBlackouts(blackoutsPayload.blackouts ?? []);
+    const defaultLocationId = nextLocations[0]?.id ?? "";
+    setHoursLocationId(defaultLocationId);
+    const locationHours = (hoursPayload.hours ?? []).filter((row) => row.pickup_location_id === defaultLocationId);
+    setHoursText(
+      JSON.stringify(
+        locationHours.map((row) => ({
+          dayOfWeek: row.day_of_week,
+          opensAt: row.opens_at,
+          closesAt: row.closes_at
+        })),
+        null,
+        2
+      )
+    );
     setLoading(false);
   }
 
@@ -165,6 +223,98 @@ export function PickupSettingsManager() {
     }
 
     setLocations((current) => current.filter((entry) => entry.id !== id));
+    setSaving(false);
+  }
+
+  async function saveHours() {
+    if (!hoursLocationId) {
+      setError("Select a pickup location before saving hours.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+
+    let parsedHours: Array<{ dayOfWeek: number; opensAt: string; closesAt: string }> = [];
+    try {
+      const parsed = JSON.parse(hoursText) as unknown;
+      if (!Array.isArray(parsed)) {
+        throw new Error("Hours payload must be an array.");
+      }
+      parsedHours = parsed as Array<{ dayOfWeek: number; opensAt: string; closesAt: string }>;
+    } catch (parseError) {
+      setSaving(false);
+      setError(parseError instanceof Error ? parseError.message : "Pickup hours JSON is invalid.");
+      return;
+    }
+
+    const response = await fetch("/api/stores/pickup/hours", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        locationId: hoursLocationId,
+        hours: parsedHours
+      })
+    });
+
+    const payload = (await response.json()) as { hours?: PickupHoursRow[]; error?: string };
+    if (!response.ok) {
+      setError(payload.error ?? "Unable to save pickup hours.");
+      setSaving(false);
+      return;
+    }
+
+    setHours(payload.hours ?? []);
+    setSaving(false);
+  }
+
+  async function addBlackout() {
+    if (!blackoutStartAt || !blackoutEndAt) {
+      setError("Select blackout start and end times.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+
+    const response = await fetch("/api/stores/pickup/blackouts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pickupLocationId: blackoutLocationId === "all" ? null : blackoutLocationId,
+        startsAt: new Date(blackoutStartAt).toISOString(),
+        endsAt: new Date(blackoutEndAt).toISOString(),
+        reason: blackoutReason.trim() || null
+      })
+    });
+
+    const payload = (await response.json()) as { blackout?: PickupBlackoutRow; error?: string };
+    if (!response.ok || !payload.blackout) {
+      setError(payload.error ?? "Unable to create blackout.");
+      setSaving(false);
+      return;
+    }
+
+    setBlackouts((current) => [...current, payload.blackout!]);
+    setBlackoutStartAt("");
+    setBlackoutEndAt("");
+    setBlackoutReason("");
+    setSaving(false);
+  }
+
+  async function removeBlackout(id: string) {
+    setSaving(true);
+    setError(null);
+
+    const response = await fetch(`/api/stores/pickup/blackouts/${id}`, { method: "DELETE" });
+    const payload = (await response.json()) as { ok?: boolean; error?: string };
+    if (!response.ok) {
+      setError(payload.error ?? "Unable to remove blackout.");
+      setSaving(false);
+      return;
+    }
+
+    setBlackouts((current) => current.filter((entry) => entry.id !== id));
     setSaving(false);
   }
 
@@ -283,6 +433,83 @@ export function PickupSettingsManager() {
                 </p>
               </div>
               <Button type="button" variant="ghost" size="sm" onClick={() => void removeLocation(location.id)} disabled={saving}>
+                Remove
+              </Button>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="mt-4 space-y-3 border-t border-border pt-4">
+        <p className="text-sm font-medium">Pickup Hours (per location)</p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Select
+            value={hoursLocationId}
+            onChange={(event) => {
+              const nextLocationId = event.target.value;
+              setHoursLocationId(nextLocationId);
+              const nextHours = hours.filter((row) => row.pickup_location_id === nextLocationId);
+              setHoursText(
+                JSON.stringify(
+                  nextHours.map((row) => ({
+                    dayOfWeek: row.day_of_week,
+                    opensAt: row.opens_at,
+                    closesAt: row.closes_at
+                  })),
+                  null,
+                  2
+                )
+              );
+            }}
+          >
+            {locations.map((location) => (
+              <option key={location.id} value={location.id}>
+                {location.name}
+              </option>
+            ))}
+          </Select>
+          <Button type="button" variant="outline" size="sm" onClick={() => void saveHours()} disabled={saving || !hoursLocationId}>
+            Save hours JSON
+          </Button>
+        </div>
+        <Textarea
+          rows={8}
+          value={hoursText}
+          onChange={(event) => setHoursText(event.target.value)}
+          placeholder='[{"dayOfWeek":1,"opensAt":"09:00","closesAt":"17:00"}]'
+        />
+        <p className="text-xs text-muted-foreground">
+          Format: JSON array of objects with `dayOfWeek` (0-6), `opensAt` and `closesAt` in 24h `HH:MM`.
+        </p>
+      </div>
+
+      <div className="mt-4 space-y-3 border-t border-border pt-4">
+        <p className="text-sm font-medium">Pickup Blackout Windows</p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Select value={blackoutLocationId} onChange={(event) => setBlackoutLocationId(event.target.value)}>
+            <option value="all">All pickup locations</option>
+            {locations.map((location) => (
+              <option key={location.id} value={location.id}>
+                {location.name}
+              </option>
+            ))}
+          </Select>
+          <Input value={blackoutReason} onChange={(event) => setBlackoutReason(event.target.value)} placeholder="Reason (optional)" />
+          <Input type="datetime-local" value={blackoutStartAt} onChange={(event) => setBlackoutStartAt(event.target.value)} />
+          <Input type="datetime-local" value={blackoutEndAt} onChange={(event) => setBlackoutEndAt(event.target.value)} />
+        </div>
+        <Button type="button" variant="outline" size="sm" onClick={() => void addBlackout()} disabled={saving || !blackoutStartAt || !blackoutEndAt}>
+          Add blackout
+        </Button>
+        <ul className="space-y-2">
+          {blackouts.length === 0 ? <li className="text-sm text-muted-foreground">No blackout windows configured.</li> : null}
+          {blackouts.map((blackout) => (
+            <li key={blackout.id} className="flex items-center justify-between gap-2 border border-border/60 px-3 py-2 text-xs">
+              <span>
+                {new Date(blackout.starts_at).toLocaleString()} - {new Date(blackout.ends_at).toLocaleString()}
+                {blackout.reason ? ` (${blackout.reason})` : ""}
+              </span>
+              <Button type="button" variant="ghost" size="sm" onClick={() => void removeBlackout(blackout.id)} disabled={saving}>
                 Remove
               </Button>
             </li>

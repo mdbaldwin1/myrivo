@@ -195,8 +195,38 @@ export function StorefrontCartPage({ store, branding, settings, products }: Prop
       const filtered = loaded.filter((entry) => products.some((product) => product.id === entry.productId));
       hasHydratedCartRef.current = true;
       setCart(filtered);
+
+      void (async () => {
+        const response = await fetch(`/api/customer/cart?store=${encodeURIComponent(store.slug)}`, { cache: "no-store" });
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = (await response.json()) as {
+          guest?: boolean;
+          items?: Array<{ productId: string; variantId?: string; quantity: number }>;
+        };
+
+        if (!payload.items || payload.items.length === 0) {
+          return;
+        }
+
+        const sanitized = payload.items
+          .map((item) => ({
+            productId: item.productId,
+            variantId: item.variantId ?? "",
+            quantity: Math.max(1, Math.min(99, item.quantity))
+          }))
+          .filter((item) => item.variantId.length > 0);
+
+        if (sanitized.length === 0) {
+          return;
+        }
+
+        setCart(sanitized);
+      })();
     });
-  }, [products]);
+  }, [products, store.slug]);
 
   useEffect(() => {
     if (!hasHydratedCartRef.current) {
@@ -204,7 +234,23 @@ export function StorefrontCartPage({ store, branding, settings, products }: Prop
     }
     const filtered = cart.filter((entry) => products.some((product) => product.id === entry.productId));
     writeStorefrontCart(filtered);
-  }, [cart, products]);
+
+    const timeout = setTimeout(() => {
+      void fetch(`/api/customer/cart?store=${encodeURIComponent(store.slug)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: filtered.map((entry) => ({
+            productId: entry.productId,
+            variantId: entry.variantId,
+            quantity: entry.quantity
+          }))
+        })
+      });
+    }, 250);
+
+    return () => clearTimeout(timeout);
+  }, [cart, products, store.slug]);
 
   useEffect(() => {
     if (selectedFulfillmentMethod !== "pickup" || !settings?.checkout_enable_local_pickup) {
