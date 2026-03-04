@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { resolveAvailablePickupLocations } from "@/lib/pickup/availability";
 import { buildPickupSlots } from "@/lib/pickup/scheduling";
-import { resolveStoreSlugFromRequest } from "@/lib/stores/active-store";
+import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const payloadSchema = z.object({
@@ -12,7 +12,7 @@ const payloadSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const storeSlug = resolveStoreSlugFromRequest(request);
+  const storeSlug = await resolveStoreSlugFromRequestAsync(request);
   const payload = payloadSchema.safeParse(await request.json().catch(() => ({})));
 
   if (!payload.success) {

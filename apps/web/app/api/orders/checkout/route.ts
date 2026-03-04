@@ -9,7 +9,7 @@ import { formatVariantLabel } from "@/lib/products/variants";
 import { calculateDiscountCents } from "@/lib/promotions/calculate-discount";
 import { checkRateLimit } from "@/lib/security/rate-limit";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
-import { resolveStoreSlugFromRequest } from "@/lib/stores/active-store";
+import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
 import { getStripeClient } from "@/lib/stripe/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
     items,
     promoCode
   } = payload.data;
-  const storeSlug = resolveStoreSlugFromRequest(request);
+  const storeSlug = await resolveStoreSlugFromRequestAsync(request);
 
   const { data: store, error: storeError } = await supabase
     .from("stores")

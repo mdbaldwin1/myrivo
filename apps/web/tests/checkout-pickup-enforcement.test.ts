@@ -29,7 +29,7 @@ type PickupLocationRecord = {
 
 const enforceTrustedOriginMock = vi.fn();
 const checkRateLimitMock = vi.fn();
-const resolveStoreSlugFromRequestMock = vi.fn();
+const resolveStoreSlugFromRequestAsyncMock = vi.fn();
 const buildPickupSlotsMock = vi.fn();
 const adminFromMock = vi.fn();
 
@@ -45,7 +45,7 @@ vi.mock("@/lib/security/rate-limit", () => ({
 }));
 
 vi.mock("@/lib/stores/active-store", () => ({
-  resolveStoreSlugFromRequest: (...args: unknown[]) => resolveStoreSlugFromRequestMock(...args)
+  resolveStoreSlugFromRequestAsync: (...args: unknown[]) => resolveStoreSlugFromRequestAsyncMock(...args)
 }));
 
 vi.mock("@/lib/pickup/scheduling", () => ({
@@ -180,13 +180,13 @@ beforeEach(() => {
   vi.resetModules();
   enforceTrustedOriginMock.mockReset();
   checkRateLimitMock.mockReset();
-  resolveStoreSlugFromRequestMock.mockReset();
+  resolveStoreSlugFromRequestAsyncMock.mockReset();
   buildPickupSlotsMock.mockReset();
   adminFromMock.mockReset();
 
   enforceTrustedOriginMock.mockReturnValue(null);
   checkRateLimitMock.mockReturnValue(null);
-  resolveStoreSlugFromRequestMock.mockReturnValue("curby");
+  resolveStoreSlugFromRequestAsyncMock.mockResolvedValue("curby");
   buildPickupSlotsMock.mockReturnValue([
     {
       startsAt: "2030-04-01T13:00:00.000Z",

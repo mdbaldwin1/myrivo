@@ -51,13 +51,39 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     isVerified = false;
   }
 
+  let shouldSetPrimary = false;
+  if (isVerified) {
+    const { data: existingPrimary, error: existingPrimaryError } = await supabase
+      .from("store_domains")
+      .select("id")
+      .eq("store_id", auth.context.storeId)
+      .eq("is_primary", true)
+      .maybeSingle<{ id: string }>();
+
+    if (existingPrimaryError) {
+      return NextResponse.json({ error: existingPrimaryError.message }, { status: 500 });
+    }
+
+    shouldSetPrimary = !existingPrimary;
+  }
+
+  const updates: {
+    verification_status: "pending" | "verified" | "failed";
+    last_verification_at: string;
+    verified_at: string | null;
+    is_primary?: boolean;
+  } = {
+    verification_status: isVerified ? "verified" : "failed",
+    last_verification_at: new Date().toISOString(),
+    verified_at: isVerified ? new Date().toISOString() : null
+  };
+  if (isVerified && shouldSetPrimary) {
+    updates.is_primary = true;
+  }
+
   const { data, error } = await supabase
     .from("store_domains")
-    .update({
-      verification_status: isVerified ? "verified" : "failed",
-      last_verification_at: new Date().toISOString(),
-      verified_at: isVerified ? new Date().toISOString() : null
-    })
+    .update(updates)
     .eq("id", domain.id)
     .eq("store_id", auth.context.storeId)
     .select("id,store_id,domain,is_primary,verification_status,verification_token,last_verification_at,verified_at,created_at")

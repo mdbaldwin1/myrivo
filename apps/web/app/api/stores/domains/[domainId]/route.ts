@@ -31,6 +31,25 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const supabase = await createSupabaseServerClient();
 
   if (payload.data.isPrimary) {
+    const { data: targetDomain, error: targetDomainError } = await supabase
+      .from("store_domains")
+      .select("id,verification_status")
+      .eq("id", domainId)
+      .eq("store_id", auth.context.storeId)
+      .maybeSingle<{ id: string; verification_status: "pending" | "verified" | "failed" }>();
+
+    if (targetDomainError) {
+      return NextResponse.json({ error: targetDomainError.message }, { status: 500 });
+    }
+
+    if (!targetDomain) {
+      return NextResponse.json({ error: "Domain not found" }, { status: 404 });
+    }
+
+    if (targetDomain.verification_status !== "verified") {
+      return NextResponse.json({ error: "Only verified domains can be set as primary." }, { status: 400 });
+    }
+
     const { error: clearPrimaryError } = await supabase.from("store_domains").update({ is_primary: false }).eq("store_id", auth.context.storeId);
     if (clearPrimaryError) {
       return NextResponse.json({ error: clearPrimaryError.message }, { status: 500 });

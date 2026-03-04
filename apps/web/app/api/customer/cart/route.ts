@@ -6,7 +6,7 @@ import {
   validateStoreItemSelection
 } from "@/lib/customer/account";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
-import { resolveStoreSlugFromRequest } from "@/lib/stores/active-store";
+import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const itemSchema = z.object({
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ guest: true, items: [] });
   }
 
-  const storeSlug = resolveStoreSlugFromRequest(request);
+  const storeSlug = await resolveStoreSlugFromRequestAsync(request);
   const storeLookup = await requireStoreBySlug(supabase, storeSlug);
   if (storeLookup.response) {
     return NextResponse.json({ items: [] });
@@ -86,7 +86,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ guest: true, ok: true });
   }
 
-  const storeSlug = resolveStoreSlugFromRequest(request);
+  const storeSlug = await resolveStoreSlugFromRequestAsync(request);
   const storeLookup = await requireStoreBySlug(supabase, storeSlug);
   if (storeLookup.response) {
     return storeLookup.response;

@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 
 const enforceTrustedOriginMock = vi.fn();
 const authGetUserMock = vi.fn();
-const resolveStoreSlugFromRequestMock = vi.fn();
+const resolveStoreSlugFromRequestAsyncMock = vi.fn();
 const serverFromMock = vi.fn();
 const cartItemsInsertMock = vi.fn();
 
@@ -12,7 +12,7 @@ vi.mock("@/lib/security/request-origin", () => ({
 }));
 
 vi.mock("@/lib/stores/active-store", () => ({
-  resolveStoreSlugFromRequest: (...args: unknown[]) => resolveStoreSlugFromRequestMock(...args)
+  resolveStoreSlugFromRequestAsync: (...args: unknown[]) => resolveStoreSlugFromRequestAsyncMock(...args)
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -26,13 +26,13 @@ beforeEach(() => {
   vi.resetModules();
   enforceTrustedOriginMock.mockReset();
   authGetUserMock.mockReset();
-  resolveStoreSlugFromRequestMock.mockReset();
+  resolveStoreSlugFromRequestAsyncMock.mockReset();
   serverFromMock.mockReset();
   cartItemsInsertMock.mockReset();
 
   enforceTrustedOriginMock.mockReturnValue(null);
   authGetUserMock.mockResolvedValue({ data: { user: { id: "user-1", email: "test@example.com" } } });
-  resolveStoreSlugFromRequestMock.mockReturnValue("curby");
+  resolveStoreSlugFromRequestAsyncMock.mockResolvedValue("curby");
 });
 
 describe("customer cart route", () => {

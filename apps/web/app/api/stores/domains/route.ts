@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStoreRole } from "@/lib/auth/authorization";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
+import { normalizeDomainInput } from "@/lib/stores/domain-utils";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const createSchema = z.object({
@@ -13,10 +14,6 @@ const createSchema = z.object({
     .max(255)
     .regex(/^[a-z0-9.-]+$/i, "Domain may include letters, numbers, dashes, and dots only.")
 });
-
-function normalizeDomain(value: string) {
-  return value.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/$/, "");
-}
 
 function createVerificationToken() {
   return `myrivo-${randomBytes(12).toString("hex")}`;
@@ -64,10 +61,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid payload", details: payload.error.flatten() }, { status: 400 });
   }
 
-  const normalizedDomain = normalizeDomain(payload.data.domain);
+  const normalizedDomain = normalizeDomainInput(payload.data.domain);
+  if (!normalizedDomain) {
+    return NextResponse.json({ error: "Domain format is invalid." }, { status: 400 });
+  }
   const token = createVerificationToken();
 
   const supabase = await createSupabaseServerClient();
+  const { data: storeConfig, error: storeConfigError } = await supabase
+    .from("stores")
+    .select("white_label_enabled")
+    .eq("id", auth.context.storeId)
+    .maybeSingle<{ white_label_enabled: boolean }>();
+
+  if (storeConfigError) {
+    return NextResponse.json({ error: storeConfigError.message }, { status: 500 });
+  }
+
+  if (!storeConfig?.white_label_enabled) {
+    return NextResponse.json({ error: "Enable white-label before adding custom domains." }, { status: 400 });
+  }
+
   const { data, error } = await supabase
     .from("store_domains")
     .insert({
