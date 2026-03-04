@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStorePermission } from "@/lib/auth/authorization";
+import { readJsonBody } from "@/lib/http/read-json-body";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -65,7 +66,12 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const payload = updateSchema.safeParse(await request.json());
+  const rawBody = await readJsonBody(request);
+  if (!rawBody.ok) {
+    return rawBody.response;
+  }
+
+  const payload = updateSchema.safeParse(rawBody.data);
   if (!payload.success) {
     return NextResponse.json({ error: "Invalid payload", details: payload.error.flatten() }, { status: 400 });
   }

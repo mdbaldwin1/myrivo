@@ -141,4 +141,19 @@ describe("user profile route", () => {
       }
     });
   });
+
+  test("PUT returns 400 for malformed JSON payload", async () => {
+    const route = await import("@/app/api/user/profile/route");
+    const request = new NextRequest("http://localhost:3000/api/user/profile", {
+      method: "PUT",
+      headers: { "content-type": "application/json", origin: "http://localhost:3000", host: "localhost:3000" },
+      body: "{"
+    });
+
+    const response = await route.PUT(request);
+    const payload = (await response.json()) as { error: string };
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toContain("Invalid JSON");
+  });
 });
