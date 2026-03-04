@@ -704,24 +704,102 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   const deleteConfirmResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
   const createActivePanelRef = useRef<HTMLDivElement | null>(null);
   const editActivePanelRef = useRef<HTMLDivElement | null>(null);
+  const wasCreateFlyoutOpenRef = useRef(false);
+  const wasEditFlyoutOpenRef = useRef(false);
+
+  const currentCreateSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        title,
+        description,
+        sku,
+        isFeatured,
+        createImageUrls,
+        createVariants,
+        createHasVariants,
+        createVariantTierCount,
+        createOptionOneName,
+        createOptionTwoName,
+        createSingleSkuMode,
+        createSinglePriceDollars,
+        createSingleInventoryQty,
+        createSingleMadeToOrder
+      }),
+    [
+      title,
+      description,
+      sku,
+      isFeatured,
+      createImageUrls,
+      createVariants,
+      createHasVariants,
+      createVariantTierCount,
+      createOptionOneName,
+      createOptionTwoName,
+      createSingleSkuMode,
+      createSinglePriceDollars,
+      createSingleInventoryQty,
+      createSingleMadeToOrder
+    ]
+  );
+
+  const currentEditSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        editingProductId,
+        editTitle,
+        editDescription,
+        editSku,
+        editStatus,
+        editIsFeatured,
+        editImageUrls,
+        editVariants,
+        editHasVariants,
+        editVariantTierCount,
+        editOptionOneName,
+        editOptionTwoName,
+        editSingleInventoryQty,
+        editSingleMadeToOrder
+      }),
+    [
+      editingProductId,
+      editTitle,
+      editDescription,
+      editSku,
+      editStatus,
+      editIsFeatured,
+      editImageUrls,
+      editVariants,
+      editHasVariants,
+      editVariantTierCount,
+      editOptionOneName,
+      editOptionTwoName,
+      editSingleInventoryQty,
+      editSingleMadeToOrder
+    ]
+  );
 
   useEffect(() => {
-    if (isCreateFlyoutOpen) {
-      setCreateBaseline(buildCreateSnapshot());
-    } else {
+    const wasOpen = wasCreateFlyoutOpenRef.current;
+    if (isCreateFlyoutOpen && !wasOpen) {
+      setCreateBaseline(currentCreateSnapshot);
+    }
+    if (!isCreateFlyoutOpen && wasOpen) {
       setCreateBaseline("");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isCreateFlyoutOpen]);
+    wasCreateFlyoutOpenRef.current = isCreateFlyoutOpen;
+  }, [isCreateFlyoutOpen, currentCreateSnapshot]);
 
   useEffect(() => {
-    if (isEditFlyoutOpen) {
-      setEditBaseline(buildEditSnapshot());
-    } else {
+    const wasOpen = wasEditFlyoutOpenRef.current;
+    if (isEditFlyoutOpen && !wasOpen) {
+      setEditBaseline(currentEditSnapshot);
+    }
+    if (!isEditFlyoutOpen && wasOpen) {
       setEditBaseline("");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEditFlyoutOpen]);
+    wasEditFlyoutOpenRef.current = isEditFlyoutOpen;
+  }, [isEditFlyoutOpen, currentEditSnapshot]);
 
   const visibleProducts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -1521,46 +1599,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     setEditVariantError(null);
   }
 
-  function buildCreateSnapshot() {
-    return JSON.stringify({
-      title,
-      description,
-      sku,
-      isFeatured,
-      createImageUrls,
-      createVariants,
-      createHasVariants,
-      createVariantTierCount,
-      createOptionOneName,
-      createOptionTwoName,
-      createSingleSkuMode,
-      createSinglePriceDollars,
-      createSingleInventoryQty,
-      createSingleMadeToOrder
-    });
-  }
-
-  function buildEditSnapshot() {
-    return JSON.stringify({
-      editingProductId,
-      editTitle,
-      editDescription,
-      editSku,
-      editStatus,
-      editIsFeatured,
-      editImageUrls,
-      editVariants,
-      editHasVariants,
-      editVariantTierCount,
-      editOptionOneName,
-      editOptionTwoName,
-      editSingleInventoryQty,
-      editSingleMadeToOrder
-    });
-  }
-
-  const isCreateDirty = isCreateFlyoutOpen && createBaseline !== "" && buildCreateSnapshot() !== createBaseline;
-  const isEditDirty = isEditFlyoutOpen && editBaseline !== "" && buildEditSnapshot() !== editBaseline;
+  const isCreateDirty = isCreateFlyoutOpen && createBaseline !== "" && currentCreateSnapshot !== createBaseline;
+  const isEditDirty = isEditFlyoutOpen && editBaseline !== "" && currentEditSnapshot !== editBaseline;
 
   const inferredCreateLevelOneName = createVariants.find((variant) => variant.optionPairs[0]?.name.trim())?.optionPairs[0]?.name.trim() || "";
   const inferredCreateLevelTwoName = createVariants.find((variant) => variant.optionPairs[1]?.name.trim())?.optionPairs[1]?.name.trim() || "";
