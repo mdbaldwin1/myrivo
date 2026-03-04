@@ -36,7 +36,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   const { data: order, error: orderError } = await supabase
     .from("orders")
     .select(
-      "id,customer_email,subtotal_cents,total_cents,status,fulfillment_status,fulfilled_at,shipped_at,platform_fee_bps,platform_fee_cents,discount_cents,promo_code,currency,created_at"
+      "id,customer_email,subtotal_cents,total_cents,status,fulfillment_status,fulfilled_at,shipped_at,delivered_at,discount_cents,promo_code,currency,carrier,tracking_number,tracking_url,shipment_status,last_tracking_sync_at,created_at"
     )
     .eq("id", params.data.orderId)
     .eq("store_id", bundle.store.id)
@@ -52,7 +52,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
   const { data: items, error: itemsError } = await supabase
     .from("order_items")
-    .select("id,product_id,quantity,unit_price_cents,products(title)")
+    .select("id,product_id,product_variant_id,variant_label,variant_snapshot,quantity,unit_price_cents,products(title)")
     .eq("order_id", order.id)
     .order("created_at", { ascending: true });
 

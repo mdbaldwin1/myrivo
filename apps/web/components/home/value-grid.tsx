@@ -9,7 +9,7 @@ const valueCards = [
   },
   {
     title: "Own your brand",
-    description: "Custom domains, visual tokens, and storefront theming keep your identity at the center of the experience."
+    description: "Visual tokens and storefront theming keep your identity at the center of the experience."
   }
 ];
 

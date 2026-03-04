@@ -1,0 +1,2 @@
+export const STOREFRONT_TEXT_LINK_EFFECT_CLASS =
+  "group relative inline-flex w-fit items-center px-1 py-0.5 transition-all duration-200 hover:-translate-y-0.5 hover:bg-current/10 after:pointer-events-none after:absolute after:-bottom-0.5 after:left-1/2 after:h-0.5 after:w-[calc(100%-0.5rem)] after:-translate-x-1/2 after:origin-center after:scale-x-0 after:bg-current after:transition-transform after:duration-200 hover:after:scale-x-100";

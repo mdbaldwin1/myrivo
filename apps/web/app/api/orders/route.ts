@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { logAuditEvent } from "@/lib/audit/log";
+import { sendOrderShippingNotification } from "@/lib/notifications/order-emails";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
@@ -8,7 +9,7 @@ import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 const updateSchema = z.object({
   orderId: z.string().uuid(),
   status: z.enum(["pending", "paid", "failed", "cancelled"]).optional(),
-  fulfillmentStatus: z.enum(["unfulfilled", "processing", "fulfilled", "shipped"]).optional()
+  fulfillmentStatus: z.enum(["pending_fulfillment", "packing", "shipped", "delivered"]).optional()
 });
 
 export async function GET() {
@@ -30,7 +31,7 @@ export async function GET() {
   const { data, error } = await supabase
     .from("orders")
     .select(
-      "id,customer_email,subtotal_cents,total_cents,status,fulfillment_status,discount_cents,promo_code,platform_fee_cents,created_at"
+      "id,customer_email,subtotal_cents,total_cents,status,fulfillment_status,discount_cents,promo_code,carrier,tracking_number,tracking_url,shipment_status,created_at"
     )
     .eq("store_id", bundle.store.id)
     .order("created_at", { ascending: false });
@@ -77,11 +78,40 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (payload.data.fulfillmentStatus !== undefined) {
-    updates.fulfillment_status = payload.data.fulfillmentStatus;
-    if (payload.data.fulfillmentStatus === "fulfilled") {
-      updates.fulfilled_at = new Date().toISOString();
+    const { data: currentOrder, error: currentOrderError } = await supabase
+      .from("orders")
+      .select("fulfillment_status")
+      .eq("id", payload.data.orderId)
+      .eq("store_id", bundle.store.id)
+      .maybeSingle<{ fulfillment_status: "pending_fulfillment" | "packing" | "shipped" | "delivered" }>();
+
+    if (currentOrderError) {
+      return NextResponse.json({ error: currentOrderError.message }, { status: 500 });
     }
-    if (payload.data.fulfillmentStatus === "shipped") {
+
+    if (!currentOrder) {
+      return NextResponse.json({ error: "Order not found" }, { status: 404 });
+    }
+
+    const transitions: Record<string, string[]> = {
+      pending_fulfillment: ["packing", "shipped", "delivered"],
+      packing: ["shipped", "delivered"],
+      shipped: ["delivered"],
+      delivered: []
+    };
+
+    if (!transitions[currentOrder.fulfillment_status]?.includes(payload.data.fulfillmentStatus)) {
+      return NextResponse.json(
+        { error: `Invalid fulfillment transition: ${currentOrder.fulfillment_status} -> ${payload.data.fulfillmentStatus}` },
+        { status: 400 }
+      );
+    }
+
+    updates.fulfillment_status = payload.data.fulfillmentStatus;
+    if (payload.data.fulfillmentStatus === "delivered") {
+      updates.delivered_at = new Date().toISOString();
+      updates.fulfilled_at = new Date().toISOString();
+    } else if (payload.data.fulfillmentStatus === "shipped") {
       updates.shipped_at = new Date().toISOString();
     }
   }
@@ -96,7 +126,7 @@ export async function PATCH(request: NextRequest) {
     .eq("id", payload.data.orderId)
     .eq("store_id", bundle.store.id)
     .select(
-      "id,customer_email,subtotal_cents,total_cents,status,fulfillment_status,discount_cents,promo_code,platform_fee_cents,created_at"
+      "id,customer_email,subtotal_cents,total_cents,status,fulfillment_status,discount_cents,promo_code,carrier,tracking_number,tracking_url,shipment_status,created_at"
     )
     .single();
 
@@ -112,6 +142,10 @@ export async function PATCH(request: NextRequest) {
     entityId: payload.data.orderId,
     metadata: updates
   });
+
+  if (data.fulfillment_status === "shipped" || data.fulfillment_status === "delivered") {
+    await sendOrderShippingNotification(data.id, data.fulfillment_status);
+  }
 
   return NextResponse.json({ order: data });
 }

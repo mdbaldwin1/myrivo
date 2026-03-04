@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import animate from "tailwindcss-animate";
 
 const config: Config = {
   content: [
@@ -12,12 +13,19 @@ const config: Config = {
         background: "hsl(var(--background) / <alpha-value>)",
         foreground: "hsl(var(--foreground) / <alpha-value>)",
         card: "hsl(var(--card) / <alpha-value>)",
+        popover: "hsl(var(--popover) / <alpha-value>)",
+        "popover-foreground": "hsl(var(--popover-foreground) / <alpha-value>)",
         border: "hsl(var(--border) / <alpha-value>)",
+        input: "hsl(var(--input) / <alpha-value>)",
+        ring: "hsl(var(--ring) / <alpha-value>)",
         primary: "hsl(var(--primary) / <alpha-value>)",
         "primary-foreground": "hsl(var(--primary-foreground) / <alpha-value>)",
         muted: "hsl(var(--muted) / <alpha-value>)",
         "muted-foreground": "hsl(var(--muted-foreground) / <alpha-value>)",
-        accent: "hsl(var(--accent) / <alpha-value>)"
+        accent: "hsl(var(--accent) / <alpha-value>)",
+        "accent-foreground": "hsl(var(--accent-foreground) / <alpha-value>)",
+        destructive: "hsl(var(--destructive) / <alpha-value>)",
+        "destructive-foreground": "hsl(var(--destructive-foreground) / <alpha-value>)"
       },
       borderRadius: {
         lg: "var(--radius-lg)",
@@ -26,7 +34,7 @@ const config: Config = {
       }
     }
   },
-  plugins: []
+  plugins: [animate]
 };
 
 export default config;

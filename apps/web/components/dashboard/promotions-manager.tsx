@@ -3,10 +3,12 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FeedbackMessage } from "@/components/ui/feedback-message";
+import { Flyout } from "@/components/ui/flyout";
+import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { RowActionButton, RowActions } from "@/components/ui/row-actions";
+import { SectionCard } from "@/components/ui/section-card";
 import { Select } from "@/components/ui/select";
 import { StatusChip } from "@/components/ui/status-chip";
 import type { PromotionRecord } from "@/types/database";
@@ -55,13 +57,26 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
   const [discountType, setDiscountType] = useState<PromotionRecord["discount_type"]>("percent");
   const [discountValue, setDiscountValue] = useState("10");
   const [minSubtotalDollars, setMinSubtotalDollars] = useState("0.00");
+  const [isCreateFlyoutOpen, setIsCreateFlyoutOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const isCreateDirty =
+    code.trim().length > 0 || discountType !== "percent" || discountValue.trim() !== "10" || minSubtotalDollars.trim() !== "0.00";
+
+  function resetCreateDraft() {
+    setCode("");
+    setDiscountType("percent");
+    setDiscountValue("10");
+    setMinSubtotalDollars("0.00");
+    setCreateError(null);
+  }
 
   async function createPromotion(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
-    setError(null);
+    setCreateError(null);
+    setListError(null);
 
     const minSubtotalCents = Math.round(Number(minSubtotalDollars) * 100);
     const response = await fetch("/api/promotions", {
@@ -80,18 +95,17 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
     setSaving(false);
 
     if (!response.ok || !payload.promotion) {
-      setError(payload.error ?? "Unable to create promotion.");
+      setCreateError(payload.error ?? "Unable to create promotion.");
       return;
     }
 
     setPromotions((current) => [payload.promotion!, ...current]);
-    setCode("");
-    setDiscountValue("10");
-    setMinSubtotalDollars("0.00");
+    resetCreateDraft();
+    setIsCreateFlyoutOpen(false);
   }
 
   async function toggleActive(promotionId: string, isActive: boolean) {
-    setError(null);
+    setListError(null);
 
     const response = await fetch("/api/promotions", {
       method: "PATCH",
@@ -102,7 +116,7 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
     const payload = (await response.json()) as PromotionResponse;
 
     if (!response.ok || !payload.promotion) {
-      setError(payload.error ?? "Unable to update promotion.");
+      setListError(payload.error ?? "Unable to update promotion.");
       return;
     }
 
@@ -110,7 +124,7 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
   }
 
   async function removePromotion(promotionId: string) {
-    setError(null);
+    setListError(null);
 
     const response = await fetch("/api/promotions", {
       method: "DELETE",
@@ -121,7 +135,7 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
     const payload = (await response.json()) as PromotionResponse;
 
     if (!response.ok || !payload.deleted) {
-      setError(payload.error ?? "Unable to remove promotion.");
+      setListError(payload.error ?? "Unable to remove promotion.");
       return;
     }
 
@@ -129,36 +143,24 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
   }
 
   return (
-    <Card className="bg-muted/30">
-      <CardHeader className="pb-4">
-        <CardTitle className="text-lg">Promotions</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <form onSubmit={createPromotion} className="grid gap-2 md:grid-cols-4">
-          <Input required placeholder="WELCOME10" value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} />
-          <Select value={discountType} onChange={(event) => setDiscountType(event.target.value as PromotionRecord["discount_type"])}>
-            <option value="percent">Percent</option>
-            <option value="fixed">Fixed ($ cents)</option>
-          </Select>
-          <Input required inputMode="numeric" value={discountValue} onChange={(event) => setDiscountValue(event.target.value)} />
-          <Input
-            required
-            inputMode="decimal"
-            placeholder="Min subtotal USD"
-            value={minSubtotalDollars}
-            onChange={(event) => setMinSubtotalDollars(event.target.value)}
-          />
-          <Button type="submit" disabled={saving} className="md:col-span-4">
-            {saving ? "Creating..." : "Create promotion"}
+    <SectionCard
+      title="Promotions"
+      action={
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Button type="button" onClick={() => setIsCreateFlyoutOpen(true)}>
+            Create promotion
           </Button>
-        </form>
-        <FeedbackMessage type="error" message={error} />
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        <FeedbackMessage type="error" message={listError} />
         <ul className="space-y-2">
           {promotions.length === 0 ? (
-            <li className="rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground">No promotions yet.</li>
+            <li className="rounded-md border border-border bg-white px-3 py-2 text-sm text-muted-foreground">No promotions yet.</li>
           ) : (
             promotions.map((promo) => (
-              <li key={promo.id} className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm">
+              <li key={promo.id} className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-sm">
                 <span className="font-semibold">{promo.code}</span>
                 <Badge variant="outline">
                   {promo.discount_type === "percent" ? `${promo.discount_value}%` : `$${(promo.discount_value / 100).toFixed(2)}`}
@@ -170,7 +172,7 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
                   <RowActionButton type="button" onClick={() => void toggleActive(promo.id, promo.is_active)}>
                     {promo.is_active ? "Deactivate" : "Activate"}
                   </RowActionButton>
-                  <RowActionButton type="button" onClick={() => void removePromotion(promo.id)}>
+                  <RowActionButton type="button" variant="destructive" onClick={() => void removePromotion(promo.id)}>
                     Delete
                   </RowActionButton>
                 </RowActions>
@@ -178,7 +180,65 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
             ))
           )}
         </ul>
-      </CardContent>
-    </Card>
+      </div>
+      <Flyout
+        open={isCreateFlyoutOpen}
+        onOpenChange={(open) => {
+          setIsCreateFlyoutOpen(open);
+          if (!open) {
+            resetCreateDraft();
+          }
+        }}
+        confirmDiscardOnClose
+        isDirty={isCreateDirty}
+        onDiscardConfirm={resetCreateDraft}
+        title="Create promotion"
+        description="Define the discount code and minimum spend requirements."
+        footer={({ requestClose }) => (
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={requestClose}>
+              Close
+            </Button>
+            <Button type="submit" form="create-promotion-form" disabled={saving}>
+              {saving ? "Creating..." : "Create promotion"}
+            </Button>
+          </div>
+        )}
+      >
+        <form id="create-promotion-form" onSubmit={createPromotion} className="grid gap-3">
+          <FeedbackMessage type="error" message={createError} />
+          <FormField label="Promo code" description="What customers enter at checkout. Letters and numbers only works best.">
+            <Input required placeholder="WELCOME10" value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} />
+          </FormField>
+          <FormField label="Discount type" description="Choose a percent off or a fixed dollar amount off.">
+            <Select value={discountType} onChange={(event) => setDiscountType(event.target.value as PromotionRecord["discount_type"])}>
+              <option value="percent">Percent</option>
+              <option value="fixed">Fixed amount ($)</option>
+            </Select>
+          </FormField>
+          <FormField
+            label={discountType === "percent" ? "Discount percent" : "Discount amount (USD)"}
+            description={discountType === "percent" ? "Example: 10 for 10% off." : "Example: 5 for $5 off."}
+          >
+            <Input
+              required
+              inputMode="numeric"
+              placeholder={discountType === "percent" ? "10" : "5.00"}
+              value={discountValue}
+              onChange={(event) => setDiscountValue(event.target.value)}
+            />
+          </FormField>
+          <FormField label="Minimum subtotal (USD)" description="Set to 0.00 if there is no minimum order requirement.">
+            <Input
+              required
+              inputMode="decimal"
+              placeholder="0.00"
+              value={minSubtotalDollars}
+              onChange={(event) => setMinSubtotalDollars(event.target.value)}
+            />
+          </FormField>
+        </form>
+      </Flyout>
+    </SectionCard>
   );
 }
