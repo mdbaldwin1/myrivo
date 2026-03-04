@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
-import { redirect } from "next/navigation";
-import Link from "next/link";
 import Image from "next/image";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { DashboardMobileNavSheet } from "@/components/dashboard/dashboard-mobile-nav-sheet";
 import { DashboardNav } from "@/components/dashboard/dashboard-nav";
 import { buttonVariants } from "@/components/ui/button";
-import { PageShell } from "@/components/layout/page-shell";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { GlobalUserRole } from "@/types/database";
@@ -45,14 +45,17 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const availableStores = bundle?.availableStores ?? [];
 
   return (
-    <PageShell maxWidthClassName="max-w-7xl">
-      <div className="space-y-5">
-        <header className="rounded-xl border border-border/70 bg-card px-4 py-4 shadow-sm sm:px-5">
-          <div className="flex items-center gap-2">
-            <Image src="/brand/myrivo-mark.svg" alt="Myrivo logo" width={20} height={20} className="h-5 w-5 rounded-sm" />
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Myrivo</p>
+    <main data-dashboard-shell="true" className="mx-auto flex h-[100dvh] w-full max-w-7xl flex-col overflow-hidden px-4 py-6 md:px-8 md:py-8">
+      <div className="min-h-0 flex flex-1 flex-col gap-5">
+        <header className="shrink-0 rounded-xl border border-border/70 bg-card px-4 py-4 shadow-sm sm:px-5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Image src="/brand/myrivo-mark.svg" alt="Myrivo logo" width={20} height={20} className="h-5 w-5 rounded-sm" />
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Myrivo</p>
+            </div>
+            <DashboardMobileNavSheet activeStoreSlug={storeSlug} stores={availableStores} globalRole={globalRole} />
           </div>
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="mt-2 flex min-h-10 flex-wrap items-center justify-between gap-2">
             <h1 className="text-xl font-semibold">{storeName}</h1>
             <div className="flex items-center gap-2">
               {storeStatus ? (
@@ -61,29 +64,27 @@ export default async function DashboardLayout({ children }: { children: ReactNod
                 </p>
               ) : null}
               {storeSlug ? (
-                <Link
-                  href={`/s/${storeSlug}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={buttonVariants({ variant: "outline", size: "sm" })}
-                >
+                <Link href={`/s/${storeSlug}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", size: "sm" })}>
                   View storefront
                 </Link>
               ) : null}
             </div>
           </div>
         </header>
-        <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <div className="grid min-h-0 flex-1 gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
           <DashboardNav
             activeStoreSlug={storeSlug}
             stores={availableStores}
             globalRole={globalRole}
             userDisplayName={userDisplayName}
             userEmail={userEmail}
+            className="hidden lg:flex"
           />
-          <div className="min-w-0">{children}</div>
+          <div data-dashboard-scroll-container="true" className="min-h-0 min-w-0 overflow-y-auto pr-1">
+            <div className="space-y-4 pb-1">{children}</div>
+          </div>
         </div>
       </div>
-    </PageShell>
+    </main>
   );
 }

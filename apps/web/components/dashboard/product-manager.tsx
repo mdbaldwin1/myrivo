@@ -2445,7 +2445,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
               <TableHead>Price</TableHead>
               <TableHead>Inventory</TableHead>
               <TableHead>Variants</TableHead>
-              <TableHead className="sticky right-0 z-30 bg-muted/35 text-right">Actions</TableHead>
+              <TableHead className="sticky right-0 z-20 bg-muted/35 text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -2570,7 +2570,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         {variantProduct ? `${sortedVariants.length} variant${sortedVariants.length === 1 ? "" : "s"}` : "No variants"}
                       </p>
                     </TableCell>
-                    <TableCell className="sticky right-0 z-20 bg-card text-right">
+                    <TableCell className="sticky right-0 z-10 bg-card text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button type="button" variant="outline" size="sm" className="ml-auto h-7 w-7 p-0" aria-label={`Open actions for ${product.title}`}>

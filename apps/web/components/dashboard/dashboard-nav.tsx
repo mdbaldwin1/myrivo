@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { StoreSwitcher, type StoreOption } from "@/components/dashboard/store-switcher";
-import { buttonVariants, Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import type { GlobalUserRole } from "@/types/database";
@@ -14,8 +14,11 @@ type DashboardNavProps = {
   activeStoreSlug: string | null;
   stores: StoreOption[];
   globalRole: GlobalUserRole;
-  userDisplayName: string | null;
-  userEmail: string | null;
+  userDisplayName?: string | null;
+  userEmail?: string | null;
+  mode?: "desktop" | "mobile";
+  className?: string;
+  onNavigate?: () => void;
 };
 
 type SectionKey = "navigation" | "store-settings" | "content-studio" | "marketing" | "platform";
@@ -50,7 +53,7 @@ const marketingLinks = [
   { href: "/dashboard/marketing/subscribers", label: "Email Subscribers" }
 ] as const;
 
-function getInitials(name: string | null, email: string | null) {
+function getInitials(name: string | null | undefined, email: string | null | undefined) {
   const trimmed = name?.trim();
   if (trimmed) {
     const parts = trimmed.split(/\s+/).filter(Boolean);
@@ -63,11 +66,22 @@ function getInitials(name: string | null, email: string | null) {
   return emailPrefix.slice(0, 2).toUpperCase() || "ME";
 }
 
-export function DashboardNav({ activeStoreSlug, stores, globalRole, userDisplayName, userEmail }: DashboardNavProps) {
+export function DashboardNav({
+  activeStoreSlug,
+  stores,
+  globalRole,
+  userDisplayName,
+  userEmail,
+  mode = "desktop",
+  className,
+  onNavigate
+}: DashboardNavProps) {
   const pathname = usePathname();
   const normalizedPath = pathname?.replace(/\/$/, "") ?? "";
   const hasStoreAccess = stores.length > 0 && Boolean(activeStoreSlug);
   const canAccessPlatform = globalRole === "support" || globalRole === "admin";
+  const isMobile = mode === "mobile";
+
   const [collapsedSections, setCollapsedSections] = useState<Record<SectionKey, boolean>>({
     navigation: false,
     "store-settings": false,
@@ -109,13 +123,13 @@ export function DashboardNav({ activeStoreSlug, stores, globalRole, userDisplayN
   }
 
   return (
-    <nav className="h-fit rounded-lg border border-border bg-card p-3 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:flex lg:flex-col">
+    <nav className={cn("rounded-lg border border-border bg-card p-3", isMobile ? "h-full min-h-0 flex flex-col" : "h-full min-h-0 lg:flex lg:flex-col", className)}>
       {hasStoreAccess ? (
-        <div className="mb-3 border-b border-border px-2 pb-3 lg:shrink-0">
+        <div className="mb-3 shrink-0 border-b border-border px-2 pb-3">
           <StoreSwitcher activeStoreSlug={activeStoreSlug!} stores={stores} />
         </div>
       ) : null}
-      <div className="min-h-0 lg:flex-1 lg:overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="space-y-2">
           {hasStoreAccess ? (
             <div>
@@ -133,6 +147,8 @@ export function DashboardNav({ activeStoreSlug, stores, globalRole, userDisplayN
                     <Link
                       key={link.href}
                       href={link.href}
+                      onClick={onNavigate}
+                      aria-current={isLinkActive(link.href) ? "page" : undefined}
                       className={cn(buttonVariants({ variant: isLinkActive(link.href) ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
                     >
                       {link.label}
@@ -159,6 +175,8 @@ export function DashboardNav({ activeStoreSlug, stores, globalRole, userDisplayN
                     <Link
                       key={link.href}
                       href={link.href}
+                      onClick={onNavigate}
+                      aria-current={isLinkActive(link.href) ? "page" : undefined}
                       className={cn(buttonVariants({ variant: isLinkActive(link.href) ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
                     >
                       {link.label}
@@ -185,6 +203,8 @@ export function DashboardNav({ activeStoreSlug, stores, globalRole, userDisplayN
                     <Link
                       key={link.href}
                       href={link.href}
+                      onClick={onNavigate}
+                      aria-current={isLinkActive(link.href) ? "page" : undefined}
                       className={cn(buttonVariants({ variant: isLinkActive(link.href) ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
                     >
                       {link.label}
@@ -211,6 +231,8 @@ export function DashboardNav({ activeStoreSlug, stores, globalRole, userDisplayN
                     <Link
                       key={link.href}
                       href={link.href}
+                      onClick={onNavigate}
+                      aria-current={isLinkActive(link.href) ? "page" : undefined}
                       className={cn(buttonVariants({ variant: isLinkActive(link.href) ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
                     >
                       {link.label}
@@ -235,6 +257,8 @@ export function DashboardNav({ activeStoreSlug, stores, globalRole, userDisplayN
                 <div className="space-y-1 pl-2">
                   <Link
                     href="/dashboard/platform"
+                    onClick={onNavigate}
+                    aria-current={isLinkActive("/dashboard/platform") ? "page" : undefined}
                     className={cn(buttonVariants({ variant: isLinkActive("/dashboard/platform") ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
                   >
                     Platform Console
@@ -245,7 +269,7 @@ export function DashboardNav({ activeStoreSlug, stores, globalRole, userDisplayN
           ) : null}
         </div>
       </div>
-      <div className="mt-4 space-y-2 border-t border-border pt-3 lg:mt-3 lg:shrink-0">
+      <div className="mt-4 shrink-0 space-y-2 border-t border-border pt-3">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button type="button" variant="ghost" className="h-auto w-full justify-between px-2 py-2">
@@ -263,7 +287,9 @@ export function DashboardNav({ activeStoreSlug, stores, globalRole, userDisplayN
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-64">
             <DropdownMenuItem asChild>
-              <Link href="/dashboard/account">Profile & Account</Link>
+              <Link href="/dashboard/account" onClick={onNavigate}>
+                Profile & Account
+              </Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => void signOut()}>Sign out</DropdownMenuItem>
