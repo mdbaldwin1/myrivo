@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const requireStoreRoleMock = vi.fn();
+const requireStorePermissionMock = vi.fn();
 const enforceTrustedOriginMock = vi.fn();
 const serverFromMock = vi.fn();
 const resolveTxtMock = vi.fn();
@@ -12,7 +12,7 @@ vi.mock("node:dns/promises", () => ({
 }));
 
 vi.mock("@/lib/auth/authorization", () => ({
-  requireStoreRole: (...args: unknown[]) => requireStoreRoleMock(...args)
+  requireStorePermission: (...args: unknown[]) => requireStorePermissionMock(...args)
 }));
 
 vi.mock("@/lib/security/request-origin", () => ({
@@ -31,14 +31,14 @@ vi.mock("@/lib/supabase/server", () => ({
 
 beforeEach(() => {
   vi.resetModules();
-  requireStoreRoleMock.mockReset();
+  requireStorePermissionMock.mockReset();
   enforceTrustedOriginMock.mockReset();
   serverFromMock.mockReset();
   resolveTxtMock.mockReset();
   provisionVercelProjectDomainMock.mockReset();
 
   enforceTrustedOriginMock.mockReturnValue(null);
-  requireStoreRoleMock.mockResolvedValue({
+  requireStorePermissionMock.mockResolvedValue({
     context: { storeId: "store-1", userId: "user-1", storeRole: "admin", globalRole: "user", storeSlug: "curby" },
     response: null
   });

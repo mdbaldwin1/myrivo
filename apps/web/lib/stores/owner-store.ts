@@ -15,6 +15,7 @@ export type OwnedStoreBundle = {
   store: Pick<StoreRecord, "id" | "name" | "slug" | "status" | "stripe_account_id">;
   role: StoreMemberRole | "support";
   availableStores: AccessibleStore[];
+  permissionsJson: Record<string, unknown> | null;
   branding: Pick<StoreBrandingRecord, "logo_path" | "primary_color" | "accent_color" | "theme_json"> | null;
   settings: Pick<
     StoreSettingsRecord,
@@ -53,6 +54,7 @@ export type OwnedStoreBundle = {
 type MembershipStoreRow = {
   role: StoreMemberRole;
   status: string;
+  permissions_json: Record<string, unknown> | null;
   store: Pick<StoreRecord, "id" | "name" | "slug" | "status" | "stripe_account_id"> | null;
 };
 
@@ -60,7 +62,7 @@ async function resolveAccessibleStores(userId: string): Promise<AccessibleStore[
   const supabase = await createSupabaseServerClient();
   const { data: memberships, error: membershipsError } = await supabase
     .from("store_memberships")
-    .select("role,status,store:stores!inner(id,name,slug,status,stripe_account_id)")
+    .select("role,status,permissions_json,store:stores!inner(id,name,slug,status,stripe_account_id)")
     .eq("user_id", userId)
     .eq("status", "active")
     .returns<MembershipStoreRow[]>();
@@ -75,7 +77,8 @@ async function resolveAccessibleStores(userId: string): Promise<AccessibleStore[
         .filter((entry) => entry.store)
         .map((entry) => ({
           ...entry.store!,
-          role: entry.role
+          role: entry.role,
+          permissions_json: entry.permissions_json ?? {}
         }));
 
   if (membershipsError && isMissingRelationInSchemaCache(membershipsError)) {
@@ -90,7 +93,7 @@ async function resolveAccessibleStores(userId: string): Promise<AccessibleStore[
     }
 
     if ((ownedStores ?? []).length > 0) {
-      return (ownedStores ?? []).map((store) => ({ ...store, role: "owner" as const }));
+      return (ownedStores ?? []).map((store) => ({ ...store, role: "owner" as const, permissions_json: {} }));
     }
   }
 
@@ -115,7 +118,7 @@ async function resolveAccessibleStores(userId: string): Promise<AccessibleStore[
     throw new Error(allowlistedStoresError.message);
   }
 
-  return (allowlistedStores ?? []).map((store) => ({ ...store, role: "support" as const }));
+  return (allowlistedStores ?? []).map((store) => ({ ...store, role: "support" as const, permissions_json: { "*": true } }));
 }
 
 export async function getOwnedStoreBundle(
@@ -183,6 +186,7 @@ export async function getOwnedStoreBundle(
     store: resolvedStore,
     role: resolvedStore.role,
     availableStores: accessibleStores,
+    permissionsJson: resolvedStore.permissions_json ?? {},
     branding,
     settings: settingsError ? null : settings,
     contentBlocks: contentBlocks ?? []

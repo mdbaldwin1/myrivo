@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { requireStoreRole } from "@/lib/auth/authorization";
+import { requireStorePermission } from "@/lib/auth/authorization";
 import { logAuditEvent } from "@/lib/audit/log";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -35,7 +35,7 @@ type InviteRow = {
 };
 
 export async function GET() {
-  const auth = await requireStoreRole("admin");
+  const auth = await requireStorePermission("store.manage_members");
   if (auth.response) {
     return auth.response;
   }
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
     return trustedOriginResponse;
   }
 
-  const auth = await requireStoreRole("admin");
+  const auth = await requireStorePermission("store.manage_members");
   if (auth.response) {
     return auth.response;
   }

@@ -5,6 +5,7 @@ export const ACTIVE_STORE_COOKIE = "myrivo_active_store_slug";
 
 export type AccessibleStore = Pick<StoreRecord, "id" | "name" | "slug" | "status" | "stripe_account_id"> & {
   role: StoreMemberRole | "support";
+  permissions_json: Record<string, unknown> | null;
 };
 
 function normalizeSlug(value: string | null | undefined): string | null {
