@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { SectionCard } from "@/components/ui/section-card";
@@ -31,7 +31,7 @@ export function StoreEmailSubscribersManager() {
   const [error, setError] = useState<string | null>(null);
   const [subscribers, setSubscribers] = useState<SubscriberRow[]>([]);
 
-  async function loadSubscribers() {
+  const loadSubscribers = useCallback(async () => {
     setLoading(true);
     setError(null);
     const query = new URLSearchParams();
@@ -46,12 +46,16 @@ export function StoreEmailSubscribersManager() {
       return;
     }
     setSubscribers(payload.subscribers ?? []);
-  }
+  }, [statusFilter]);
 
   useEffect(() => {
-    void loadSubscribers();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter]);
+    const timer = window.setTimeout(() => {
+      void loadSubscribers();
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [loadSubscribers]);
 
   const summary = useMemo(
     () => ({
