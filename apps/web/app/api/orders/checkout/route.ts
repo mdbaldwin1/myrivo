@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getAppUrl, isStripeStubMode } from "@/lib/env";
 import { calculatePlatformFeeCents, resolveStoreFeeProfile, writeOrderFeeBreakdown } from "@/lib/billing/fees";
+import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { sendOrderCreatedNotifications } from "@/lib/notifications/order-emails";
 import { resolveAvailablePickupLocations } from "@/lib/pickup/availability";
 import { buildPickupSlots } from "@/lib/pickup/scheduling";
@@ -83,10 +84,9 @@ export async function POST(request: NextRequest) {
     return rateLimitResponse;
   }
 
-  const payload = payloadSchema.safeParse(await request.json());
-
-  if (!payload.success) {
-    return NextResponse.json({ error: "Invalid payload", details: payload.error.flatten() }, { status: 400 });
+  const payload = await parseJsonRequest(request, payloadSchema);
+  if (!payload.ok) {
+    return payload.response;
   }
 
   const supabase = createSupabaseAdminClient();

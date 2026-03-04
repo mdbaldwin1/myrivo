@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import {
   mapStoreExperienceContentRow,
@@ -70,9 +71,9 @@ export async function PUT(request: NextRequest) {
     return trustedOriginResponse;
   }
 
-  const payload = updateSchema.safeParse(await request.json());
-  if (!payload.success) {
-    return NextResponse.json({ error: "Invalid payload", details: payload.error.flatten() }, { status: 400 });
+  const payload = await parseJsonRequest(request, updateSchema);
+  if (!payload.ok) {
+    return payload.response;
   }
 
   const resolved = await resolveOwnerContext();

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { logAuditEvent } from "@/lib/audit/log";
+import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -83,10 +84,9 @@ export async function POST(request: NextRequest) {
     return trustedOriginResponse;
   }
 
-  const payload = createSchema.safeParse(await request.json());
-
-  if (!payload.success) {
-    return NextResponse.json({ error: "Invalid payload", details: payload.error.flatten() }, { status: 400 });
+  const payload = await parseJsonRequest(request, createSchema);
+  if (!payload.ok) {
+    return payload.response;
   }
 
   const resolved = await getStoreId();
@@ -141,10 +141,9 @@ export async function PATCH(request: NextRequest) {
     return trustedOriginResponse;
   }
 
-  const payload = updateSchema.safeParse(await request.json());
-
-  if (!payload.success) {
-    return NextResponse.json({ error: "Invalid payload", details: payload.error.flatten() }, { status: 400 });
+  const payload = await parseJsonRequest(request, updateSchema);
+  if (!payload.ok) {
+    return payload.response;
   }
 
   const resolved = await getStoreId();
@@ -194,10 +193,9 @@ export async function DELETE(request: NextRequest) {
     return trustedOriginResponse;
   }
 
-  const payload = deleteSchema.safeParse(await request.json());
-
-  if (!payload.success) {
-    return NextResponse.json({ error: "Invalid payload", details: payload.error.flatten() }, { status: 400 });
+  const payload = await parseJsonRequest(request, deleteSchema);
+  if (!payload.ok) {
+    return payload.response;
   }
 
   const resolved = await getStoreId();

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -33,9 +34,9 @@ export async function POST(request: NextRequest) {
     return trustedOriginResponse;
   }
 
-  const parsed = payloadSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid payload", details: parsed.error.flatten() }, { status: 400 });
+  const parsed = await parseJsonRequest(request, payloadSchema);
+  if (!parsed.ok) {
+    return parsed.response;
   }
 
   const resolved = await resolveOwnedStoreId();
