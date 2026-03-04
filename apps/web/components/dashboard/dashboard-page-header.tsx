@@ -17,16 +17,19 @@ export function DashboardPageHeader({ title, description, className, action }: D
 
   useEffect(() => {
     let frame = 0;
+    const element = headerRef.current;
+    const scrollContainer = element?.closest('[data-dashboard-scroll-container="true"]') as HTMLElement | null;
+    const scrollTarget: Window | HTMLElement = scrollContainer ?? window;
 
     const updateStickyState = () => {
       frame = 0;
-      const element = headerRef.current;
-      if (!element) {
+      const currentElement = headerRef.current;
+      if (!currentElement) {
         return;
       }
 
-      const stickyTop = Number.parseFloat(window.getComputedStyle(element).top || "0");
-      const nextIsStuck = element.getBoundingClientRect().top <= stickyTop + 0.5;
+      const stickyTop = Number.parseFloat(window.getComputedStyle(currentElement).top || "0");
+      const nextIsStuck = currentElement.getBoundingClientRect().top <= stickyTop + 0.5;
       setIsStuck((current) => (current === nextIsStuck ? current : nextIsStuck));
     };
 
@@ -38,14 +41,14 @@ export function DashboardPageHeader({ title, description, className, action }: D
     };
 
     updateStickyState();
-    window.addEventListener("scroll", onScrollOrResize, { passive: true });
+    scrollTarget.addEventListener("scroll", onScrollOrResize, { passive: true });
     window.addEventListener("resize", onScrollOrResize);
 
     return () => {
       if (frame !== 0) {
         window.cancelAnimationFrame(frame);
       }
-      window.removeEventListener("scroll", onScrollOrResize);
+      scrollTarget.removeEventListener("scroll", onScrollOrResize);
       window.removeEventListener("resize", onScrollOrResize);
     };
   }, []);
