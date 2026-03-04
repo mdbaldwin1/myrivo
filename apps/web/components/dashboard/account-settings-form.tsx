@@ -65,6 +65,17 @@ export function AccountSettingsForm({ email, globalRole, initialDisplayName, ini
     return source.slice(0, 2).toUpperCase();
   }, [displayName, email]);
 
+  async function cleanupUploadedAvatar(path: string) {
+    await fetch("/api/user/avatar", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        avatarPath: path,
+        clearProfile: false
+      })
+    });
+  }
+
   async function handleAvatarUpload(file: File) {
     setAvatarUploading(true);
     setError(null);
@@ -85,6 +96,11 @@ export function AccountSettingsForm({ email, globalRole, initialDisplayName, ini
       return;
     }
 
+    const previousAvatarPath = avatarPath;
+    if (previousAvatarPath && previousAvatarPath !== savedAvatarPath && previousAvatarPath !== payload.avatarPath) {
+      await cleanupUploadedAvatar(previousAvatarPath);
+    }
+
     setAvatarPath(payload.avatarPath);
     setMessage("Avatar ready to save.");
     setAvatarUploading(false);
@@ -93,6 +109,9 @@ export function AccountSettingsForm({ email, globalRole, initialDisplayName, ini
   async function handleAvatarRemove() {
     setError(null);
     setMessage(null);
+    if (avatarPath && avatarPath !== savedAvatarPath) {
+      await cleanupUploadedAvatar(avatarPath);
+    }
     setAvatarPath(null);
     setMessage("Avatar removal ready to save.");
   }
@@ -101,6 +120,9 @@ export function AccountSettingsForm({ email, globalRole, initialDisplayName, ini
     event.preventDefault();
     const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
     if (submitter?.value === "discard") {
+      if (avatarPath && avatarPath !== savedAvatarPath) {
+        await cleanupUploadedAvatar(avatarPath);
+      }
       setDisplayName(savedDisplayName);
       setAvatarPath(savedAvatarPath);
       setWeeklyDigestEmails(savedWeeklyDigestEmails);

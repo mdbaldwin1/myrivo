@@ -26,6 +26,17 @@ export function CustomerProfileSettings({ email, displayName, initialAvatarPath 
     return source.slice(0, 2).toUpperCase();
   }, [displayName, email]);
 
+  async function cleanupUploadedAvatar(path: string) {
+    await fetch("/api/user/avatar", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        avatarPath: path,
+        clearProfile: false
+      })
+    });
+  }
+
   async function persistAvatar(nextAvatarPath: string | null): Promise<boolean> {
     const response = await fetch("/api/user/profile", {
       method: "PUT",
@@ -62,6 +73,9 @@ export function CustomerProfileSettings({ email, displayName, initialAvatarPath 
     }
 
     const persisted = await persistAvatar(payload.avatarPath);
+    if (!persisted) {
+      await cleanupUploadedAvatar(payload.avatarPath);
+    }
     if (persisted) {
       setMessage("Avatar updated.");
     }
