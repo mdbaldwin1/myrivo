@@ -27,7 +27,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const bundle = await getOwnedStoreBundle(user.id);
+  const bundle = await getOwnedStoreBundle(user.id, "staff");
 
   if (!bundle) {
     return NextResponse.json({ error: "No store found for account" }, { status: 404 });
@@ -36,7 +36,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   const { data: order, error: orderError } = await supabase
     .from("orders")
     .select(
-      "id,customer_email,subtotal_cents,total_cents,status,fulfillment_status,fulfilled_at,shipped_at,delivered_at,discount_cents,promo_code,currency,carrier,tracking_number,tracking_url,shipment_status,last_tracking_sync_at,created_at"
+      "id,customer_email,subtotal_cents,total_cents,status,fulfillment_status,fulfilled_at,shipped_at,delivered_at,discount_cents,promo_code,currency,carrier,tracking_number,tracking_url,shipment_status,last_tracking_sync_at,created_at,order_fee_breakdowns(platform_fee_cents,net_payout_cents,fee_bps,fee_fixed_cents,plan_key)"
     )
     .eq("id", params.data.orderId)
     .eq("store_id", bundle.store.id)

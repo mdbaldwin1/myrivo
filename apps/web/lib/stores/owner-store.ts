@@ -1,4 +1,5 @@
 import { isOwnerAccessEmail } from "@/lib/auth/owner-access";
+import { hasStoreRole } from "@/lib/auth/roles";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isMissingRelationInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { readSelectedStoreSlugFromCookies, resolveActiveStoreFromList, type AccessibleStore } from "@/lib/stores/tenant-context";
@@ -117,13 +118,20 @@ async function resolveAccessibleStores(userId: string): Promise<AccessibleStore[
   return (allowlistedStores ?? []).map((store) => ({ ...store, role: "support" as const }));
 }
 
-export async function getOwnedStoreBundle(userId: string): Promise<OwnedStoreBundle | null> {
+export async function getOwnedStoreBundle(
+  userId: string,
+  requiredRole: StoreMemberRole | "support" = "staff"
+): Promise<OwnedStoreBundle | null> {
   const supabase = await createSupabaseServerClient();
   const accessibleStores = await resolveAccessibleStores(userId);
   const selectedStoreSlug = await readSelectedStoreSlugFromCookies();
   const resolvedStore = resolveActiveStoreFromList(accessibleStores, selectedStoreSlug);
 
   if (!resolvedStore) {
+    return null;
+  }
+
+  if (!hasStoreRole(resolvedStore.role, requiredRole)) {
     return null;
   }
 
@@ -182,6 +190,6 @@ export async function getOwnedStoreBundle(userId: string): Promise<OwnedStoreBun
 }
 
 export async function getOwnedStoreId(userId: string): Promise<string | null> {
-  const bundle = await getOwnedStoreBundle(userId);
+  const bundle = await getOwnedStoreBundle(userId, "staff");
   return bundle?.store.id ?? null;
 }

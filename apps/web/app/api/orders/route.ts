@@ -12,6 +12,34 @@ const updateSchema = z.object({
   fulfillmentStatus: z.enum(["pending_fulfillment", "packing", "shipped", "delivered"]).optional()
 });
 
+const orderSelect =
+  "id,customer_email,subtotal_cents,total_cents,status,fulfillment_status,discount_cents,promo_code,carrier,tracking_number,tracking_url,shipment_status,created_at,order_fee_breakdowns(platform_fee_cents,net_payout_cents,fee_bps,fee_fixed_cents,plan_key)";
+
+type OrderFeeBreakdownRow = {
+  platform_fee_cents: number;
+  net_payout_cents: number;
+  fee_bps: number;
+  fee_fixed_cents: number;
+  plan_key: string | null;
+};
+
+type OrderWithFeeBreakdown = {
+  id: string;
+  customer_email: string;
+  subtotal_cents: number;
+  total_cents: number;
+  status: "pending" | "paid" | "failed" | "cancelled";
+  fulfillment_status: "pending_fulfillment" | "packing" | "shipped" | "delivered";
+  discount_cents: number;
+  promo_code: string | null;
+  carrier: string | null;
+  tracking_number: string | null;
+  tracking_url: string | null;
+  shipment_status: string | null;
+  created_at: string;
+  order_fee_breakdowns: OrderFeeBreakdownRow | OrderFeeBreakdownRow[] | null;
+};
+
 export async function GET() {
   const supabase = await createSupabaseServerClient();
   const {
@@ -22,7 +50,7 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const bundle = await getOwnedStoreBundle(user.id);
+  const bundle = await getOwnedStoreBundle(user.id, "staff");
 
   if (!bundle) {
     return NextResponse.json({ error: "No store found for account" }, { status: 404 });
@@ -30,11 +58,10 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("orders")
-    .select(
-      "id,customer_email,subtotal_cents,total_cents,status,fulfillment_status,discount_cents,promo_code,carrier,tracking_number,tracking_url,shipment_status,created_at"
-    )
+    .select(orderSelect)
     .eq("store_id", bundle.store.id)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .returns<OrderWithFeeBreakdown[]>();
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -65,7 +92,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const bundle = await getOwnedStoreBundle(user.id);
+  const bundle = await getOwnedStoreBundle(user.id, "staff");
 
   if (!bundle) {
     return NextResponse.json({ error: "No store found for account" }, { status: 404 });
@@ -125,10 +152,8 @@ export async function PATCH(request: NextRequest) {
     .update(updates)
     .eq("id", payload.data.orderId)
     .eq("store_id", bundle.store.id)
-    .select(
-      "id,customer_email,subtotal_cents,total_cents,status,fulfillment_status,discount_cents,promo_code,carrier,tracking_number,tracking_url,shipment_status,created_at"
-    )
-    .single();
+    .select(orderSelect)
+    .single<OrderWithFeeBreakdown>();
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

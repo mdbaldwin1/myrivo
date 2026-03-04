@@ -11,6 +11,8 @@ import { Textarea } from "@/components/ui/textarea";
 type PickupSettings = {
   pickup_enabled: boolean;
   selection_mode: "buyer_select" | "hidden_nearest";
+  geolocation_fallback_mode: "allow_without_distance" | "disable_pickup";
+  out_of_radius_behavior: "disable_pickup" | "allow_all_locations";
   eligibility_radius_miles: number;
   lead_time_hours: number;
   slot_interval_minutes: 15 | 30 | 60 | 120;
@@ -150,6 +152,8 @@ export function PickupSettingsManager() {
       body: JSON.stringify({
         pickupEnabled: settings.pickup_enabled,
         selectionMode: settings.selection_mode,
+        geolocationFallbackMode: settings.geolocation_fallback_mode,
+        outOfRadiusBehavior: settings.out_of_radius_behavior,
         eligibilityRadiusMiles: settings.eligibility_radius_miles,
         leadTimeHours: settings.lead_time_hours,
         slotIntervalMinutes: settings.slot_interval_minutes,
@@ -362,6 +366,42 @@ export function PickupSettingsManager() {
                 setSettings((current) => (current ? { ...current, eligibility_radius_miles: Number.parseInt(event.target.value || "100", 10) } : current))
               }
             />
+          </FormField>
+          <FormField label="No Geolocation Behavior" description="Control pickup behavior when buyer location is unavailable.">
+            <Select
+              value={settings.geolocation_fallback_mode}
+              onChange={(event) =>
+                setSettings((current) =>
+                  current
+                    ? {
+                        ...current,
+                        geolocation_fallback_mode: event.target.value as "allow_without_distance" | "disable_pickup"
+                      }
+                    : current
+                )
+              }
+            >
+              <option value="allow_without_distance">Allow pickup without distance checks</option>
+              <option value="disable_pickup">Disable pickup until location is shared</option>
+            </Select>
+          </FormField>
+          <FormField label="Outside Radius Behavior" description="Control pickup behavior when no location falls within the radius.">
+            <Select
+              value={settings.out_of_radius_behavior}
+              onChange={(event) =>
+                setSettings((current) =>
+                  current
+                    ? {
+                        ...current,
+                        out_of_radius_behavior: event.target.value as "disable_pickup" | "allow_all_locations"
+                      }
+                    : current
+                )
+              }
+            >
+              <option value="disable_pickup">Disable pickup</option>
+              <option value="allow_all_locations">Allow all pickup locations</option>
+            </Select>
           </FormField>
           <FormField label="Lead Time (hours)" description="Minimum prep time before the first available slot.">
             <Input

@@ -30,6 +30,22 @@ type OrderDetailResponse = {
     shipment_status: string | null;
     last_tracking_sync_at: string | null;
     created_at: string;
+    order_fee_breakdowns:
+      | {
+          platform_fee_cents: number;
+          net_payout_cents: number;
+          fee_bps: number;
+          fee_fixed_cents: number;
+          plan_key: string | null;
+        }
+      | Array<{
+          platform_fee_cents: number;
+          net_payout_cents: number;
+          fee_bps: number;
+          fee_fixed_cents: number;
+          plan_key: string | null;
+        }>
+      | null;
   };
   items?: Array<{
     id: string;
@@ -103,6 +119,13 @@ export function OrderDetailPanel({ orderId, onClose }: OrderDetailPanelProps) {
     return status;
   }
 
+  const feeBreakdown =
+    payload?.order
+      ? Array.isArray(payload.order.order_fee_breakdowns)
+        ? payload.order.order_fee_breakdowns[0]
+        : payload.order.order_fee_breakdowns
+      : null;
+
   return (
     <Card className="bg-muted/30">
       <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
@@ -145,6 +168,19 @@ export function OrderDetailPanel({ orderId, onClose }: OrderDetailPanelProps) {
               </p>
               <p>
                 <span className="font-medium">Discount:</span> ${(payload.order.discount_cents / 100).toFixed(2)}
+              </p>
+              <p>
+                <span className="font-medium">Platform fee:</span> ${((feeBreakdown?.platform_fee_cents ?? 0) / 100).toFixed(2)}
+              </p>
+              <p>
+                <span className="font-medium">Net payout:</span> ${((feeBreakdown?.net_payout_cents ?? 0) / 100).toFixed(2)}
+              </p>
+              <p>
+                <span className="font-medium">Fee basis:</span>{" "}
+                {feeBreakdown ? `${(feeBreakdown.fee_bps / 100).toFixed(2)}% + $${(feeBreakdown.fee_fixed_cents / 100).toFixed(2)}` : "-"}
+              </p>
+              <p>
+                <span className="font-medium">Billing plan:</span> {feeBreakdown?.plan_key ?? "-"}
               </p>
               <p>
                 <span className="font-medium">Promo:</span> {payload.order.promo_code ?? "none"}

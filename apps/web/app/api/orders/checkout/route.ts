@@ -3,13 +3,13 @@ import { z } from "zod";
 import { getAppUrl, isStripeStubMode } from "@/lib/env";
 import { calculatePlatformFeeCents, resolveStoreFeeProfile, writeOrderFeeBreakdown } from "@/lib/billing/fees";
 import { sendOrderCreatedNotifications } from "@/lib/notifications/order-emails";
-import { resolveEligiblePickupLocations } from "@/lib/pickup/distance";
+import { resolveAvailablePickupLocations } from "@/lib/pickup/availability";
 import { buildPickupSlots } from "@/lib/pickup/scheduling";
 import { formatVariantLabel } from "@/lib/products/variants";
 import { calculateDiscountCents } from "@/lib/promotions/calculate-discount";
 import { checkRateLimit } from "@/lib/security/rate-limit";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
-import { resolveStoreSlugFromRequest } from "@/lib/stores/active-store";
+import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
 import { getStripeClient } from "@/lib/stripe/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
     items,
     promoCode
   } = payload.data;
-  const storeSlug = resolveStoreSlugFromRequest(request);
+  const storeSlug = await resolveStoreSlugFromRequestAsync(request);
 
   const { data: store, error: storeError } = await supabase
     .from("stores")
@@ -161,11 +161,15 @@ export async function POST(request: NextRequest) {
 
   const { data: pickupSettings, error: pickupSettingsError } = await supabase
     .from("store_pickup_settings")
-    .select("pickup_enabled,selection_mode,eligibility_radius_miles,lead_time_hours,slot_interval_minutes,show_pickup_times,timezone")
+    .select(
+      "pickup_enabled,selection_mode,geolocation_fallback_mode,out_of_radius_behavior,eligibility_radius_miles,lead_time_hours,slot_interval_minutes,show_pickup_times,timezone"
+    )
     .eq("store_id", store.id)
     .maybeSingle<{
       pickup_enabled: boolean;
       selection_mode: "buyer_select" | "hidden_nearest";
+      geolocation_fallback_mode: "allow_without_distance" | "disable_pickup";
+      out_of_radius_behavior: "disable_pickup" | "allow_all_locations";
       eligibility_radius_miles: number;
       lead_time_hours: number;
       slot_interval_minutes: number;
@@ -263,28 +267,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Pickup is unavailable for this store." }, { status: 400 });
     }
 
-    const eligiblePickupLocations = resolveEligiblePickupLocations(
-      buyerCoordinates,
-      (pickupLocations ?? []).map((location) => ({
-        id: location.id,
-        name: location.name,
-        latitude: location.latitude,
-        longitude: location.longitude
-      })),
-      pickupSettings.eligibility_radius_miles
-    );
+    const normalizedPickupLocations = (pickupLocations ?? []).map((location) => ({
+      id: location.id,
+      name: location.name,
+      latitude: location.latitude,
+      longitude: location.longitude
+    }));
+    const availablePickupLocations = resolveAvailablePickupLocations({
+      buyer: buyerCoordinates,
+      locations: normalizedPickupLocations,
+      radiusMiles: pickupSettings.eligibility_radius_miles,
+      geolocationFallbackMode: pickupSettings.geolocation_fallback_mode,
+      outOfRadiusBehavior: pickupSettings.out_of_radius_behavior
+    });
 
-    if (eligiblePickupLocations.length === 0) {
+    if (availablePickupLocations.length === 0) {
+      const reason = buyerCoordinates
+        ? `No pickup locations are available within ${pickupSettings.eligibility_radius_miles} miles.`
+        : "Enable location access to verify pickup availability.";
       return NextResponse.json(
-        { error: `No pickup locations are available within ${pickupSettings.eligibility_radius_miles} miles.` },
+        { error: reason },
         { status: 400 }
       );
     }
 
     resolvedPickupLocationId =
       pickupSettings.selection_mode === "hidden_nearest"
-        ? eligiblePickupLocations[0]?.id ?? null
-        : pickupLocationId && eligiblePickupLocations.some((location) => location.id === pickupLocationId)
+        ? availablePickupLocations[0]?.id ?? null
+        : pickupLocationId && availablePickupLocations.some((location) => location.id === pickupLocationId)
           ? pickupLocationId
           : null;
 

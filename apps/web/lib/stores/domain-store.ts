@@ -1,17 +1,5 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-
-function normalizeHost(value: string | null | undefined) {
-  if (!value) {
-    return null;
-  }
-
-  const host = value.trim().toLowerCase().split(":")[0];
-  if (!host || host === "localhost" || host.endsWith(".vercel.app")) {
-    return null;
-  }
-
-  return host;
-}
+import { normalizeHost } from "@/lib/stores/domain-utils";
 
 export async function resolveStoreSlugFromDomain(host: string | null | undefined): Promise<string | null> {
   const normalizedHost = normalizeHost(host);

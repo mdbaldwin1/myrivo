@@ -215,11 +215,15 @@ export type OrderRecord = {
 };
 
 export type PickupSelectionMode = "buyer_select" | "hidden_nearest";
+export type PickupGeolocationFallbackMode = "allow_without_distance" | "disable_pickup";
+export type PickupOutOfRadiusBehavior = "disable_pickup" | "allow_all_locations";
 
 export type StorePickupSettingsRecord = {
   store_id: string;
   pickup_enabled: boolean;
   selection_mode: PickupSelectionMode;
+  geolocation_fallback_mode: PickupGeolocationFallbackMode;
+  out_of_radius_behavior: PickupOutOfRadiusBehavior;
   eligibility_radius_miles: number;
   lead_time_hours: number;
   slot_interval_minutes: 15 | 30 | 60 | 120;
@@ -377,6 +381,12 @@ export type StoreDomainRecord = {
   verification_token: string | null;
   last_verification_at: string | null;
   verified_at: string | null;
+  hosting_provider: "vercel";
+  hosting_status: "pending" | "provisioning" | "ready" | "failed" | "not_configured";
+  hosting_last_checked_at: string | null;
+  hosting_ready_at: string | null;
+  hosting_error: string | null;
+  hosting_metadata_json: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 };

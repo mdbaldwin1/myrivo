@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isStripeStubMode } from "@/lib/env";
 import { checkRateLimit } from "@/lib/security/rate-limit";
-import { resolveStoreSlugFromRequest } from "@/lib/stores/active-store";
+import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
 import { finalizeStorefrontCheckout, getStorefrontCheckoutBySessionId } from "@/lib/storefront/checkout-finalization";
 import { getStripeClient } from "@/lib/stripe/server";
 
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
   }
 
   const { sessionId } = parsed.data;
-  const storeSlug = resolveStoreSlugFromRequest(request);
+  const storeSlug = await resolveStoreSlugFromRequestAsync(request);
 
   try {
     const checkout = await getStorefrontCheckoutBySessionId(storeSlug, sessionId);

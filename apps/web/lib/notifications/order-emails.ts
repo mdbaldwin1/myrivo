@@ -42,6 +42,11 @@ type OrderEmailContext = {
   };
 };
 
+type PickupSummaryInput = Pick<
+  OrderEmailContext,
+  "fulfillmentMethod" | "pickupLocationSnapshot" | "pickupWindowStartAt" | "pickupWindowEndAt" | "pickupTimezone"
+>;
+
 const CUSTOMER_CONFIRMATION_ACTION = "email_order_confirmation_sent";
 const OWNER_NEW_ORDER_ACTION = "email_owner_new_order_sent";
 const ORDER_SHIPPED_ACTION = "email_order_shipped_sent";
@@ -95,6 +100,47 @@ function formatMoney(cents: number, currency: string) {
 function buildOrderLine(item: OrderEmailItem, currency: string) {
   const label = item.variantLabel ? `${item.title} (${item.variantLabel})` : item.title;
   return `- ${label} x${item.quantity} @ ${formatMoney(item.unitPriceCents, currency)}`;
+}
+
+function formatDateTimeInTimezone(iso: string, timezone: string | null) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+
+  if (!timezone) {
+    return date.toLocaleString();
+  }
+
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      dateStyle: "medium",
+      timeStyle: "short"
+    }).format(date);
+  } catch {
+    return date.toLocaleString();
+  }
+}
+
+export function buildPickupSummaryText(input: PickupSummaryInput) {
+  if (input.fulfillmentMethod !== "pickup") {
+    return "Fulfillment: Shipping";
+  }
+
+  const pickup = input.pickupLocationSnapshot;
+  const name = typeof pickup?.name === "string" ? pickup.name : "Pickup location";
+  const address = [pickup?.addressLine1, pickup?.city, pickup?.stateRegion, pickup?.postalCode].filter(Boolean).join(", ");
+  const windowLabel =
+    input.pickupWindowStartAt && input.pickupWindowEndAt
+      ? `${formatDateTimeInTimezone(input.pickupWindowStartAt, input.pickupTimezone)} - ${formatDateTimeInTimezone(input.pickupWindowEndAt, input.pickupTimezone)}${
+          input.pickupTimezone ? ` (${input.pickupTimezone})` : ""
+        }`
+      : "To be confirmed";
+
+  return [`Fulfillment: Pickup`, `Pickup Location: ${name}`, address ? `Address: ${address}` : "", `Pickup Window: ${windowLabel}`]
+    .filter(Boolean)
+    .join("\n");
 }
 
 async function sendEmail(to: string[], subject: string, text: string) {
@@ -284,24 +330,7 @@ export async function sendOrderCreatedNotifications(orderId: string) {
 
     const orderSummary = context.items.map((item) => buildOrderLine(item, context.currency)).join("\n");
     const dashboardLink = `${getAppUrl()}/dashboard/orders`;
-    const pickupSummary =
-      context.fulfillmentMethod === "pickup"
-        ? (() => {
-            const pickup = context.pickupLocationSnapshot;
-            const name = typeof pickup?.name === "string" ? pickup.name : "Pickup location";
-            const address = [pickup?.addressLine1, pickup?.city, pickup?.stateRegion, pickup?.postalCode].filter(Boolean).join(", ");
-            const windowLabel =
-              context.pickupWindowStartAt && context.pickupWindowEndAt
-                ? `${new Date(context.pickupWindowStartAt).toLocaleString()} - ${new Date(context.pickupWindowEndAt).toLocaleString()}${
-                    context.pickupTimezone ? ` (${context.pickupTimezone})` : ""
-                  }`
-                : "To be confirmed";
-
-            return [`Fulfillment: Pickup`, `Pickup Location: ${name}`, address ? `Address: ${address}` : "", `Pickup Window: ${windowLabel}`]
-              .filter(Boolean)
-              .join("\n");
-          })()
-        : "Fulfillment: Shipping";
+    const pickupSummary = buildPickupSummaryText(context);
 
     if (!customerAlreadySent) {
       const customerSubject =

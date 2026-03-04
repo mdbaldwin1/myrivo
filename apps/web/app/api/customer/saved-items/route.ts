@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import {
+  requireAuthenticatedCustomerUser,
+  requireStoreById,
+  validateStoreItemSelection
+} from "@/lib/customer/account";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -20,25 +25,32 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid payload", details: payload.error.flatten() }, { status: 400 });
   }
 
-  if (!payload.data.productId && !payload.data.variantId) {
-    return NextResponse.json({ error: "productId or variantId is required" }, { status: 400 });
-  }
-
   const supabase = await createSupabaseServerClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = await requireAuthenticatedCustomerUser(supabase);
+  if (auth.response) {
+    return auth.response;
   }
 
-  const { error } = await supabase.from("customer_saved_items").insert({
-    user_id: user.id,
-    store_id: payload.data.storeId,
-    product_id: payload.data.productId ?? null,
-    product_variant_id: payload.data.variantId ?? null
+  const storeLookup = await requireStoreById(supabase, payload.data.storeId);
+  if (storeLookup.response) {
+    return storeLookup.response;
+  }
+
+  const selectionLookup = await validateStoreItemSelection(supabase, {
+    storeId: payload.data.storeId,
+    productId: payload.data.productId,
+    variantId: payload.data.variantId
   });
+  if (selectionLookup.response) {
+    return selectionLookup.response;
+  }
+
+  const { error } = await supabase.from("customer_saved_items").upsert({
+    user_id: auth.user.id,
+    store_id: payload.data.storeId,
+    product_id: selectionLookup.selection.productId,
+    product_variant_id: selectionLookup.selection.variantId
+  }, { onConflict: "user_id,store_id,product_id,product_variant_id" });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -60,15 +72,12 @@ export async function DELETE(request: NextRequest) {
   }
 
   const supabase = await createSupabaseServerClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = await requireAuthenticatedCustomerUser(supabase);
+  if (auth.response) {
+    return auth.response;
   }
 
-  const { error } = await supabase.from("customer_saved_items").delete().eq("id", id).eq("user_id", user.id);
+  const { error } = await supabase.from("customer_saved_items").delete().eq("id", id).eq("user_id", auth.user.id);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

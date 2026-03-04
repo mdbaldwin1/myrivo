@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Missing user email" }, { status: 400 });
   }
 
-  const bundle = await getOwnedStoreBundle(user.id);
+  const bundle = await getOwnedStoreBundle(user.id, "admin");
 
   if (!bundle) {
     return NextResponse.json({ error: "No store found for account" }, { status: 404 });

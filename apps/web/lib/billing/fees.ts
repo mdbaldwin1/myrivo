@@ -6,9 +6,42 @@ export type FeeProfile = {
   feeFixedCents: number;
 };
 
+function normalizeFeeProfile(profile: FeeProfile): FeeProfile {
+  return {
+    planKey: profile.planKey,
+    feeBps: Number.isFinite(profile.feeBps) ? Math.min(10000, Math.max(0, Math.round(profile.feeBps))) : 0,
+    feeFixedCents: Number.isFinite(profile.feeFixedCents) ? Math.max(0, Math.round(profile.feeFixedCents)) : 0
+  };
+}
+
 export function calculatePlatformFeeCents(subtotalCents: number, feeProfile: FeeProfile) {
-  const variable = Math.round((Math.max(0, subtotalCents) * Math.max(0, feeProfile.feeBps)) / 10000);
-  return Math.max(0, variable + Math.max(0, feeProfile.feeFixedCents));
+  const normalizedProfile = normalizeFeeProfile(feeProfile);
+  const variable = Math.round((Math.max(0, subtotalCents) * normalizedProfile.feeBps) / 10000);
+  return Math.max(0, variable + normalizedProfile.feeFixedCents);
+}
+
+async function resolveDefaultFeeProfile() {
+  const admin = createSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("billing_plans")
+    .select("key,transaction_fee_bps,transaction_fee_fixed_cents")
+    .eq("key", "starter")
+    .eq("active", true)
+    .maybeSingle<{
+      key: string;
+      transaction_fee_bps: number;
+      transaction_fee_fixed_cents: number;
+    }>();
+
+  if (error || !data) {
+    return { planKey: null, feeBps: 0, feeFixedCents: 0 } as FeeProfile;
+  }
+
+  return normalizeFeeProfile({
+    planKey: data.key,
+    feeBps: data.transaction_fee_bps,
+    feeFixedCents: data.transaction_fee_fixed_cents
+  });
 }
 
 export async function resolveStoreFeeProfile(storeId: string): Promise<FeeProfile> {
@@ -36,15 +69,15 @@ export async function resolveStoreFeeProfile(storeId: string): Promise<FeeProfil
     }>();
 
   if (error || !data) {
-    return { planKey: null, feeBps: 0, feeFixedCents: 0 };
+    return resolveDefaultFeeProfile();
   }
 
   const plan = Array.isArray(data.billing_plans) ? data.billing_plans[0] : data.billing_plans;
-  return {
+  return normalizeFeeProfile({
     planKey: plan?.key ?? null,
     feeBps: data.fee_override_bps ?? plan?.transaction_fee_bps ?? 0,
     feeFixedCents: data.fee_override_fixed_cents ?? plan?.transaction_fee_fixed_cents ?? 0
-  };
+  });
 }
 
 export async function writeOrderFeeBreakdown(params: {
@@ -57,7 +90,7 @@ export async function writeOrderFeeBreakdown(params: {
 }) {
   const admin = createSupabaseAdminClient();
 
-  await admin.from("order_fee_breakdowns").upsert(
+  const { error } = await admin.from("order_fee_breakdowns").upsert(
     {
       order_id: params.orderId,
       store_id: params.storeId,
@@ -70,4 +103,8 @@ export async function writeOrderFeeBreakdown(params: {
     },
     { onConflict: "order_id" }
   );
+
+  if (error) {
+    throw new Error(error.message);
+  }
 }

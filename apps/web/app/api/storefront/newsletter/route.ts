@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { resolveStoreSlugFromRequest } from "@/lib/stores/active-store";
+import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
 
 const subscribeSchema = z.object({
   email: z.string().email().max(320)
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
 
   const email = payload.data.email.trim().toLowerCase();
   const supabase = createSupabaseAdminClient();
-  const storeSlug = resolveStoreSlugFromRequest(request);
+  const storeSlug = await resolveStoreSlugFromRequestAsync(request);
 
   const { data: store, error: storeError } = await supabase
     .from("stores")

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { resolveEligiblePickupLocations } from "@/lib/pickup/distance";
+import { resolveAvailablePickupLocations } from "@/lib/pickup/availability";
 import { buildPickupSlots } from "@/lib/pickup/scheduling";
-import { resolveStoreSlugFromRequest } from "@/lib/stores/active-store";
+import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const payloadSchema = z.object({
@@ -12,7 +12,7 @@ const payloadSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const storeSlug = resolveStoreSlugFromRequest(request);
+  const storeSlug = await resolveStoreSlugFromRequestAsync(request);
   const payload = payloadSchema.safeParse(await request.json().catch(() => ({})));
 
   if (!payload.success) {
@@ -39,11 +39,15 @@ export async function POST(request: NextRequest) {
   const [{ data: pickupSettings }, { data: locations }, { data: locationHours }, { data: blackouts }] = await Promise.all([
     admin
       .from("store_pickup_settings")
-      .select("pickup_enabled,selection_mode,eligibility_radius_miles,lead_time_hours,slot_interval_minutes,show_pickup_times,timezone,instructions")
+      .select(
+        "pickup_enabled,selection_mode,geolocation_fallback_mode,out_of_radius_behavior,eligibility_radius_miles,lead_time_hours,slot_interval_minutes,show_pickup_times,timezone,instructions"
+      )
       .eq("store_id", store.id)
       .maybeSingle<{
         pickup_enabled: boolean;
         selection_mode: "buyer_select" | "hidden_nearest";
+        geolocation_fallback_mode: "allow_without_distance" | "disable_pickup";
+        out_of_radius_behavior: "disable_pickup" | "allow_all_locations";
         eligibility_radius_miles: number;
         lead_time_hours: number;
         slot_interval_minutes: number;
@@ -100,34 +104,41 @@ export async function POST(request: NextRequest) {
         }
       : null;
 
-  const eligible = resolveEligiblePickupLocations(
+  const normalizedLocations = (locations ?? []).map((location) => ({
+    id: location.id,
+    name: location.name,
+    latitude: location.latitude,
+    longitude: location.longitude
+  }));
+  const availableCandidates = resolveAvailablePickupLocations({
     buyer,
-    (locations ?? []).map((location) => ({
-      id: location.id,
-      name: location.name,
-      latitude: location.latitude,
-      longitude: location.longitude
-    })),
-    pickupSettings.eligibility_radius_miles
-  );
+    locations: normalizedLocations,
+    radiusMiles: pickupSettings.eligibility_radius_miles,
+    geolocationFallbackMode: pickupSettings.geolocation_fallback_mode,
+    outOfRadiusBehavior: pickupSettings.out_of_radius_behavior
+  });
 
-  if (!buyer || eligible.length === 0) {
+  if (availableCandidates.length === 0) {
+    const reason =
+      buyer || pickupSettings.geolocation_fallback_mode === "disable_pickup"
+        ? `No pickup locations found within ${pickupSettings.eligibility_radius_miles} miles.`
+        : "Enable location sharing to verify pickup availability.";
     return NextResponse.json({
       pickupEnabled: false,
       selectionMode: pickupSettings.selection_mode,
       options: [],
       selectedLocationId: null,
       slots: [],
-      reason: `No pickup locations found within ${pickupSettings.eligibility_radius_miles} miles.`
+      reason
     });
   }
 
   const defaultLocationId =
     pickupSettings.selection_mode === "hidden_nearest"
-      ? eligible[0]?.id ?? null
-      : payload.data.locationId && eligible.some((location) => location.id === payload.data.locationId)
+      ? availableCandidates[0]?.id ?? null
+      : payload.data.locationId && availableCandidates.some((location) => location.id === payload.data.locationId)
         ? payload.data.locationId
-        : eligible[0]?.id ?? null;
+        : availableCandidates[0]?.id ?? null;
 
   const selectedLocation = (locations ?? []).find((location) => location.id === defaultLocationId);
 
@@ -162,7 +173,7 @@ export async function POST(request: NextRequest) {
     instructions: pickupSettings.instructions,
     showPickupTimes: pickupSettings.show_pickup_times,
     timezone: pickupSettings.timezone,
-    options: eligible.map((entry) => {
+    options: availableCandidates.map((entry) => {
       const location = (locations ?? []).find((item) => item.id === entry.id);
       return {
         id: entry.id,

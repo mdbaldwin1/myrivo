@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import {
+  requireAuthenticatedCustomerUser,
+  requireStoreBySlug,
+  validateStoreItemSelection
+} from "@/lib/customer/account";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
-import { resolveStoreSlugFromRequest } from "@/lib/stores/active-store";
+import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const itemSchema = z.object({
@@ -16,34 +21,22 @@ const upsertSchema = z.object({
 
 export async function GET(request: NextRequest) {
   const supabase = await createSupabaseServerClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  if (!user) {
+  const auth = await requireAuthenticatedCustomerUser(supabase);
+  if (auth.response) {
     return NextResponse.json({ guest: true, items: [] });
   }
 
-  const storeSlug = resolveStoreSlugFromRequest(request);
-  const { data: store, error: storeError } = await supabase
-    .from("stores")
-    .select("id")
-    .eq("slug", storeSlug)
-    .maybeSingle<{ id: string }>();
-
-  if (storeError) {
-    return NextResponse.json({ error: storeError.message }, { status: 500 });
-  }
-
-  if (!store) {
+  const storeSlug = await resolveStoreSlugFromRequestAsync(request);
+  const storeLookup = await requireStoreBySlug(supabase, storeSlug);
+  if (storeLookup.response) {
     return NextResponse.json({ items: [] });
   }
 
   const { data: cart, error: cartError } = await supabase
     .from("customer_carts")
     .select("id")
-    .eq("user_id", user.id)
-    .eq("store_id", store.id)
+    .eq("user_id", auth.user.id)
+    .eq("store_id", storeLookup.store.id)
     .eq("status", "active")
     .maybeSingle<{ id: string }>();
 
@@ -88,34 +81,22 @@ export async function PUT(request: NextRequest) {
   }
 
   const supabase = await createSupabaseServerClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  if (!user) {
+  const auth = await requireAuthenticatedCustomerUser(supabase);
+  if (auth.response) {
     return NextResponse.json({ guest: true, ok: true });
   }
 
-  const storeSlug = resolveStoreSlugFromRequest(request);
-  const { data: store, error: storeError } = await supabase
-    .from("stores")
-    .select("id")
-    .eq("slug", storeSlug)
-    .maybeSingle<{ id: string }>();
-
-  if (storeError) {
-    return NextResponse.json({ error: storeError.message }, { status: 500 });
-  }
-
-  if (!store) {
-    return NextResponse.json({ error: "Store not found" }, { status: 404 });
+  const storeSlug = await resolveStoreSlugFromRequestAsync(request);
+  const storeLookup = await requireStoreBySlug(supabase, storeSlug);
+  if (storeLookup.response) {
+    return storeLookup.response;
   }
 
   const { data: existingCart, error: existingCartError } = await supabase
     .from("customer_carts")
     .select("id")
-    .eq("user_id", user.id)
-    .eq("store_id", store.id)
+    .eq("user_id", auth.user.id)
+    .eq("store_id", storeLookup.store.id)
     .eq("status", "active")
     .maybeSingle<{ id: string }>();
 
@@ -129,8 +110,8 @@ export async function PUT(request: NextRequest) {
     const { data: createdCart, error: createCartError } = await supabase
       .from("customer_carts")
       .insert({
-        user_id: user.id,
-        store_id: store.id,
+        user_id: auth.user.id,
+        store_id: storeLookup.store.id,
         status: "active",
         metadata_json: {}
       })
@@ -144,19 +125,49 @@ export async function PUT(request: NextRequest) {
     cart = createdCart;
   }
 
+  const normalizedSelections = [];
+  for (const item of payload.data.items) {
+    const selectionLookup = await validateStoreItemSelection(supabase, {
+      storeId: storeLookup.store.id,
+      productId: item.productId,
+      variantId: item.variantId
+    });
+    if (selectionLookup.response) {
+      return selectionLookup.response;
+    }
+
+    normalizedSelections.push({
+      productId: selectionLookup.selection.productId,
+      variantId: selectionLookup.selection.variantId,
+      quantity: item.quantity,
+      unitPriceSnapshotCents: selectionLookup.selection.unitPriceSnapshotCents
+    });
+  }
+
+  const mergedSelections = new Map<string, { productId: string | null; variantId: string | null; quantity: number; unitPriceSnapshotCents: number }>();
+  for (const selection of normalizedSelections) {
+    const key = `${selection.productId ?? ""}::${selection.variantId ?? ""}`;
+    const existing = mergedSelections.get(key);
+    if (existing) {
+      existing.quantity = Math.min(99, existing.quantity + selection.quantity);
+      continue;
+    }
+    mergedSelections.set(key, { ...selection });
+  }
+
   const { error: clearError } = await supabase.from("customer_cart_items").delete().eq("cart_id", cart.id);
   if (clearError) {
     return NextResponse.json({ error: clearError.message }, { status: 500 });
   }
 
-  if (payload.data.items.length > 0) {
+  if (mergedSelections.size > 0) {
     const { error: insertError } = await supabase.from("customer_cart_items").insert(
-      payload.data.items.map((item) => ({
+      [...mergedSelections.values()].map((item) => ({
         cart_id: cart.id,
         product_id: item.productId,
         product_variant_id: item.variantId ?? null,
         quantity: item.quantity,
-        unit_price_snapshot_cents: 0
+        unit_price_snapshot_cents: item.unitPriceSnapshotCents
       }))
     );
 

@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { getSingleStoreSlug } from "@/lib/stores/single-store";
+import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
 import { ACTIVE_STORE_COOKIE, readSelectedStoreSlugFromCookies } from "@/lib/stores/tenant-context";
 
 function normalizeSlug(value: string | null | undefined): string | null {
@@ -46,4 +47,19 @@ export function resolveStoreSlugFromRequest(request: NextRequest): string {
   }
 
   return getSingleStoreSlug();
+}
+
+export async function resolveStoreSlugFromRequestAsync(request: NextRequest): Promise<string> {
+  const syncResolved = resolveStoreSlugFromRequest(request);
+  if (syncResolved !== getSingleStoreSlug()) {
+    return syncResolved;
+  }
+
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  const fromDomain = await resolveStoreSlugFromDomain(host);
+  if (fromDomain) {
+    return fromDomain;
+  }
+
+  return syncResolved;
 }
