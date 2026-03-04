@@ -34,7 +34,7 @@ export async function GET() {
   const { data: orders, error } = await supabase
     .from("orders")
     .select(
-      "id,customer_email,currency,subtotal_cents,discount_cents,total_cents,status,fulfillment_status,promo_code,platform_fee_cents,created_at"
+      "id,customer_email,currency,subtotal_cents,discount_cents,total_cents,status,fulfillment_status,promo_code,carrier,tracking_number,tracking_url,shipment_status,created_at"
     )
     .eq("store_id", bundle.store.id)
     .order("created_at", { ascending: false });
@@ -54,7 +54,10 @@ export async function GET() {
     "status",
     "fulfillment_status",
     "promo_code",
-    "platform_fee_cents"
+    "carrier",
+    "tracking_number",
+    "tracking_url",
+    "shipment_status"
   ];
 
   const rows = (orders ?? []).map((order) =>
@@ -69,7 +72,10 @@ export async function GET() {
       order.status,
       order.fulfillment_status,
       order.promo_code,
-      order.platform_fee_cents
+      order.carrier,
+      order.tracking_number,
+      order.tracking_url,
+      order.shipment_status
     ]
       .map((value) => escapeCsv(value))
       .join(",")

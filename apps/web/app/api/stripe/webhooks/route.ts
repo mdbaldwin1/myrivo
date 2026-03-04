@@ -1,49 +1,9 @@
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
-import { getPlanConfig, getPlanKeyByStripePriceId, type PlanKey } from "@/config/pricing";
 import { getStripeEnv, isStripeStubMode } from "@/lib/env";
+import { finalizeStorefrontCheckout } from "@/lib/storefront/checkout-finalization";
 import { getStripeClient } from "@/lib/stripe/server";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-
-type ManagedStripeStatus = "active" | "past_due" | "cancelled" | "incomplete" | "trialing";
-
-function normalizeSubscriptionStatus(status: Stripe.Subscription.Status): ManagedStripeStatus {
-  if (status === "active") return "active";
-  if (status === "past_due") return "past_due";
-  if (status === "trialing") return "trialing";
-  if (status === "incomplete" || status === "incomplete_expired") return "incomplete";
-  return "cancelled";
-}
-
-async function upsertSubscriptionFromStripe(
-  subscription: Stripe.Subscription,
-  fallbackStoreId?: string,
-  fallbackPlan?: PlanKey
-) {
-  const stripeEnv = getStripeEnv();
-  const supabase = createSupabaseAdminClient();
-  const priceId = subscription.items.data[0]?.price.id;
-  const metadataPlan = subscription.metadata.plan as PlanKey | undefined;
-  const resolvedPlan = metadataPlan ?? fallbackPlan ?? (priceId ? getPlanKeyByStripePriceId(priceId, stripeEnv) : null);
-  const storeId = subscription.metadata.store_id || fallbackStoreId;
-
-  if (!storeId || !resolvedPlan) {
-    return;
-  }
-
-  const status = normalizeSubscriptionStatus(subscription.status);
-  const planConfig = getPlanConfig(resolvedPlan);
-
-  await supabase.from("subscriptions").upsert({
-    store_id: storeId,
-    stripe_customer_id: String(subscription.customer),
-    stripe_subscription_id: subscription.id,
-    plan_key: resolvedPlan,
-    status,
-    platform_fee_bps: planConfig.platformFeeBps
-  });
-}
 
 export async function POST(request: Request) {
   if (isStripeStubMode()) {
@@ -67,29 +27,19 @@ export async function POST(request: Request) {
 
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
-    const storeId = session.metadata?.store_id;
-    const plan = session.metadata?.plan as PlanKey | undefined;
-    const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
+    const checkoutKind = session.metadata?.checkout_kind;
 
-    if (subscriptionId) {
-      const subscription = await getStripeClient().subscriptions.retrieve(subscriptionId);
-      await upsertSubscriptionFromStripe(subscription, storeId, plan);
+    if (checkoutKind === "storefront_order") {
+      const checkoutId = session.metadata?.storefront_checkout_id;
+
+      if (checkoutId) {
+        const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
+        await finalizeStorefrontCheckout(checkoutId, paymentIntentId);
+      }
+
+      return NextResponse.json({ received: true, checkoutKind });
     }
-  }
 
-  if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.created") {
-    const subscription = event.data.object as Stripe.Subscription;
-    await upsertSubscriptionFromStripe(subscription);
-  }
-
-  if (event.type === "customer.subscription.deleted") {
-    const subscription = event.data.object as Stripe.Subscription;
-    const supabase = createSupabaseAdminClient();
-
-    await supabase
-      .from("subscriptions")
-      .update({ status: "cancelled" })
-      .eq("stripe_subscription_id", subscription.id);
   }
 
   return NextResponse.json({ received: true });

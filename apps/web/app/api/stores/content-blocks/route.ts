@@ -4,6 +4,19 @@ import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+function isValidCtaUrl(value: string) {
+  if (value.startsWith("/") || value.startsWith("#") || value.startsWith("mailto:") || value.startsWith("tel:")) {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 const contentBlockSchema = z.object({
   id: z.string().uuid().optional(),
   sortOrder: z.number().int().min(0).default(0),
@@ -11,7 +24,15 @@ const contentBlockSchema = z.object({
   title: z.string().min(2).max(140),
   body: z.string().min(2).max(1000),
   ctaLabel: z.string().max(50).nullable().optional(),
-  ctaUrl: z.string().url().nullable().optional(),
+  ctaUrl: z
+    .string()
+    .trim()
+    .max(500)
+    .refine(isValidCtaUrl, {
+      message: "CTA URL must be an absolute URL, site-relative path, or page anchor."
+    })
+    .nullable()
+    .optional(),
   isActive: z.boolean().default(true)
 });
 
@@ -78,7 +99,7 @@ export async function PUT(request: NextRequest) {
   }
 
   const blocks = payload.data.blocks.map((block) => ({
-    id: block.id,
+    ...(block.id ? { id: block.id } : {}),
     store_id: resolved.storeId,
     sort_order: block.sortOrder,
     eyebrow: block.eyebrow ?? null,

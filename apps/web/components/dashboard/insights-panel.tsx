@@ -1,5 +1,5 @@
 import type { OrderRecord, ProductRecord } from "@/types/database";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 type DailyRevenuePoint = {
   date: string;
@@ -8,8 +8,12 @@ type DailyRevenuePoint = {
 };
 
 type InsightsPanelProps = {
-  recentOrders: Array<Pick<OrderRecord, "id" | "total_cents" | "status" | "platform_fee_cents" | "discount_cents" | "created_at">>;
+  recentOrders: Array<
+    Pick<OrderRecord, "id" | "total_cents" | "status" | "fulfillment_status" | "shipment_status" | "tracking_number" | "discount_cents" | "created_at">
+  >;
   products: Array<Pick<ProductRecord, "id" | "title" | "inventory_qty" | "status">>;
+  showLowStockWatchlist?: boolean;
+  title?: string;
 };
 
 function buildDailyRevenue(orders: Array<Pick<OrderRecord, "total_cents" | "status" | "created_at">>): DailyRevenuePoint[] {
@@ -35,23 +39,26 @@ function buildDailyRevenue(orders: Array<Pick<OrderRecord, "total_cents" | "stat
   return [...map.values()].sort((a, b) => a.date.localeCompare(b.date)).slice(-14);
 }
 
-export function InsightsPanel({ recentOrders, products }: InsightsPanelProps) {
+export function InsightsPanel({ recentOrders, products, showLowStockWatchlist = true, title = "Insights" }: InsightsPanelProps) {
   const dailyRevenue = buildDailyRevenue(recentOrders);
   const maxRevenue = Math.max(1, ...dailyRevenue.map((point) => point.revenueCents));
   const paidOrders = recentOrders.filter((order) => order.status === "paid");
   const grossCents = paidOrders.reduce((sum, order) => sum + order.total_cents, 0);
   const discountsCents = paidOrders.reduce((sum, order) => sum + order.discount_cents, 0);
-  const platformFeesCents = paidOrders.reduce((sum, order) => sum + order.platform_fee_cents, 0);
+  const pendingFulfillmentCount = recentOrders.filter((order) => order.fulfillment_status === "pending_fulfillment").length;
+  const packingCount = recentOrders.filter((order) => order.fulfillment_status === "packing").length;
+  const shippedCount = recentOrders.filter((order) => order.fulfillment_status === "shipped").length;
+  const deliveredCount = recentOrders.filter((order) => order.fulfillment_status === "delivered").length;
   const lowStock = products.filter((product) => product.status === "active" && product.inventory_qty < 10);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-xl">Insights</CardTitle>
-        <p className="text-sm text-muted-foreground">Revenue, discounts, and stock health for operational planning.</p>
+        <CardTitle className="text-xl">{title}</CardTitle>
+        <CardDescription>Revenue, discounts, and stock health for operational planning.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-2">
         <article className="rounded-md border border-border bg-muted/25 p-3">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Paid Revenue</p>
           <p className="mt-2 text-2xl font-semibold">${(grossCents / 100).toFixed(2)}</p>
@@ -60,9 +67,24 @@ export function InsightsPanel({ recentOrders, products }: InsightsPanelProps) {
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Discounts Given</p>
           <p className="mt-2 text-2xl font-semibold">${(discountsCents / 100).toFixed(2)}</p>
         </article>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-4">
         <article className="rounded-md border border-border bg-muted/25 p-3">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Platform Fees</p>
-          <p className="mt-2 text-2xl font-semibold">${(platformFeesCents / 100).toFixed(2)}</p>
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Pending Fulfillment</p>
+          <p className="mt-2 text-2xl font-semibold">{pendingFulfillmentCount}</p>
+        </article>
+        <article className="rounded-md border border-border bg-muted/25 p-3">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Packing</p>
+          <p className="mt-2 text-2xl font-semibold">{packingCount}</p>
+        </article>
+        <article className="rounded-md border border-border bg-muted/25 p-3">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Shipped</p>
+          <p className="mt-2 text-2xl font-semibold">{shippedCount}</p>
+        </article>
+        <article className="rounded-md border border-border bg-muted/25 p-3">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Delivered</p>
+          <p className="mt-2 text-2xl font-semibold">{deliveredCount}</p>
         </article>
       </div>
 
@@ -87,21 +109,23 @@ export function InsightsPanel({ recentOrders, products }: InsightsPanelProps) {
         </div>
       </section>
 
-      <section className="space-y-2">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Low Stock Watchlist</h3>
-        <ul className="space-y-1 text-sm">
-          {lowStock.length === 0 ? (
-            <li className="text-muted-foreground">No urgent low-stock items.</li>
-          ) : (
-            lowStock.map((product) => (
-              <li key={product.id} className="flex items-center justify-between rounded-md border border-border bg-muted/25 px-3 py-2">
-                <span>{product.title}</span>
-                <span className="text-xs text-muted-foreground">{product.inventory_qty} left</span>
-              </li>
-            ))
-          )}
-        </ul>
-      </section>
+      {showLowStockWatchlist ? (
+        <section className="space-y-2">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Low Stock Watchlist</h3>
+          <ul className="space-y-1 text-sm">
+            {lowStock.length === 0 ? (
+              <li className="text-muted-foreground">No urgent low-stock items.</li>
+            ) : (
+              lowStock.map((product) => (
+                <li key={product.id} className="flex items-center justify-between rounded-md border border-border bg-muted/25 px-3 py-2">
+                  <span>{product.title}</span>
+                  <span className="text-xs text-muted-foreground">{product.inventory_qty} left</span>
+                </li>
+              ))
+            )}
+          </ul>
+        </section>
+      ) : null}
       </CardContent>
     </Card>
   );

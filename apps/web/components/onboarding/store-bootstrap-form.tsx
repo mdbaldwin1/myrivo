@@ -7,7 +7,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
-import { normalizeStoreSlug } from "@/lib/stores/slug";
 
 type BootstrapResponse = {
   store?: { id: string; slug: string };
@@ -16,7 +15,6 @@ type BootstrapResponse = {
 
 export function StoreBootstrapForm() {
   const [storeName, setStoreName] = useState("");
-  const [slug, setSlug] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -26,12 +24,10 @@ export function StoreBootstrapForm() {
     setLoading(true);
     setError(null);
 
-    const normalizedSlug = normalizeStoreSlug(slug || storeName);
-
     const response = await fetch("/api/stores/bootstrap", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ storeName, slug: normalizedSlug })
+      body: JSON.stringify({ storeName })
     });
 
     const data = (await response.json()) as BootstrapResponse;
@@ -51,33 +47,18 @@ export function StoreBootstrapForm() {
     <Card>
       <CardHeader>
         <CardTitle>Set up your store</CardTitle>
-        <CardDescription>Create your store profile. You can edit branding and domain settings later.</CardDescription>
+        <CardDescription>Create your store profile. You can edit branding and storefront settings later.</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <FormField label="Store name">
+          <FormField label="Store name" description="Public business name shown across your storefront and checkout.">
             <Input
               type="text"
               required
               minLength={2}
+              placeholder="At Home Apothecary"
               value={storeName}
-              onChange={(event) => {
-                const next = event.target.value;
-                setStoreName(next);
-                if (!slug) {
-                  setSlug(normalizeStoreSlug(next));
-                }
-              }}
-            />
-          </FormField>
-          <FormField label="Store slug">
-            <Input
-              type="text"
-              required
-              minLength={3}
-              maxLength={63}
-              value={slug}
-              onChange={(event) => setSlug(normalizeStoreSlug(event.target.value))}
+              onChange={(event) => setStoreName(event.target.value)}
             />
           </FormField>
           <FeedbackMessage type="error" message={error} />

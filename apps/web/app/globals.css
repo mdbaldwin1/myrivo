@@ -6,12 +6,19 @@
   --background: 171 47% 97%;
   --foreground: 182 39% 15%;
   --card: 0 0% 100%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 182 39% 15%;
   --border: 183 38% 82%;
+  --input: 183 38% 82%;
+  --ring: 185 80% 29%;
   --primary: 185 80% 29%;
   --primary-foreground: 186 83% 95%;
   --muted: 184 44% 92%;
   --muted-foreground: 182 16% 39%;
   --accent: 182 73% 38%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
   --radius-lg: 1rem;
   --radius-md: 0.75rem;
   --radius-sm: 0.5rem;
@@ -26,6 +33,17 @@
   body {
     background-image: radial-gradient(circle at top right, hsl(var(--accent) / 0.14), transparent 35%),
       radial-gradient(circle at 20% 20%, hsl(var(--primary) / 0.14), transparent 30%);
+    background-attachment: fixed;
     min-height: 100vh;
+  }
+}
+
+@layer components {
+  .ProseMirror p.is-editor-empty:first-child::before {
+    color: hsl(var(--muted-foreground));
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    pointer-events: none;
   }
 }

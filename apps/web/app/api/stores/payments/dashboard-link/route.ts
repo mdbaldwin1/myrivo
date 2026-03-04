@@ -1,0 +1,36 @@
+import { NextRequest, NextResponse } from "next/server";
+import { enforceTrustedOrigin } from "@/lib/security/request-origin";
+import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
+import { getStripeClient } from "@/lib/stripe/server";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+
+export async function POST(request: NextRequest) {
+  const trustedOriginResponse = enforceTrustedOrigin(request);
+
+  if (trustedOriginResponse) {
+    return trustedOriginResponse;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const bundle = await getOwnedStoreBundle(user.id);
+
+  if (!bundle) {
+    return NextResponse.json({ error: "No store found for account" }, { status: 404 });
+  }
+
+  if (!bundle.store.stripe_account_id) {
+    return NextResponse.json({ error: "Stripe account not connected." }, { status: 400 });
+  }
+
+  const loginLink = await getStripeClient().accounts.createLoginLink(bundle.store.stripe_account_id);
+
+  return NextResponse.json({ dashboardUrl: loginLink.url });
+}

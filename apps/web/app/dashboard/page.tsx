@@ -23,7 +23,7 @@ export default async function DashboardPage() {
 
   const { data: products, error: productsError } = await supabase
     .from("products")
-    .select("id,title,description,sku,image_url,is_featured,price_cents,inventory_qty,status,created_at")
+    .select("id,title,description,sku,image_urls,is_featured,price_cents,inventory_qty,status,created_at")
     .eq("store_id", store.id)
     .order("created_at", { ascending: false });
 
@@ -33,10 +33,10 @@ export default async function DashboardPage() {
 
   const { data: recentOrders, error: ordersError } = await supabase
     .from("orders")
-    .select("id,total_cents,status,created_at")
+    .select("id,total_cents,status,fulfillment_status,shipment_status,tracking_number,discount_cents,created_at")
     .eq("store_id", store.id)
     .order("created_at", { ascending: false })
-    .limit(8);
+    .limit(30);
 
   if (ordersError) {
     throw new Error(ordersError.message);
@@ -47,7 +47,6 @@ export default async function DashboardPage() {
       store={store}
       products={products ?? []}
       recentOrders={recentOrders ?? []}
-      subscription={bundle?.subscription ?? null}
     />
   );
 }
