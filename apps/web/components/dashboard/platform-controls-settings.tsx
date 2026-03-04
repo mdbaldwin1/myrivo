@@ -49,33 +49,38 @@ export function PlatformControlsSettings() {
     ).toFixed(2)} fee`;
   }, [billingPlanKey, plans]);
 
-  async function loadConfig() {
-    setLoading(true);
-    setError(null);
-
+  async function fetchConfig() {
     const response = await fetch("/api/stores/platform-config", { cache: "no-store" });
     const payload = (await response.json()) as PlatformConfigResponse;
-
-    if (!response.ok || !payload.store) {
-      setError(payload.error ?? "Unable to load platform settings.");
-      setLoading(false);
-      return;
-    }
-
-    setMode(payload.store.mode);
-    setTestModeEnabled(payload.billing?.test_mode_enabled ?? false);
-    setWhiteLabelEnabled(payload.store.white_label_enabled);
-    setWhiteLabelBrandName(payload.store.white_label_brand_name ?? "");
-    setWhiteLabelFaviconPath(payload.store.white_label_favicon_path ?? "");
-    setBillingPlanKey(payload.billing?.billing_plans?.key ?? payload.plans?.[0]?.key ?? "starter");
-    setFeeOverrideBps(payload.billing?.fee_override_bps?.toString() ?? "");
-    setFeeOverrideFixedCents(payload.billing?.fee_override_fixed_cents?.toString() ?? "");
-    setPlans(payload.plans ?? []);
-    setLoading(false);
+    return { ok: response.ok, payload };
   }
 
   useEffect(() => {
-    void loadConfig();
+    let cancelled = false;
+    void (async () => {
+      const result = await fetchConfig();
+      if (cancelled) {
+        return;
+      }
+      if (!result.ok || !result.payload.store) {
+        setError(result.payload.error ?? "Unable to load platform settings.");
+        setLoading(false);
+        return;
+      }
+      setMode(result.payload.store.mode);
+      setTestModeEnabled(result.payload.billing?.test_mode_enabled ?? false);
+      setWhiteLabelEnabled(result.payload.store.white_label_enabled);
+      setWhiteLabelBrandName(result.payload.store.white_label_brand_name ?? "");
+      setWhiteLabelFaviconPath(result.payload.store.white_label_favicon_path ?? "");
+      setBillingPlanKey(result.payload.billing?.billing_plans?.key ?? result.payload.plans?.[0]?.key ?? "starter");
+      setFeeOverrideBps(result.payload.billing?.fee_override_bps?.toString() ?? "");
+      setFeeOverrideFixedCents(result.payload.billing?.fee_override_fixed_cents?.toString() ?? "");
+      setPlans(result.payload.plans ?? []);
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function saveConfig() {
@@ -105,7 +110,24 @@ export function PlatformControlsSettings() {
       return;
     }
 
-    await loadConfig();
+    setLoading(true);
+    const refreshed = await fetchConfig();
+    if (!refreshed.ok || !refreshed.payload.store) {
+      setError(refreshed.payload.error ?? "Unable to reload platform settings.");
+      setLoading(false);
+      setSaving(false);
+      return;
+    }
+    setMode(refreshed.payload.store.mode);
+    setTestModeEnabled(refreshed.payload.billing?.test_mode_enabled ?? false);
+    setWhiteLabelEnabled(refreshed.payload.store.white_label_enabled);
+    setWhiteLabelBrandName(refreshed.payload.store.white_label_brand_name ?? "");
+    setWhiteLabelFaviconPath(refreshed.payload.store.white_label_favicon_path ?? "");
+    setBillingPlanKey(refreshed.payload.billing?.billing_plans?.key ?? refreshed.payload.plans?.[0]?.key ?? "starter");
+    setFeeOverrideBps(refreshed.payload.billing?.fee_override_bps?.toString() ?? "");
+    setFeeOverrideFixedCents(refreshed.payload.billing?.fee_override_fixed_cents?.toString() ?? "");
+    setPlans(refreshed.payload.plans ?? []);
+    setLoading(false);
     setSaving(false);
   }
 

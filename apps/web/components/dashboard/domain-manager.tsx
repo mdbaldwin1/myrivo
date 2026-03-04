@@ -22,25 +22,30 @@ export function DomainManager() {
   const [newDomain, setNewDomain] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  async function loadDomains() {
-    setLoading(true);
-    setError(null);
-
+  async function fetchDomains() {
     const response = await fetch("/api/stores/domains", { cache: "no-store" });
     const payload = (await response.json()) as { domains?: DomainRecord[]; error?: string };
-
-    if (!response.ok) {
-      setError(payload.error ?? "Unable to load domains.");
-      setLoading(false);
-      return;
-    }
-
-    setDomains(payload.domains ?? []);
-    setLoading(false);
+    return { ok: response.ok, payload };
   }
 
   useEffect(() => {
-    void loadDomains();
+    let cancelled = false;
+    void (async () => {
+      const result = await fetchDomains();
+      if (cancelled) {
+        return;
+      }
+      if (!result.ok) {
+        setError(result.payload.error ?? "Unable to load domains.");
+        setLoading(false);
+        return;
+      }
+      setDomains(result.payload.domains ?? []);
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function addDomain() {
