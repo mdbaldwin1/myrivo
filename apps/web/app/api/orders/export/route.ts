@@ -34,7 +34,7 @@ export async function GET() {
   const { data: orders, error } = await supabase
     .from("orders")
     .select(
-      "id,customer_email,currency,subtotal_cents,discount_cents,total_cents,status,fulfillment_status,promo_code,carrier,tracking_number,tracking_url,shipment_status,created_at"
+      "id,customer_email,currency,subtotal_cents,discount_cents,total_cents,status,fulfillment_status,promo_code,carrier,tracking_number,tracking_url,shipment_status,created_at,order_fee_breakdowns(platform_fee_cents,net_payout_cents,fee_bps,fee_fixed_cents,plan_key)"
     )
     .eq("store_id", bundle.store.id)
     .order("created_at", { ascending: false });
@@ -57,11 +57,17 @@ export async function GET() {
     "carrier",
     "tracking_number",
     "tracking_url",
-    "shipment_status"
+    "shipment_status",
+    "platform_fee_cents",
+    "net_payout_cents",
+    "fee_bps",
+    "fee_fixed_cents",
+    "fee_plan_key"
   ];
 
-  const rows = (orders ?? []).map((order) =>
-    [
+  const rows = (orders ?? []).map((order) => {
+    const feeBreakdown = Array.isArray(order.order_fee_breakdowns) ? order.order_fee_breakdowns[0] : order.order_fee_breakdowns;
+    return [
       order.id,
       order.created_at,
       order.customer_email,
@@ -75,11 +81,16 @@ export async function GET() {
       order.carrier,
       order.tracking_number,
       order.tracking_url,
-      order.shipment_status
+      order.shipment_status,
+      feeBreakdown?.platform_fee_cents ?? "",
+      feeBreakdown?.net_payout_cents ?? "",
+      feeBreakdown?.fee_bps ?? "",
+      feeBreakdown?.fee_fixed_cents ?? "",
+      feeBreakdown?.plan_key ?? ""
     ]
       .map((value) => escapeCsv(value))
-      .join(",")
-  );
+      .join(",");
+  });
 
   const csv = [headers.join(","), ...rows].join("\n");
 

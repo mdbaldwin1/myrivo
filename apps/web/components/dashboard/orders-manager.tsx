@@ -17,45 +17,40 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import type { OrderRecord } from "@/types/database";
 
 type OrdersManagerProps = {
-  initialOrders: Array<
-    Pick<
-      OrderRecord,
-      | "id"
-      | "customer_email"
-      | "subtotal_cents"
-      | "total_cents"
-      | "status"
-      | "fulfillment_status"
-      | "discount_cents"
-      | "promo_code"
-      | "carrier"
-      | "tracking_number"
-      | "tracking_url"
-      | "shipment_status"
-      | "created_at"
-    >
-  >;
+  initialOrders: OrderRow[];
+};
+
+type OrderFeeBreakdown = {
+  platform_fee_cents: number;
+  net_payout_cents: number;
+  fee_bps: number;
+  fee_fixed_cents: number;
+  plan_key: string | null;
+};
+
+type OrderRow = Pick<
+  OrderRecord,
+  | "id"
+  | "customer_email"
+  | "subtotal_cents"
+  | "total_cents"
+  | "status"
+  | "fulfillment_status"
+  | "discount_cents"
+  | "promo_code"
+  | "carrier"
+  | "tracking_number"
+  | "tracking_url"
+  | "shipment_status"
+  | "created_at"
+> & {
+  order_fee_breakdowns?: OrderFeeBreakdown | OrderFeeBreakdown[] | null;
 };
 
 type OrderStatus = OrderRecord["status"];
 
 type OrdersResponse = {
-  order?: Pick<
-    OrderRecord,
-    | "id"
-    | "customer_email"
-    | "subtotal_cents"
-    | "total_cents"
-    | "status"
-    | "fulfillment_status"
-    | "discount_cents"
-    | "promo_code"
-    | "carrier"
-    | "tracking_number"
-    | "tracking_url"
-    | "shipment_status"
-    | "created_at"
-  >;
+  order?: OrderRow;
   error?: string;
   message?: string;
 };
@@ -82,6 +77,13 @@ function getFulfillmentOptionsForCurrent(status: OrderRecord["fulfillment_status
   return ["delivered"] as const;
 }
 
+function getFeeBreakdown(order: OrderRow): OrderFeeBreakdown | null {
+  if (!order.order_fee_breakdowns) {
+    return null;
+  }
+  return Array.isArray(order.order_fee_breakdowns) ? (order.order_fee_breakdowns[0] ?? null) : order.order_fee_breakdowns;
+}
+
 export function OrdersManager({ initialOrders }: OrdersManagerProps) {
   const [orders, setOrders] = useState(initialOrders);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
@@ -100,7 +102,9 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
 
   const totals = useMemo(() => {
     const gross = orders.reduce((sum, order) => sum + order.total_cents, 0);
-    return { gross, count: orders.length };
+    const platformFees = orders.reduce((sum, order) => sum + (getFeeBreakdown(order)?.platform_fee_cents ?? 0), 0);
+    const netPayout = orders.reduce((sum, order) => sum + (getFeeBreakdown(order)?.net_payout_cents ?? 0), 0);
+    return { gross, count: orders.length, platformFees, netPayout };
   }, [orders]);
 
   const fulfillmentStats = useMemo(() => {
@@ -292,10 +296,12 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
               ))}
             </Select>
           </FormField>
-          <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-8">
             <DataStat label="Orders" value={String(totals.count)} />
             <DataStat label="Gross" value={`$${(totals.gross / 100).toFixed(2)}`} />
             <DataStat label="Avg Order" value={totals.count ? `$${(totals.gross / totals.count / 100).toFixed(2)}` : "$0.00"} />
+            <DataStat label="Platform Fees" value={`$${(totals.platformFees / 100).toFixed(2)}`} />
+            <DataStat label="Net Payout" value={`$${(totals.netPayout / 100).toFixed(2)}`} />
             <DataStat label="To Fulfill" value={String(fulfillmentStats.pending)} />
             <DataStat label="Packing" value={String(fulfillmentStats.packing)} />
             <DataStat label="In Transit" value={String(fulfillmentStats.shipped)} />
@@ -320,6 +326,8 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
                   <TableHead>Customer</TableHead>
                   <TableHead>Total</TableHead>
                   <TableHead>Discount</TableHead>
+                  <TableHead>Platform Fee</TableHead>
+                  <TableHead>Net Payout</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Fulfillment</TableHead>
                   <TableHead>Tracking</TableHead>
@@ -329,13 +337,15 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
               <TableBody>
                 {visibleOrders.length === 0 ? (
                   <TableRow>
-                    <TableCell className="py-3 text-muted-foreground" colSpan={8}>
+                    <TableCell className="py-3 text-muted-foreground" colSpan={10}>
                       No orders yet.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  visibleOrders.map((order) => (
-                    <TableRow key={order.id}>
+                  visibleOrders.map((order) => {
+                    const feeBreakdown = getFeeBreakdown(order);
+                    return (
+                      <TableRow key={order.id}>
                       <TableCell>{new Date(order.created_at).toLocaleString()}</TableCell>
                       <TableCell>{order.customer_email}</TableCell>
                       <TableCell>${(order.total_cents / 100).toFixed(2)}</TableCell>
@@ -343,6 +353,8 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
                         {order.discount_cents > 0 ? `-$${(order.discount_cents / 100).toFixed(2)}` : "$0.00"}
                         {order.promo_code ? <p className="text-xs text-muted-foreground">{order.promo_code}</p> : null}
                       </TableCell>
+                      <TableCell>${((feeBreakdown?.platform_fee_cents ?? 0) / 100).toFixed(2)}</TableCell>
+                      <TableCell>${((feeBreakdown?.net_payout_cents ?? 0) / 100).toFixed(2)}</TableCell>
                       <TableCell>
                         <Select value={order.status} onChange={(event) => void updateStatus(order.id, event.target.value as OrderStatus)}>
                           {statusOptions.map((status) => (
@@ -413,8 +425,9 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
                           </RowActionButton>
                         </RowActions>
                       </TableCell>
-                    </TableRow>
-                  ))
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
