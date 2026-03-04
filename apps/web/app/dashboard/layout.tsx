@@ -71,7 +71,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             stores={availableStores}
             globalRole={globalRole}
           />
-          <div className="min-h-0 min-w-0 overflow-y-auto pr-1">
+          <div data-dashboard-scroll-container="true" className="min-h-0 min-w-0 overflow-y-auto pr-1">
             <div className="space-y-4 pb-1">{children}</div>
           </div>
         </div>
