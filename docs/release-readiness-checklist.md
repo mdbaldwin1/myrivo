@@ -22,6 +22,7 @@ This checklist is for the final release cut from `develop` to `main`.
 - [ ] `npm run test`
 - [ ] `npm run build`
 - [ ] Latest Supabase migrations applied in target environment.
+- [ ] `npm run verify:platform-rollout` passes in target environment.
 - [ ] Stripe webhook endpoint verified reachable from production.
 - [ ] Error monitoring + alerting enabled for checkout and webhooks.
 

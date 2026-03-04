@@ -21,7 +21,8 @@
     "setup:test-env": "node scripts/assert-test-store.mjs --env-file=.env.local.test && node scripts/setup-test-environment.mjs --env-file=.env.local.test",
     "e2e:test": "npm run env:test && npm run -w @myrivo/web e2e",
     "snapshot:store-experience": "node scripts/export-store-experience-snapshot.mjs",
-    "replay:store-experience": "npm run guard:test-store && node scripts/replay-store-experience-snapshot.mjs"
+    "replay:store-experience": "npm run guard:test-store && node scripts/replay-store-experience-snapshot.mjs",
+    "verify:platform-rollout": "node scripts/verify-platform-rollout.mjs --env-file=.env.local"
   },
   "devDependencies": {
     "prettier": "^3.6.2",

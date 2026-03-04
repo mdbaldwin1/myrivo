@@ -13,8 +13,25 @@
    - `supabase db push --linked`
 4. Verify migration alignment:
    - `supabase migration list --linked`
-5. Open release PR `develop -> main` and confirm required checks pass.
-6. After merge, monitor production health metrics and auth/order activity.
+5. Run platform rollout integrity verification:
+   - `npm run verify:platform-rollout`
+   - Optional relaxed mode for diagnostics: `node scripts/verify-platform-rollout.mjs --env-file=.env.local --no-strict`
+6. Open release PR `develop -> main` and confirm required checks pass.
+7. After merge, monitor production health metrics and auth/order activity.
+
+## Platform rollout integrity checks
+
+`scripts/verify-platform-rollout.mjs` validates:
+- Required platform-expansion migrations are present in `supabase_migrations.schema_migrations`.
+- Critical schema surface exists (roles, pickup, customer, billing, domain hosting columns).
+- Each store owner has a corresponding active owner membership row.
+- Billing profile coverage for each store (hard fail in strict mode).
+- Pending/failed domains retain verification tokens.
+
+If verification fails:
+1. Resolve failed checks directly in DB/application migrations.
+2. Re-run `supabase db push --linked` if migrations were added.
+3. Re-run `npm run verify:platform-rollout` until all checks pass.
 
 ## Smoke test checklist
 
