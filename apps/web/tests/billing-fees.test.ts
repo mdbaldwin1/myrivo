@@ -17,15 +17,15 @@ describe("billing fee engine", () => {
   test("calculates deterministic fee from bps + fixed cents", async () => {
     const { calculatePlatformFeeCents } = await import("@/lib/billing/fees");
     const fee = calculatePlatformFeeCents(12_345, {
-      planKey: "starter",
-      feeBps: 350,
-      feeFixedCents: 30
+      planKey: "standard",
+      feeBps: 125,
+      feeFixedCents: 25
     });
 
-    expect(fee).toBe(462);
+    expect(fee).toBe(179);
   });
 
-  test("falls back to starter plan when store billing profile is missing", async () => {
+  test("falls back to standard plan when store billing profile is missing", async () => {
     adminFromMock.mockImplementation((table: string) => {
       if (table === "store_billing_profiles") {
         return {
@@ -44,9 +44,9 @@ describe("billing fee engine", () => {
               eq: vi.fn(() => ({
                 maybeSingle: vi.fn(async () => ({
                   data: {
-                    key: "starter",
-                    transaction_fee_bps: 350,
-                    transaction_fee_fixed_cents: 0
+                    key: "standard",
+                    transaction_fee_bps: 125,
+                    transaction_fee_fixed_cents: 25
                   },
                   error: null
                 }))
@@ -63,9 +63,9 @@ describe("billing fee engine", () => {
     const profile = await resolveStoreFeeProfile("store-1");
 
     expect(profile).toEqual({
-      planKey: "starter",
-      feeBps: 350,
-      feeFixedCents: 0
+      planKey: "standard",
+      feeBps: 125,
+      feeFixedCents: 25
     });
   });
 });

@@ -1,4 +1,3 @@
-import { InventoryMovementsPanel } from "@/components/dashboard/inventory-movements-panel";
 import { ProductManager, type ProductListItem } from "@/components/dashboard/product-manager";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
@@ -67,7 +66,6 @@ export default async function DashboardCatalogPage() {
     <section className="space-y-4">
       <DashboardPageHeader title="Catalog" description="Manage products, stock, and publishing status." />
       <ProductManager initialProducts={normalizeProducts(products)} />
-      <InventoryMovementsPanel />
     </section>
   );
 }

@@ -21,6 +21,7 @@ export function DashboardOverview({ store, products, recentOrders }: DashboardOv
   const lowStockProducts = products.filter((product) => product.inventory_qty < 10 && product.status !== "archived");
   const paidOrders = recentOrders.filter((order) => order.status === "paid");
   const revenueCents = paidOrders.reduce((sum, order) => sum + order.total_cents, 0);
+  const avgOrderCents = paidOrders.length > 0 ? Math.round(revenueCents / paidOrders.length) : 0;
   const needsPacking = recentOrders.filter((order) => order.fulfillment_status === "pending_fulfillment").length;
   const inPacking = recentOrders.filter((order) => order.fulfillment_status === "packing").length;
   const inTransit = recentOrders.filter((order) => order.fulfillment_status === "shipped").length;
@@ -39,6 +40,20 @@ export function DashboardOverview({ store, products, recentOrders }: DashboardOv
         <DataStat label="Pending Fulfillment" value={String(needsPacking)} className="bg-card" />
         <DataStat label="Packing Queue" value={String(inPacking)} className="bg-card" />
         <DataStat label="In Transit" value={String(inTransit)} className="bg-card" />
+      </section>
+
+      <section className="space-y-2 rounded-lg border border-border/70 bg-card p-4">
+        <div>
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Order Snapshot</h3>
+          <p className="text-xs text-muted-foreground">High-level order activity and fulfillment workload at a glance.</p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          <DataStat label="Orders" value={String(recentOrders.length)} className="bg-card" />
+          <DataStat label="Paid Orders" value={String(paidOrders.length)} className="bg-card" />
+          <DataStat label="Gross" value={`$${(revenueCents / 100).toFixed(2)}`} className="bg-card" />
+          <DataStat label="Avg Paid Order" value={`$${(avgOrderCents / 100).toFixed(2)}`} className="bg-card" />
+          <DataStat label="To Fulfill" value={String(needsPacking)} className="bg-card" />
+        </div>
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">

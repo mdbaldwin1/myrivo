@@ -12,8 +12,8 @@ Myrivo is a multi-tenant commerce platform for independent makers and small shop
 
 ## Monetization model
 
-- Free tier with platform fee per transaction
-- Paid tiers with reduced or zero platform fee
+- Standard tier: 1.25% + $0.25 per successful order
+- Family & friends tier: 0% + $0 (platform admin assigned only)
 - Stripe processing fees are always merchant-visible and separate
 
 ## Workspace layout

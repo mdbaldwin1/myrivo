@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { DashboardFormActionBar } from "@/components/dashboard/dashboard-form-action-bar";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FeedbackMessage } from "@/components/ui/feedback-message";
@@ -933,6 +934,17 @@ export function StorePoliciesForm({
             </FormField>
             ) : null}
           </div>
+          {inlineEditor ? (
+            <DashboardFormActionBar
+              formId="store-policies-form"
+              saveLabel={mode === "checkout" ? "Save checkout rules" : "Save changes"}
+              savePendingLabel="Saving..."
+              savePending={saving}
+              discardLabel="Discard changes"
+              saveDisabled={!isDirty || saving}
+              discardDisabled={!isDirty || saving}
+            />
+          ) : null}
           <FeedbackMessage type="error" message={flyoutError} />
         </form>
       </Flyout>

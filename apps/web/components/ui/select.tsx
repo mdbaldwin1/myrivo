@@ -9,6 +9,23 @@ type OptionConfig = {
   disabled?: boolean;
 };
 
+function getNodeText(node: React.ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") {
+    return String(node);
+  }
+
+  if (Array.isArray(node)) {
+    return node.map((child) => getNodeText(child)).join("");
+  }
+
+  if (React.isValidElement(node)) {
+    const element = node as React.ReactElement<{ children?: React.ReactNode }>;
+    return getNodeText(element.props.children);
+  }
+
+  return "";
+}
+
 type SelectProps = {
   id?: string;
   className?: string;
@@ -18,6 +35,7 @@ type SelectProps = {
   disabled?: boolean;
   placeholder?: string;
   icon?: "down" | "up-down";
+  onOpenChange?: (open: boolean) => void;
   onChange?: (event: { target: { value: string } }) => void;
 };
 
@@ -35,8 +53,7 @@ function extractOptions(children: React.ReactNode) {
       return;
     }
 
-    const label =
-      typeof option.props.children === "string" ? option.props.children : String(option.props.children ?? value);
+    const label = getNodeText(option.props.children).trim() || value;
 
     options.push({
       value,
@@ -49,7 +66,7 @@ function extractOptions(children: React.ReactNode) {
 }
 
 const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
-  ({ id, className, children, value, defaultValue, disabled, onChange, placeholder, icon = "down" }, ref) => {
+  ({ id, className, children, value, defaultValue, disabled, onOpenChange, onChange, placeholder, icon = "down" }, ref) => {
     const options = React.useMemo(() => extractOptions(children), [children]);
     const [internalValue, setInternalValue] = React.useState(defaultValue ?? options[0]?.value ?? "");
     const selectedValue = typeof value === "string" ? value : internalValue;
@@ -57,6 +74,7 @@ const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
     return (
       <SelectPrimitive.Root
         value={selectedValue}
+        onOpenChange={onOpenChange}
         onValueChange={(nextValue) => {
           if (typeof value !== "string") {
             setInternalValue(nextValue);

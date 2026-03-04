@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
@@ -142,17 +143,21 @@ export function TeamManager() {
           </Button>
         }
       >
-        <div className="grid gap-3 sm:grid-cols-2">
-          <FormField label="Email" description="Invite by email. The invite can be accepted only by this email address.">
-            <Input value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="staff@yourshop.com" />
-          </FormField>
-          <FormField label="Role" description="Initial store-level role for the invited user.">
-            <select className="h-10 rounded-md border border-border/70 bg-background px-2 text-sm" value={inviteRole} onChange={(event) => setInviteRole(event.target.value as "admin" | "staff" | "customer")}>
-              <option value="admin">admin</option>
-              <option value="staff">staff</option>
-              <option value="customer">customer</option>
-            </select>
-          </FormField>
+        <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
+          <p className="text-sm font-medium">Invite Details</p>
+          <p className="mt-1 text-xs text-muted-foreground">Send an invite link and assign the initial store-level role.</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <FormField label="Email" description="Invite by email. The invite can be accepted only by this email address.">
+              <Input value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="staff@yourshop.com" />
+            </FormField>
+            <FormField label="Role" description="Initial store-level role for the invited user.">
+              <select className="h-10 rounded-md border border-border/70 bg-background px-2 text-sm" value={inviteRole} onChange={(event) => setInviteRole(event.target.value as "admin" | "staff" | "customer")}>
+                <option value="admin">admin</option>
+                <option value="staff">staff</option>
+                <option value="customer">customer</option>
+              </select>
+            </FormField>
+          </div>
         </div>
         {lastInviteToken ? (
           <p className="mt-3 break-all rounded-md border border-border/70 bg-background px-3 py-2 text-xs text-muted-foreground">
@@ -163,7 +168,11 @@ export function TeamManager() {
 
       <SectionCard title="Current Members">
         {loading ? <p className="text-sm text-muted-foreground">Loading team members...</p> : null}
-        <div className="space-y-2">
+        <div className="space-y-3 rounded-lg border border-border/70 bg-muted/20 p-4">
+          <div>
+            <p className="text-sm font-medium">Member Access</p>
+            <p className="mt-1 text-xs text-muted-foreground">Update role assignments and active/suspended status for store members.</p>
+          </div>
           {members.length === 0 ? <p className="text-sm text-muted-foreground">No members found.</p> : null}
           {members.map((member) => (
             <div key={member.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/70 px-3 py-2">
@@ -204,7 +213,11 @@ export function TeamManager() {
       </SectionCard>
 
       <SectionCard title="Recent Invites">
-        <div className="space-y-2">
+        <div className="space-y-3 rounded-lg border border-border/70 bg-muted/20 p-4">
+          <div>
+            <p className="text-sm font-medium">Invitation History</p>
+            <p className="mt-1 text-xs text-muted-foreground">Track pending, accepted, and expired invite links.</p>
+          </div>
           {invites.length === 0 ? <p className="text-sm text-muted-foreground">No invites yet.</p> : null}
           {invites.map((invite) => (
             <div key={invite.id} className="flex items-center justify-between rounded-md border border-border/70 px-3 py-2 text-sm">
@@ -217,7 +230,9 @@ export function TeamManager() {
             </div>
           ))}
         </div>
-        {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+        <div className="mt-2">
+          <FeedbackMessage type="error" message={error} />
+        </div>
       </SectionCard>
     </section>
   );

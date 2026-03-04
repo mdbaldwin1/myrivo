@@ -40,6 +40,7 @@ describe("user profile route", () => {
                 id: "user-1",
                 email: "owner@example.com",
                 display_name: "Owner User",
+                avatar_path: null,
                 global_role: "user",
                 metadata: {}
               },
@@ -74,6 +75,7 @@ describe("user profile route", () => {
                 id: "user-1",
                 email: "owner@example.com",
                 display_name: "Old Name",
+                avatar_path: null,
                 global_role: "user",
                 metadata: { color: "blue" }
               },
@@ -91,6 +93,7 @@ describe("user profile route", () => {
                     id: "user-1",
                     email: "owner@example.com",
                     display_name: "New Name",
+                    avatar_path: "https://example.com/avatar.png",
                     global_role: "user",
                     metadata: {
                       color: "blue",

@@ -1,6 +1,6 @@
+import { BillingPlanSettings } from "@/components/dashboard/billing-plan-settings";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { DomainManager } from "@/components/dashboard/domain-manager";
-import { PlatformControlsSettings } from "@/components/dashboard/platform-controls-settings";
 import { StorePaymentsSettings } from "@/components/dashboard/store-payments-settings";
 import { StoreShippingSettings } from "@/components/dashboard/store-shipping-settings";
 
@@ -13,7 +13,7 @@ export default function DashboardStoreSettingsIntegrationsPage() {
         title="Integrations"
         description="Payment and shipping-provider configuration for storefront operations."
       />
-      <PlatformControlsSettings />
+      <BillingPlanSettings title="Billing Plan" editable />
       <DomainManager />
       <StorePaymentsSettings />
       <StoreShippingSettings />

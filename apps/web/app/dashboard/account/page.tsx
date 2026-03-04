@@ -1,6 +1,5 @@
 import { AccountSettingsForm } from "@/components/dashboard/account-settings-form";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
-import { SectionCard } from "@/components/ui/section-card";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -17,9 +16,9 @@ export default async function DashboardAccountSettingsPage() {
 
   const { data: profile } = await supabase
     .from("user_profiles")
-    .select("display_name,global_role,metadata")
+    .select("display_name,avatar_path,global_role,metadata")
     .eq("id", user.id)
-    .maybeSingle<{ display_name: string | null; global_role: "user" | "admin" | "support"; metadata: Record<string, unknown> }>();
+    .maybeSingle<{ display_name: string | null; avatar_path: string | null; global_role: "user" | "admin" | "support"; metadata: Record<string, unknown> }>();
 
   const accountPreferences = (() => {
     const raw = profile?.metadata?.account_preferences;
@@ -38,18 +37,14 @@ export default async function DashboardAccountSettingsPage() {
 
   return (
     <section className="space-y-4">
-      <DashboardPageHeader title="Profile & Account" description="Identity, role visibility, and account-level preferences." />
+      <DashboardPageHeader title="Profile & Account" description="Your account identity, preferences, and customer dashboard access." />
       <AccountSettingsForm
         email={user.email ?? null}
         globalRole={profile?.global_role ?? "user"}
         initialDisplayName={profile?.display_name ?? ""}
+        initialAvatarPath={profile?.avatar_path ?? null}
         initialPreferences={accountPreferences}
       />
-      <SectionCard title="Customer View Shortcut">
-        <p className="text-sm text-muted-foreground">
-          Open <a className="underline-offset-4 hover:underline" href="/account">/account</a> to view saved stores, saved items, and active carts.
-        </p>
-      </SectionCard>
     </section>
   );
 }

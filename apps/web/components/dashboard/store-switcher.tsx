@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Select } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 export type StoreOption = {
   id: string;
@@ -15,21 +16,45 @@ export type StoreOption = {
 type StoreSwitcherProps = {
   activeStoreSlug: string;
   stores: StoreOption[];
+  className?: string;
+  selectClassName?: string;
+  autoFocus?: boolean;
+  onSwitchComplete?: () => void;
+  onSwitchSuccess?: (nextSlug: string) => void;
 };
 
 type ActiveStoreResponse = {
   error?: string;
 };
 
-export function StoreSwitcher({ activeStoreSlug, stores }: StoreSwitcherProps) {
+export function StoreSwitcher({
+  activeStoreSlug,
+  stores,
+  className,
+  selectClassName,
+  autoFocus = false,
+  onSwitchComplete,
+  onSwitchSuccess
+}: StoreSwitcherProps) {
   const router = useRouter();
+  const selectRef = useRef<HTMLButtonElement | null>(null);
   const [value, setValue] = useState(activeStoreSlug);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const sortedStores = useMemo(() => [...stores].sort((a, b) => a.name.localeCompare(b.name)), [stores]);
 
+  useEffect(() => {
+    if (autoFocus && selectRef.current) {
+      selectRef.current.focus();
+      requestAnimationFrame(() => {
+        selectRef.current?.click();
+      });
+    }
+  }, [autoFocus]);
+
   async function onStoreChange(nextValue: string) {
     if (nextValue === value || isPending) {
+      onSwitchComplete?.();
       return;
     }
 
@@ -52,12 +77,25 @@ export function StoreSwitcher({ activeStoreSlug, stores }: StoreSwitcherProps) {
     startTransition(() => {
       router.refresh();
     });
+    onSwitchSuccess?.(nextValue);
+    onSwitchComplete?.();
   }
 
   return (
-    <div className="w-full min-w-0 space-y-1">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Active Store</p>
-      <Select value={value} icon="up-down" disabled={isPending} onChange={(event) => void onStoreChange(event.target.value)}>
+    <div className={cn("w-full min-w-0 space-y-1", className)}>
+      <Select
+        ref={selectRef}
+        className={selectClassName}
+        value={value}
+        icon="up-down"
+        disabled={isPending}
+        onOpenChange={(open) => {
+          if (!open) {
+            onSwitchComplete?.();
+          }
+        }}
+        onChange={(event) => void onStoreChange(event.target.value)}
+      >
         {sortedStores.map((store) => (
           <option key={store.id} value={store.slug}>
             {store.name}

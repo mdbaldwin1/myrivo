@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
+import { DashboardFormActionBar } from "@/components/dashboard/dashboard-form-action-bar";
 import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ type BrandingResponse = {
 };
 
 export function StoreHeroContentForm({ initialBranding }: StoreHeroContentFormProps) {
+  const formId = "store-hero-content-form";
   const initialTheme = resolveStorefrontThemeConfig(initialBranding?.theme_json ?? {});
   const [heroBrandDisplay, setHeroBrandDisplay] = useState(initialTheme.heroBrandDisplay);
   const [heroEyebrow, setHeroEyebrow] = useState(initialTheme.heroEyebrow);
@@ -44,6 +45,20 @@ export function StoreHeroContentForm({ initialBranding }: StoreHeroContentFormPr
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    if (submitter?.value === "discard") {
+      setHeroBrandDisplay(savedTheme.heroBrandDisplay);
+      setHeroEyebrow(savedTheme.heroEyebrow);
+      setHeroHeadline(savedTheme.heroHeadline);
+      setHeroSubcopy(savedTheme.heroSubcopy);
+      setHeroBadgeOne(savedTheme.heroBadgeOne);
+      setHeroBadgeTwo(savedTheme.heroBadgeTwo);
+      setHeroBadgeThree(savedTheme.heroBadgeThree);
+      setError(null);
+      setMessage(null);
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -86,7 +101,7 @@ export function StoreHeroContentForm({ initialBranding }: StoreHeroContentFormPr
 
   return (
     <SectionCard title="Hero Content">
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form id={formId} onSubmit={handleSubmit} className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <FormField label="Hero Brand Display" description="Controls whether the hero shows logo, title, or both.">
             <Select value={heroBrandDisplay} onChange={(event) => setHeroBrandDisplay(event.target.value as typeof heroBrandDisplay)}>
@@ -118,28 +133,14 @@ export function StoreHeroContentForm({ initialBranding }: StoreHeroContentFormPr
             <Input value={heroBadgeThree} onChange={(event) => setHeroBadgeThree(event.target.value)} placeholder="Handmade" />
           </FormField>
         </div>
-        <div className="flex items-center justify-end gap-2 border-t border-border pt-3">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={!isDirty || saving}
-            onClick={() => {
-              setHeroBrandDisplay(savedTheme.heroBrandDisplay);
-              setHeroEyebrow(savedTheme.heroEyebrow);
-              setHeroHeadline(savedTheme.heroHeadline);
-              setHeroSubcopy(savedTheme.heroSubcopy);
-              setHeroBadgeOne(savedTheme.heroBadgeOne);
-              setHeroBadgeTwo(savedTheme.heroBadgeTwo);
-              setHeroBadgeThree(savedTheme.heroBadgeThree);
-              setError(null);
-            }}
-          >
-            Discard
-          </Button>
-          <Button type="submit" disabled={!isDirty || saving}>
-            {saving ? "Saving..." : "Save hero content"}
-          </Button>
-        </div>
+        <DashboardFormActionBar
+          formId={formId}
+          saveLabel="Save hero content"
+          savePendingLabel="Saving..."
+          savePending={saving}
+          saveDisabled={!isDirty || saving}
+          discardDisabled={!isDirty || saving}
+        />
         <FeedbackMessage type="success" message={message} />
         <FeedbackMessage type="error" message={error} />
       </form>

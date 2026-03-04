@@ -98,25 +98,29 @@ export function StorePaymentsSettings() {
         {loading ? <p className="text-sm text-muted-foreground">Loading payment status...</p> : null}
 
         {!loading && status ? (
-          <div className="rounded-md border border-border bg-white p-3 text-sm">
-            <p>
-              Checkout mode: <span className="font-medium uppercase">{status.mode ?? "unknown"}</span>
-            </p>
-            <p>
-              Stripe env configured: <span className="font-medium">{status.hasStripeEnv ? "Yes" : "No"}</span>
-            </p>
-            <p>
-              Connection: <span className="font-medium">{status.connected ? "Connected" : "Not connected"}</span>
-            </p>
-            {status.accountId ? <p className="text-xs text-muted-foreground">Account: {status.accountId}</p> : null}
-            {status.connected ? (
-              <>
-                <p className="text-xs text-muted-foreground">Charges enabled: {status.chargesEnabled ? "Yes" : "No"}</p>
-                <p className="text-xs text-muted-foreground">Payouts enabled: {status.payoutsEnabled ? "Yes" : "No"}</p>
-                <p className="text-xs text-muted-foreground">Details submitted: {status.detailsSubmitted ? "Yes" : "No"}</p>
-                <p className="text-xs text-muted-foreground">Live checkout ready: {status.readyForLiveCheckout ? "Yes" : "No"}</p>
-              </>
-            ) : null}
+          <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
+            <p className="text-sm font-medium">Connection Status</p>
+            <p className="mt-1 text-xs text-muted-foreground">Review Stripe onboarding state and readiness for live checkout.</p>
+            <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+              <p>
+                Checkout mode: <span className="font-medium uppercase">{status.mode ?? "unknown"}</span>
+              </p>
+              <p>
+                Stripe env configured: <span className="font-medium">{status.hasStripeEnv ? "Yes" : "No"}</span>
+              </p>
+              <p>
+                Connection: <span className="font-medium">{status.connected ? "Connected" : "Not connected"}</span>
+              </p>
+              {status.accountId ? <p className="text-xs text-muted-foreground">Account: {status.accountId}</p> : null}
+              {status.connected ? (
+                <>
+                  <p className="text-xs text-muted-foreground">Charges enabled: {status.chargesEnabled ? "Yes" : "No"}</p>
+                  <p className="text-xs text-muted-foreground">Payouts enabled: {status.payoutsEnabled ? "Yes" : "No"}</p>
+                  <p className="text-xs text-muted-foreground">Details submitted: {status.detailsSubmitted ? "Yes" : "No"}</p>
+                  <p className="text-xs text-muted-foreground">Live checkout ready: {status.readyForLiveCheckout ? "Yes" : "No"}</p>
+                </>
+              ) : null}
+            </div>
           </div>
         ) : null}
 

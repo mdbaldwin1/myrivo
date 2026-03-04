@@ -154,15 +154,16 @@ export function StoreShippingSettings() {
         {loading ? <p className="text-sm text-muted-foreground">Loading shipping settings...</p> : null}
 
         {!loading ? (
-          <>
-            <div className="rounded-md border border-border bg-white p-3 text-xs text-muted-foreground">
+          <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
+            <p className="text-sm font-medium">Current Configuration</p>
+            <p className="mt-1 text-xs text-muted-foreground">These values reflect the currently active store shipping integration state.</p>
+            <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
               <p>Provider: {provider === "easypost" ? "EasyPost" : "None"}</p>
               <p>Source: {source ?? "unknown"}</p>
               <p>API key configured: {hasApiKey ? "Yes" : "No"}</p>
               <p>Webhook secret configured: {hasWebhookSecret ? "Yes" : "No"}</p>
             </div>
-
-          </>
+          </div>
         ) : null}
 
         <FeedbackMessage type="error" message={pageError} />
@@ -183,14 +184,22 @@ export function StoreShippingSettings() {
           description="Set carrier sync provider and webhook credentials."
           footer={({ requestClose }) => (
             <div className="flex flex-wrap justify-end gap-2">
-              <Button type="button" variant="outline" onClick={requestClose}>
-                Close
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  resetDraftFromBaseline();
+                  requestClose();
+                }}
+                disabled={saving}
+              >
+                Discard
               </Button>
               <Button type="button" variant="outline" onClick={() => void saveSettings(true)} disabled={saving}>
                 {saving ? "Saving..." : "Regenerate webhook secret"}
               </Button>
               <Button type="button" onClick={() => void saveSettings(false)} disabled={saving}>
-                {saving ? "Saving..." : "Save shipping settings"}
+                {saving ? "Saving..." : "Save"}
               </Button>
             </div>
           )}

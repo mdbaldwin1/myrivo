@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { DashboardFormActionBar } from "@/components/dashboard/dashboard-form-action-bar";
 import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
@@ -214,6 +215,7 @@ function serializeStructuredValue(field: StoreExperienceField, input: unknown): 
 
 export function StoreExperienceSectionForm(props: StoreExperienceSectionFormProps) {
   const { title, section, description, fields } = props;
+  const formId = `store-experience-form-${section}`;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [baseline, setBaseline] = useState<Record<string, string>>({});
@@ -350,7 +352,7 @@ export function StoreExperienceSectionForm(props: StoreExperienceSectionFormProp
 
   return (
     <SectionCard title={title}>
-      <form className="space-y-4" onSubmit={handleSubmit}>
+      <form id={formId} className="space-y-4" onSubmit={handleSubmit}>
         {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
         {loading ? <p className="text-sm text-muted-foreground">Loading section...</p> : null}
         {!loading ? (
@@ -727,14 +729,16 @@ export function StoreExperienceSectionForm(props: StoreExperienceSectionFormProp
             ))}
           </div>
         ) : null}
-        <div className="flex items-center justify-end gap-2 border-t border-border pt-3">
-          <Button type="submit" name="intent" value="discard" variant="outline" disabled={!isDirty || saving || loading}>
-            Discard
-          </Button>
-          <Button type="submit" name="intent" value="save" disabled={!isDirty || saving || loading}>
-            {saving ? "Saving..." : "Save"}
-          </Button>
-        </div>
+        <DashboardFormActionBar
+          formId={formId}
+          className="border-t-0"
+          saveLabel="Save"
+          savePendingLabel="Saving..."
+          discardLabel="Discard"
+          savePending={saving}
+          saveDisabled={!isDirty || saving || loading}
+          discardDisabled={!isDirty || saving || loading}
+        />
         <FeedbackMessage type="success" message={message} />
         <FeedbackMessage type="error" message={error} />
       </form>

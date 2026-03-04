@@ -1,6 +1,5 @@
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { StoreSettingsForm } from "@/components/dashboard/store-settings-form";
-import { Button } from "@/components/ui/button";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -23,22 +22,8 @@ export default async function DashboardStoreSettingsProfilePage() {
 
   return (
     <section className="space-y-4">
-      <DashboardPageHeader
-        title="Profile"
-        description="Low-frequency store identity and publish-state controls."
-        action={
-          <div className="flex items-center gap-2">
-            <Button type="submit" form="store-profile-form" name="intent" value="discard" variant="outline">
-              Discard
-            </Button>
-            <Button type="submit" form="store-profile-form" name="intent" value="save">
-              Save
-            </Button>
-          </div>
-        }
-      />
+      <DashboardPageHeader title="General" description="Low-frequency store identity and publish-state controls." />
       <StoreSettingsForm initialStore={bundle.store} initialLogoPath={bundle.branding?.logo_path ?? null} />
     </section>
   );
 }
-

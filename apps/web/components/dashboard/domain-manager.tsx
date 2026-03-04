@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
 
@@ -52,12 +53,17 @@ export function DomainManager() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [newDomain, setNewDomain] = useState("");
+  const [whiteLabelEnabled, setWhiteLabelEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function fetchDomains() {
-    const response = await fetch("/api/stores/domains", { cache: "no-store" });
-    const payload = (await response.json()) as { domains?: DomainRecord[]; error?: string };
-    return { ok: response.ok, payload };
+    const [domainsResponse, whiteLabelResponse] = await Promise.all([
+      fetch("/api/stores/domains", { cache: "no-store" }),
+      fetch("/api/stores/white-label", { cache: "no-store" })
+    ]);
+    const domainsPayload = (await domainsResponse.json()) as { domains?: DomainRecord[]; error?: string };
+    const whiteLabelPayload = (await whiteLabelResponse.json()) as { enabled?: boolean; error?: string };
+    return { domainsResponse, whiteLabelResponse, domainsPayload, whiteLabelPayload };
   }
 
   useEffect(() => {
@@ -67,12 +73,18 @@ export function DomainManager() {
       if (cancelled) {
         return;
       }
-      if (!result.ok) {
-        setError(result.payload.error ?? "Unable to load domains.");
+      if (!result.domainsResponse.ok) {
+        setError(result.domainsPayload.error ?? "Unable to load domains.");
         setLoading(false);
         return;
       }
-      setDomains(result.payload.domains ?? []);
+      if (!result.whiteLabelResponse.ok) {
+        setError(result.whiteLabelPayload.error ?? "Unable to load white-label settings.");
+        setLoading(false);
+        return;
+      }
+      setDomains(result.domainsPayload.domains ?? []);
+      setWhiteLabelEnabled(Boolean(result.whiteLabelPayload.enabled));
       setLoading(false);
     })();
     return () => {
@@ -104,6 +116,27 @@ export function DomainManager() {
 
     setDomains((current) => [...current, payload.domain!]);
     setNewDomain("");
+    setSaving(false);
+  }
+
+  async function toggleWhiteLabel(nextEnabled: boolean) {
+    setSaving(true);
+    setError(null);
+
+    const response = await fetch("/api/stores/white-label", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: nextEnabled })
+    });
+    const payload = (await response.json()) as { enabled?: boolean; error?: string };
+
+    if (!response.ok) {
+      setError(payload.error ?? "Unable to update white-label mode.");
+      setSaving(false);
+      return;
+    }
+
+    setWhiteLabelEnabled(Boolean(payload.enabled));
     setSaving(false);
   }
 
@@ -166,15 +199,40 @@ export function DomainManager() {
   return (
     <SectionCard title="Custom Domains">
       <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">
-          Add your domain and create TXT record `_myrivo-verification.yourdomain.com` with the token shown below, then click Verify & Provision.
-        </p>
+        <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
+          <p className="text-sm font-medium">White Label & Domain Setup</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            White labeling uses your store name and logo automatically. Turn it on, then add a domain and complete DNS verification.
+          </p>
 
-        <div className="flex gap-2">
-          <Input value={newDomain} onChange={(event) => setNewDomain(event.target.value)} placeholder="shop.example.com" />
-          <Button type="button" variant="outline" onClick={() => void addDomain()} disabled={saving || !newDomain.trim()}>
-            Add
-          </Button>
+          <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-border/60 bg-background px-3 py-2">
+            <div>
+              <p className="text-sm font-medium">White Labeling</p>
+              <p className="text-xs text-muted-foreground">Enable custom domains and branded browser metadata.</p>
+            </div>
+            <Button
+              type="button"
+              variant={whiteLabelEnabled ? "default" : "outline"}
+              size="sm"
+              onClick={() => void toggleWhiteLabel(!whiteLabelEnabled)}
+              disabled={saving || loading}
+            >
+              {whiteLabelEnabled ? "Enabled" : "Disabled"}
+            </Button>
+          </div>
+
+          <div className="mt-3 flex gap-2">
+            <Input
+              value={newDomain}
+              onChange={(event) => setNewDomain(event.target.value)}
+              placeholder={whiteLabelEnabled ? "shop.example.com" : "Enable white labeling first"}
+              disabled={!whiteLabelEnabled}
+            />
+            <Button type="button" variant="outline" onClick={() => void addDomain()} disabled={saving || !newDomain.trim() || !whiteLabelEnabled}>
+              Add
+            </Button>
+          </div>
+          {!whiteLabelEnabled ? <p className="mt-2 text-xs text-muted-foreground">Custom domains are available when white labeling is enabled.</p> : null}
         </div>
 
         {loading ? <p className="text-sm text-muted-foreground">Loading domains...</p> : null}
@@ -212,7 +270,7 @@ export function DomainManager() {
                 }
 
                 return (
-                  <div className="space-y-1 rounded-md border border-dashed border-border/60 p-2">
+                  <div className="space-y-1 rounded-md border border-dashed border-border/60 bg-background p-2">
                     <p className="text-muted-foreground">Vercel DNS records needed:</p>
                     {dnsRecords.map((record, index) => (
                       <p key={`${domain.id}-dns-${index}`} className="break-all text-muted-foreground">
@@ -241,7 +299,7 @@ export function DomainManager() {
           ))}
         </ul>
 
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        <FeedbackMessage type="error" message={error} />
       </div>
     </SectionCard>
   );

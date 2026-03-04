@@ -15,7 +15,7 @@ function makeOrder(overrides: Partial<BillingReportOrder>): BillingReportOrder {
       net_payout_cents: 900,
       fee_bps: 1000,
       fee_fixed_cents: 0,
-      plan_key: "starter"
+      plan_key: "standard"
     },
     ...overrides
   };
@@ -35,7 +35,7 @@ describe("buildBillingReport", () => {
           net_payout_cents: 1800,
           fee_bps: 1000,
           fee_fixed_cents: 0,
-          plan_key: "starter"
+          plan_key: "standard"
         }
       })
     ]);
@@ -65,7 +65,7 @@ describe("buildBillingReport", () => {
           net_payout_cents: 1300,
           fee_bps: 714,
           fee_fixed_cents: 0,
-          plan_key: "starter"
+          plan_key: "standard"
         }
       }),
       makeOrder({
@@ -76,7 +76,7 @@ describe("buildBillingReport", () => {
           net_payout_cents: 890,
           fee_bps: 1000,
           fee_fixed_cents: 0,
-          plan_key: "starter"
+          plan_key: "standard"
         }
       })
     ]);

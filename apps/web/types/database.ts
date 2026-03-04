@@ -10,8 +10,6 @@ export type StoreRecord = {
   status: StoreStatus;
   default_pickup_radius_miles: number;
   white_label_enabled: boolean;
-  white_label_brand_name: string | null;
-  white_label_favicon_path: string | null;
   stripe_account_id: string | null;
   created_at: string;
   updated_at: string;
@@ -32,6 +30,7 @@ export type UserProfileRecord = {
   id: string;
   email: string | null;
   display_name: string | null;
+  avatar_path: string | null;
   global_role: GlobalUserRole;
   metadata: Record<string, unknown>;
   created_at: string;
@@ -338,8 +337,6 @@ export type BillingPlanRecord = {
 export type StoreBillingProfileRecord = {
   store_id: string;
   billing_plan_id: string | null;
-  fee_override_bps: number | null;
-  fee_override_fixed_cents: number | null;
   test_mode_enabled: boolean;
   metadata_json: Record<string, unknown>;
   created_at: string;
