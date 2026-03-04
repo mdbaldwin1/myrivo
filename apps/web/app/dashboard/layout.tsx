@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import Image from "next/image";
 import { DashboardMobileNavSheet } from "@/components/dashboard/dashboard-mobile-nav-sheet";
 import { DashboardNav } from "@/components/dashboard/dashboard-nav";
 import { buttonVariants } from "@/components/ui/button";
@@ -23,10 +23,12 @@ export default async function DashboardLayout({ children }: { children: ReactNod
 
   const { data: profile } = await supabase
     .from("user_profiles")
-    .select("global_role")
+    .select("global_role,display_name,email")
     .eq("id", user.id)
-    .maybeSingle<{ global_role: GlobalUserRole }>();
+    .maybeSingle<{ global_role: GlobalUserRole; display_name: string | null; email: string | null }>();
   const globalRole = profile?.global_role ?? "user";
+  const userDisplayName = profile?.display_name ?? null;
+  const userEmail = profile?.email ?? user.email ?? null;
   const bundle = await getOwnedStoreBundle(user.id, "staff");
 
   if (!bundle && globalRole === "user") {
@@ -70,7 +72,14 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           </div>
         </header>
         <div className="grid min-h-0 flex-1 gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
-          <DashboardNav activeStoreSlug={storeSlug} stores={availableStores} globalRole={globalRole} className="hidden lg:flex" />
+          <DashboardNav
+            activeStoreSlug={storeSlug}
+            stores={availableStores}
+            globalRole={globalRole}
+            userDisplayName={userDisplayName}
+            userEmail={userEmail}
+            className="hidden lg:flex"
+          />
           <div data-dashboard-scroll-container="true" className="min-h-0 min-w-0 overflow-y-auto pr-1">
             <div className="space-y-4 pb-1">{children}</div>
           </div>

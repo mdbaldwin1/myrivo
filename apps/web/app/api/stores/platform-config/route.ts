@@ -5,7 +5,6 @@ import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const updateSchema = z.object({
-  mode: z.enum(["sandbox", "live"]).optional(),
   whiteLabelEnabled: z.boolean().optional(),
   whiteLabelBrandName: z.string().trim().max(120).nullable().optional(),
   whiteLabelFaviconPath: z.string().trim().max(400).nullable().optional(),
@@ -29,12 +28,12 @@ export async function GET() {
   const [{ data: store, error: storeError }, { data: billing, error: billingError }, { data: plans, error: plansError }] = await Promise.all([
     supabase
       .from("stores")
-      .select("id,mode,white_label_enabled,white_label_brand_name,white_label_favicon_path")
+      .select("id,white_label_enabled,white_label_brand_name,white_label_favicon_path")
       .eq("id", auth.context.storeId)
       .single(),
     supabase
       .from("store_billing_profiles")
-      .select("store_id,billing_plan_id,fee_override_bps,fee_override_fixed_cents,billing_mode,test_mode_enabled,metadata_json,billing_plans(key,name,transaction_fee_bps,transaction_fee_fixed_cents)")
+      .select("store_id,billing_plan_id,fee_override_bps,fee_override_fixed_cents,test_mode_enabled,metadata_json,billing_plans(key,name,transaction_fee_bps,transaction_fee_fixed_cents)")
       .eq("store_id", auth.context.storeId)
       .maybeSingle(),
     supabase
@@ -56,7 +55,7 @@ export async function GET() {
     return NextResponse.json({ error: plansError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ store, billing, plans: plans ?? [] });
+  return NextResponse.json({ store, billing, plans: plans ?? [], canManageFeeOverrides: auth.context.globalRole === "admin" });
 }
 
 export async function PUT(request: NextRequest) {
@@ -79,11 +78,13 @@ export async function PUT(request: NextRequest) {
   }
 
   const supabase = await createSupabaseServerClient();
+  const includesFeeOverrideUpdate = payload.data.feeOverrideBps !== undefined || payload.data.feeOverrideFixedCents !== undefined;
+
+  if (includesFeeOverrideUpdate && auth.context.globalRole !== "admin") {
+    return NextResponse.json({ error: "Only platform admins can modify fee overrides." }, { status: 403 });
+  }
 
   const storeUpdate: Record<string, unknown> = {};
-  if (payload.data.mode !== undefined) {
-    storeUpdate.mode = payload.data.mode;
-  }
   if (payload.data.whiteLabelEnabled !== undefined) {
     storeUpdate.white_label_enabled = payload.data.whiteLabelEnabled;
   }
@@ -123,8 +124,7 @@ export async function PUT(request: NextRequest) {
 
   if (
     payload.data.billingPlanKey !== undefined ||
-    payload.data.feeOverrideBps !== undefined ||
-    payload.data.feeOverrideFixedCents !== undefined ||
+    includesFeeOverrideUpdate ||
     payload.data.testModeEnabled !== undefined
   ) {
     const { error: billingError } = await supabase.from("store_billing_profiles").upsert(

@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
 
   const { data: store, error: storeError } = await supabase
     .from("stores")
-    .select("id,name,slug,status,mode,stripe_account_id")
+    .select("id,name,slug,status,stripe_account_id")
     .eq("slug", storeSlug)
     .eq("status", "active")
     .maybeSingle<{
@@ -117,7 +117,6 @@ export async function POST(request: NextRequest) {
       name: string;
       slug: string;
       status: string;
-      mode: "sandbox" | "live";
       stripe_account_id: string | null;
     }>();
 
@@ -585,7 +584,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Order total must be greater than $0.00." }, { status: 400 });
   }
 
-  const shouldUseStubMode = isStripeStubMode() || store.mode === "sandbox" || Boolean(billingProfile?.test_mode_enabled);
+  const shouldUseStubMode = isStripeStubMode() || Boolean(billingProfile?.test_mode_enabled);
 
   if (shouldUseStubMode) {
     const { data, error } = await supabase.rpc("stub_checkout_create_paid_order", {

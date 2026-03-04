@@ -7,7 +7,6 @@ type StoreRow = {
   name: string;
   slug: string;
   status: "draft" | "active" | "suspended";
-  mode: "sandbox" | "live";
   created_at: string;
 };
 
@@ -29,7 +28,7 @@ export async function GET() {
   const [{ data: stores, error: storesError }, { data: users, error: usersError }] = await Promise.all([
     admin
       .from("stores")
-      .select("id,name,slug,status,mode,created_at")
+      .select("id,name,slug,status,created_at")
       .order("created_at", { ascending: false })
       .limit(25)
       .returns<StoreRow[]>(),
@@ -53,10 +52,6 @@ export async function GET() {
     acc[store.status] = (acc[store.status] ?? 0) + 1;
     return acc;
   }, {});
-  const modeCounts = (stores ?? []).reduce<Record<string, number>>((acc, store) => {
-    acc[store.mode] = (acc[store.mode] ?? 0) + 1;
-    return acc;
-  }, {});
   const userRoleCounts = (users ?? []).reduce<Record<string, number>>((acc, profile) => {
     acc[profile.global_role] = (acc[profile.global_role] ?? 0) + 1;
     return acc;
@@ -66,11 +61,9 @@ export async function GET() {
     role: auth.context?.globalRole ?? "user",
     summary: {
       storeStatusCounts,
-      modeCounts,
       userRoleCounts
     },
     stores: stores ?? [],
     users: users ?? []
   });
 }
-

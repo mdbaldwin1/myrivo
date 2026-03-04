@@ -1,6 +1,6 @@
 import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
-import { Check, ChevronDown, ChevronUp } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type OptionConfig = {
@@ -17,6 +17,7 @@ type SelectProps = {
   defaultValue?: string;
   disabled?: boolean;
   placeholder?: string;
+  icon?: "down" | "up-down";
   onChange?: (event: { target: { value: string } }) => void;
 };
 
@@ -48,7 +49,7 @@ function extractOptions(children: React.ReactNode) {
 }
 
 const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
-  ({ id, className, children, value, defaultValue, disabled, onChange, placeholder }, ref) => {
+  ({ id, className, children, value, defaultValue, disabled, onChange, placeholder, icon = "down" }, ref) => {
     const options = React.useMemo(() => extractOptions(children), [children]);
     const [internalValue, setInternalValue] = React.useState(defaultValue ?? options[0]?.value ?? "");
     const selectedValue = typeof value === "string" ? value : internalValue;
@@ -74,7 +75,7 @@ const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
         >
           <SelectPrimitive.Value className="block max-w-[calc(100%-1.5rem)] truncate" placeholder={placeholder ?? "Select"} />
           <SelectPrimitive.Icon>
-            <ChevronDown className="h-4 w-4 opacity-50" />
+            {icon === "up-down" ? <ChevronsUpDown className="h-4 w-4 opacity-50" /> : <ChevronDown className="h-4 w-4 opacity-50" />}
           </SelectPrimitive.Icon>
         </SelectPrimitive.Trigger>
         <SelectPrimitive.Portal>

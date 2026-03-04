@@ -26,7 +26,6 @@ type BillingPlanSnapshot = {
 };
 
 type StoreBillingSnapshot = {
-  billing_mode: "platform" | "manual";
   test_mode_enabled: boolean;
   fee_override_bps: number | null;
   fee_override_fixed_cents: number | null;
@@ -86,7 +85,7 @@ export default async function DashboardBillingPage() {
         .returns<BillingEventRow[]>(),
       supabase
         .from("store_billing_profiles")
-        .select("billing_mode,test_mode_enabled,fee_override_bps,fee_override_fixed_cents,billing_plans(key,name,monthly_price_cents,transaction_fee_bps,transaction_fee_fixed_cents)")
+        .select("test_mode_enabled,fee_override_bps,fee_override_fixed_cents,billing_plans(key,name,monthly_price_cents,transaction_fee_bps,transaction_fee_fixed_cents)")
         .eq("store_id", bundle.store.id)
         .maybeSingle<StoreBillingSnapshot>()
     ]);
@@ -154,9 +153,6 @@ export default async function DashboardBillingPage() {
 
       <SectionCard title="Billing Profile Snapshot">
         <div className="grid gap-2 text-sm sm:grid-cols-2">
-          <p>
-            <span className="font-medium">Mode:</span> {billingProfile?.billing_mode ?? "platform"}
-          </p>
           <p>
             <span className="font-medium">Test mode:</span> {billingProfile?.test_mode_enabled ? "Enabled" : "Disabled"}
           </p>

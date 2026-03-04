@@ -12,7 +12,6 @@ type PlatformOverviewResponse = {
   role: "user" | "support" | "admin";
   summary: {
     storeStatusCounts: Record<string, number>;
-    modeCounts: Record<string, number>;
     userRoleCounts: Record<string, number>;
   };
   stores: Array<{
@@ -20,7 +19,6 @@ type PlatformOverviewResponse = {
     name: string;
     slug: string;
     status: "draft" | "active" | "suspended";
-    mode: "sandbox" | "live";
     created_at: string;
   }>;
   users: Array<{
@@ -90,17 +88,12 @@ export function PlatformConsole({ currentGlobalRole }: PlatformConsoleProps) {
       <SectionCard title="Platform Snapshot">
         {loading ? <p className="text-sm text-muted-foreground">Loading platform data...</p> : null}
         {overview ? (
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-md border border-border/70 bg-background p-3 text-sm">
               <p className="font-medium">Store Status</p>
               <p className="text-muted-foreground">Active: {overview.summary.storeStatusCounts.active ?? 0}</p>
               <p className="text-muted-foreground">Draft: {overview.summary.storeStatusCounts.draft ?? 0}</p>
               <p className="text-muted-foreground">Suspended: {overview.summary.storeStatusCounts.suspended ?? 0}</p>
-            </div>
-            <div className="rounded-md border border-border/70 bg-background p-3 text-sm">
-              <p className="font-medium">Store Mode</p>
-              <p className="text-muted-foreground">Live: {overview.summary.modeCounts.live ?? 0}</p>
-              <p className="text-muted-foreground">Sandbox: {overview.summary.modeCounts.sandbox ?? 0}</p>
             </div>
             <div className="rounded-md border border-border/70 bg-background p-3 text-sm">
               <p className="font-medium">User Roles</p>
@@ -120,9 +113,7 @@ export function PlatformConsole({ currentGlobalRole }: PlatformConsoleProps) {
                 <span className="font-medium">
                   {store.name} <span className="text-muted-foreground">({store.slug})</span>
                 </span>
-                <span className="text-xs uppercase tracking-wide text-muted-foreground">
-                  {store.status} · {store.mode}
-                </span>
+                <span className="text-xs uppercase tracking-wide text-muted-foreground">{store.status}</span>
               </div>
             ))}
           </div>
@@ -168,4 +159,3 @@ export function PlatformConsole({ currentGlobalRole }: PlatformConsoleProps) {
     </section>
   );
 }
-
