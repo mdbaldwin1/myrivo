@@ -5,6 +5,7 @@ import { DashboardNav } from "@/components/dashboard/dashboard-nav";
 import { PageShell } from "@/components/layout/page-shell";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { GlobalUserRole } from "@/types/database";
 
 export const dynamic = "force-dynamic";
 
@@ -18,15 +19,26 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     redirect("/login");
   }
 
-  const bundle = await getOwnedStoreBundle(user.id);
+  const { data: profile } = await supabase
+    .from("user_profiles")
+    .select("global_role")
+    .eq("id", user.id)
+    .maybeSingle<{ global_role: GlobalUserRole }>();
+  const globalRole = profile?.global_role ?? "user";
+  const bundle = await getOwnedStoreBundle(user.id, "staff");
 
-  if (!bundle) {
+  if (!bundle && globalRole === "user") {
     redirect("/login");
   }
 
-  if (bundle.role === "customer") {
+  if (bundle && bundle.role === "customer") {
     redirect("/account");
   }
+
+  const storeName = bundle?.store.name ?? "Platform";
+  const storeStatus = bundle?.store.status ?? null;
+  const storeSlug = bundle?.store.slug ?? null;
+  const availableStores = bundle?.availableStores ?? [];
 
   return (
     <PageShell maxWidthClassName="max-w-7xl">
@@ -37,18 +49,21 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Myrivo</p>
           </div>
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-            <h1 className="text-xl font-semibold">{bundle.store.name}</h1>
-            <p className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {bundle.store.status}
-            </p>
+            <h1 className="text-xl font-semibold">{storeName}</h1>
+            {storeStatus ? (
+              <p className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {storeStatus}
+              </p>
+            ) : null}
           </div>
         </header>
         <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
           <DashboardNav
-            storeStatus={bundle.store.status}
-            storeSlug={bundle.store.slug}
-            activeStoreSlug={bundle.store.slug}
-            stores={bundle.availableStores}
+            storeStatus={storeStatus}
+            storeSlug={storeSlug}
+            activeStoreSlug={storeSlug}
+            stores={availableStores}
+            globalRole={globalRole}
           />
           <div className="min-w-0">{children}</div>
         </div>
