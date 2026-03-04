@@ -1,5 +1,3 @@
-import { getServerEnv } from "@/lib/env";
-
 function parseEmailList(raw: string | undefined): Set<string> {
   if (!raw) {
     return new Set();
@@ -18,7 +16,7 @@ export function isOwnerAccessEmail(email: string | null | undefined): boolean {
     return false;
   }
 
-  const allowlist = parseEmailList(getServerEnv().OWNER_ACCESS_EMAILS);
+  const allowlist = parseEmailList(process.env.OWNER_ACCESS_EMAILS);
   if (allowlist.size === 0) {
     return false;
   }
@@ -27,6 +25,6 @@ export function isOwnerAccessEmail(email: string | null | undefined): boolean {
 }
 
 export function isPublicSignupAllowed(): boolean {
-  const value = getServerEnv().MYRIVO_ALLOW_PUBLIC_SIGNUP?.trim().toLowerCase();
+  const value = process.env.MYRIVO_ALLOW_PUBLIC_SIGNUP?.trim().toLowerCase();
   return value === "1" || value === "true" || value === "yes";
 }
