@@ -76,6 +76,7 @@ export function DashboardNav({ activeStoreSlug, stores, globalRole, mode = "desk
                 key={link.href}
                 href={link.href}
                 onClick={onNavigate}
+                aria-current={isActive ? "page" : undefined}
                 className={cn(buttonVariants({ variant: isActive ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
               >
                 {link.label}
@@ -94,6 +95,7 @@ export function DashboardNav({ activeStoreSlug, stores, globalRole, mode = "desk
                     key={link.href}
                     href={link.href}
                     onClick={onNavigate}
+                    aria-current={isActive ? "page" : undefined}
                     className={cn(
                       buttonVariants({ variant: isActive ? "default" : "ghost", size: "sm" }),
                       "w-full justify-start"
@@ -117,6 +119,7 @@ export function DashboardNav({ activeStoreSlug, stores, globalRole, mode = "desk
                     key={link.href}
                     href={link.href}
                     onClick={onNavigate}
+                    aria-current={isActive ? "page" : undefined}
                     className={cn(
                       buttonVariants({ variant: isActive ? "default" : "ghost", size: "sm" }),
                       "w-full justify-start"
@@ -140,6 +143,7 @@ export function DashboardNav({ activeStoreSlug, stores, globalRole, mode = "desk
                     key={link.href}
                     href={link.href}
                     onClick={onNavigate}
+                    aria-current={isActive ? "page" : undefined}
                     className={cn(
                       buttonVariants({ variant: isActive ? "default" : "ghost", size: "sm" }),
                       "w-full justify-start"
@@ -159,6 +163,7 @@ export function DashboardNav({ activeStoreSlug, stores, globalRole, mode = "desk
                 <Link
                   href="/dashboard/platform"
                   onClick={onNavigate}
+                  aria-current={normalizedPath === "/dashboard/platform" ? "page" : undefined}
                   className={cn(
                     buttonVariants({ variant: normalizedPath === "/dashboard/platform" ? "default" : "ghost", size: "sm" }),
                     "w-full justify-start"
@@ -175,6 +180,7 @@ export function DashboardNav({ activeStoreSlug, stores, globalRole, mode = "desk
         <Link
           href="/dashboard/account"
           onClick={onNavigate}
+          aria-current={normalizedPath === "/dashboard/account" ? "page" : undefined}
           className={cn(
             buttonVariants({ variant: normalizedPath === "/dashboard/account" ? "default" : "ghost", size: "sm" }),
             "w-full justify-start"
