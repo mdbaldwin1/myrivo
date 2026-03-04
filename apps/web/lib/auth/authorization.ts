@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { hasGlobalRole } from "@/lib/auth/roles";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import type { GlobalUserRole, StoreMemberRole } from "@/types/database";
@@ -16,28 +17,6 @@ export type AuthorizationResult = {
   response: NextResponse | null;
 };
 
-const storeRoleOrder: Record<StoreMemberRole | "support", number> = {
-  customer: 0,
-  staff: 1,
-  admin: 2,
-  owner: 3,
-  support: 4
-};
-
-const globalRoleOrder: Record<GlobalUserRole, number> = {
-  user: 0,
-  support: 1,
-  admin: 2
-};
-
-function hasStoreRole(currentRole: StoreMemberRole | "support", requiredRole: StoreMemberRole | "support") {
-  return storeRoleOrder[currentRole] >= storeRoleOrder[requiredRole];
-}
-
-function hasGlobalRole(currentRole: GlobalUserRole, requiredRole: GlobalUserRole) {
-  return globalRoleOrder[currentRole] >= globalRoleOrder[requiredRole];
-}
-
 export async function requireStoreRole(requiredRole: StoreMemberRole | "support"): Promise<AuthorizationResult> {
   const supabase = await createSupabaseServerClient();
   const {
@@ -48,7 +27,7 @@ export async function requireStoreRole(requiredRole: StoreMemberRole | "support"
     return { context: null, response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }
 
-  const bundle = await getOwnedStoreBundle(user.id);
+  const bundle = await getOwnedStoreBundle(user.id, requiredRole);
   if (!bundle) {
     return { context: null, response: NextResponse.json({ error: "Store access denied" }, { status: 403 }) };
   }
@@ -60,10 +39,6 @@ export async function requireStoreRole(requiredRole: StoreMemberRole | "support"
     .maybeSingle<{ global_role: GlobalUserRole }>();
 
   const globalRole = profile?.global_role ?? "user";
-  if (!hasStoreRole(bundle.role, requiredRole)) {
-    return { context: null, response: NextResponse.json({ error: "Insufficient store role" }, { status: 403 }) };
-  }
-
   return {
     context: {
       userId: user.id,

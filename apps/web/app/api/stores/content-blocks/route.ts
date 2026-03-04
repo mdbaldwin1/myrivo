@@ -50,7 +50,7 @@ async function getStore() {
     return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) } as const;
   }
 
-  const bundle = await getOwnedStoreBundle(user.id);
+  const bundle = await getOwnedStoreBundle(user.id, "staff");
 
   if (!bundle) {
     return { error: NextResponse.json({ error: "No store found for account" }, { status: 404 }) } as const;
