@@ -52,7 +52,6 @@ const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
     const options = React.useMemo(() => extractOptions(children), [children]);
     const [internalValue, setInternalValue] = React.useState(defaultValue ?? options[0]?.value ?? "");
     const selectedValue = typeof value === "string" ? value : internalValue;
-    const selectedLabel = options.find((option) => option.value === selectedValue)?.label ?? placeholder ?? "Select";
 
     return (
       <SelectPrimitive.Root
@@ -73,10 +72,8 @@ const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
             className
           )}
         >
-          <SelectPrimitive.Value asChild>
-            <span className="block max-w-[calc(100%-1.5rem)] truncate">{selectedLabel}</span>
-          </SelectPrimitive.Value>
-          <SelectPrimitive.Icon asChild>
+          <SelectPrimitive.Value className="block max-w-[calc(100%-1.5rem)] truncate" placeholder={placeholder ?? "Select"} />
+          <SelectPrimitive.Icon>
             <ChevronDown className="h-4 w-4 opacity-50" />
           </SelectPrimitive.Icon>
         </SelectPrimitive.Trigger>
