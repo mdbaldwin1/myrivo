@@ -64,6 +64,27 @@ describe("billing settings routes", () => {
     expect(serverFromMock).not.toHaveBeenCalled();
   });
 
+  test("platform-config PUT rejects billing plan assignment for non-admin users", async () => {
+    requireStorePermissionMock.mockResolvedValueOnce({
+      context: { storeId: "store-1", globalRole: "user" },
+      response: null
+    });
+
+    const route = await import("@/app/api/stores/platform-config/route");
+    const request = new NextRequest("http://localhost:3000/api/stores/platform-config", {
+      method: "PUT",
+      headers: { "content-type": "application/json", origin: "http://localhost:3000", host: "localhost:3000" },
+      body: JSON.stringify({ billingPlanKey: "standard" })
+    });
+
+    const response = await route.PUT(request);
+    const payload = (await response.json()) as { error: string };
+
+    expect(response.status).toBe(403);
+    expect(payload.error).toContain("Only platform admins");
+    expect(serverFromMock).not.toHaveBeenCalled();
+  });
+
   test("white-label PUT returns 400 for malformed JSON", async () => {
     const route = await import("@/app/api/stores/white-label/route");
     const request = new NextRequest("http://localhost:3000/api/stores/white-label", {
@@ -78,5 +99,61 @@ describe("billing settings routes", () => {
     expect(response.status).toBe(400);
     expect(payload.error).toContain("Invalid JSON");
     expect(serverFromMock).not.toHaveBeenCalled();
+  });
+
+  test("test-mode PUT upserts billing profile and returns enabled flag", async () => {
+    const upsertMock = vi.fn(async () => ({ error: null }));
+    serverFromMock.mockImplementation((table: string) => {
+      if (table !== "store_billing_profiles") {
+        throw new Error(`Unexpected table ${table}`);
+      }
+      return { upsert: upsertMock };
+    });
+
+    const route = await import("@/app/api/stores/test-mode/route");
+    const request = new NextRequest("http://localhost:3000/api/stores/test-mode", {
+      method: "PUT",
+      headers: { "content-type": "application/json", origin: "http://localhost:3000", host: "localhost:3000" },
+      body: JSON.stringify({ enabled: true })
+    });
+
+    const response = await route.PUT(request);
+    const payload = (await response.json()) as { enabled: boolean };
+
+    expect(response.status).toBe(200);
+    expect(payload.enabled).toBe(true);
+    expect(upsertMock).toHaveBeenCalledWith(
+      {
+        store_id: "store-1",
+        test_mode_enabled: true
+      },
+      { onConflict: "store_id" }
+    );
+  });
+
+  test("white-label PUT updates store flag and returns enabled flag", async () => {
+    const eqMock = vi.fn(async () => ({ error: null }));
+    const updateMock = vi.fn(() => ({ eq: eqMock }));
+    serverFromMock.mockImplementation((table: string) => {
+      if (table !== "stores") {
+        throw new Error(`Unexpected table ${table}`);
+      }
+      return { update: updateMock };
+    });
+
+    const route = await import("@/app/api/stores/white-label/route");
+    const request = new NextRequest("http://localhost:3000/api/stores/white-label", {
+      method: "PUT",
+      headers: { "content-type": "application/json", origin: "http://localhost:3000", host: "localhost:3000" },
+      body: JSON.stringify({ enabled: false })
+    });
+
+    const response = await route.PUT(request);
+    const payload = (await response.json()) as { enabled: boolean };
+
+    expect(response.status).toBe(200);
+    expect(payload.enabled).toBe(false);
+    expect(updateMock).toHaveBeenCalledWith({ white_label_enabled: false });
+    expect(eqMock).toHaveBeenCalledWith("id", "store-1");
   });
 });
