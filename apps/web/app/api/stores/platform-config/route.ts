@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { requireStoreRole } from "@/lib/auth/authorization";
+import { requireStorePermission } from "@/lib/auth/authorization";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -16,7 +16,7 @@ const updateSchema = z.object({
 });
 
 export async function GET() {
-  const auth = await requireStoreRole("admin");
+  const auth = await requireStorePermission("store.manage_billing");
   if (auth.response) {
     return auth.response;
   }
@@ -65,7 +65,7 @@ export async function PUT(request: NextRequest) {
     return trustedOriginResponse;
   }
 
-  const auth = await requireStoreRole("admin");
+  const auth = await requireStorePermission("store.manage_billing");
   if (auth.response) {
     return auth.response;
   }

@@ -8,7 +8,8 @@ function makeStore(slug: string, role: AccessibleStore["role"] = "owner"): Acces
     slug,
     status: "active",
     stripe_account_id: null,
-    role
+    role,
+    permissions_json: {}
   };
 }
 

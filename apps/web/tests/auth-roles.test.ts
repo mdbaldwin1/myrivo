@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { hasGlobalRole, hasStoreRole } from "@/lib/auth/roles";
+import { hasGlobalRole, hasStorePermission, hasStoreRole } from "@/lib/auth/roles";
 
 describe("authorization role ordering", () => {
   test("store role ordering enforces customer < staff < admin < owner < support", () => {
@@ -15,5 +15,16 @@ describe("authorization role ordering", () => {
     expect(hasGlobalRole("support", "user")).toBe(true);
     expect(hasGlobalRole("admin", "support")).toBe(true);
   });
-});
 
+  test("store permissions default to role matrix when no overrides exist", () => {
+    expect(hasStorePermission("staff", {}, "store.manage_catalog")).toBe(true);
+    expect(hasStorePermission("staff", {}, "store.manage_domains")).toBe(false);
+    expect(hasStorePermission("admin", {}, "store.manage_domains")).toBe(true);
+  });
+
+  test("store permissions honor explicit overrides before role defaults", () => {
+    expect(hasStorePermission("admin", { "store.manage_domains": false }, "store.manage_domains")).toBe(false);
+    expect(hasStorePermission("staff", { "store.manage_members": true }, "store.manage_members")).toBe(true);
+    expect(hasStorePermission("staff", { "*": false }, "store.manage_catalog")).toBe(false);
+  });
+});

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const requireStoreRoleMock = vi.fn();
+const requireStorePermissionMock = vi.fn();
 const enforceTrustedOriginMock = vi.fn();
 const logAuditEventMock = vi.fn();
 const createInviteTokenMock = vi.fn();
@@ -21,7 +21,7 @@ type QueryBuilder = {
 const adminFromMock = vi.fn();
 
 vi.mock("@/lib/auth/authorization", () => ({
-  requireStoreRole: (...args: unknown[]) => requireStoreRoleMock(...args)
+  requireStorePermission: (...args: unknown[]) => requireStorePermissionMock(...args)
 }));
 
 vi.mock("@/lib/security/request-origin", () => ({
@@ -46,7 +46,7 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 
 beforeEach(() => {
-  requireStoreRoleMock.mockReset();
+  requireStorePermissionMock.mockReset();
   enforceTrustedOriginMock.mockReset();
   logAuditEventMock.mockReset();
   createInviteTokenMock.mockReset();
@@ -58,7 +58,7 @@ beforeEach(() => {
 
 describe("store members route", () => {
   test("GET returns authorization error response", async () => {
-    requireStoreRoleMock.mockResolvedValueOnce({
+    requireStorePermissionMock.mockResolvedValueOnce({
       context: null,
       response: new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 })
     });
@@ -69,7 +69,7 @@ describe("store members route", () => {
   });
 
   test("POST creates invite and returns token", async () => {
-    requireStoreRoleMock.mockResolvedValue({
+    requireStorePermissionMock.mockResolvedValue({
       context: { storeId: "store-1", userId: "owner-1" },
       response: null
     });
@@ -150,4 +150,3 @@ describe("store members route", () => {
     expect(logAuditEventMock).toHaveBeenCalledTimes(1);
   });
 });
-

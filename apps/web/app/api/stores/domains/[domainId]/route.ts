@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { requireStoreRole } from "@/lib/auth/authorization";
+import { requireStorePermission } from "@/lib/auth/authorization";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -14,7 +14,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return trustedOriginResponse;
   }
 
-  const auth = await requireStoreRole("admin");
+  const auth = await requireStorePermission("store.manage_domains");
   if (auth.response) {
     return auth.response;
   }
@@ -85,7 +85,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     return trustedOriginResponse;
   }
 
-  const auth = await requireStoreRole("admin");
+  const auth = await requireStorePermission("store.manage_domains");
   if (auth.response) {
     return auth.response;
   }
