@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import Image from "next/image";
 import { DashboardNav } from "@/components/dashboard/dashboard-nav";
-import { PageShell } from "@/components/layout/page-shell";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { GlobalUserRole } from "@/types/database";
@@ -41,8 +40,8 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const availableStores = bundle?.availableStores ?? [];
 
   return (
-    <PageShell maxWidthClassName="max-w-7xl">
-      <div className="space-y-5">
+    <main className="mx-auto flex h-[100dvh] w-full max-w-7xl flex-col overflow-hidden px-4 py-6 md:px-8 md:py-8">
+      <div className="space-y-5 min-h-0 flex flex-1 flex-col">
         <header className="rounded-xl border border-border/70 bg-card px-4 py-4 shadow-sm sm:px-5">
           <div className="flex items-center gap-2">
             <Image src="/brand/myrivo-mark.svg" alt="Myrivo logo" width={20} height={20} className="h-5 w-5 rounded-sm" />
@@ -57,7 +56,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             ) : null}
           </div>
         </header>
-        <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <div className="grid min-h-0 flex-1 gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
           <DashboardNav
             storeStatus={storeStatus}
             storeSlug={storeSlug}
@@ -65,9 +64,11 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             stores={availableStores}
             globalRole={globalRole}
           />
-          <div className="min-w-0">{children}</div>
+          <div className="min-h-0 min-w-0 overflow-y-auto pr-1">
+            <div className="space-y-4 pb-1">{children}</div>
+          </div>
         </div>
       </div>
-    </PageShell>
+    </main>
   );
 }
