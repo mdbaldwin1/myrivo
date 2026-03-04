@@ -43,7 +43,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const availableStores = bundle?.availableStores ?? [];
 
   return (
-    <main className="mx-auto flex h-[100dvh] w-full max-w-7xl flex-col overflow-hidden px-4 py-6 md:px-8 md:py-8">
+    <main data-dashboard-shell="true" className="mx-auto flex h-[100dvh] w-full max-w-7xl flex-col overflow-hidden px-4 py-6 md:px-8 md:py-8">
       <div className="min-h-0 flex flex-1 flex-col gap-5">
         <header className="shrink-0 rounded-xl border border-border/70 bg-card px-4 py-4 shadow-sm sm:px-5">
           <div className="flex items-center justify-between gap-2">
