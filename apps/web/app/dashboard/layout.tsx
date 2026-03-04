@@ -2,10 +2,9 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import Image from "next/image";
-import { Menu } from "lucide-react";
+import { DashboardMobileNavSheet } from "@/components/dashboard/dashboard-mobile-nav-sheet";
 import { DashboardNav } from "@/components/dashboard/dashboard-nav";
 import { buttonVariants } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { GlobalUserRole } from "@/types/database";
@@ -52,23 +51,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
               <Image src="/brand/myrivo-mark.svg" alt="Myrivo logo" width={20} height={20} className="h-5 w-5 rounded-sm" />
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Myrivo</p>
             </div>
-            <Sheet>
-              <SheetTrigger asChild>
-                <button type="button" className={buttonVariants({ variant: "outline", size: "sm" }) + " lg:hidden"}>
-                  <Menu className="mr-2 h-4 w-4" />
-                  Menu
-                </button>
-              </SheetTrigger>
-              <SheetContent side="left" className="flex w-[88vw] max-w-sm flex-col gap-0 p-4 pt-10">
-                <SheetHeader className="mb-3">
-                  <SheetTitle>Dashboard Navigation</SheetTitle>
-                  <SheetDescription>Switch sections without leaving your current store context.</SheetDescription>
-                </SheetHeader>
-                <div className="min-h-0 flex-1 overflow-hidden">
-                  <DashboardNav activeStoreSlug={storeSlug} stores={availableStores} globalRole={globalRole} mode="mobile" className="h-full border-0 p-0" />
-                </div>
-              </SheetContent>
-            </Sheet>
+            <DashboardMobileNavSheet activeStoreSlug={storeSlug} stores={availableStores} globalRole={globalRole} />
           </div>
           <div className="mt-2 flex min-h-10 flex-wrap items-center justify-between gap-2">
             <h1 className="text-xl font-semibold">{storeName}</h1>
