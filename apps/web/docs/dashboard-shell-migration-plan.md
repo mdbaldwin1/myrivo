@@ -36,8 +36,8 @@ Migrate dashboard UX to a fixed-shell model with desktop-app feel:
 
 Each bead must run, at minimum:
 
-- `pnpm -C apps/web eslint ... --max-warnings=0` for touched files
-- `pnpm -C apps/web tsc --noEmit`
+- `npm run lint`
+- `npm run typecheck`
 - Focused tests for touched behavior (unit/integration/e2e where applicable)
 
 Additional gates for shell beads (`4.2`-`4.8`):
