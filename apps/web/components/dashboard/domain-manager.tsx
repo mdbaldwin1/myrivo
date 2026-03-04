@@ -18,7 +18,34 @@ type DomainRecord = {
   hosting_last_checked_at: string | null;
   hosting_ready_at: string | null;
   hosting_error: string | null;
+  hosting_metadata_json: Record<string, unknown> | null;
 };
+
+type VercelVerificationRecord = {
+  type?: string;
+  domain?: string;
+  value?: string;
+  reason?: string;
+  verified?: boolean;
+};
+
+function extractDnsRecordsFromMetadata(metadata: Record<string, unknown> | null) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return [];
+  }
+
+  const domainStatus = metadata.domainStatus;
+  if (!domainStatus || typeof domainStatus !== "object" || Array.isArray(domainStatus)) {
+    return [];
+  }
+
+  const verification = (domainStatus as { verification?: unknown }).verification;
+  if (!Array.isArray(verification)) {
+    return [];
+  }
+
+  return verification.filter((record): record is VercelVerificationRecord => typeof record === "object" && record !== null);
+}
 
 export function DomainManager() {
   const [domains, setDomains] = useState<DomainRecord[]>([]);
@@ -177,6 +204,31 @@ export function DomainManager() {
                   </Button>
                 </div>
               </div>
+
+              {(() => {
+                const dnsRecords = extractDnsRecordsFromMetadata(domain.hosting_metadata_json).filter((record) => record.verified !== true);
+                if (dnsRecords.length === 0) {
+                  return null;
+                }
+
+                return (
+                  <div className="space-y-1 rounded-md border border-dashed border-border/60 p-2">
+                    <p className="text-muted-foreground">Vercel DNS records needed:</p>
+                    {dnsRecords.map((record, index) => (
+                      <p key={`${domain.id}-dns-${index}`} className="break-all text-muted-foreground">
+                        {record.type ?? "Record"} {record.domain ?? "(host missing)"} {"->"} {record.value ?? "(value missing)"}
+                        {record.reason ? ` (${record.reason})` : ""}
+                      </p>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {domain.hosting_status === "provisioning" && !extractDnsRecordsFromMetadata(domain.hosting_metadata_json).length ? (
+                <p className="text-muted-foreground">
+                  If your registrar needs values: `www` CNAME to `cname.vercel-dns.com` and apex `@` A to `76.76.21.21`.
+                </p>
+              ) : null}
 
               {domain.verification_token ? (
                 <p className="break-all text-muted-foreground">TXT token: {domain.verification_token}</p>

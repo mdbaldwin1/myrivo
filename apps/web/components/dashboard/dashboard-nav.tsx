@@ -163,7 +163,13 @@ export function DashboardNav({ storeStatus, storeSlug, activeStoreSlug, stores, 
         ) : null}
       </div>
       <div className="mt-4 space-y-2 border-t border-border pt-3">
-        <Link href="/dashboard/account" className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-full justify-start")}>
+        <Link
+          href="/dashboard/account"
+          className={cn(
+            buttonVariants({ variant: normalizedPath === "/dashboard/account" ? "default" : "ghost", size: "sm" }),
+            "w-full justify-start"
+          )}
+        >
           Profile & Account
         </Link>
         {storeSlug ? (
