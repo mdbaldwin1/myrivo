@@ -51,116 +51,118 @@ export function DashboardNav({ activeStoreSlug, stores, globalRole }: DashboardN
   const canAccessPlatform = globalRole === "support" || globalRole === "admin";
 
   return (
-    <nav className="h-fit rounded-lg border border-border bg-card p-3 lg:sticky lg:top-6">
+    <nav className="h-full min-h-0 rounded-lg border border-border bg-card p-3 lg:flex lg:flex-col">
       {hasStoreAccess ? (
-        <div className="mb-3 border-b border-border px-2 pb-3">
+        <div className="mb-3 shrink-0 border-b border-border px-2 pb-3">
           <StoreSwitcher activeStoreSlug={activeStoreSlug!} stores={stores} />
         </div>
       ) : null}
-      <p className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Navigation</p>
-      <div className="space-y-1">
-        {(hasStoreAccess ? links : []).map((link) => {
-          const normalizedHref = link.href.replace(/\/$/, "");
-          const isOverviewLink = normalizedHref === "/dashboard";
-          const isActive = isOverviewLink
-            ? normalizedPath === "/dashboard"
-            : normalizedPath === normalizedHref || normalizedPath.startsWith(`${normalizedHref}/`);
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <p className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Navigation</p>
+        <div className="space-y-1">
+          {(hasStoreAccess ? links : []).map((link) => {
+            const normalizedHref = link.href.replace(/\/$/, "");
+            const isOverviewLink = normalizedHref === "/dashboard";
+            const isActive = isOverviewLink
+              ? normalizedPath === "/dashboard"
+              : normalizedPath === normalizedHref || normalizedPath.startsWith(`${normalizedHref}/`);
 
-          return (
-            <Link
-              key={link.href}
-              href={link.href}
-              className={cn(buttonVariants({ variant: isActive ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
-            >
-              {link.label}
-            </Link>
-          );
-        })}
-
-        {hasStoreAccess ? <div className="pt-2">
-          <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Store Settings</p>
-          <div className="space-y-1 pl-2">
-            {storeSettingsLinks.map((link) => {
-              const normalizedHref = link.href.replace(/\/$/, "");
-              const isActive = normalizedPath === normalizedHref || normalizedPath.startsWith(`${normalizedHref}/`);
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={cn(
-                    buttonVariants({ variant: isActive ? "default" : "ghost", size: "sm" }),
-                    "w-full justify-start"
-                  )}
-                >
-                  {link.label}
-                </Link>
-              );
-            })}
-          </div>
-        </div> : null}
-
-        {hasStoreAccess ? <div className="pt-2">
-          <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Content Studio</p>
-          <div className="space-y-1 pl-2">
-            {contentStudioLinks.map((link) => {
-              const normalizedHref = link.href.replace(/\/$/, "");
-              const isActive = normalizedPath === normalizedHref || normalizedPath.startsWith(`${normalizedHref}/`);
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={cn(
-                    buttonVariants({ variant: isActive ? "default" : "ghost", size: "sm" }),
-                    "w-full justify-start"
-                  )}
-                >
-                  {link.label}
-                </Link>
-              );
-            })}
-          </div>
-        </div> : null}
-
-        {hasStoreAccess ? <div className="pt-2">
-          <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Marketing</p>
-          <div className="space-y-1 pl-2">
-            {marketingLinks.map((link) => {
-              const normalizedHref = link.href.replace(/\/$/, "");
-              const isActive = normalizedPath === normalizedHref || normalizedPath.startsWith(`${normalizedHref}/`);
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={cn(
-                    buttonVariants({ variant: isActive ? "default" : "ghost", size: "sm" }),
-                    "w-full justify-start"
-                  )}
-                >
-                  {link.label}
-                </Link>
-              );
-            })}
-          </div>
-        </div> : null}
-
-        {canAccessPlatform ? (
-          <div className="pt-2">
-            <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Platform</p>
-            <div className="space-y-1 pl-2">
+            return (
               <Link
-                href="/dashboard/platform"
-                className={cn(
-                  buttonVariants({ variant: normalizedPath === "/dashboard/platform" ? "default" : "ghost", size: "sm" }),
-                  "w-full justify-start"
-                )}
+                key={link.href}
+                href={link.href}
+                className={cn(buttonVariants({ variant: isActive ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
               >
-                Platform Console
+                {link.label}
               </Link>
+            );
+          })}
+
+          {hasStoreAccess ? <div className="pt-2">
+            <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Store Settings</p>
+            <div className="space-y-1 pl-2">
+              {storeSettingsLinks.map((link) => {
+                const normalizedHref = link.href.replace(/\/$/, "");
+                const isActive = normalizedPath === normalizedHref || normalizedPath.startsWith(`${normalizedHref}/`);
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className={cn(
+                      buttonVariants({ variant: isActive ? "default" : "ghost", size: "sm" }),
+                      "w-full justify-start"
+                    )}
+                  >
+                    {link.label}
+                  </Link>
+                );
+              })}
             </div>
-          </div>
-        ) : null}
+          </div> : null}
+
+          {hasStoreAccess ? <div className="pt-2">
+            <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Content Studio</p>
+            <div className="space-y-1 pl-2">
+              {contentStudioLinks.map((link) => {
+                const normalizedHref = link.href.replace(/\/$/, "");
+                const isActive = normalizedPath === normalizedHref || normalizedPath.startsWith(`${normalizedHref}/`);
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className={cn(
+                      buttonVariants({ variant: isActive ? "default" : "ghost", size: "sm" }),
+                      "w-full justify-start"
+                    )}
+                  >
+                    {link.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div> : null}
+
+          {hasStoreAccess ? <div className="pt-2">
+            <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Marketing</p>
+            <div className="space-y-1 pl-2">
+              {marketingLinks.map((link) => {
+                const normalizedHref = link.href.replace(/\/$/, "");
+                const isActive = normalizedPath === normalizedHref || normalizedPath.startsWith(`${normalizedHref}/`);
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className={cn(
+                      buttonVariants({ variant: isActive ? "default" : "ghost", size: "sm" }),
+                      "w-full justify-start"
+                    )}
+                  >
+                    {link.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div> : null}
+
+          {canAccessPlatform ? (
+            <div className="pt-2">
+              <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Platform</p>
+              <div className="space-y-1 pl-2">
+                <Link
+                  href="/dashboard/platform"
+                  className={cn(
+                    buttonVariants({ variant: normalizedPath === "/dashboard/platform" ? "default" : "ghost", size: "sm" }),
+                    "w-full justify-start"
+                  )}
+                >
+                  Platform Console
+                </Link>
+              </div>
+            </div>
+          ) : null}
+        </div>
       </div>
-      <div className="mt-4 space-y-2 border-t border-border pt-3">
+      <div className="mt-4 shrink-0 space-y-2 border-t border-border pt-3">
         <Link
           href="/dashboard/account"
           className={cn(
