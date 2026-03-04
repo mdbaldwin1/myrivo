@@ -66,6 +66,7 @@ Myrivo is a multi-tenant commerce platform for independent makers and small shop
 
 ## Quality checks
 
+- `npm run sync:next-env --workspace=@myrivo/web` (normalizes `apps/web/next-env.d.ts` if dev mode rewrote it)
 - `npm run lint`
 - `npm run typecheck`
 - `npm run test`
