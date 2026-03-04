@@ -25,6 +25,7 @@ const links = [
 const storeSettingsLinks = [
   { href: "/dashboard/store-settings/profile", label: "Profile" },
   { href: "/dashboard/store-settings/branding", label: "Branding" },
+  { href: "/dashboard/store-settings/team", label: "Team" },
   { href: "/dashboard/store-settings/checkout-rules", label: "Checkout Rules" },
   { href: "/dashboard/store-settings/integrations", label: "Integrations" }
 ] as const;
