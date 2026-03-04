@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { logAuditEvent } from "@/lib/audit/log";
+import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { sendOrderShippingNotification } from "@/lib/notifications/order-emails";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { mapShipmentStatusToFulfillmentStatus, refreshTracker } from "@/lib/shipping/provider";
@@ -19,10 +20,9 @@ export async function POST(request: NextRequest) {
     return trustedOriginResponse;
   }
 
-  const payload = payloadSchema.safeParse(await request.json());
-
-  if (!payload.success) {
-    return NextResponse.json({ error: "Invalid payload", details: payload.error.flatten() }, { status: 400 });
+  const payload = await parseJsonRequest(request, payloadSchema);
+  if (!payload.ok) {
+    return payload.response;
   }
 
   const supabase = await createSupabaseServerClient();

@@ -5,6 +5,7 @@ import {
   requireStoreBySlug,
   validateStoreItemSelection
 } from "@/lib/customer/account";
+import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -75,9 +76,9 @@ export async function PUT(request: NextRequest) {
     return trustedOriginResponse;
   }
 
-  const payload = upsertSchema.safeParse(await request.json());
-  if (!payload.success) {
-    return NextResponse.json({ error: "Invalid payload", details: payload.error.flatten() }, { status: 400 });
+  const payload = await parseJsonRequest(request, upsertSchema);
+  if (!payload.ok) {
+    return payload.response;
   }
 
   const supabase = await createSupabaseServerClient();

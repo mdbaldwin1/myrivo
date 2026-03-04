@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { logAuditEvent } from "@/lib/audit/log";
+import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { buildProductVariantRollup, normalizeVariantInputs, type VariantInput } from "@/lib/products/variants";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
@@ -1002,10 +1003,9 @@ export async function POST(request: NextRequest) {
     return trustedOriginResponse;
   }
 
-  const payload = createProductSchema.safeParse(await request.json());
-
-  if (!payload.success) {
-    return NextResponse.json({ error: "Invalid payload", details: payload.error.flatten() }, { status: 400 });
+  const payload = await parseJsonRequest(request, createProductSchema);
+  if (!payload.ok) {
+    return payload.response;
   }
 
   const resolved = await resolveOwnedStoreId();
@@ -1135,10 +1135,9 @@ export async function PATCH(request: NextRequest) {
     return trustedOriginResponse;
   }
 
-  const payload = updateProductSchema.safeParse(await request.json());
-
-  if (!payload.success) {
-    return NextResponse.json({ error: "Invalid payload", details: payload.error.flatten() }, { status: 400 });
+  const payload = await parseJsonRequest(request, updateProductSchema);
+  if (!payload.ok) {
+    return payload.response;
   }
 
   const resolved = await resolveOwnedStoreId();
@@ -1270,10 +1269,9 @@ export async function DELETE(request: NextRequest) {
     return trustedOriginResponse;
   }
 
-  const payload = deleteProductSchema.safeParse(await request.json());
-
-  if (!payload.success) {
-    return NextResponse.json({ error: "Invalid payload", details: payload.error.flatten() }, { status: 400 });
+  const payload = await parseJsonRequest(request, deleteProductSchema);
+  if (!payload.ok) {
+    return payload.response;
   }
 
   const resolved = await resolveOwnedStoreId();
