@@ -13,6 +13,11 @@ type DomainRecord = {
   verification_token: string | null;
   last_verification_at: string | null;
   verified_at: string | null;
+  hosting_provider: "vercel";
+  hosting_status: "pending" | "provisioning" | "ready" | "failed" | "not_configured";
+  hosting_last_checked_at: string | null;
+  hosting_ready_at: string | null;
+  hosting_error: string | null;
 };
 
 export function DomainManager() {
@@ -135,7 +140,7 @@ export function DomainManager() {
     <SectionCard title="Custom Domains">
       <div className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          Add your domain and create TXT record `_myrivo-verification.yourdomain.com` with the token shown below, then click Verify.
+          Add your domain and create TXT record `_myrivo-verification.yourdomain.com` with the token shown below, then click Verify & Provision.
         </p>
 
         <div className="flex gap-2">
@@ -158,10 +163,11 @@ export function DomainManager() {
                     Status: {domain.verification_status}
                     {domain.is_primary ? " · Primary" : ""}
                   </p>
+                  <p className="text-muted-foreground">Hosting: {domain.hosting_status}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button type="button" variant="ghost" size="sm" onClick={() => void verifyDomain(domain.id)} disabled={saving}>
-                    Verify
+                    Verify & Provision
                   </Button>
                   <Button type="button" variant="ghost" size="sm" onClick={() => void setPrimary(domain.id)} disabled={saving || domain.verification_status !== "verified"}>
                     Set primary
@@ -174,6 +180,10 @@ export function DomainManager() {
 
               {domain.verification_token ? (
                 <p className="break-all text-muted-foreground">TXT token: {domain.verification_token}</p>
+              ) : null}
+              {domain.hosting_error ? <p className="break-all text-red-600">Hosting error: {domain.hosting_error}</p> : null}
+              {domain.hosting_last_checked_at ? (
+                <p className="text-muted-foreground">Hosting checked: {new Date(domain.hosting_last_checked_at).toLocaleString()}</p>
               ) : null}
             </li>
           ))}

@@ -63,7 +63,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     })
     .eq("id", domainId)
     .eq("store_id", auth.context.storeId)
-    .select("id,store_id,domain,is_primary,verification_status,verification_token,last_verification_at,verified_at,created_at")
+    .select(
+      "id,store_id,domain,is_primary,verification_status,verification_token,last_verification_at,verified_at,hosting_provider,hosting_status,hosting_last_checked_at,hosting_ready_at,hosting_error,hosting_metadata_json,created_at"
+    )
     .maybeSingle();
 
   if (error) {

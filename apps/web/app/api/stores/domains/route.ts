@@ -31,7 +31,9 @@ export async function GET() {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from("store_domains")
-    .select("id,store_id,domain,is_primary,verification_status,verification_token,last_verification_at,verified_at,created_at")
+    .select(
+      "id,store_id,domain,is_primary,verification_status,verification_token,last_verification_at,verified_at,hosting_provider,hosting_status,hosting_last_checked_at,hosting_ready_at,hosting_error,hosting_metadata_json,created_at"
+    )
     .eq("store_id", auth.context.storeId)
     .order("created_at", { ascending: true });
 
@@ -91,9 +93,17 @@ export async function POST(request: NextRequest) {
       verification_status: "pending",
       verification_token: token,
       last_verification_at: null,
-      verified_at: null
+      verified_at: null,
+      hosting_provider: "vercel",
+      hosting_status: "pending",
+      hosting_last_checked_at: null,
+      hosting_ready_at: null,
+      hosting_error: null,
+      hosting_metadata_json: {}
     })
-    .select("id,store_id,domain,is_primary,verification_status,verification_token,last_verification_at,verified_at,created_at")
+    .select(
+      "id,store_id,domain,is_primary,verification_status,verification_token,last_verification_at,verified_at,hosting_provider,hosting_status,hosting_last_checked_at,hosting_ready_at,hosting_error,hosting_metadata_json,created_at"
+    )
     .single();
 
   if (error) {

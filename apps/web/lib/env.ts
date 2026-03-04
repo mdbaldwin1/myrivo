@@ -12,7 +12,10 @@ export const serverEnvSchema = z.object({
   MYRIVO_ALLOW_PUBLIC_SIGNUP: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
   MYRIVO_EMAIL_FROM: z.string().optional(),
-  MYRIVO_ORDER_ALERT_EMAILS: z.string().optional()
+  MYRIVO_ORDER_ALERT_EMAILS: z.string().optional(),
+  VERCEL_API_TOKEN: z.string().optional(),
+  VERCEL_PROJECT_ID: z.string().optional(),
+  VERCEL_TEAM_ID: z.string().optional()
 });
 
 export const appUrlEnvSchema = z.object({
@@ -70,7 +73,10 @@ export function getServerEnv() {
       MYRIVO_ALLOW_PUBLIC_SIGNUP: process.env.MYRIVO_ALLOW_PUBLIC_SIGNUP,
       RESEND_API_KEY: process.env.RESEND_API_KEY,
       MYRIVO_EMAIL_FROM: process.env.MYRIVO_EMAIL_FROM,
-      MYRIVO_ORDER_ALERT_EMAILS: process.env.MYRIVO_ORDER_ALERT_EMAILS
+      MYRIVO_ORDER_ALERT_EMAILS: process.env.MYRIVO_ORDER_ALERT_EMAILS,
+      VERCEL_API_TOKEN: process.env.VERCEL_API_TOKEN,
+      VERCEL_PROJECT_ID: process.env.VERCEL_PROJECT_ID,
+      VERCEL_TEAM_ID: process.env.VERCEL_TEAM_ID
     });
   }
 

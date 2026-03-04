@@ -381,6 +381,12 @@ export type StoreDomainRecord = {
   verification_token: string | null;
   last_verification_at: string | null;
   verified_at: string | null;
+  hosting_provider: "vercel";
+  hosting_status: "pending" | "provisioning" | "ready" | "failed" | "not_configured";
+  hosting_last_checked_at: string | null;
+  hosting_ready_at: string | null;
+  hosting_error: string | null;
+  hosting_metadata_json: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 };

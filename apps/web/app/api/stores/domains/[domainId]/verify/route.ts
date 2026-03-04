@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireStoreRole } from "@/lib/auth/authorization";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { provisionVercelProjectDomain } from "@/lib/vercel/domains";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ domainId: string }> }) {
   const trustedOriginResponse = enforceTrustedOrigin(request);
@@ -71,14 +72,37 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     verification_status: "pending" | "verified" | "failed";
     last_verification_at: string;
     verified_at: string | null;
+    hosting_status?: "pending" | "provisioning" | "ready" | "failed" | "not_configured";
+    hosting_last_checked_at?: string;
+    hosting_ready_at?: string | null;
+    hosting_error?: string | null;
+    hosting_metadata_json?: Record<string, unknown>;
     is_primary?: boolean;
   } = {
     verification_status: isVerified ? "verified" : "failed",
     last_verification_at: new Date().toISOString(),
     verified_at: isVerified ? new Date().toISOString() : null
   };
+
+  if (!isVerified) {
+    updates.hosting_status = "pending";
+    updates.hosting_last_checked_at = new Date().toISOString();
+    updates.hosting_ready_at = null;
+    updates.hosting_error = "Domain DNS verification did not pass.";
+    updates.hosting_metadata_json = {};
+  }
+
   if (isVerified && shouldSetPrimary) {
     updates.is_primary = true;
+  }
+
+  if (isVerified) {
+    const provisionResult = await provisionVercelProjectDomain(domain.domain);
+    updates.hosting_status = provisionResult.status;
+    updates.hosting_last_checked_at = new Date().toISOString();
+    updates.hosting_ready_at = provisionResult.status === "ready" ? new Date().toISOString() : null;
+    updates.hosting_error = provisionResult.error;
+    updates.hosting_metadata_json = provisionResult.metadata;
   }
 
   const { data, error } = await supabase
@@ -86,7 +110,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     .update(updates)
     .eq("id", domain.id)
     .eq("store_id", auth.context.storeId)
-    .select("id,store_id,domain,is_primary,verification_status,verification_token,last_verification_at,verified_at,created_at")
+    .select(
+      "id,store_id,domain,is_primary,verification_status,verification_token,last_verification_at,verified_at,hosting_provider,hosting_status,hosting_last_checked_at,hosting_ready_at,hosting_error,hosting_metadata_json,created_at"
+    )
     .single();
 
   if (error) {
