@@ -4,11 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build --webpack",
+    "sync:next-env": "node scripts/normalize-next-env.mjs",
+    "build": "npm run -s sync:next-env && next build --webpack",
     "start": "next start",
-    "lint": "eslint . --max-warnings=0",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "lint": "npm run -s sync:next-env && eslint . --max-warnings=0",
+    "typecheck": "npm run -s sync:next-env && tsc --noEmit",
+    "test": "npm run -s sync:next-env && vitest run",
     "e2e": "playwright test",
     "e2e:headed": "playwright test --headed",
     "e2e:ui": "playwright test --ui"
