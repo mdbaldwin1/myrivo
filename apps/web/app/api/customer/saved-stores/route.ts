@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { requireAuthenticatedCustomerUser, requireStoreById } from "@/lib/customer/account";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -19,17 +20,19 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = await createSupabaseServerClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
+  const auth = await requireAuthenticatedCustomerUser(supabase);
+  if (auth.response) {
+    return auth.response;
+  }
 
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const storeLookup = await requireStoreById(supabase, payload.data.storeId);
+  if (storeLookup.response) {
+    return storeLookup.response;
   }
 
   const { error } = await supabase.from("customer_saved_stores").upsert(
     {
-      user_id: user.id,
+      user_id: auth.user.id,
       store_id: payload.data.storeId
     },
     { onConflict: "user_id,store_id" }
@@ -55,15 +58,12 @@ export async function DELETE(request: NextRequest) {
   }
 
   const supabase = await createSupabaseServerClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = await requireAuthenticatedCustomerUser(supabase);
+  if (auth.response) {
+    return auth.response;
   }
 
-  const { error } = await supabase.from("customer_saved_stores").delete().eq("user_id", user.id).eq("store_id", storeId);
+  const { error } = await supabase.from("customer_saved_stores").delete().eq("user_id", auth.user.id).eq("store_id", storeId);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
