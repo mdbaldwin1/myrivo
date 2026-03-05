@@ -1,5 +1,5 @@
 import { ProductManager, type ProductListItem } from "@/components/dashboard/product-manager";
-import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
+import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
 import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -63,9 +63,8 @@ export default async function DashboardCatalogPage() {
   }
 
   return (
-    <section className="space-y-4">
-      <DashboardPageHeader title="Catalog" description="Manage products, stock, and publishing status." />
+    <DashboardPageScaffold title="Catalog" description="Manage products, stock, and publishing status.">
       <ProductManager initialProducts={normalizeProducts(products)} />
-    </section>
+    </DashboardPageScaffold>
   );
 }

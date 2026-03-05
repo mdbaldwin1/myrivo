@@ -1,4 +1,4 @@
-import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
+import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
 import { DataStat } from "@/components/ui/data-stat";
 import { SectionCard } from "@/components/ui/section-card";
 import Link from "next/link";
@@ -80,12 +80,10 @@ export default async function DashboardBillingPage() {
   const reportCurrency = ((orders ?? [])[0] as { currency?: string } | undefined)?.currency ?? "usd";
 
   return (
-    <section className="space-y-4">
-      <DashboardPageHeader
-        title="Billing"
-        description={`Fee reporting and billing events for ${bundle.store.name}.`}
-      />
-
+    <DashboardPageScaffold
+      title="Billing"
+      description={`Fee reporting and billing events for ${bundle.store.name}.`}
+    >
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <DataStat label="Orders In Report" value={String(report.summary.orderCount)} />
         <DataStat label="Paid Orders" value={String(report.summary.paidOrderCount)} />
@@ -138,6 +136,6 @@ export default async function DashboardBillingPage() {
           </Table>
         </SectionCard>
       ) : null}
-    </section>
+    </DashboardPageScaffold>
   );
 }
