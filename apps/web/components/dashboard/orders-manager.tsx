@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
+import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
 import { Flyout } from "@/components/ui/flyout";
 import { OrderDetailPanel } from "@/components/dashboard/order-detail-panel";
 import { Button } from "@/components/ui/button";
@@ -244,24 +244,22 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
   }
 
   return (
-    <section className="space-y-4">
-      <DashboardPageHeader
-        title="Orders"
-        description="Track order status, ship orders, and keep delivery status synced."
-        action={
-          <RowActions align="start">
-            <Button type="button" variant="outline" size="sm" asChild>
-              <Link href="/dashboard/orders/pick-list" target="_blank" rel="noreferrer">
-                Daily Pick List
-              </Link>
-            </Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => void exportOrdersCsv()} disabled={exporting}>
-              {exporting ? "Exporting..." : "Export CSV"}
-            </Button>
-          </RowActions>
-        }
-      />
-
+    <DashboardPageScaffold
+      title="Orders"
+      description="Track order status, ship orders, and keep delivery status synced."
+      action={
+        <RowActions align="start">
+          <Button type="button" variant="outline" size="sm" asChild>
+            <Link href="/dashboard/orders/pick-list" target="_blank" rel="noreferrer">
+              Daily Pick List
+            </Link>
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => void exportOrdersCsv()} disabled={exporting}>
+            {exporting ? "Exporting..." : "Export CSV"}
+          </Button>
+        </RowActions>
+      }
+    >
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-end justify-between gap-3">
@@ -456,6 +454,6 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
           </FormField>
         </form>
       </Flyout>
-    </section>
+    </DashboardPageScaffold>
   );
 }

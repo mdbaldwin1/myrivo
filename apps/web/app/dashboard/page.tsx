@@ -1,4 +1,5 @@
 import { DashboardOverview } from "@/components/dashboard/dashboard-overview";
+import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -43,10 +44,14 @@ export default async function DashboardPage() {
   }
 
   return (
-    <DashboardOverview
-      store={store}
-      products={products ?? []}
-      recentOrders={recentOrders ?? []}
-    />
+    <DashboardPageScaffold
+      title="Overview"
+      description={`Performance and operational snapshot for ${store.name}.`}
+    >
+      <DashboardOverview
+        products={products ?? []}
+        recentOrders={recentOrders ?? []}
+      />
+    </DashboardPageScaffold>
   );
 }

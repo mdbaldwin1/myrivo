@@ -1,11 +1,9 @@
 import { InsightsPanel } from "@/components/dashboard/insights-panel";
-import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataStat } from "@/components/ui/data-stat";
-import { OrderRecord, ProductRecord, StoreRecord } from "@/types/database";
+import { SectionCard } from "@/components/ui/section-card";
+import { OrderRecord, ProductRecord } from "@/types/database";
 
 type DashboardOverviewProps = {
-  store: Pick<StoreRecord, "id" | "name" | "slug" | "status">;
   recentOrders: Array<
     Pick<OrderRecord, "id" | "total_cents" | "status" | "fulfillment_status" | "shipment_status" | "tracking_number" | "discount_cents" | "created_at">
   >;
@@ -17,7 +15,7 @@ type DashboardOverviewProps = {
   >;
 };
 
-export function DashboardOverview({ store, products, recentOrders }: DashboardOverviewProps) {
+export function DashboardOverview({ products, recentOrders }: DashboardOverviewProps) {
   const lowStockProducts = products.filter((product) => product.inventory_qty < 10 && product.status !== "archived");
   const paidOrders = recentOrders.filter((order) => order.status === "paid");
   const revenueCents = paidOrders.reduce((sum, order) => sum + order.total_cents, 0);
@@ -27,9 +25,7 @@ export function DashboardOverview({ store, products, recentOrders }: DashboardOv
   const inTransit = recentOrders.filter((order) => order.fulfillment_status === "shipped").length;
 
   return (
-    <section className="space-y-5">
-      <DashboardPageHeader title="Overview" description={`Performance and operational snapshot for ${store.name}.`} />
-
+    <section className="space-y-4">
       <section className="grid gap-3 sm:grid-cols-3">
         <DataStat label="Recent Revenue" value={`$${(revenueCents / 100).toFixed(2)}`} className="bg-card" />
         <DataStat label="Recent Orders" value={String(recentOrders.length)} className="bg-card" />
@@ -57,12 +53,7 @@ export function DashboardOverview({ store, products, recentOrders }: DashboardOv
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Recent Orders</CardTitle>
-            <CardDescription>Latest paid and pending orders for quick status checks.</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <SectionCard title="Recent Orders" description="Latest paid and pending orders for quick status checks.">
             <ul className="space-y-2 text-sm">
               {recentOrders.length === 0 ? (
                 <li className="text-muted-foreground">No orders yet.</li>
@@ -76,15 +67,9 @@ export function DashboardOverview({ store, products, recentOrders }: DashboardOv
                 ))
               )}
             </ul>
-          </CardContent>
-        </Card>
+        </SectionCard>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Low Stock Alerts</CardTitle>
-            <CardDescription>Active products below your low-stock threshold.</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <SectionCard title="Low Stock Alerts" description="Active products below your low-stock threshold.">
             <ul className="space-y-2 text-sm">
               {lowStockProducts.length === 0 ? (
                 <li className="text-muted-foreground">No low-stock alerts.</li>
@@ -97,8 +82,7 @@ export function DashboardOverview({ store, products, recentOrders }: DashboardOv
                 ))
               )}
             </ul>
-          </CardContent>
-        </Card>
+        </SectionCard>
       </section>
 
       <InsightsPanel recentOrders={recentOrders} products={products} showLowStockWatchlist={false} title="Performance Insights" />
