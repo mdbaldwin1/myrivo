@@ -14,6 +14,9 @@ const createSchema = z.object({
   productId: z.string().uuid().optional(),
   variantId: z.string().uuid().optional()
 });
+const deleteSchema = z.object({
+  id: z.string().uuid()
+});
 
 export async function POST(request: NextRequest) {
   const trustedOriginResponse = enforceTrustedOrigin(request);
@@ -67,9 +70,11 @@ export async function DELETE(request: NextRequest) {
   }
 
   const url = new URL(request.url);
-  const id = url.searchParams.get("id");
-  if (!id) {
-    return NextResponse.json({ error: "id is required" }, { status: 400 });
+  const query = deleteSchema.safeParse({
+    id: url.searchParams.get("id")
+  });
+  if (!query.success) {
+    return NextResponse.json({ error: "Valid id is required." }, { status: 400 });
   }
 
   const supabase = await createSupabaseServerClient();
@@ -78,7 +83,7 @@ export async function DELETE(request: NextRequest) {
     return auth.response;
   }
 
-  const { error } = await supabase.from("customer_saved_items").delete().eq("id", id).eq("user_id", auth.user.id);
+  const { error } = await supabase.from("customer_saved_items").delete().eq("id", query.data.id).eq("user_id", auth.user.id);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
