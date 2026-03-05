@@ -19,6 +19,9 @@ const itemSchema = z.object({
 const upsertSchema = z.object({
   items: z.array(itemSchema)
 });
+const deleteSchema = z.object({
+  cartId: z.string().uuid()
+});
 
 export async function GET(request: NextRequest) {
   const supabase = await createSupabaseServerClient();
@@ -175,6 +178,63 @@ export async function PUT(request: NextRequest) {
     if (insertError) {
       return NextResponse.json({ error: insertError.message }, { status: 500 });
     }
+  }
+
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(request: NextRequest) {
+  const trustedOriginResponse = enforceTrustedOrigin(request);
+  if (trustedOriginResponse) {
+    return trustedOriginResponse;
+  }
+
+  const url = new URL(request.url);
+  const query = deleteSchema.safeParse({
+    cartId: url.searchParams.get("cartId")
+  });
+  if (!query.success) {
+    return NextResponse.json({ error: "Valid cartId is required." }, { status: 400 });
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const auth = await requireAuthenticatedCustomerUser(supabase);
+  if (auth.response) {
+    return auth.response;
+  }
+
+  const { data: cart, error: cartError } = await supabase
+    .from("customer_carts")
+    .select("id")
+    .eq("id", query.data.cartId)
+    .eq("user_id", auth.user.id)
+    .eq("status", "active")
+    .maybeSingle<{ id: string }>();
+
+  if (cartError) {
+    return NextResponse.json({ error: cartError.message }, { status: 500 });
+  }
+
+  if (!cart) {
+    return NextResponse.json({ error: "Active cart not found." }, { status: 404 });
+  }
+
+  const { error: clearError } = await supabase.from("customer_cart_items").delete().eq("cart_id", cart.id);
+  if (clearError) {
+    return NextResponse.json({ error: clearError.message }, { status: 500 });
+  }
+
+  const { error: cartUpdateError } = await supabase
+    .from("customer_carts")
+    .update({
+      status: "abandoned",
+      metadata_json: {}
+    })
+    .eq("id", cart.id)
+    .eq("user_id", auth.user.id);
+
+  if (cartUpdateError) {
+    return NextResponse.json({ error: cartUpdateError.message }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true });

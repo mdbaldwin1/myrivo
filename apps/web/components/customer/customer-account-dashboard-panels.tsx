@@ -67,6 +67,10 @@ export function CustomerAccountDashboardPanels({
   const [savedStoresMessage, setSavedStoresMessage] = useState<string | null>(null);
   const [savedItemsError, setSavedItemsError] = useState<string | null>(null);
   const [savedItemsMessage, setSavedItemsMessage] = useState<string | null>(null);
+  const [activeCarts, setActiveCarts] = useState(carts);
+  const [pendingCartIds, setPendingCartIds] = useState<string[]>([]);
+  const [cartsError, setCartsError] = useState<string | null>(null);
+  const [cartsMessage, setCartsMessage] = useState<string | null>(null);
 
   const savedStoreRows = useMemo(
     () =>
@@ -143,6 +147,34 @@ export function CustomerAccountDashboardPanels({
     }
   }
 
+  async function removeCart(cartId: string) {
+    if (pendingCartIds.includes(cartId)) {
+      return;
+    }
+
+    setCartsError(null);
+    setCartsMessage(null);
+    const snapshot = activeCarts;
+    setPendingCartIds((current) => [...current, cartId]);
+    setActiveCarts((current) => current.filter((cart) => cart.id !== cartId));
+
+    try {
+      const response = await fetch(`/api/customer/cart?cartId=${encodeURIComponent(cartId)}`, {
+        method: "DELETE"
+      });
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Unable to remove active cart.");
+      }
+      setCartsMessage("Active cart removed.");
+    } catch (error) {
+      setActiveCarts(snapshot);
+      setCartsError(error instanceof Error ? error.message : "Unable to remove active cart.");
+    } finally {
+      setPendingCartIds((current) => current.filter((id) => id !== cartId));
+    }
+  }
+
   return (
     <>
       <div className="grid gap-4 md:grid-cols-2">
@@ -203,9 +235,10 @@ export function CustomerAccountDashboardPanels({
       <div className="grid gap-4 md:grid-cols-2">
         <SectionCard title="Active Carts" description="Continue where you left off in checkout.">
           <ul className="space-y-2 text-sm">
-            {carts.length === 0 ? <li className="text-muted-foreground">No active carts.</li> : null}
-            {carts.map((cart) => {
+            {activeCarts.length === 0 ? <li className="text-muted-foreground">No active carts.</li> : null}
+            {activeCarts.map((cart) => {
               const store = firstRelation(cart.stores);
+              const isPending = pendingCartIds.includes(cart.id);
               return (
                 <li key={cart.id} className="flex items-center justify-between gap-3 rounded-md border border-border/60 px-3 py-2">
                   <div className="min-w-0">
@@ -214,15 +247,22 @@ export function CustomerAccountDashboardPanels({
                       Updated {cart.updated_at ? new Date(cart.updated_at).toLocaleString() : "recently"}
                     </p>
                   </div>
-                  {store?.slug ? (
-                    <Button asChild variant="outline" size="sm">
-                      <Link href={`/cart?store=${encodeURIComponent(store.slug)}`}>Open cart</Link>
+                  <div className="flex items-center gap-2">
+                    {store?.slug ? (
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={`/cart?store=${encodeURIComponent(store.slug)}`}>Open cart</Link>
+                      </Button>
+                    ) : null}
+                    <Button type="button" size="sm" variant="ghost" onClick={() => void removeCart(cart.id)} disabled={isPending}>
+                      {isPending ? "Removing..." : "Remove"}
                     </Button>
-                  ) : null}
+                  </div>
                 </li>
               );
             })}
           </ul>
+          <FeedbackMessage type="success" message={cartsMessage} className="mt-3" />
+          <FeedbackMessage type="error" message={cartsError} className="mt-3" />
         </SectionCard>
 
         <SectionCard title="Recent Orders" description="Your latest purchases across stores.">
