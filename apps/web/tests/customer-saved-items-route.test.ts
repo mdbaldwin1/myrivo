@@ -5,6 +5,8 @@ const enforceTrustedOriginMock = vi.fn();
 const authGetUserMock = vi.fn();
 const serverFromMock = vi.fn();
 const savedItemsUpsertMock = vi.fn();
+const savedItemsDeleteEqUserMock = vi.fn();
+const savedItemsDeleteEqIdMock = vi.fn();
 
 vi.mock("@/lib/security/request-origin", () => ({
   enforceTrustedOrigin: (...args: unknown[]) => enforceTrustedOriginMock(...args)
@@ -23,6 +25,8 @@ beforeEach(() => {
   authGetUserMock.mockReset();
   serverFromMock.mockReset();
   savedItemsUpsertMock.mockReset();
+  savedItemsDeleteEqUserMock.mockReset();
+  savedItemsDeleteEqIdMock.mockReset();
 
   enforceTrustedOriginMock.mockReturnValue(null);
   authGetUserMock.mockResolvedValue({ data: { user: { id: "user-1", email: "test@example.com" } } });
@@ -97,5 +101,51 @@ describe("customer saved-items route", () => {
     expect(response.status).toBe(400);
     expect(payload.error).toContain("Product is unavailable");
     expect(savedItemsUpsertMock).not.toHaveBeenCalled();
+  });
+
+  test("DELETE rejects invalid id parameter", async () => {
+    const route = await import("@/app/api/customer/saved-items/route");
+    const request = new NextRequest("http://localhost:3000/api/customer/saved-items?id=bad", {
+      method: "DELETE",
+      headers: { origin: "http://localhost:3000", host: "localhost:3000" }
+    });
+
+    const response = await route.DELETE(request);
+    const payload = (await response.json()) as { error: string };
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toContain("Valid id is required");
+  });
+
+  test("DELETE removes saved item with valid id", async () => {
+    savedItemsDeleteEqUserMock.mockResolvedValue({ error: null });
+    savedItemsDeleteEqIdMock.mockReturnValue({ eq: savedItemsDeleteEqUserMock });
+
+    serverFromMock.mockImplementation((table: string) => {
+      if (table === "customer_saved_items") {
+        return {
+          delete: vi.fn(() => ({
+            eq: savedItemsDeleteEqIdMock
+          }))
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const route = await import("@/app/api/customer/saved-items/route");
+    const itemId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const request = new NextRequest(`http://localhost:3000/api/customer/saved-items?id=${itemId}`, {
+      method: "DELETE",
+      headers: { origin: "http://localhost:3000", host: "localhost:3000" }
+    });
+
+    const response = await route.DELETE(request);
+    const payload = (await response.json()) as { ok: boolean };
+
+    expect(response.status).toBe(200);
+    expect(payload.ok).toBe(true);
+    expect(savedItemsDeleteEqIdMock).toHaveBeenCalledWith("id", itemId);
+    expect(savedItemsDeleteEqUserMock).toHaveBeenCalledWith("user_id", "user-1");
   });
 });

@@ -23,7 +23,7 @@ export async function GET() {
       .eq("user_id", user.id),
     supabase
       .from("customer_saved_items")
-      .select("id,store_id,product_id,product_variant_id,products(id,title,status),product_variants(id,title,status)")
+      .select("id,store_id,product_id,product_variant_id,products(id,title,status),product_variants(id,title,status),stores(id,name,slug,status)")
       .eq("user_id", user.id),
     supabase
       .from("customer_carts")

@@ -8,6 +8,9 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 const bodySchema = z.object({
   storeId: z.string().uuid()
 });
+const querySchema = z.object({
+  storeId: z.string().uuid()
+});
 
 export async function POST(request: NextRequest) {
   const trustedOriginResponse = enforceTrustedOrigin(request);
@@ -53,9 +56,11 @@ export async function DELETE(request: NextRequest) {
   }
 
   const url = new URL(request.url);
-  const storeId = url.searchParams.get("storeId");
-  if (!storeId) {
-    return NextResponse.json({ error: "storeId is required" }, { status: 400 });
+  const query = querySchema.safeParse({
+    storeId: url.searchParams.get("storeId")
+  });
+  if (!query.success) {
+    return NextResponse.json({ error: "Valid storeId is required." }, { status: 400 });
   }
 
   const supabase = await createSupabaseServerClient();
@@ -64,7 +69,7 @@ export async function DELETE(request: NextRequest) {
     return auth.response;
   }
 
-  const { error } = await supabase.from("customer_saved_stores").delete().eq("user_id", auth.user.id).eq("store_id", storeId);
+  const { error } = await supabase.from("customer_saved_stores").delete().eq("user_id", auth.user.id).eq("store_id", query.data.storeId);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
