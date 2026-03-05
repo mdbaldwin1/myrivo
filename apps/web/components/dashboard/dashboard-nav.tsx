@@ -148,17 +148,41 @@ export function DashboardNav({
   const isStoreSettingsMode =
     normalizedPath === "/dashboard/store-settings" || normalizedPath.startsWith("/dashboard/store-settings/");
   const isReportsMode = normalizedPath === "/dashboard/reports" || normalizedPath.startsWith("/dashboard/reports/");
+  const activeWorkspaceLinks = isContentStudioMode
+    ? { title: "Content Studio", links: contentStudioLinks }
+    : isStoreSettingsMode
+      ? { title: "Store Settings", links: storeSettingsLinks }
+      : isReportsMode
+        ? { title: "Reports", links: reportsLinks }
+        : null;
 
   return (
     <nav className={cn("h-full min-h-0 flex flex-col", className)}>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="space-y-2">
           {hasStoreAccess ? (
-            <div>
-              {isContentStudioMode ? (
-                <div className="space-y-1">
-                  <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Content Studio</p>
-                  {contentStudioLinks.map((link) => (
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Navigation</p>
+                {globalLinks.map((link) => (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    onClick={onNavigate}
+                    aria-current={isLinkActive(link.href) ? "page" : undefined}
+                    className={cn(buttonVariants({ variant: isLinkActive(link.href) ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
+                  >
+                    {link.label}
+                  </Link>
+                ))}
+              </div>
+
+              {activeWorkspaceLinks ? (
+                <div className="space-y-1 border-t border-border/70 pt-3">
+                  <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    {activeWorkspaceLinks.title}
+                  </p>
+                  {activeWorkspaceLinks.links.map((link) => (
                     <Link
                       key={link.href}
                       href={link.href}
@@ -170,68 +194,24 @@ export function DashboardNav({
                     </Link>
                   ))}
                 </div>
-              ) : isStoreSettingsMode ? (
-                <div className="space-y-1">
-                  <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Store Settings</p>
-                  {storeSettingsLinks.map((link) => (
-                    <Link
-                      key={link.href}
-                      href={link.href}
-                      onClick={onNavigate}
-                      aria-current={isLinkActive(link.href) ? "page" : undefined}
-                      className={cn(buttonVariants({ variant: isLinkActive(link.href) ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
-                    >
-                      {link.label}
-                    </Link>
-                  ))}
+              ) : null}
+
+              {canAccessPlatform ? (
+                <div className="space-y-1 border-t border-border/70 pt-3">
+                  <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Platform</p>
+                  <Link
+                    href="/dashboard/platform"
+                    onClick={onNavigate}
+                    aria-current={isLinkActive("/dashboard/platform") ? "page" : undefined}
+                    className={cn(
+                      buttonVariants({ variant: isLinkActive("/dashboard/platform") ? "default" : "ghost", size: "sm" }),
+                      "w-full justify-start"
+                    )}
+                  >
+                    Platform Console
+                  </Link>
                 </div>
-              ) : isReportsMode ? (
-                <div className="space-y-1">
-                  <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Reports</p>
-                  {reportsLinks.map((link) => (
-                    <Link
-                      key={link.href}
-                      href={link.href}
-                      onClick={onNavigate}
-                      aria-current={isLinkActive(link.href) ? "page" : undefined}
-                      className={cn(buttonVariants({ variant: isLinkActive(link.href) ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
-                    >
-                      {link.label}
-                    </Link>
-                  ))}
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Navigation</p>
-                  {globalLinks.map((link) => (
-                    <Link
-                      key={link.href}
-                      href={link.href}
-                      onClick={onNavigate}
-                      aria-current={isLinkActive(link.href) ? "page" : undefined}
-                      className={cn(buttonVariants({ variant: isLinkActive(link.href) ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
-                    >
-                      {link.label}
-                    </Link>
-                  ))}
-                  {canAccessPlatform ? (
-                    <div className="pt-2">
-                      <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Platform</p>
-                      <Link
-                        href="/dashboard/platform"
-                        onClick={onNavigate}
-                        aria-current={isLinkActive("/dashboard/platform") ? "page" : undefined}
-                        className={cn(
-                          buttonVariants({ variant: isLinkActive("/dashboard/platform") ? "default" : "ghost", size: "sm" }),
-                          "w-full justify-start"
-                        )}
-                      >
-                        Platform Console
-                      </Link>
-                    </div>
-                  ) : null}
-                </div>
-              )}
+              ) : null}
             </div>
           ) : null}
 
