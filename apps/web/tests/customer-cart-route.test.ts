@@ -6,6 +6,12 @@ const authGetUserMock = vi.fn();
 const resolveStoreSlugFromRequestAsyncMock = vi.fn();
 const serverFromMock = vi.fn();
 const cartItemsInsertMock = vi.fn();
+const cartDeleteEqMock = vi.fn();
+const cartSelectStatusEqMock = vi.fn();
+const cartSelectUserEqMock = vi.fn();
+const cartSelectIdEqMock = vi.fn();
+const cartUpdateEqUserMock = vi.fn();
+const cartUpdateEqIdMock = vi.fn();
 
 vi.mock("@/lib/security/request-origin", () => ({
   enforceTrustedOrigin: (...args: unknown[]) => enforceTrustedOriginMock(...args)
@@ -29,6 +35,12 @@ beforeEach(() => {
   resolveStoreSlugFromRequestAsyncMock.mockReset();
   serverFromMock.mockReset();
   cartItemsInsertMock.mockReset();
+  cartDeleteEqMock.mockReset();
+  cartSelectStatusEqMock.mockReset();
+  cartSelectUserEqMock.mockReset();
+  cartSelectIdEqMock.mockReset();
+  cartUpdateEqUserMock.mockReset();
+  cartUpdateEqIdMock.mockReset();
 
   enforceTrustedOriginMock.mockReturnValue(null);
   authGetUserMock.mockResolvedValue({ data: { user: { id: "user-1", email: "test@example.com" } } });
@@ -141,5 +153,68 @@ describe("customer cart route", () => {
     expect(inserted).toHaveLength(1);
     expect(inserted[0]?.quantity).toBe(3);
     expect(inserted[0]?.unit_price_snapshot_cents).toBe(2500);
+  });
+
+  test("DELETE rejects invalid cartId parameter", async () => {
+    const route = await import("@/app/api/customer/cart/route");
+    const request = new NextRequest("http://localhost:3000/api/customer/cart?cartId=bad", {
+      method: "DELETE",
+      headers: { origin: "http://localhost:3000", host: "localhost:3000" }
+    });
+
+    const response = await route.DELETE(request);
+    const payload = (await response.json()) as { error: string };
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toContain("Valid cartId is required");
+  });
+
+  test("DELETE clears an active cart for the authenticated user", async () => {
+    cartSelectStatusEqMock.mockReturnValue({
+      maybeSingle: vi.fn(async () => ({ data: { id: "cart-1" }, error: null }))
+    });
+    cartSelectUserEqMock.mockReturnValue({ eq: cartSelectStatusEqMock });
+    cartSelectIdEqMock.mockReturnValue({ eq: cartSelectUserEqMock });
+    cartDeleteEqMock.mockResolvedValue({ error: null });
+    cartUpdateEqUserMock.mockResolvedValue({ error: null });
+    cartUpdateEqIdMock.mockReturnValue({ eq: cartUpdateEqUserMock });
+
+    serverFromMock.mockImplementation((table: string) => {
+      if (table === "customer_carts") {
+        return {
+          select: vi.fn(() => ({
+            eq: cartSelectIdEqMock
+          })),
+          update: vi.fn(() => ({
+            eq: cartUpdateEqIdMock
+          }))
+        };
+      }
+
+      if (table === "customer_cart_items") {
+        return {
+          delete: vi.fn(() => ({
+            eq: cartDeleteEqMock
+          }))
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const route = await import("@/app/api/customer/cart/route");
+    const request = new NextRequest("http://localhost:3000/api/customer/cart?cartId=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", {
+      method: "DELETE",
+      headers: { origin: "http://localhost:3000", host: "localhost:3000" }
+    });
+
+    const response = await route.DELETE(request);
+    const payload = (await response.json()) as { ok: boolean };
+
+    expect(response.status).toBe(200);
+    expect(payload.ok).toBe(true);
+    expect(cartDeleteEqMock).toHaveBeenCalledWith("cart_id", "cart-1");
+    expect(cartUpdateEqIdMock).toHaveBeenCalledWith("id", "cart-1");
+    expect(cartUpdateEqUserMock).toHaveBeenCalledWith("user_id", "user-1");
   });
 });
