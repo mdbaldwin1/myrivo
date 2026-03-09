@@ -11,10 +11,13 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     env:
-      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://example.supabase.co' }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'ci-placeholder-anon-key' }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || '' }}
       E2E_OWNER_EMAIL: ${{ secrets.E2E_OWNER_EMAIL }}
       E2E_OWNER_PASSWORD: ${{ secrets.E2E_OWNER_PASSWORD }}
+      HAS_SUPABASE_SECRETS: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL != '' && secrets.SUPABASE_SERVICE_ROLE_KEY != '' }}
+      HAS_E2E_SECRETS: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL != '' && secrets.SUPABASE_SERVICE_ROLE_KEY != '' && secrets.E2E_OWNER_EMAIL != '' && secrets.E2E_OWNER_PASSWORD != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -33,7 +36,7 @@ jobs:
         run: npm run build
       - name: E2E (when required secrets are configured)
         run: |
-          if [ -n "$NEXT_PUBLIC_SUPABASE_URL" ] && [ -n "$SUPABASE_SERVICE_ROLE_KEY" ] && [ -n "$E2E_OWNER_EMAIL" ] && [ -n "$E2E_OWNER_PASSWORD" ]; then
+          if [ "$HAS_E2E_SECRETS" = "true" ]; then
             npx playwright install --with-deps chromium
             npm run -w @myrivo/web e2e
           else
@@ -41,7 +44,7 @@ jobs:
           fi
       - name: Verify platform rollout (when Supabase secrets are configured)
         run: |
-          if [ -n "$NEXT_PUBLIC_SUPABASE_URL" ] && [ -n "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+          if [ "$HAS_SUPABASE_SECRETS" = "true" ]; then
             cat > .env.ci <<EOF
             NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
             SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY
