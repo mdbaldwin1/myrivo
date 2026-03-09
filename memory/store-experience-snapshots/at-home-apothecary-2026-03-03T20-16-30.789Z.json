@@ -1,0 +1,181 @@
+{
+  "snapshotVersion": 1,
+  "createdAt": "2026-03-03T20:16:30.786Z",
+  "source": {
+    "storeSlug": "at-home-apothecary",
+    "storeId": "c4f3f1df-24b6-410b-b5b0-1f84aa832df0"
+  },
+  "data": {
+    "store": {
+      "id": "c4f3f1df-24b6-410b-b5b0-1f84aa832df0",
+      "owner_user_id": "21cf4245-baba-4e3d-a578-d6298983ac8c",
+      "name": "At Home Apothecary",
+      "slug": "at-home-apothecary",
+      "status": "active",
+      "stripe_account_id": null,
+      "created_at": "2026-02-25T15:45:03.308694+00:00",
+      "updated_at": "2026-03-02T20:42:43.634211+00:00"
+    },
+    "store_branding": {
+      "store_id": "c4f3f1df-24b6-410b-b5b0-1f84aa832df0",
+      "logo_path": "https://hvjdicxhwncdnlpmmxkq.supabase.co/storage/v1/object/public/store-branding/c4f3f1df-24b6-410b-b5b0-1f84aa832df0/logo-1772247160002-f0d0e313-e7f5-43fe-bf66-52531c194c4c.png",
+      "primary_color": "#BA690B",
+      "accent_color": "#B88850",
+      "theme_json": {
+        "cardStyle": "integrated",
+        "pageWidth": "wide",
+        "textColor": "#1F1F1F",
+        "fontPreset": "clean",
+        "heroLayout": "split",
+        "accentColor": "#B88850",
+        "buttonStyle": "rounded",
+        "heroEyebrow": "",
+        "heroSubcopy": "Simple ingredients, intentional formulas, and direct-from-maker quality.",
+        "radiusScale": "sharp",
+        "heroBadgeOne": "",
+        "heroBadgeTwo": "",
+        "heroHeadline": "Small-batch tallow skincare, crafted at home",
+        "homeShowHero": true,
+        "primaryColor": "#BA690B",
+        "spacingScale": "comfortable",
+        "surfaceColor": "#FFFFFF",
+        "footerNavItems": [
+          "products",
+          "cart",
+          "about",
+          "policies"
+        ],
+        "headerNavItems": [
+          "home",
+          "products",
+          "about",
+          "policies"
+        ],
+        "heroBadgeThree": "",
+        "backgroundColor": "#FFFFFF",
+        "primaryCtaStyle": "primary",
+        "showPolicyStrip": true,
+        "heroBrandDisplay": "logo",
+        "productsShowSort": true,
+        "showContentBlocks": true,
+        "productGridColumns": 3,
+        "productsShowSearch": true,
+        "productCardImageFit": "cover",
+        "showFooterBackToTop": true,
+        "productsFilterLayout": "sidebar",
+        "showFooterOwnerLogin": true,
+        "accentForegroundColor": "#F8F8F8",
+        "headerBackgroundColor": "#F8F8F8",
+        "headerForegroundColor": "#111111",
+        "homeShowContentBlocks": true,
+        "primaryForegroundColor": "#F8F8F8",
+        "productCardShowQuickAdd": true,
+        "homeShowFeaturedProducts": true,
+        "productsShowAvailability": true,
+        "homeFeaturedProductsLimit": 6,
+        "productCardImageHoverZoom": true,
+        "productsShowOptionFilters": true,
+        "productCardShowDescription": true,
+        "productsFiltersDefaultOpen": false,
+        "productCardDescriptionLines": 2,
+        "productCardShowAvailability": true,
+        "productCardShowCarouselDots": true,
+        "productCardShowFeaturedBadge": true,
+        "productCardShowCarouselArrows": true
+      },
+      "created_at": "2026-02-25T15:45:06.942716+00:00",
+      "updated_at": "2026-03-03T15:34:10.100166+00:00"
+    },
+    "store_settings": {
+      "store_id": "c4f3f1df-24b6-410b-b5b0-1f84aa832df0",
+      "support_email": "support@athomeapothacary.com",
+      "fulfillment_message": "Orders are hand-packed with care and usually ship within 2-4 business days. You’ll receive tracking as soon as your package is on the way.",
+      "shipping_policy": "We currently ship within the U.S. Orders are processed in 2-4 business days, then sent via standard tracked shipping. Shipping cost is calculated at checkout based on destination and package weight. You’ll receive a tracking update once your label is created.",
+      "return_policy": "Because our products are personal-care items, we cannot accept returns on opened or used products. If your order arrives damaged or there is an issue with your shipment, contact us within 7 days of delivery and we’ll make it right.",
+      "announcement": "Hand-poured in small batches. Free local pickup each Friday.",
+      "created_at": "2026-02-25T15:45:07.671715+00:00",
+      "updated_at": "2026-03-03T17:40:34.945745+00:00",
+      "footer_tagline": "Traditional tallow care, thoughtfully made for modern homes.",
+      "footer_note": "At Home Apothecary crafts small-batch tallow goods with simple ingredients and intentional process.",
+      "instagram_url": "https://www.instagram.com/racheljonesathome/",
+      "facebook_url": null,
+      "tiktok_url": null,
+      "about_article_html": "<h2><strong>About Article Draft</strong></h2><p><strong>At Home Apothecary was born from a simple belief: skincare should be nourishing, intentional, and made with ingredients you can trust.</strong></p><p>What started as small batches made at home for family and friends has grown into a daily ritual shared with our community. Every product is made with care, using thoughtfully selected ingredients and a process that favors quality over speed.</p><p>We focus on formulas that support skin health without unnecessary fillers. Our approach is rooted in simplicity: fewer ingredients, purposeful combinations, and textures that feel rich and restorative.</p><h3><strong>Our Standards</strong></h3><ul><li><p>Small-batch production for consistency and freshness</p></li><li><p>Ingredient-first formulation</p></li><li><p>Handmade with care, not mass manufactured</p></li><li><p>Honest products designed for everyday use</p></li></ul><h3><strong>Why We Make It This Way</strong></h3><p>Modern routines can feel complicated. We want skincare to feel grounding again: a moment to slow down, care for yourself, and use products that do exactly what they promise.</p><h3><strong>From Our Home to Yours</strong></h3><p>Each order is packed by hand and sent with care. We’re grateful to be part of your routine, and we take that responsibility seriously.</p><p>Thank you for supporting independent, small-batch skincare.</p>",
+      "about_sections": [],
+      "policy_faqs": [
+        {
+          "id": "faq-shipping-timing",
+          "answer": "Most orders are packed and shipped within 2 to 4 business days. You will receive tracking by email once your package is on the way.",
+          "question": "When will my order ship?",
+          "is_active": true,
+          "sort_order": 0
+        },
+        {
+          "id": "faq-return-window",
+          "answer": "Returns are accepted according to the return policy listed on this page. Please contact support before sending items back.",
+          "question": "What is your return policy?",
+          "is_active": true,
+          "sort_order": 1
+        },
+        {
+          "id": "faq-order-help",
+          "answer": "If you need help, email support and include your order number so we can assist quickly.",
+          "question": "How do I get help with my order?",
+          "is_active": true,
+          "sort_order": 2
+        }
+      ],
+      "storefront_copy_json": {},
+      "email_capture_enabled": true,
+      "email_capture_heading": "Join our email list",
+      "email_capture_description": "Be first to hear about new releases, restocks, and occasional offers. Unsubscribe anytime.",
+      "email_capture_success_message": "Thanks for subscribing. You are on the list.",
+      "checkout_enable_local_pickup": true,
+      "checkout_local_pickup_label": "Porch pickup",
+      "checkout_local_pickup_fee_cents": 0,
+      "checkout_enable_flat_rate_shipping": true,
+      "checkout_flat_rate_shipping_label": "Shipped (flat fee)",
+      "checkout_flat_rate_shipping_fee_cents": 1000,
+      "checkout_allow_order_note": true,
+      "checkout_order_note_prompt": "If you have any questions, comments, or concerns about your order, leave a note below."
+    },
+    "store_content_blocks": [
+      {
+        "id": "f8a65254-f51e-41de-922b-8d27a935e3b5",
+        "store_id": "c4f3f1df-24b6-410b-b5b0-1f84aa832df0",
+        "sort_order": 0,
+        "eyebrow": "Our Approach",
+        "title": "Simple Ingredients, Honest Care",
+        "body": "We keep formulas focused and purposeful, using time-honored ingredients chosen for daily skin support.",
+        "cta_label": "Shop bestsellers",
+        "cta_url": "#products",
+        "is_active": true,
+        "created_at": "2026-02-28T18:13:10.373985+00:00",
+        "updated_at": "2026-02-28T18:13:10.373985+00:00"
+      }
+    ],
+    "promotions": [
+      {
+        "id": "1d5cb8c3-6784-4ba4-a727-5787c975e44e",
+        "store_id": "c4f3f1df-24b6-410b-b5b0-1f84aa832df0",
+        "code": "WELCOME10",
+        "discount_type": "percent",
+        "discount_value": 10,
+        "min_subtotal_cents": 0,
+        "max_redemptions": null,
+        "times_redeemed": 0,
+        "starts_at": null,
+        "ends_at": null,
+        "is_active": true,
+        "created_at": "2026-02-28T16:20:06.378592+00:00",
+        "updated_at": "2026-03-01T01:31:22.34653+00:00"
+      }
+    ],
+    "store_integrations": null,
+    "store_email_subscribers": []
+  },
+  "checksum": {
+    "algorithm": "sha256",
+    "value": "10df94486310c0f092576c153996d702744cb65a752326cd2c5b3ce1d3ed6c33"
+  }
+}

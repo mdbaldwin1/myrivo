@@ -1,8 +1,8 @@
 {
-  "name": "storefoundry",
+  "name": "myrivo",
   "private": true,
   "version": "0.1.0",
-  "description": "Multi-tenant commerce platform for independent makers",
+  "description": "Single-store commerce app for At Home Apothecary",
   "packageManager": "npm@10.8.2",
   "workspaces": [
     "apps/*",
@@ -14,7 +14,15 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "guard:test-store": "node scripts/assert-test-store.mjs --env-file=.env.local",
+    "env:test": "node scripts/switch-env.mjs .env.local.test",
+    "env:prod": "node scripts/switch-env.mjs .env.local.prod",
+    "setup:test-env": "node scripts/assert-test-store.mjs --env-file=.env.local.test && node scripts/setup-test-environment.mjs --env-file=.env.local.test",
+    "e2e:test": "npm run env:test && npm run -w @myrivo/web e2e",
+    "snapshot:store-experience": "node scripts/export-store-experience-snapshot.mjs",
+    "replay:store-experience": "npm run guard:test-store && node scripts/replay-store-experience-snapshot.mjs",
+    "verify:platform-rollout": "node scripts/verify-platform-rollout.mjs --env-file=.env.local"
   },
   "devDependencies": {
     "prettier": "^3.6.2",

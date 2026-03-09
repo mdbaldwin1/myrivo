@@ -8,6 +8,8 @@ dist/
 coverage/
 .turbo/
 *.tsbuildinfo
+playwright-report/
+test-results/
 
 # local env
 .env
@@ -23,3 +25,5 @@ pnpm-debug.log*
 # misc
 .DS_Store
 .vercel
+
+.mynotes

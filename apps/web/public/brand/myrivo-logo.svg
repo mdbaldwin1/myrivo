@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 920 280">
+  <!-- Generator: Adobe Illustrator 30.1.0, SVG Export Plug-In . SVG Version: 2.1.1 Build 136)  -->
+  <defs>
+    <style>
+      .st0 {
+        fill: #f7fbfb;
+      }
+
+      .st1 {
+        fill: #fff;
+        stroke-width: 10px;
+      }
+
+      .st1, .st2 {
+        stroke: #0f7b84;
+      }
+
+      .st3 {
+        fill: #123d40;
+        font-family: AvenirNext-Regular, 'Avenir Next';
+        font-size: 118px;
+        isolation: isolate;
+        letter-spacing: 0em;
+      }
+
+      .st4 {
+        fill: #f2fbfa;
+      }
+
+      .st2 {
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: 9px;
+      }
+    </style>
+  </defs>
+  <rect class="st0" width="747.41" height="280" rx="36" ry="36"/>
+  <g>
+    <rect class="st4" x="34" y="30" width="220" height="220" rx="52" ry="52"/>
+    <circle class="st1" cx="144" cy="100" r="30"/>
+    <circle class="st1" cx="110" cy="156" r="30"/>
+    <circle class="st1" cx="178" cy="156" r="30"/>
+    <path class="st2" d="M96,183l16-45,32-42,32,42,16,45"/>
+  </g>
+  <text class="st3" transform="translate(292 164)"><tspan x="0" y="0">Myrivo</tspan></text>
+</svg>

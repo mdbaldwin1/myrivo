@@ -5,13 +5,13 @@
 ### Standard
 
 - Merchant has a full Stripe dashboard and relationship with Stripe.
-- Lowest compliance and support burden for Storefoundry.
+- Lowest compliance and support burden for Myrivo.
 - Stripe handles most KYC and payout onboarding directly.
 - Good fit for early-stage platform teams.
 
 ### Express
 
-- Merchant onboarding is embedded and more branded to Storefoundry.
+- Merchant onboarding is embedded and more branded to Myrivo.
 - Better UX control and less context switching for merchants.
 - Higher platform responsibility for support and operations.
 - Useful when merchant experience needs deeper integration.

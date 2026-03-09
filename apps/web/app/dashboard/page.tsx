@@ -1,7 +1,9 @@
-import { redirect } from "next/navigation";
-import { DashboardOverview } from "@/components/dashboard/dashboard-overview";
-import { PageShell } from "@/components/layout/page-shell";
+import { DashboardHomeShell } from "@/components/dashboard/dashboard-home-shell";
+import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
+import { getDashboardHomeData } from "@/lib/dashboard/home/get-dashboard-home-data";
+import { resolveCustomerStorefrontLinksBySlug } from "@/lib/customer/storefront-links";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { GlobalUserRole } from "@/types/database";
 
 export const dynamic = "force-dynamic";
 
@@ -12,38 +14,65 @@ export default async function DashboardPage() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    return null;
   }
 
-  const { data: store, error: storeError } = await supabase
-    .from("stores")
-    .select("id,name,slug,status")
-    .eq("owner_user_id", user.id)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+  const [{ data: profile }, { data: savedStores }, { data: savedItems }, { data: carts }, { data: orders }] = await Promise.all([
+    supabase.from("user_profiles").select("global_role").eq("id", user.id).maybeSingle<{ global_role: GlobalUserRole }>(),
+    supabase.from("customer_saved_stores").select("id,stores(id,name,slug,status),store_id").eq("user_id", user.id),
+    supabase.from("customer_saved_items").select("id,products(id,title),product_variants(id,title),stores(id,name,slug,status)").eq("user_id", user.id),
+    supabase.from("customer_carts").select("id,stores(id,name,slug),updated_at").eq("user_id", user.id).eq("status", "active"),
+    supabase
+      .from("orders")
+      .select("id,total_cents,status,fulfillment_status,created_at,stores(name,slug)")
+      .eq("customer_email", user.email ?? "")
+      .order("created_at", { ascending: false })
+      .limit(15)
+  ]);
 
-  if (storeError) {
-    throw new Error(storeError.message);
-  }
-
-  if (!store) {
-    redirect("/onboarding");
-  }
-
-  const { data: products, error: productsError } = await supabase
-    .from("products")
-    .select("id,title,description,price_cents,inventory_qty,status,created_at")
-    .eq("store_id", store.id)
-    .order("created_at", { ascending: false });
-
-  if (productsError) {
-    throw new Error(productsError.message);
-  }
+  const role = profile?.global_role ?? "user";
+  const dashboardHomeData = await getDashboardHomeData({
+    supabase,
+    userId: user.id,
+    userEmail: user.email ?? null,
+    role
+  });
+  const storeSlugs = [
+    ...(savedStores ?? []).map((entry) => {
+      const store = Array.isArray(entry.stores) ? entry.stores[0] : entry.stores;
+      return store?.slug ?? "";
+    }),
+    ...(savedItems ?? []).map((entry) => {
+      const store = Array.isArray(entry.stores) ? entry.stores[0] : entry.stores;
+      return store?.slug ?? "";
+    }),
+    ...(carts ?? []).map((entry) => {
+      const store = Array.isArray(entry.stores) ? entry.stores[0] : entry.stores;
+      return store?.slug ?? "";
+    }),
+    ...(orders ?? []).map((entry) => {
+      const store = Array.isArray(entry.stores) ? entry.stores[0] : entry.stores;
+      return store?.slug ?? "";
+    })
+  ];
+  const storefrontLinksBySlug = await resolveCustomerStorefrontLinksBySlug(storeSlugs);
 
   return (
-    <PageShell>
-      <DashboardOverview store={store} products={products ?? []} />
-    </PageShell>
+    <DashboardPageScaffold
+      title="Dashboard"
+      description="Your personal home for customer activity, workspace signals, and immediate next actions."
+      className="p-4 lg:p-4"
+    >
+      <DashboardHomeShell
+        data={dashboardHomeData}
+        storefrontLinksBySlug={storefrontLinksBySlug}
+        legacyPanelProps={{
+          initialSavedStores: savedStores ?? [],
+          initialSavedItems: savedItems ?? [],
+          carts: carts ?? [],
+          orders: orders ?? []
+        }}
+      />
+    </DashboardPageScaffold>
   );
 }

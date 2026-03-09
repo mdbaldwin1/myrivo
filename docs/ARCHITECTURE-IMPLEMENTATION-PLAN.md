@@ -1,4 +1,4 @@
-# Storefoundry Architecture and Implementation Plan
+# Myrivo Architecture and Implementation Plan
 
 ## Product Goal
 

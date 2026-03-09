@@ -1,4 +1,4 @@
-# Storefoundry - Agent Operating Guide
+# Myrivo - Agent Operating Guide
 
 ## Purpose
 

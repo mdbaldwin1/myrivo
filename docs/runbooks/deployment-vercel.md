@@ -14,9 +14,10 @@
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
-- `STRIPE_STARTER_PRICE_ID`
-- `STRIPE_GROWTH_PRICE_ID`
-- `STRIPE_SCALE_PRICE_ID`
+- `MYRIVO_SINGLE_STORE_SLUG`
+- `SHIPPING_PROVIDER`
+- `EASYPOST_API_KEY` (when using EasyPost)
+- `SHIPPING_WEBHOOK_SECRET`
 
 ## GitHub Actions secrets (for automated deploy workflow)
 
@@ -30,9 +31,8 @@ Deploy behavior:
 
 ## DNS and domains
 
-- Platform root domain: `storefoundry.app`
-- Support custom domains via Vercel domain attachment.
-- Each custom domain must be verified before marking as primary in `store_domains`.
+- Primary production domain should point directly to this single-store app.
+- Storefront lives at root (`/`), owner dashboard is routed under `/dashboard`.
 
 ## Webhook routing
 

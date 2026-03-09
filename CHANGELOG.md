@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- Initial Storefoundry platform foundation with monorepo tooling, web app scaffold, Supabase schema, and Stripe integration skeleton.
+- Initial Myrivo platform foundation with monorepo tooling, web app scaffold, Supabase schema, and Stripe integration skeleton.
 - Added Tailwind-based UI foundation with componentized page sections and theme token variables.
 - Added configurable pricing module for fee/tier behavior and wired Stripe handlers to plan config.
 - Added automated Vercel deployment workflow for `main` (production only).
@@ -33,3 +33,41 @@ All notable changes to this project will be documented in this file.
 - Fixed Supabase server client cookie write handling in Server Components to prevent dashboard runtime exceptions during auth session refresh.
 - Fixed production dashboard/runtime crashes caused by strict global app URL env parsing; app URL is now resolved lazily with Vercel fallback when billing routes need it.
 - Split env access into public/browser-safe vs server-only parsing to prevent signup/login runtime failures when service-role env vars are unavailable client-side.
+- Added configurable Stripe stub mode (`STRIPE_STUB_MODE`) so local development can run full subscription and checkout flows without live Stripe calls.
+- Added shared billing checkout helper and subscription plan-selection API to centralize paid/free plan transitions.
+- Added merchant settings APIs and UI for store profile, branding, domain management, and storefront status control.
+- Added dashboard layout navigation and new merchant operations pages for orders and settings.
+- Added storefront runtime route (`/s/[slug]`) with cart and stub checkout pipeline that creates orders/order-items and decrements inventory.
+- Added root host-based tenant resolution so non-platform hosts can render storefront content directly.
+- Added sign-out API/button and onboarding guardrails to prevent duplicate store bootstrap for a single owner account.
+- Added order totals utility and tests to keep platform-fee calculation behavior deterministic and configurable.
+- Added transactional checkout migration with a service-role-only RPC that atomically creates orders, decrements inventory, and writes inventory ledger events.
+- Added merchant policy settings (support email, announcement, fulfillment, shipping/return copy) with dashboard editing and storefront rendering.
+- Added order details API/UI and inventory movement dashboard panel for stronger merchant operations visibility.
+- Expanded dashboard overview with KPIs, low-stock alerts, and recent-order summaries.
+- Expanded home/marketing page with differentiator value cards and pricing preview.
+- Upgraded storefront visual design with branding-driven theme tokens and richer trust/policy content.
+- Added product merchandising metadata (`sku`, `image_url`, `is_featured`) with dashboard controls and storefront image rendering.
+- Added store policy data model (`store_settings`) and dashboard editor for announcements, fulfillment messaging, support, shipping, and returns.
+- Added local domain-verification helper action in dashboard to support non-production domain workflow testing.
+- Added release-readiness checklist doc for QA, Stripe cutover, and operations signoff.
+- Added promotions system (promo codes, percent/fixed discounts, limits, active windows) with dashboard management and checkout integration.
+- Added order fulfillment workflow fields and dashboard controls for `unfulfilled`, `processing`, `fulfilled`, and `shipped`.
+- Added configurable storefront content blocks with dashboard editor and public storefront rendering.
+- Added inventory adjustment API and dashboard actions that write explicit `restock`/`adjustment` ledger events.
+- Added orders CSV export endpoint and dashboard export control for merchant reporting workflows.
+- Hardened promo redemption by moving final promo validation/redemption into transactional checkout RPC for race-safe discount application.
+- Added promo preview endpoint and storefront apply flow for pre-checkout discount visibility.
+- Added `dashboard/insights` with revenue trend visualization and operational stock/revenue metrics.
+- Added API rate limiting for checkout and promo preview endpoints to reduce abuse/spam risk.
+- Added audit events model and non-blocking audit writes for high-impact merchant operations (store/product/promo/order/inventory changes).
+- Added Playwright E2E harness with full merchant journey test and local-server-aware configuration.
+- Added dashboard loading/error states and storefront loading state for better resilience and UX continuity.
+- Added operational docs: env matrix, release runbook, and incident playbook.
+- Hardened owner-store bundle loading to gracefully tolerate missing optional relation cache entries (`store_settings`, `store_content_blocks`) instead of crashing dashboard routes.
+- Added owner-authenticated audit events API and dashboard Insights panel for filtering/viewing recent operational events.
+- Added feature-flagged manual domain verification control (`NEXT_PUBLIC_ENABLE_MANUAL_DOMAIN_VERIFY`) for local/dev domain workflow simulation.
+- Added shared Supabase error classifier and storefront-safe fallbacks so missing optional relations in schema cache no longer crash tenant storefront rendering.
+- Expanded Playwright coverage with dedicated settings/domain workflow and storefront visibility-gating scenarios.
+- Fixed draft-store UX so authenticated owners can preview `/s/[slug]` before activation, while public traffic remains restricted to active stores.
+- Hardened authenticated mutation APIs with same-origin request enforcement (CSRF mitigation) across store/product/promotion/order/inventory/subscription actions.

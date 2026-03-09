@@ -2,7 +2,7 @@
 
 ## Model
 
-Storefoundry uses a hybrid model:
+Myrivo uses a hybrid model:
 
 - Free plan: no monthly subscription, higher platform fee on each transaction.
 - Paid plans: monthly subscription with reduced or zero platform fee.
