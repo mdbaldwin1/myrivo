@@ -7,18 +7,28 @@ import { isRecord, mergeStorefrontCopy } from "@/lib/store-experience/merge";
 import { resolveStoreSlugForServerRender } from "@/lib/stores/active-store";
 import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
 
-function getString(record: Record<string, unknown>, key: string, fallback: string | null = null) {
-  const value = record[key];
+function getValueAtPath(record: Record<string, unknown>, key: string): unknown {
+  return key.split(".").reduce<unknown>((current, part) => {
+    if (!current || typeof current !== "object" || Array.isArray(current)) {
+      return undefined;
+    }
+
+    return (current as Record<string, unknown>)[part];
+  }, record);
+}
+
+export function getString(record: Record<string, unknown>, key: string, fallback: string | null = null) {
+  const value = getValueAtPath(record, key);
   return typeof value === "string" ? value : fallback;
 }
 
-function getBoolean(record: Record<string, unknown>, key: string, fallback: boolean) {
-  const value = record[key];
+export function getBoolean(record: Record<string, unknown>, key: string, fallback: boolean) {
+  const value = getValueAtPath(record, key);
   return typeof value === "boolean" ? value : fallback;
 }
 
-function getNumber(record: Record<string, unknown>, key: string, fallback: number) {
-  const value = record[key];
+export function getNumber(record: Record<string, unknown>, key: string, fallback: number) {
+  const value = getValueAtPath(record, key);
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
