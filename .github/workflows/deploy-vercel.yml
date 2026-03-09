@@ -17,6 +17,7 @@ jobs:
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_SCOPE: michael-baldwins-projects
+      VERCEL_PROJECT: web
     steps:
       - uses: actions/checkout@v4
 
@@ -29,6 +30,7 @@ jobs:
         run: |
           test -n "$VERCEL_TOKEN"
           test -n "$VERCEL_SCOPE"
+          test -n "$VERCEL_PROJECT"
 
       - name: Install dependencies
         run: npm ci
@@ -37,10 +39,10 @@ jobs:
         run: npm run build
 
       - name: Verify Vercel project access
-        run: npx vercel project inspect myrivo --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
+        run: npx vercel project inspect "$VERCEL_PROJECT" --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
 
       - name: Link repository to Vercel project
-        run: npx vercel link --project myrivo --scope="$VERCEL_SCOPE" --yes --token="$VERCEL_TOKEN" --cwd apps/web
+        run: npx vercel link --project "$VERCEL_PROJECT" --scope="$VERCEL_SCOPE" --yes --token="$VERCEL_TOKEN" --cwd apps/web
 
       - name: Pull Vercel environment (production)
         run: npx vercel pull --yes --environment=production --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN" --cwd apps/web
