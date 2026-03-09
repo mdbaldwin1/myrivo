@@ -101,7 +101,11 @@ export async function GET(request: NextRequest) {
 
   const platformEntries: SitemapUrlEntry[] = [
     { loc: `${origin}/`, changefreq: "weekly", priority: 1.0 },
+    { loc: `${origin}/features`, changefreq: "weekly", priority: 0.8 },
+    { loc: `${origin}/compare`, changefreq: "weekly", priority: 0.7 },
     { loc: `${origin}/pricing`, changefreq: "weekly", priority: 0.8 },
+    { loc: `${origin}/terms`, changefreq: "monthly", priority: 0.4 },
+    { loc: `${origin}/privacy`, changefreq: "monthly", priority: 0.4 },
     { loc: `${origin}/docs`, changefreq: "weekly", priority: 0.7 }
   ];
 
