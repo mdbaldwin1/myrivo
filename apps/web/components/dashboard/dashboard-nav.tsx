@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { withReturnTo } from "@/lib/auth/return-to";
+import { storeSettingsWorkspaceGroups } from "@/lib/store-editor/store-settings-workspace";
 import { cn } from "@/lib/utils";
 import type { GlobalUserRole } from "@/types/database";
 
@@ -62,18 +63,6 @@ type DashboardNavProps = {
   className?: string;
   onNavigate?: () => void;
 };
-
-const storeSettingsLinksBase = [
-  { href: "/store-settings", label: "Overview", icon: Settings },
-  { href: "/store-settings/general", label: "General", icon: Cog },
-  { href: "/store-settings/branding", label: "Branding", icon: Paintbrush },
-  { href: "/store-settings/team", label: "Team", icon: Users },
-  { href: "/store-settings/shipping", label: "Shipping", icon: Truck },
-  { href: "/store-settings/pickup", label: "Pickup", icon: Store },
-  { href: "/store-settings/checkout-experience", label: "Checkout Experience", icon: ReceiptText },
-  { href: "/store-settings/domains", label: "Domains", icon: Globe },
-  { href: "/store-settings/integrations", label: "Integrations", icon: Plug }
-] as const;
 
 const contentWorkspaceLinks = [
   { href: "/content-workspace", label: "Studio", icon: Settings },
@@ -183,9 +172,12 @@ export function DashboardNav({
     `${storeWorkspaceBaseHref}/store-settings`
   ]);
 
-  const storeSettingsLinks: DashboardNavLink[] = storeSettingsLinksBase.map((link) => ({
-    ...link,
-    href: `${storeWorkspaceBaseHref}${link.href}`
+  const storeSettingsLinkGroups = storeSettingsWorkspaceGroups.map((group) => ({
+    ...group,
+    sections: group.sections.map((link) => ({
+      ...link,
+      href: `${storeWorkspaceBaseHref}${link.href}`
+    }))
   }));
   const contentWorkspaceWorkspaceLinks: DashboardNavLink[] = contentWorkspaceLinks.map((link) => ({
     ...link,
@@ -276,19 +268,24 @@ export function DashboardNav({
               ) : isStoreSettingsMode ? (
                 <div className="space-y-1">
                   <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Settings Workspace</p>
-                  {storeSettingsLinks.map((link) => (
-                    <Link
-                      key={link.href}
-                      href={link.href}
-                      onClick={onNavigate}
-                      aria-current={isLinkActive(link.href) ? "page" : undefined}
-                      className={cn(buttonVariants({ variant: isLinkActive(link.href) ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
-                    >
-                      <span className="flex items-center gap-2">
-                        <link.icon className="h-4 w-4 shrink-0" />
-                        <span>{link.label}</span>
-                      </span>
-                    </Link>
+                  {storeSettingsLinkGroups.map((group) => (
+                    <div key={group.id} className="space-y-1">
+                      <p className="px-2 pt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/80">{group.title}</p>
+                      {group.sections.map((link) => (
+                        <Link
+                          key={link.href}
+                          href={link.href}
+                          onClick={onNavigate}
+                          aria-current={isLinkActive(link.href) ? "page" : undefined}
+                          className={cn(buttonVariants({ variant: isLinkActive(link.href) ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
+                        >
+                          <span className="flex items-center gap-2">
+                            <link.icon className="h-4 w-4 shrink-0" />
+                            <span>{link.label}</span>
+                          </span>
+                        </Link>
+                      ))}
+                    </div>
                   ))}
                 </div>
               ) : isReportsMode ? (
