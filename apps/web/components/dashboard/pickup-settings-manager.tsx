@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { DashboardFormActionBar } from "@/components/dashboard/dashboard-form-action-bar";
@@ -11,6 +12,7 @@ import { SectionCard } from "@/components/ui/section-card";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { notify } from "@/lib/feedback/toast";
+import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
 
 type PickupSettings = {
   pickup_enabled: boolean;
@@ -85,6 +87,8 @@ type PickupSettingsManagerProps = {
 
 export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
   const formId = "pickup-config-form";
+  const pathname = usePathname();
+  const storeSlug = getStoreSlugFromDashboardPathname(pathname);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -128,11 +132,11 @@ export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
     setError(null);
 
     const [settingsResponse, pickupResponse, locationsResponse, hoursResponse, blackoutsResponse] = await Promise.all([
-      fetch("/api/stores/settings", { cache: "no-store" }),
-      fetch("/api/stores/pickup/settings", { cache: "no-store" }),
-      fetch("/api/stores/pickup/locations", { cache: "no-store" }),
-      fetch("/api/stores/pickup/hours", { cache: "no-store" }),
-      fetch("/api/stores/pickup/blackouts", { cache: "no-store" })
+      fetch(buildStoreScopedApiPath("/api/stores/settings", storeSlug), { cache: "no-store" }),
+      fetch(buildStoreScopedApiPath("/api/stores/pickup/settings", storeSlug), { cache: "no-store" }),
+      fetch(buildStoreScopedApiPath("/api/stores/pickup/locations", storeSlug), { cache: "no-store" }),
+      fetch(buildStoreScopedApiPath("/api/stores/pickup/hours", storeSlug), { cache: "no-store" }),
+      fetch(buildStoreScopedApiPath("/api/stores/pickup/blackouts", storeSlug), { cache: "no-store" })
     ]);
 
     const settingsPayload = (await settingsResponse.json()) as {
@@ -213,7 +217,7 @@ export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
     }, 0);
 
     return () => clearTimeout(timeout);
-  }, []);
+  }, [storeSlug]);
 
   function resetCoreChanges() {
     if (!savedPickupSettings || !savedCheckoutSettings) {
@@ -241,7 +245,7 @@ export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
     setError(null);
 
     const [settingsResponse, pickupResponse] = await Promise.all([
-      fetch("/api/stores/settings", {
+      fetch(buildStoreScopedApiPath("/api/stores/settings", storeSlug), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -250,7 +254,7 @@ export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
           checkoutLocalPickupFeeCents: localPickupFeeCents
         })
       }),
-      fetch("/api/stores/pickup/settings", {
+      fetch(buildStoreScopedApiPath("/api/stores/pickup/settings", storeSlug), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -322,7 +326,7 @@ export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
     setSaving(true);
     setError(null);
 
-    const response = await fetch("/api/stores/pickup/locations", {
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/pickup/locations", storeSlug), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -361,7 +365,7 @@ export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
     setSaving(true);
     setError(null);
 
-    const response = await fetch(`/api/stores/pickup/locations/${id}`, { method: "DELETE" });
+    const response = await fetch(buildStoreScopedApiPath(`/api/stores/pickup/locations/${id}`, storeSlug), { method: "DELETE" });
     const payload = (await response.json()) as { ok?: boolean; error?: string };
 
     if (!response.ok) {
@@ -402,7 +406,7 @@ export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
     setSaving(true);
     setError(null);
 
-    const response = await fetch("/api/stores/pickup/hours", {
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/pickup/hours", storeSlug), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -433,7 +437,7 @@ export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
     setSaving(true);
     setError(null);
 
-    const response = await fetch("/api/stores/pickup/blackouts", {
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/pickup/blackouts", storeSlug), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -464,7 +468,7 @@ export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
     setSaving(true);
     setError(null);
 
-    const response = await fetch(`/api/stores/pickup/blackouts/${id}`, { method: "DELETE" });
+    const response = await fetch(buildStoreScopedApiPath(`/api/stores/pickup/blackouts/${id}`, storeSlug), { method: "DELETE" });
     const payload = (await response.json()) as { ok?: boolean; error?: string };
 
     if (!response.ok) {

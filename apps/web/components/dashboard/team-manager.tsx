@@ -1,6 +1,7 @@
 "use client";
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
 import { Select } from "@/components/ui/select";
 import { notify } from "@/lib/feedback/toast";
+import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
 
 type MemberRecord = {
   id: string;
@@ -74,6 +76,8 @@ function formatInviteStatus(status: InviteRecord["status"]) {
 }
 
 export function TeamManager() {
+  const pathname = usePathname();
+  const storeSlug = getStoreSlugFromDashboardPathname(pathname);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,7 +90,7 @@ export function TeamManager() {
   const [lastInviteLink, setLastInviteLink] = useState<string | null>(null);
 
   async function fetchMembers() {
-    const response = await fetch("/api/stores/members", { cache: "no-store" });
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/members", storeSlug), { cache: "no-store" });
     const payload = (await response.json()) as MembersResponse;
     return { ok: response.ok, payload };
   }
@@ -110,7 +114,7 @@ export function TeamManager() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [storeSlug]);
 
   const rows = useMemo<TeamRow[]>(() => {
     const memberRows: TeamRow[] = members.map((member) => ({
@@ -150,7 +154,7 @@ export function TeamManager() {
     setInviteError(null);
     setLastInviteLink(null);
 
-    const response = await fetch("/api/stores/members", {
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/members", storeSlug), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -180,7 +184,7 @@ export function TeamManager() {
     setSaving(true);
     setError(null);
     setInviteError(null);
-    const response = await fetch(`/api/stores/members/${membershipId}`, {
+    const response = await fetch(buildStoreScopedApiPath(`/api/stores/members/${membershipId}`, storeSlug), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
@@ -200,7 +204,7 @@ export function TeamManager() {
     setSaving(true);
     setError(null);
     setInviteError(null);
-    const response = await fetch(`/api/stores/members/${membershipId}`, { method: "DELETE" });
+    const response = await fetch(buildStoreScopedApiPath(`/api/stores/members/${membershipId}`, storeSlug), { method: "DELETE" });
     const payload = (await response.json()) as { ok?: boolean; error?: string };
     if (!response.ok) {
       setError(payload.error ?? "Unable to remove member.");

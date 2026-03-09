@@ -10,7 +10,7 @@ import {
 } from "@/lib/store-experience/content";
 import { isMissingRelationInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
+import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
 
 const sectionSchema = z.enum(["home", "productsPage", "aboutPage", "policiesPage", "cartPage", "orderSummaryPage", "emails"]);
 
@@ -109,7 +109,7 @@ function validateSectionValue(section: StoreExperienceContentSection, value: Rec
   return null;
 }
 
-async function resolveOwnerContext() {
+async function resolveOwnerContext(storeSlug?: string | null) {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user }
@@ -119,7 +119,7 @@ async function resolveOwnerContext() {
     return { error: fail(401, "Unauthorized") } as const;
   }
 
-  const bundle = await getOwnedStoreBundle(user.id, "staff");
+  const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, storeSlug, "staff");
   if (!bundle) {
     return { error: fail(404, "No store found for account") } as const;
   }
@@ -127,8 +127,8 @@ async function resolveOwnerContext() {
   return { supabase, storeId: bundle.store.id } as const;
 }
 
-export async function GET() {
-  const resolved = await resolveOwnerContext();
+export async function GET(request: NextRequest) {
+  const resolved = await resolveOwnerContext(request.nextUrl.searchParams.get("storeSlug"));
   if ("error" in resolved) {
     return resolved.error;
   }
@@ -167,7 +167,7 @@ export async function PUT(request: NextRequest) {
     return payload.response;
   }
 
-  const resolved = await resolveOwnerContext();
+  const resolved = await resolveOwnerContext(request.nextUrl.searchParams.get("storeSlug"));
   if ("error" in resolved) {
     return resolved.error;
   }

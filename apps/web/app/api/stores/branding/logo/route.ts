@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
-import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
+import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const bundle = await getOwnedStoreBundle(user.id, "staff");
+  const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, request.nextUrl.searchParams.get("storeSlug"), "staff");
 
   if (!bundle) {
     return NextResponse.json({ error: "No store found for account" }, { status: 404 });

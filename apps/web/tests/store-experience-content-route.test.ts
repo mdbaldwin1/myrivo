@@ -8,6 +8,7 @@ type SupabaseMock = {
 
 let supabaseMock: SupabaseMock;
 let ownedStoreBundleMock: { store: { id: string } } | null = { store: { id: "store-1" } };
+let lastRequestedStoreSlug: string | null = null;
 let originGuardResponse: Response | null = null;
 let lastUpsertPayload: Record<string, unknown> | null = null;
 let selectErrorMessage: string | null = null;
@@ -18,19 +19,22 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 vi.mock("@/lib/stores/owner-store", () => ({
-  getOwnedStoreBundle: vi.fn(async () => ownedStoreBundleMock)
+  getOwnedStoreBundleForOptionalSlug: vi.fn(async (_userId: string, storeSlug?: string | null) => {
+    lastRequestedStoreSlug = storeSlug ?? null;
+    return ownedStoreBundleMock;
+  })
 }));
 
 vi.mock("@/lib/security/request-origin", () => ({
   enforceTrustedOrigin: vi.fn(() => originGuardResponse)
 }));
 
-async function callGetHandler(): Promise<Response> {
+async function callGetHandler(url = "http://localhost:3000/api/store-experience/content"): Promise<Response> {
   const route = await import("@/app/api/store-experience/content/route");
   if (!route.GET) {
     throw new Error("GET handler is not defined");
   }
-  const response = await route.GET();
+  const response = await route.GET(new NextRequest(url));
   if (!response) {
     throw new Error("GET handler returned no response");
   }
@@ -100,6 +104,7 @@ beforeEach(() => {
   lastUpsertPayload = null;
   selectErrorMessage = null;
   upsertErrorMessage = null;
+  lastRequestedStoreSlug = null;
 });
 
 describe("store experience content route", () => {
@@ -145,6 +150,13 @@ describe("store experience content route", () => {
       store_id: "store-1",
       home_json: { announcement: "Hello" }
     });
+  });
+
+  test("GET resolves the requested store slug when provided", async () => {
+    const response = await callGetHandler("http://localhost:3000/api/store-experience/content?storeSlug=second-store");
+
+    expect(response.status).toBe(200);
+    expect(lastRequestedStoreSlug).toBe("second-store");
   });
 
   test("PUT returns 400 for invalid body", async () => {

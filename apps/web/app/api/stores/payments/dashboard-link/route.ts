@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isStripeStubMode, stripeEnvSchema } from "@/lib/env";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
-import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
+import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
 import { getStripeClient } from "@/lib/stripe/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const bundle = await getOwnedStoreBundle(user.id, "admin");
+    const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, request.nextUrl.searchParams.get("storeSlug"), "admin");
 
     if (!bundle) {
       return NextResponse.json({ error: "No store found for account" }, { status: 404 });

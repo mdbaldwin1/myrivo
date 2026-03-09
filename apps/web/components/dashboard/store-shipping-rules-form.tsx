@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { DashboardFormActionBar } from "@/components/dashboard/dashboard-form-action-bar";
@@ -8,6 +9,7 @@ import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
 import { notify } from "@/lib/feedback/toast";
+import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
 
 type ShippingSettingsSnapshot = {
   checkout_enable_flat_rate_shipping: boolean;
@@ -26,6 +28,8 @@ type StoreShippingRulesFormProps = {
 
 export function StoreShippingRulesForm({ header }: StoreShippingRulesFormProps) {
   const formId = "shipping-rules-form";
+  const pathname = usePathname();
+  const storeSlug = getStoreSlugFromDashboardPathname(pathname);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +54,7 @@ export function StoreShippingRulesForm({ header }: StoreShippingRulesFormProps) 
     let cancelled = false;
 
     void (async () => {
-      const response = await fetch("/api/stores/settings", { cache: "no-store" });
+      const response = await fetch(buildStoreScopedApiPath("/api/stores/settings", storeSlug), { cache: "no-store" });
       const payload = (await response.json()) as SettingsResponse;
 
       if (cancelled) {
@@ -79,7 +83,7 @@ export function StoreShippingRulesForm({ header }: StoreShippingRulesFormProps) 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [storeSlug]);
 
   function discardChanges() {
     if (!baseline) {
@@ -110,7 +114,7 @@ export function StoreShippingRulesForm({ header }: StoreShippingRulesFormProps) 
     setSaving(true);
     setError(null);
 
-    const response = await fetch("/api/stores/settings", {
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/settings", storeSlug), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

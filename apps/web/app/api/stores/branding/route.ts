@@ -3,7 +3,7 @@ import { z } from "zod";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
+import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
 import { resolveStorefrontThemeConfig } from "@/lib/theme/storefront-theme";
 
 const hexColor = z.string().regex(/^#([0-9a-fA-F]{6})$/, "Expected 6-digit hex color");
@@ -19,7 +19,7 @@ const brandingSchema = z.object({
   themeJson: z.record(z.string(), z.unknown()).nullable().optional()
 });
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user }
@@ -29,7 +29,7 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const bundle = await getOwnedStoreBundle(user.id, "staff");
+  const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, request.nextUrl.searchParams.get("storeSlug"), "staff");
 
   if (!bundle) {
     return NextResponse.json({ error: "No store found for account" }, { status: 404 });
@@ -59,7 +59,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const bundle = await getOwnedStoreBundle(user.id, "staff");
+  const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, request.nextUrl.searchParams.get("storeSlug"), "staff");
 
   if (!bundle) {
     return NextResponse.json({ error: "No store found for account" }, { status: 404 });

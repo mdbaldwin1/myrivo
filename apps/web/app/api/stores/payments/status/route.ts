@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
+import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
 import { getStripeClient } from "@/lib/stripe/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user }
@@ -13,7 +13,8 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const bundle = await getOwnedStoreBundle(user.id, "staff");
+  const storeSlug = new URL(request.url).searchParams.get("storeSlug");
+  const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, storeSlug, "staff");
 
   if (!bundle) {
     return NextResponse.json({ error: "No store found for account" }, { status: 404 });

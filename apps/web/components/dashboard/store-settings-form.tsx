@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import { Pencil, Plus, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -11,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
 import { Switch } from "@/components/ui/switch";
 import { notify } from "@/lib/feedback/toast";
+import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
 import type { StoreBrandingRecord, StoreRecord } from "@/types/database";
 
 type StoreSettingsFormProps = {
@@ -62,6 +64,8 @@ type StoreExperienceSettingsResponse = {
 
 export function StoreSettingsForm({ initialStore, initialLogoPath, header }: StoreSettingsFormProps) {
   const formId = "store-profile-form";
+  const pathname = usePathname();
+  const storeSlug = getStoreSlugFromDashboardPathname(pathname);
   const [name, setName] = useState(initialStore.name);
   const [status, setStatus] = useState<StoreRecord["status"]>(initialStore.status);
   const [savedName, setSavedName] = useState(initialStore.name);
@@ -135,7 +139,7 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header }: Sto
     let cancelled = false;
 
     void (async () => {
-      const response = await fetch("/api/stores/white-label", { cache: "no-store" });
+      const response = await fetch(buildStoreScopedApiPath("/api/stores/white-label", storeSlug), { cache: "no-store" });
       const payload = (await response.json()) as WhiteLabelResponse;
 
       if (cancelled) {
@@ -151,7 +155,7 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header }: Sto
       setWhiteLabelEnabled(Boolean(payload.enabled));
       setWhiteLabelLoading(false);
 
-      const settingsResponse = await fetch("/api/store-experience/settings", { cache: "no-store" });
+      const settingsResponse = await fetch(buildStoreScopedApiPath("/api/store-experience/settings", storeSlug), { cache: "no-store" });
       const settingsPayload = (await settingsResponse.json()) as StoreExperienceSettingsResponse;
       if (!settingsResponse.ok) {
         setError(settingsPayload.error ?? "Unable to load SEO settings.");
@@ -195,13 +199,13 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header }: Sto
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [storeSlug]);
 
   async function toggleWhiteLabel(nextEnabled: boolean) {
     setWhiteLabelSaving(true);
     setError(null);
 
-    const response = await fetch("/api/stores/white-label", {
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/white-label", storeSlug), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled: nextEnabled })
@@ -228,7 +232,7 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header }: Sto
     const formData = new FormData();
     formData.append("file", logoFile);
 
-    const response = await fetch("/api/stores/branding/logo", {
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/branding/logo", storeSlug), {
       method: "POST",
       body: formData
     });
@@ -279,7 +283,7 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header }: Sto
     }
 
     if ((nextLogoPath ?? "") !== savedLogoPath) {
-      const brandingResponse = await fetch("/api/stores/branding", {
+      const brandingResponse = await fetch(buildStoreScopedApiPath("/api/stores/branding", storeSlug), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ logoPath: nextLogoPath ?? null })
@@ -293,7 +297,7 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header }: Sto
       }
     }
 
-    const seoResponse = await fetch("/api/store-experience/settings", {
+      const seoResponse = await fetch(buildStoreScopedApiPath("/api/store-experience/settings", storeSlug), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -321,7 +325,7 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header }: Sto
       return;
     }
 
-    const response = await fetch("/api/stores/current", {
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/current", storeSlug), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name })
@@ -361,7 +365,7 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header }: Sto
     setSubmittingReview(true);
     setError(null);
 
-    const response = await fetch("/api/stores/current/submit-review", {
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/current/submit-review", storeSlug), {
       method: "POST"
     });
     const payload = (await response.json()) as StoreResponse & { ok?: boolean };

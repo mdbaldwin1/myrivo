@@ -18,3 +18,13 @@ export function buildStoreWorkspacePath(
   }
   return `/dashboard/stores/${storeSlug}${normalizedChildPath}`;
 }
+
+export function buildStoreScopedApiPath(path: string, storeSlug: string | null | undefined): string {
+  if (!storeSlug) {
+    return path;
+  }
+
+  const url = new URL(path, "http://localhost");
+  url.searchParams.set("storeSlug", storeSlug);
+  return `${url.pathname}${url.search}`;
+}

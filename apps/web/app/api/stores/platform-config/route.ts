@@ -10,8 +10,9 @@ const updateSchema = z.object({
   billingPlanKey: z.string().trim().min(2).max(40).optional()
 });
 
-export async function GET() {
-  const auth = await requireStorePermission("store.manage_billing");
+export async function GET(request: NextRequest) {
+  const storeSlug = request.nextUrl.searchParams.get("storeSlug");
+  const auth = await requireStorePermission("store.manage_billing", storeSlug);
   if (auth.response) {
     return auth.response;
   }
@@ -91,7 +92,7 @@ export async function PUT(request: NextRequest) {
     return trustedOriginResponse;
   }
 
-  const auth = await requireStorePermission("store.manage_billing");
+  const auth = await requireStorePermission("store.manage_billing", request.nextUrl.searchParams.get("storeSlug"));
   if (auth.response) {
     return auth.response;
   }
@@ -157,5 +158,5 @@ export async function PUT(request: NextRequest) {
     }
   }
 
-  return GET();
+  return GET(request);
 }

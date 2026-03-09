@@ -1,7 +1,9 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { notify } from "@/lib/feedback/toast";
+import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
 import type { StoreExperienceContentSection } from "@/lib/store-experience/content";
 
 type ContentPayload = {
@@ -43,6 +45,8 @@ export function setAtPath(input: Record<string, unknown>, path: string, value: u
 }
 
 export function useStoreExperienceSection(section: StoreExperienceContentSection) {
+  const pathname = usePathname();
+  const storeSlug = getStoreSlugFromDashboardPathname(pathname);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [baseline, setBaseline] = useState<Record<string, unknown>>({});
@@ -61,7 +65,7 @@ export function useStoreExperienceSection(section: StoreExperienceContentSection
       setMessage(null);
 
       try {
-        const response = await fetch("/api/store-experience/content", { cache: "no-store" });
+        const response = await fetch(buildStoreScopedApiPath("/api/store-experience/content", storeSlug), { cache: "no-store" });
         const payload = (await response.json()) as ContentPayload;
 
         if (!response.ok || !payload.content) {
@@ -94,7 +98,7 @@ export function useStoreExperienceSection(section: StoreExperienceContentSection
     return () => {
       cancelled = true;
     };
-  }, [section]);
+  }, [section, storeSlug]);
 
   const save = useCallback(async () => {
     setSaving(true);
@@ -102,7 +106,7 @@ export function useStoreExperienceSection(section: StoreExperienceContentSection
     setMessage(null);
 
     try {
-      const response = await fetch("/api/store-experience/content", {
+      const response = await fetch(buildStoreScopedApiPath("/api/store-experience/content", storeSlug), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ section, value: draft })
@@ -127,7 +131,7 @@ export function useStoreExperienceSection(section: StoreExperienceContentSection
     } finally {
       setSaving(false);
     }
-  }, [draft, section]);
+  }, [draft, section, storeSlug]);
 
   const discard = useCallback(() => {
     setDraft(baseline);

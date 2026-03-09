@@ -64,7 +64,7 @@ describe("store members route", () => {
     });
 
     const route = await import("@/app/api/stores/members/route");
-    const response = await route.GET();
+    const response = await route.GET(new NextRequest("http://localhost:3000/api/stores/members"));
     expect(response.status).toBe(403);
   });
 

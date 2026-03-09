@@ -12,8 +12,8 @@ const createSchema = z.object({
   reason: z.string().trim().max(240).nullable().optional()
 });
 
-export async function GET() {
-  const auth = await requireStoreRole("staff");
+export async function GET(request: NextRequest) {
+  const auth = await requireStoreRole("staff", request.nextUrl.searchParams.get("storeSlug"));
   if (auth.response) {
     return auth.response;
   }
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     return trustedOriginResponse;
   }
 
-  const auth = await requireStoreRole("staff");
+  const auth = await requireStoreRole("staff", request.nextUrl.searchParams.get("storeSlug"));
   if (auth.response) {
     return auth.response;
   }

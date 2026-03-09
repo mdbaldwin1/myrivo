@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { DashboardFormActionBar } from "@/components/dashboard/dashboard-form-action-bar";
@@ -9,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
 import { Select } from "@/components/ui/select";
 import { notify } from "@/lib/feedback/toast";
+import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
 import {
   resolveStorefrontThemeConfig,
   type CtaStyle,
@@ -68,6 +70,8 @@ const DEFAULT_ACTION_FOREGROUND = "#FFFFFF";
 
 export function BrandingSettingsForm({ initialBranding, header }: BrandingSettingsFormProps) {
   const formId = "branding-form";
+  const pathname = usePathname();
+  const storeSlug = getStoreSlugFromDashboardPathname(pathname);
   const initialTheme = resolveStorefrontThemeConfig(initialBranding?.theme_json ?? {});
 
   const [primaryColor, setPrimaryColor] = useState(initialBranding?.primary_color ?? "#0F7B84");
@@ -196,7 +200,7 @@ export function BrandingSettingsForm({ initialBranding, header }: BrandingSettin
     formData.append("assetType", type);
     formData.append("file", file);
 
-    const response = await fetch("/api/stores/branding/logo", {
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/branding/logo", storeSlug), {
       method: "POST",
       body: formData
     });
@@ -257,7 +261,7 @@ export function BrandingSettingsForm({ initialBranding, header }: BrandingSettin
     const safeHeaderNavItems = headerNavItems.length > 0 ? headerNavItems : initialTheme.headerNavItems;
     const safeFooterNavItems = footerNavItems.length > 0 ? footerNavItems : initialTheme.footerNavItems;
 
-    const response = await fetch("/api/stores/branding", {
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/branding", storeSlug), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

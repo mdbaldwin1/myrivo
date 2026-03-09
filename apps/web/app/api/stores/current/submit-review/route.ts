@@ -3,7 +3,7 @@ import { logAuditEvent } from "@/lib/audit/log";
 import { notifyOwnersStoreSubmittedForReview, notifyPlatformAdminsStoreSubmittedForReview } from "@/lib/notifications/owner-notifications";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
+import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
 
 export async function POST(request: NextRequest) {
   const trustedOriginResponse = enforceTrustedOrigin(request);
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const bundle = await getOwnedStoreBundle(user.id, "admin");
+  const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, request.nextUrl.searchParams.get("storeSlug"), "admin");
   if (!bundle) {
     return NextResponse.json({ error: "Store not found or insufficient permissions." }, { status: 403 });
   }
