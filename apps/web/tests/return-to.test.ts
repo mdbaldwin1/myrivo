@@ -23,4 +23,8 @@ describe("returnTo helpers", () => {
       "/login?returnTo=%2Fs%2Fmy-shop%2Fproducts%3Fstore%3Dmy-shop"
     );
   });
+
+  test("allows legal consent routes", () => {
+    expect(sanitizeReturnTo("/legal/consent?returnTo=%2Fdashboard")).toBe("/legal/consent?returnTo=%2Fdashboard");
+  });
 });

@@ -10,6 +10,7 @@ import { DashboardNav } from "@/components/dashboard/dashboard-nav";
 import { DashboardHeaderBackButton } from "@/components/dashboard/dashboard-header-back-button";
 import { buttonVariants } from "@/components/ui/button";
 import { hasStorePermission } from "@/lib/auth/roles";
+import { getMissingRequiredLegalVersions } from "@/lib/legal/consent";
 import { resolveAccountNotificationPreferences } from "@/lib/notifications/preferences";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -25,6 +26,11 @@ export default async function DashboardLayout({ children }: { children: ReactNod
 
   if (!user) {
     redirect("/login");
+  }
+
+  const missingLegalVersions = await getMissingRequiredLegalVersions(supabase, user.id);
+  if (missingLegalVersions.length > 0) {
+    redirect("/legal/consent?returnTo=%2Fdashboard");
   }
 
   const { data: profile } = await supabase
