@@ -13,6 +13,7 @@ import {
   sortAndReindexDraftReviewMediaAssets,
   validateReviewMediaDimensions
 } from "@/lib/reviews/media";
+import { logReviewUploadError } from "@/lib/reviews/telemetry";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 
 const mediaItemSchema = z.object({
@@ -75,6 +76,13 @@ export async function POST(request: NextRequest) {
   try {
     await ensureReviewMediaBucket();
   } catch (error) {
+    void logReviewUploadError({
+      storeId: store.id,
+      stage: "complete",
+      reason: "bucket_init_failed",
+      draftId: payload.reviewDraftId,
+      details: { message: error instanceof Error ? error.message : "bucket init failed" }
+    }).catch(() => null);
     return fail(500, error instanceof Error ? error.message : "Unable to initialize review media bucket.");
   }
 
@@ -82,6 +90,13 @@ export async function POST(request: NextRequest) {
   try {
     draftAssets = await listReviewDraftMediaAssets(store.id, payload.reviewDraftId);
   } catch (error) {
+    void logReviewUploadError({
+      storeId: store.id,
+      stage: "complete",
+      reason: "list_draft_media_failed",
+      draftId: payload.reviewDraftId,
+      details: { message: error instanceof Error ? error.message : "draft list failed" }
+    }).catch(() => null);
     return fail(500, error instanceof Error ? error.message : "Unable to read uploaded draft media.");
   }
 
