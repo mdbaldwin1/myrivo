@@ -30,6 +30,13 @@ export async function generateMetadata({ params }: DocDetailPageProps): Promise<
   };
 }
 
+function toHeadingAnchorId(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 export default async function DocDetailPage({ params }: DocDetailPageProps) {
   const { slug } = await params;
   const doc = getOwnerDocBySlug(slug);
@@ -50,9 +57,11 @@ export default async function DocDetailPage({ params }: DocDetailPageProps) {
             Audience: {doc.audience} | Updated {doc.lastUpdated}
           </p>
           <div className="mt-4 space-y-6">
-            {doc.sections.map((section) => (
-              <section key={section.heading} className="space-y-2">
-                <h2 className="text-sm font-semibold text-foreground">{section.heading}</h2>
+                {doc.sections.map((section) => (
+                  <section key={section.heading} className="space-y-2">
+                <h2 id={toHeadingAnchorId(section.heading)} className="scroll-mt-20 text-sm font-semibold text-foreground">
+                  {section.heading}
+                </h2>
                 <div className="space-y-2 text-sm text-muted-foreground">
                   {section.paragraphs.map((paragraph) => (
                     <p key={paragraph}>{paragraph}</p>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
 import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
+import { ContextHelpLink } from "@/components/dashboard/context-help-link";
 import { Flyout } from "@/components/ui/flyout";
 import { OrderDetailPanel } from "@/components/dashboard/order-detail-panel";
 import { AppAlert } from "@/components/ui/app-alert";
@@ -262,6 +263,12 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
           <Button type="button" variant="outline" size="sm" onClick={() => void exportOrdersCsv()} disabled={exporting}>
             {exporting ? "Exporting..." : "Export CSV"}
           </Button>
+          <ContextHelpLink
+            href="/docs/catalog-and-orders#order-fulfillment"
+            context="orders_manager"
+            storeSlug={activeStoreSlug ?? undefined}
+            label="Order Help"
+          />
         </RowActions>
       }
     >
