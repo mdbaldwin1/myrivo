@@ -130,6 +130,12 @@ const CATALOG: Record<string, NotificationCatalogEntry> = {
     defaultSeverity: "critical",
     defaultTargets: ["in_app", "email"]
   },
+  "legal.update.required": {
+    eventType: "legal.update.required",
+    category: "system",
+    defaultSeverity: "warning",
+    defaultTargets: ["in_app", "email"]
+  },
   "team.invite.accepted": {
     eventType: "team.invite.accepted",
     category: "team",

@@ -55,6 +55,7 @@ export function PlatformLegalPanel() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [publishingVersionId, setPublishingVersionId] = useState<string | null>(null);
+  const [announcingVersionId, setAnnouncingVersionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [payload, setPayload] = useState<LegalAdminResponse | null>(null);
@@ -158,6 +159,28 @@ export function PlatformLegalPanel() {
     setNotice("Draft version published.");
     setPublishingVersionId(null);
     await load();
+  }
+
+  async function announceVersion(versionId: string) {
+    setAnnouncingVersionId(versionId);
+    setError(null);
+    setNotice(null);
+
+    const response = await fetch("/api/platform/legal/announce", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ versionId })
+    });
+
+    const body = (await response.json()) as { error?: string; sent?: number; skipped?: number; recipients?: number };
+    if (!response.ok) {
+      setError(body.error ?? "Unable to send legal update notification.");
+      setAnnouncingVersionId(null);
+      return;
+    }
+
+    setNotice(`Legal update announcement sent to ${body.sent ?? 0} recipients (${body.skipped ?? 0} skipped from dedupe/preferences).`);
+    setAnnouncingVersionId(null);
   }
 
   return (
@@ -267,13 +290,24 @@ export function PlatformLegalPanel() {
               <p className="text-xs text-muted-foreground">
                 {version.documentKey} · {version.status} · required: {version.isRequired ? "yes" : "no"} · effective: {version.effectiveAt ? new Date(version.effectiveAt).toLocaleString() : "n/a"}
               </p>
-              {version.status === "draft" && payload?.role === "admin" ? (
-                <div className="mt-2">
+              {payload?.role === "admin" ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {version.status === "published" ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={announcingVersionId === version.id}
+                      onClick={() => void announceVersion(version.id)}
+                    >
+                      {announcingVersionId === version.id ? "Sending..." : "Send Update Notice"}
+                    </Button>
+                  ) : null}
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
-                    disabled={publishingVersionId === version.id}
+                    disabled={version.status !== "draft" || publishingVersionId === version.id}
                     onClick={() => void publishDraft(version.id)}
                   >
                     {publishingVersionId === version.id ? "Publishing..." : "Publish Draft"}
