@@ -14,6 +14,7 @@ const ALLOWED_PREFIXES = [
   "/about",
   "/policies",
   "/pricing",
+  "/legal",
   "/invite/"
 ] as const;
 
@@ -57,4 +58,3 @@ export function withReturnTo(path: string, returnTo: string | null | undefined) 
   const params = new URLSearchParams({ returnTo: safeReturnTo });
   return `${safePath}?${params.toString()}`;
 }
-
