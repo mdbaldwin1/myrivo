@@ -42,7 +42,7 @@ export async function GET() {
     hasApiKey: Boolean(config.apiKey),
     hasWebhookSecret: Boolean(config.webhookSecret),
     webhookSecret: config.webhookSecret,
-    webhookUrl: `${getAppUrl()}/api/shipping/webhook?token=${encodeURIComponent(config.webhookSecret ?? "")}`,
+    webhookUrl: `${getAppUrl()}/api/shipping/webhook`,
     source: config.source
   });
 }
@@ -101,7 +101,7 @@ export async function PUT(request: NextRequest) {
     hasApiKey: Boolean(shippingApiKey),
     hasWebhookSecret: Boolean(webhookSecret),
     webhookSecret,
-    webhookUrl: `${getAppUrl()}/api/shipping/webhook?token=${encodeURIComponent(webhookSecret)}`,
+    webhookUrl: `${getAppUrl()}/api/shipping/webhook`,
     source: "store"
   });
 }

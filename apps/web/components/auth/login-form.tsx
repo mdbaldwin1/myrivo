@@ -8,9 +8,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
+import { withReturnTo } from "@/lib/auth/return-to";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
-export function LoginForm() {
+type LoginFormProps = {
+  returnTo: string;
+};
+
+export function LoginForm({ returnTo }: LoginFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +37,7 @@ export function LoginForm() {
       return;
     }
 
-    router.push("/dashboard");
+    router.push(returnTo);
     router.refresh();
   }
 
@@ -68,7 +73,7 @@ export function LoginForm() {
           </Button>
           <p className="text-center text-sm text-muted-foreground">
             Need an account?{" "}
-            <Link href="/signup" className="font-medium text-foreground underline-offset-4 hover:underline">
+            <Link href={withReturnTo("/signup", returnTo)} className="font-medium text-foreground underline-offset-4 hover:underline">
               Create account
             </Link>
           </p>

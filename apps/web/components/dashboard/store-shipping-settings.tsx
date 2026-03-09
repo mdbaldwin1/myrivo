@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
-import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { Flyout } from "@/components/ui/flyout";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
 import { Select } from "@/components/ui/select";
+import { notify } from "@/lib/feedback/toast";
 
 type ShippingSettingsResponse = {
   shippingProvider: "none" | "easypost";
@@ -33,7 +34,6 @@ export function StoreShippingSettings() {
   const [flyoutBaseline, setFlyoutBaseline] = useState("");
   const [pageError, setPageError] = useState<string | null>(null);
   const [flyoutError, setFlyoutError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
 
   function buildFlyoutSnapshot() {
     return JSON.stringify({
@@ -103,7 +103,6 @@ export function StoreShippingSettings() {
     setSaving(true);
     setFlyoutError(null);
     setPageError(null);
-    setMessage(null);
 
     const response = await fetch("/api/stores/shipping", {
       method: "PUT",
@@ -130,7 +129,7 @@ export function StoreShippingSettings() {
     setHasWebhookSecret(payload.hasWebhookSecret);
     setSource(payload.source ?? null);
     setApiKey("");
-    setMessage(regenerateWebhookSecret ? "Webhook secret regenerated." : "Shipping settings saved.");
+    notify.success(regenerateWebhookSecret ? "Webhook secret regenerated." : "Shipping settings saved.");
     if (!regenerateWebhookSecret) {
       setIsFlyoutOpen(false);
     }
@@ -166,8 +165,7 @@ export function StoreShippingSettings() {
           </div>
         ) : null}
 
-        <FeedbackMessage type="error" message={pageError} />
-        <FeedbackMessage type="success" message={message} />
+        <AppAlert variant="error" message={pageError} />
 
         <Flyout
           open={isFlyoutOpen}
@@ -183,29 +181,31 @@ export function StoreShippingSettings() {
           title="Configure Shipping Provider"
           description="Set carrier sync provider and webhook credentials."
           footer={({ requestClose }) => (
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  resetDraftFromBaseline();
-                  requestClose();
-                }}
-                disabled={saving}
-              >
-                Discard
-              </Button>
-              <Button type="button" variant="outline" onClick={() => void saveSettings(true)} disabled={saving}>
-                {saving ? "Saving..." : "Regenerate webhook secret"}
-              </Button>
-              <Button type="button" onClick={() => void saveSettings(false)} disabled={saving}>
-                {saving ? "Saving..." : "Save"}
-              </Button>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <AppAlert compact variant="error" message={flyoutError} className="text-sm" />
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    resetDraftFromBaseline();
+                    requestClose();
+                  }}
+                  disabled={saving}
+                >
+                  Discard
+                </Button>
+                <Button type="button" variant="outline" onClick={() => void saveSettings(true)} disabled={saving}>
+                  {saving ? "Saving..." : "Regenerate webhook secret"}
+                </Button>
+                <Button type="button" onClick={() => void saveSettings(false)} disabled={saving}>
+                  {saving ? "Saving..." : "Save"}
+                </Button>
+              </div>
             </div>
           )}
         >
           <div className="space-y-4">
-            <FeedbackMessage type="error" message={flyoutError} />
             <FormField label="Provider" description="Choose manual tracking only, or connect EasyPost for synced updates.">
               <Select value={provider} onChange={(event) => setProvider(event.target.value as "none" | "easypost")}>
                 <option value="none">None (manual tracking link only)</option>

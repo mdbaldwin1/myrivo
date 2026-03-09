@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { AppAlert } from "@/components/ui/app-alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SectionCard } from "@/components/ui/section-card";
 import type { AuditEventRecord } from "@/types/database";
 
 type AuditEventsPanelProps = {
@@ -60,71 +61,67 @@ export function AuditEventsPanel({ initialEvents }: AuditEventsPanelProps) {
   }
 
   return (
-    <Card>
-      <CardHeader className="space-y-1">
-        <CardTitle className="text-xl">Recent Audit Events</CardTitle>
-        <CardDescription>
-          Track sensitive merchant actions for support investigations and operational confidence.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <SectionCard
+      title="Recent Audit Events"
+      description="Track sensitive merchant actions for support investigations and operational confidence."
+    >
+      <div className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+          <div className="space-y-1">
+            <Label htmlFor="audit-action" className="text-xs uppercase tracking-wide text-muted-foreground">Action</Label>
+            <Input
+              id="audit-action"
+              list="audit-actions"
+              value={actionFilter}
+              onChange={(event) => setActionFilter(event.target.value)}
+              placeholder="promotion.created"
+            />
+            <p className="text-xs text-muted-foreground">Example actions: `promotion.created`, `order.shipped`, `product.updated`.</p>
+            <datalist id="audit-actions">
+              {commonActions.map((action) => (
+                <option key={action} value={action} />
+              ))}
+            </datalist>
+          </div>
 
-      <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-        <div className="space-y-1">
-          <Label htmlFor="audit-action" className="text-xs uppercase tracking-wide text-muted-foreground">Action</Label>
-          <Input
-            id="audit-action"
-            list="audit-actions"
-            value={actionFilter}
-            onChange={(event) => setActionFilter(event.target.value)}
-            placeholder="promotion.created"
-          />
-          <p className="text-xs text-muted-foreground">Example actions: `promotion.created`, `order.shipped`, `product.updated`.</p>
-          <datalist id="audit-actions">
-            {commonActions.map((action) => (
-              <option key={action} value={action} />
-            ))}
-          </datalist>
+          <div className="space-y-1">
+            <Label htmlFor="audit-entity" className="text-xs uppercase tracking-wide text-muted-foreground">Entity</Label>
+            <Input
+              id="audit-entity"
+              value={entityFilter}
+              onChange={(event) => setEntityFilter(event.target.value)}
+              placeholder="order"
+            />
+            <p className="text-xs text-muted-foreground">Filter by resource type such as `order`, `product`, or `store`.</p>
+          </div>
+
+          <Button type="button" onClick={() => void applyFilters()} disabled={loading} className="h-fit self-end">
+            {loading ? "Loading..." : "Apply"}
+          </Button>
         </div>
 
-        <div className="space-y-1">
-          <Label htmlFor="audit-entity" className="text-xs uppercase tracking-wide text-muted-foreground">Entity</Label>
-          <Input
-            id="audit-entity"
-            value={entityFilter}
-            onChange={(event) => setEntityFilter(event.target.value)}
-            placeholder="order"
-          />
-          <p className="text-xs text-muted-foreground">Filter by resource type such as `order`, `product`, or `store`.</p>
-        </div>
+        <AppAlert variant="error" message={error} />
 
-        <Button type="button" onClick={() => void applyFilters()} disabled={loading} className="h-fit self-end">
-          {loading ? "Loading..." : "Apply"}
-        </Button>
+        <ul className="space-y-2">
+          {events.length === 0 ? (
+            <li className="rounded-md border border-border bg-muted/25 px-3 py-2 text-sm text-muted-foreground">No events found.</li>
+          ) : (
+            events.map((event) => (
+              <li key={event.id} className="space-y-2 rounded-md border border-border bg-muted/25 px-3 py-2">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <Badge variant="outline" className="bg-background font-medium">{event.action}</Badge>
+                  <Badge variant="outline" className="bg-background">{event.entity}</Badge>
+                  {event.entity_id ? (
+                    <Badge variant="outline" className="bg-background text-muted-foreground">{event.entity_id}</Badge>
+                  ) : null}
+                  <span className="ml-auto text-muted-foreground">{formatDate(event.created_at)}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">{JSON.stringify(event.metadata)}</p>
+              </li>
+            ))
+          )}
+        </ul>
       </div>
-
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
-
-      <ul className="space-y-2">
-        {events.length === 0 ? (
-          <li className="rounded-md border border-border bg-muted/25 px-3 py-2 text-sm text-muted-foreground">No events found.</li>
-        ) : (
-          events.map((event) => (
-            <li key={event.id} className="space-y-2 rounded-md border border-border bg-muted/25 px-3 py-2">
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <Badge variant="outline" className="bg-background font-medium">{event.action}</Badge>
-                <Badge variant="outline" className="bg-background">{event.entity}</Badge>
-                {event.entity_id ? (
-                  <Badge variant="outline" className="bg-background text-muted-foreground">{event.entity_id}</Badge>
-                ) : null}
-                <span className="ml-auto text-muted-foreground">{formatDate(event.created_at)}</span>
-              </div>
-              <p className="text-xs text-muted-foreground">{JSON.stringify(event.metadata)}</p>
-            </li>
-          ))
-        )}
-      </ul>
-      </CardContent>
-    </Card>
+    </SectionCard>
   );
 }

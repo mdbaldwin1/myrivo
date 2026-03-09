@@ -16,5 +16,5 @@ export default async function CartPage({ searchParams }: CartPageProps) {
     notFound();
   }
 
-  return <StorefrontCartPage store={data.store} branding={data.branding} settings={data.settings} products={data.products} />;
+  return <StorefrontCartPage store={data.store} viewer={data.viewer} branding={data.branding} settings={data.settings} products={data.products} />;
 }

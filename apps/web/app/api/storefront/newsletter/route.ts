@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { parseJsonRequest } from "@/lib/http/parse-json-request";
+import { checkRateLimit } from "@/lib/security/rate-limit";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
@@ -14,20 +16,33 @@ export async function POST(request: NextRequest) {
     return trustedOriginResponse;
   }
 
-  const payload = subscribeSchema.safeParse(await request.json());
-  if (!payload.success) {
-    return NextResponse.json({ error: "Please provide a valid email address." }, { status: 400 });
+  const rateLimitResponse = await checkRateLimit(request, {
+    key: "newsletter-subscribe",
+    limit: 10,
+    windowMs: 60_000
+  });
+
+  if (rateLimitResponse) {
+    return rateLimitResponse;
   }
 
-  const email = payload.data.email.trim().toLowerCase();
+  const parsed = await parseJsonRequest(request, subscribeSchema);
+  if (!parsed.ok) {
+    return parsed.response;
+  }
+
+  const email = parsed.data.email.trim().toLowerCase();
   const supabase = createSupabaseAdminClient();
   const storeSlug = await resolveStoreSlugFromRequestAsync(request);
+  if (!storeSlug) {
+    return NextResponse.json({ error: "Store context is required." }, { status: 400 });
+  }
 
   const { data: store, error: storeError } = await supabase
     .from("stores")
     .select("id,status")
     .eq("slug", storeSlug)
-    .maybeSingle<{ id: string; status: "draft" | "active" | "suspended" }>();
+    .maybeSingle<{ id: string; status: "draft" | "pending_review" | "active" | "suspended" }>();
 
   if (storeError) {
     return NextResponse.json({ error: storeError.message }, { status: 500 });

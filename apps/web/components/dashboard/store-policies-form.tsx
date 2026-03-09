@@ -4,7 +4,6 @@ import { useState } from "react";
 import { DashboardFormActionBar } from "@/components/dashboard/dashboard-form-action-bar";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { Flyout } from "@/components/ui/flyout";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
@@ -12,6 +11,7 @@ import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { SectionCard } from "@/components/ui/section-card";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { notify } from "@/lib/feedback/toast";
 import type { StoreSettingsRecord } from "@/types/database";
 
 type AboutSectionDraft = {
@@ -238,7 +238,6 @@ export function StorePoliciesForm({
   const [isFlyoutOpen, setIsFlyoutOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [flyoutError, setFlyoutError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
   const isPoliciesMode = mode === "all" || mode === "policies";
   const isCheckoutMode = mode === "all" || mode === "checkout";
   const isContentMode = mode === "all" || mode === "content";
@@ -318,7 +317,6 @@ export function StorePoliciesForm({
     }
     setSaving(true);
     setFlyoutError(null);
-    setMessage(null);
 
     let parsedStorefrontCopy: Record<string, unknown> = {};
     if (isContentMode) {
@@ -464,7 +462,7 @@ export function StorePoliciesForm({
       payload.settings.checkout_order_note_prompt ??
         "If you have any questions, comments, or concerns about your order, leave a note below."
     );
-    setMessage(
+    notify.success(
       mode === "policies"
         ? "Policies and contact settings saved."
         : mode === "checkout"
@@ -513,7 +511,6 @@ export function StorePoliciesForm({
             </p>
           </div>
         )}
-        <FeedbackMessage type="success" message={message} />
       </div>
 
       <Flyout
@@ -545,8 +542,9 @@ export function StorePoliciesForm({
           </div>
         )}
       >
-        <form id="store-policies-form" onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2">
+        <form id="store-policies-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
+            <div className="grid gap-3 sm:grid-cols-2">
             {isPoliciesMode ? (
               <FormField label="Support Email" className="sm:col-span-2" description="Public support contact shown on policies and checkout messaging.">
                 <Input
@@ -933,6 +931,7 @@ export function StorePoliciesForm({
               <p className="text-xs text-muted-foreground">Optional advanced overrides. Leave as {`{}`} to use defaults.</p>
             </FormField>
             ) : null}
+            </div>
           </div>
           {inlineEditor ? (
             <DashboardFormActionBar
@@ -943,9 +942,10 @@ export function StorePoliciesForm({
               discardLabel="Discard changes"
               saveDisabled={!isDirty || saving}
               discardDisabled={!isDirty || saving}
+              statusMessage={flyoutError}
+              statusVariant="error"
             />
           ) : null}
-          <FeedbackMessage type="error" message={flyoutError} />
         </form>
       </Flyout>
     </SectionCard>

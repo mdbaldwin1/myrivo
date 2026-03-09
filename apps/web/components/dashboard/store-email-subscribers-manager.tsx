@@ -70,7 +70,8 @@ export function StoreEmailSubscribersManager() {
 
   return (
     <SectionCard
-      title="Email Subscribers"
+      title="Email Subscriber List"
+      description="Review captured email subscribers, filter by subscription status, and export the current view."
       action={
         <div className="flex items-center gap-2">
           <Button type="button" variant="outline" size="sm" onClick={() => void loadSubscribers()} disabled={loading}>

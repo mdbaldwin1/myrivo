@@ -4,7 +4,7 @@ import { logAuditEvent } from "@/lib/audit/log";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { sendOrderShippingNotification } from "@/lib/notifications/order-emails";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
-import { registerTracker, buildTrackingUrl } from "@/lib/shipping/provider";
+import { registerTracker, buildTrackingUrl, resolveShippedAt } from "@/lib/shipping/provider";
 import { getStoreShippingConfig } from "@/lib/shipping/store-config";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -44,10 +44,10 @@ export async function POST(request: NextRequest) {
 
   const { data: currentOrder, error: orderError } = await supabase
     .from("orders")
-    .select("id,fulfillment_status")
+    .select("id,fulfillment_status,shipped_at")
     .eq("id", payload.data.orderId)
     .eq("store_id", bundle.store.id)
-    .maybeSingle<{ id: string; fulfillment_status: string }>();
+    .maybeSingle<{ id: string; fulfillment_status: string; shipped_at: string | null }>();
 
   if (orderError) {
     return NextResponse.json({ error: orderError.message }, { status: 500 });
@@ -88,7 +88,11 @@ export async function POST(request: NextRequest) {
       shipment_tracker_id: tracker.trackerId,
       shipment_status: tracker.shipmentStatus,
       last_tracking_sync_at: now,
-      shipped_at: now,
+      shipped_at: resolveShippedAt(
+        currentOrder.shipped_at,
+        currentOrder.fulfillment_status === "delivered" ? "delivered" : "shipped",
+        now
+      ),
       fulfillment_status: currentOrder.fulfillment_status === "delivered" ? "delivered" : "shipped"
     })
     .eq("id", payload.data.orderId)

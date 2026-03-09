@@ -1,5 +1,4 @@
 import type { NextRequest } from "next/server";
-import { getSingleStoreSlug } from "@/lib/stores/single-store";
 import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
 import { ACTIVE_STORE_COOKIE, readSelectedStoreSlugFromCookies } from "@/lib/stores/tenant-context";
 
@@ -11,7 +10,7 @@ function normalizeSlug(value: string | null | undefined): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
-export async function resolveStoreSlugForServerRender(explicitSlug?: string | null): Promise<string> {
+export async function resolveStoreSlugForServerRender(explicitSlug?: string | null): Promise<string | null> {
   const explicit = normalizeSlug(explicitSlug);
   if (explicit) {
     return explicit;
@@ -22,10 +21,10 @@ export async function resolveStoreSlugForServerRender(explicitSlug?: string | nu
     return selected;
   }
 
-  return getSingleStoreSlug();
+  return null;
 }
 
-export function resolveStoreSlugFromRequest(request: NextRequest): string {
+export function resolveStoreSlugFromRequest(request: NextRequest): string | null {
   const url = new URL(request.url);
   const slugFromQuery =
     normalizeSlug(url.searchParams.get("store")) ??
@@ -46,12 +45,12 @@ export function resolveStoreSlugFromRequest(request: NextRequest): string {
     return slugFromCookie;
   }
 
-  return getSingleStoreSlug();
+  return null;
 }
 
-export async function resolveStoreSlugFromRequestAsync(request: NextRequest): Promise<string> {
+export async function resolveStoreSlugFromRequestAsync(request: NextRequest): Promise<string | null> {
   const syncResolved = resolveStoreSlugFromRequest(request);
-  if (syncResolved !== getSingleStoreSlug()) {
+  if (syncResolved) {
     return syncResolved;
   }
 
@@ -61,5 +60,5 @@ export async function resolveStoreSlugFromRequestAsync(request: NextRequest): Pr
     return fromDomain;
   }
 
-  return syncResolved;
+  return null;
 }

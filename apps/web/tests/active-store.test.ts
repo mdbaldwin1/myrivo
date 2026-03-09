@@ -10,7 +10,6 @@ describe("active store resolver", () => {
     process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role";
     process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon";
-    process.env.MYRIVO_SINGLE_STORE_SLUG = "at-home-apothecary";
   });
 
   test("uses query store slug when provided", async () => {
@@ -35,9 +34,9 @@ describe("active store resolver", () => {
     expect(resolveStoreSlugFromRequest(request)).toBe("cookie-store");
   });
 
-  test("falls back to configured single-store slug", async () => {
+  test("returns null when request has no store selectors", async () => {
     const { resolveStoreSlugFromRequest } = await import("@/lib/stores/active-store");
     const request = new NextRequest("https://example.com/api/promotions/preview");
-    expect(resolveStoreSlugFromRequest(request)).toBe("at-home-apothecary");
+    expect(resolveStoreSlugFromRequest(request)).toBeNull();
   });
 });

@@ -3,7 +3,8 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MoreHorizontal, Pencil, Plus, RotateCcw, Star, X } from "lucide-react";
+import { MoreHorizontal, Pencil, Plus, RotateCcw, Search, Star, X } from "lucide-react";
+import { AppAlert } from "@/components/ui/app-alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -31,6 +32,7 @@ import {
 } from "@/components/dashboard/product-manager-domain";
 import { formatVariantLabel } from "@/lib/products/variants";
 import { richTextToPlainText } from "@/lib/rich-text";
+import { notify } from "@/lib/feedback/toast";
 import { ProductRecord } from "@/types/database";
 
 export type { ProductListItem } from "@/components/dashboard/product-manager-domain";
@@ -511,6 +513,10 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [productSlug, setProductSlug] = useState("");
+  const [seoTitle, setSeoTitle] = useState("");
+  const [seoDescription, setSeoDescription] = useState("");
+  const [imageAltText, setImageAltText] = useState("");
   const [sku, setSku] = useState("");
   const [isFeatured, setIsFeatured] = useState(false);
   const [createImageUrls, setCreateImageUrls] = useState<string[]>([]);
@@ -537,6 +543,10 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
+  const [editProductSlug, setEditProductSlug] = useState("");
+  const [editSeoTitle, setEditSeoTitle] = useState("");
+  const [editSeoDescription, setEditSeoDescription] = useState("");
+  const [editImageAltText, setEditImageAltText] = useState("");
   const [editSku, setEditSku] = useState("");
   const [editStatus, setEditStatus] = useState<ProductRecord["status"]>("draft");
   const [editIsFeatured, setEditIsFeatured] = useState(false);
@@ -596,6 +606,10 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       JSON.stringify({
         title,
         description,
+        productSlug,
+        seoTitle,
+        seoDescription,
+        imageAltText,
         sku,
         isFeatured,
         createImageUrls,
@@ -612,6 +626,10 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     [
       title,
       description,
+      productSlug,
+      seoTitle,
+      seoDescription,
+      imageAltText,
       sku,
       isFeatured,
       createImageUrls,
@@ -633,6 +651,10 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
         editingProductId,
         editTitle,
         editDescription,
+        editProductSlug,
+        editSeoTitle,
+        editSeoDescription,
+        editImageAltText,
         editSku,
         editStatus,
         editIsFeatured,
@@ -649,6 +671,10 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       editingProductId,
       editTitle,
       editDescription,
+      editProductSlug,
+      editSeoTitle,
+      editSeoDescription,
+      editImageAltText,
       editSku,
       editStatus,
       editIsFeatured,
@@ -853,6 +879,10 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       body: JSON.stringify({
         title,
         description,
+        slug: productSlug.trim() || null,
+        seoTitle: seoTitle.trim() || null,
+        seoDescription: seoDescription.trim() || null,
+        imageAltText: imageAltText.trim() || null,
         status: "draft",
         hasVariants: createHasVariants,
         variantTiersCount: createVariantTierCount,
@@ -884,6 +914,10 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     setProducts((current) => [payload.product!, ...current]);
     setTitle("");
     setDescription("");
+    setProductSlug("");
+    setSeoTitle("");
+    setSeoDescription("");
+    setImageAltText("");
     setSku("");
     setIsFeatured(false);
     setCreateImageUrls([]);
@@ -903,6 +937,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     setCreateVariantsSnapshotByMode(null);
     setCreatePending(false);
     setIsCreateFlyoutOpen(false);
+    notify.success("Product created.");
   }
 
   async function updateProduct(
@@ -1067,6 +1102,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     }
 
     setProducts((current) => current.filter((item) => item.id !== product.id));
+    notify.success("Product deleted.");
 
     if (editingProductId === product.id) {
       setIsEditFlyoutOpen(false);
@@ -1146,6 +1182,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
         window.dispatchEvent(new Event("inventory:changed"));
       }
       setInventoryAdjustDraft(null);
+      notify.success("Inventory updated.");
     } catch (error) {
       setInventoryAdjustError(error instanceof Error ? error.message : "Unable to adjust inventory.");
     } finally {
@@ -1290,6 +1327,10 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     setEditingProductId(product.id);
     setEditTitle(product.title);
     setEditDescription(product.description);
+    setEditProductSlug(product.slug ?? "");
+    setEditSeoTitle(product.seo_title ?? "");
+    setEditSeoDescription(product.seo_description ?? "");
+    setEditImageAltText(product.image_alt_text ?? "");
     setEditSku(product.sku ?? "");
     setEditStatus(product.status);
     setEditIsFeatured(product.is_featured);
@@ -1410,6 +1451,10 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       {
       title: editTitle,
       description: editDescription,
+      slug: editProductSlug.trim() || null,
+      seoTitle: editSeoTitle.trim() || null,
+      seoDescription: editSeoDescription.trim() || null,
+      imageAltText: editImageAltText.trim() || null,
       hasVariants: editHasVariants,
       variantTiersCount: editVariantTierCount,
       variantTierLevels: editVariantTierCount === 2 ? [editTierOneLabel, editTierTwoLabel] : [editTierOneLabel],
@@ -1432,11 +1477,16 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
 
     setIsEditFlyoutOpen(false);
     resetEditComposer();
+    notify.success("Product saved.");
   }
 
   function resetCreateComposer() {
     setTitle("");
     setDescription("");
+    setProductSlug("");
+    setSeoTitle("");
+    setSeoDescription("");
+    setImageAltText("");
     setSku("");
     setIsFeatured(false);
     setCreateImageUrls([]);
@@ -1462,6 +1512,10 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     setEditingProductId(null);
     setEditTitle("");
     setEditDescription("");
+    setEditProductSlug("");
+    setEditSeoTitle("");
+    setEditSeoDescription("");
+    setEditImageAltText("");
     setEditSku("");
     setEditStatus("draft");
     setEditIsFeatured(false);
@@ -2153,7 +2207,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
         className="flex w-[300%] transition-transform duration-300 ease-out"
         style={{ transform: `translateX(-${createStepIndex * 33.3333}%)` }}
       >
-        <div className="flex w-1/3 justify-end gap-2">
+        <div className="flex w-1/3 items-center justify-end gap-2">
+          <AppAlert compact variant="error" message={createError} className="mr-auto text-sm" />
           <Button type="button" variant="outline" onClick={requestClose}>
             Close
           </Button>
@@ -2251,7 +2306,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
         className="flex w-[300%] transition-transform duration-300 ease-out"
         style={{ transform: `translateX(-${editStepIndex * 33.3333}%)` }}
       >
-        <div className="flex w-1/3 justify-end gap-2">
+        <div className="flex w-1/3 items-center justify-end gap-2">
+          <AppAlert compact variant="error" message={editError} className="mr-auto text-sm" />
           <Button type="button" variant="outline" onClick={requestClose}>
             Close
           </Button>
@@ -2344,28 +2400,19 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
             Create Product
           </Button>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <FormField
-            label="Search"
-            labelClassName="text-xs uppercase tracking-wide text-muted-foreground"
-            description="Search by product title, SKU, or key option values."
-          >
-            <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find product" />
-          </FormField>
-          <FormField
-            label="Status Filter"
-            labelClassName="text-xs uppercase tracking-wide text-muted-foreground"
-            description="Filter catalog rows by publish state."
-          >
-            <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | ProductRecord["status"])}>
-              <option value="all">All statuses</option>
-              {statusOptions.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </Select>
-          </FormField>
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by title, SKU, or option value" className="pl-9" />
+          </div>
+          <Select aria-label="Status filter" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | ProductRecord["status"])}>
+            <option value="all">All statuses</option>
+            {statusOptions.map((status) => (
+              <option key={status} value={status}>
+                {status}
+              </option>
+            ))}
+          </Select>
         </div>
         <FeedbackMessage type="error" message={catalogError} />
       </header>
@@ -2804,7 +2851,6 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
         footer={createFlyoutFooter}
       >
         <form id="create-product-form" onSubmit={createProduct} className="space-y-3">
-          <FeedbackMessage type="error" message={createError} />
           <div className="overflow-x-hidden overflow-y-visible py-1">
             <div>
                 <div
@@ -2828,6 +2874,28 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                     value={description}
                     onChange={setDescription}
                     previewLabel="Description preview"
+                  />
+                </FormField>
+                <FormField label="Slug" description="Optional. Leave blank to auto-generate from title.">
+                  <Input placeholder="whipped-tallow-balm" value={productSlug} onChange={(event) => setProductSlug(event.target.value)} />
+                </FormField>
+                <FormField label="SEO Title" description="Optional override used in page metadata.">
+                  <Input maxLength={120} placeholder="Whipped Tallow Balm | At Home Apothecary" value={seoTitle} onChange={(event) => setSeoTitle(event.target.value)} />
+                </FormField>
+                <FormField label="SEO Description" description="Optional override for meta description.">
+                  <Input
+                    maxLength={320}
+                    placeholder="Rich, small-batch tallow balm crafted for daily skin support."
+                    value={seoDescription}
+                    onChange={(event) => setSeoDescription(event.target.value)}
+                  />
+                </FormField>
+                <FormField label="Primary Image Alt Text" description="Describe the product image for accessibility and SEO.">
+                  <Input
+                    maxLength={240}
+                    placeholder="Glass jar of whipped tallow balm on a wooden tray."
+                    value={imageAltText}
+                    onChange={(event) => setImageAltText(event.target.value)}
                   />
                 </FormField>
                 <label className="flex items-center gap-2">
@@ -3701,7 +3769,6 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
         footer={editFlyoutFooter}
       >
         <form id="edit-product-form" onSubmit={saveEditedProduct} className="space-y-3">
-          <FeedbackMessage type="error" message={editError} />
           {isEditReadOnly ? (
             <p className="rounded-md border border-border bg-muted/25 px-3 py-2 text-xs text-muted-foreground">
               Archived products are read-only. Unarchive from the catalog list to make edits.
@@ -3731,6 +3798,41 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                     value={editDescription}
                     onChange={setEditDescription}
                     previewLabel="Description preview"
+                    disabled={isEditReadOnly || editPending}
+                  />
+                </FormField>
+                <FormField label="Slug" description="Optional. Leave blank to auto-generate from title.">
+                  <Input
+                    placeholder="whipped-tallow-balm"
+                    value={editProductSlug}
+                    onChange={(event) => setEditProductSlug(event.target.value)}
+                    disabled={isEditReadOnly || editPending}
+                  />
+                </FormField>
+                <FormField label="SEO Title" description="Optional override used in page metadata.">
+                  <Input
+                    maxLength={120}
+                    placeholder="Whipped Tallow Balm | At Home Apothecary"
+                    value={editSeoTitle}
+                    onChange={(event) => setEditSeoTitle(event.target.value)}
+                    disabled={isEditReadOnly || editPending}
+                  />
+                </FormField>
+                <FormField label="SEO Description" description="Optional override for meta description.">
+                  <Input
+                    maxLength={320}
+                    placeholder="Rich, small-batch tallow balm crafted for daily skin support."
+                    value={editSeoDescription}
+                    onChange={(event) => setEditSeoDescription(event.target.value)}
+                    disabled={isEditReadOnly || editPending}
+                  />
+                </FormField>
+                <FormField label="Primary Image Alt Text" description="Describe the product image for accessibility and SEO.">
+                  <Input
+                    maxLength={240}
+                    placeholder="Glass jar of whipped tallow balm on a wooden tray."
+                    value={editImageAltText}
+                    onChange={(event) => setEditImageAltText(event.target.value)}
                     disabled={isEditReadOnly || editPending}
                   />
                 </FormField>
@@ -4645,22 +4747,24 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                   }
                 />
               </FormField>
-              <FeedbackMessage type="error" message={inventoryAdjustError} />
-              <div className="flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setInventoryAdjustDraft(null);
-                    setInventoryAdjustError(null);
-                  }}
-                  disabled={inventoryAdjustPending}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={inventoryAdjustPending}>
-                  {inventoryAdjustPending ? "Saving..." : "Save adjustment"}
-                </Button>
+              <div className="flex items-center justify-between gap-3">
+                <AppAlert compact variant="error" message={inventoryAdjustError} className="text-sm" />
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setInventoryAdjustDraft(null);
+                      setInventoryAdjustError(null);
+                    }}
+                    disabled={inventoryAdjustPending}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={inventoryAdjustPending}>
+                    {inventoryAdjustPending ? "Saving..." : "Save adjustment"}
+                  </Button>
+                </div>
               </div>
             </form>
           </DialogPrimitive.Content>

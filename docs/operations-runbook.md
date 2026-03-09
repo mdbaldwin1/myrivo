@@ -41,6 +41,7 @@ If verification fails:
 4. Apply promo code and run storefront checkout.
 5. Confirm order appears in dashboard and fulfillment update works.
 6. Export CSV and confirm downloadable output.
+7. Validate shipping webhook endpoint with header-based auth (`x-shipping-webhook-secret`) and signature headers when enabled (`x-shipping-timestamp`, `x-shipping-signature`).
 
 ## Rollback model
 

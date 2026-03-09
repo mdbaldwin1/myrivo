@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPickupSummaryText } from "@/lib/notifications/order-emails";
+import { buildPickupSummaryText, resolveCustomerName, resolveEffectiveReplyTo } from "@/lib/notifications/order-emails";
 
 describe("order email pickup summary", () => {
   it("includes pickup location and timezone-formatted pickup window", () => {
@@ -45,5 +45,24 @@ describe("order email pickup summary", () => {
     });
 
     expect(summary).toContain("Pickup Window: To be confirmed");
+  });
+
+  it("resolves customer name from first and last name", () => {
+    const value = resolveCustomerName("Maya", "Rivera", "buyer@example.com");
+    expect(value).toBe("Maya Rivera");
+  });
+
+  it("falls back to email prefix when customer name is missing", () => {
+    const value = resolveCustomerName(null, null, "maker@example.com");
+    expect(value).toBe("maker");
+  });
+
+  it("prioritizes configured reply-to over support and platform defaults", () => {
+    expect(resolveEffectiveReplyTo("replies@brand.com", "support@shop.com", "ops@myrivo.app")).toBe("replies@brand.com");
+  });
+
+  it("falls back from reply-to to support email to platform reply-to", () => {
+    expect(resolveEffectiveReplyTo(null, "support@shop.com", "ops@myrivo.app")).toBe("support@shop.com");
+    expect(resolveEffectiveReplyTo("", "", "ops@myrivo.app")).toBe("ops@myrivo.app");
   });
 });

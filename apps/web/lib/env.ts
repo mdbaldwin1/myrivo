@@ -8,11 +8,22 @@ export const publicEnvSchema = z.object({
 export const serverEnvSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   MYRIVO_SINGLE_STORE_SLUG: z.string().optional(),
-  OWNER_ACCESS_EMAILS: z.string().optional(),
-  MYRIVO_ALLOW_PUBLIC_SIGNUP: z.string().optional(),
+  MYRIVO_EMAIL_PROVIDER: z.enum(["resend"]).optional(),
   RESEND_API_KEY: z.string().optional(),
   MYRIVO_EMAIL_FROM: z.string().optional(),
+  MYRIVO_EMAIL_PLATFORM_FROM: z.string().optional(),
+  MYRIVO_EMAIL_REPLY_TO: z.string().optional(),
+  MYRIVO_EMAIL_BRANDED_LOCAL_PART: z.string().optional(),
+  MYRIVO_BRANDED_EMAIL_POLICY: z.enum(["disabled", "allowlist", "all"]).optional(),
+  MYRIVO_BRANDED_EMAIL_STORE_IDS: z.string().optional(),
   MYRIVO_ORDER_ALERT_EMAILS: z.string().optional(),
+  REVIEWS_MAX_SUBMISSIONS_PER_IP_PER_HOUR: z.string().optional(),
+  REVIEWS_MAX_SUBMISSIONS_PER_EMAIL_PER_DAY: z.string().optional(),
+  REVIEWS_BLOCKED_TERMS: z.string().optional(),
+  REVIEWS_MEDIA_MAX_IMAGES_PER_REVIEW: z.string().optional(),
+  REVIEWS_MEDIA_MAX_FILE_SIZE_BYTES: z.string().optional(),
+  REVIEWS_MEDIA_MAX_WIDTH: z.string().optional(),
+  REVIEWS_MEDIA_MAX_HEIGHT: z.string().optional(),
   VERCEL_API_TOKEN: z.string().optional(),
   VERCEL_PROJECT_ID: z.string().optional(),
   VERCEL_TEAM_ID: z.string().optional()
@@ -36,7 +47,11 @@ export const stripeEnvSchema = z.object({
 export const shippingEnvSchema = z.object({
   SHIPPING_PROVIDER: z.enum(["none", "easypost"]).optional(),
   EASYPOST_API_KEY: z.string().min(1).optional(),
-  SHIPPING_WEBHOOK_SECRET: z.string().min(1).optional()
+  SHIPPING_WEBHOOK_SECRET: z.string().min(1).optional(),
+  SHIPPING_ALLOW_QUERY_TOKEN: z.string().optional(),
+  SHIPPING_WEBHOOK_SIGNING_SECRET: z.string().min(1).optional(),
+  SHIPPING_WEBHOOK_REQUIRE_SIGNATURE: z.string().optional(),
+  SHIPPING_WEBHOOK_SIGNATURE_TOLERANCE_SECONDS: z.string().optional()
 });
 
 export const envSchema = publicEnvSchema
@@ -69,11 +84,22 @@ export function getServerEnv() {
     cachedServerEnv = serverEnvSchema.parse({
       SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
       MYRIVO_SINGLE_STORE_SLUG: process.env.MYRIVO_SINGLE_STORE_SLUG,
-      OWNER_ACCESS_EMAILS: process.env.OWNER_ACCESS_EMAILS,
-      MYRIVO_ALLOW_PUBLIC_SIGNUP: process.env.MYRIVO_ALLOW_PUBLIC_SIGNUP,
+      MYRIVO_EMAIL_PROVIDER: process.env.MYRIVO_EMAIL_PROVIDER,
       RESEND_API_KEY: process.env.RESEND_API_KEY,
       MYRIVO_EMAIL_FROM: process.env.MYRIVO_EMAIL_FROM,
+      MYRIVO_EMAIL_PLATFORM_FROM: process.env.MYRIVO_EMAIL_PLATFORM_FROM,
+      MYRIVO_EMAIL_REPLY_TO: process.env.MYRIVO_EMAIL_REPLY_TO,
+      MYRIVO_EMAIL_BRANDED_LOCAL_PART: process.env.MYRIVO_EMAIL_BRANDED_LOCAL_PART,
+      MYRIVO_BRANDED_EMAIL_POLICY: process.env.MYRIVO_BRANDED_EMAIL_POLICY,
+      MYRIVO_BRANDED_EMAIL_STORE_IDS: process.env.MYRIVO_BRANDED_EMAIL_STORE_IDS,
       MYRIVO_ORDER_ALERT_EMAILS: process.env.MYRIVO_ORDER_ALERT_EMAILS,
+      REVIEWS_MAX_SUBMISSIONS_PER_IP_PER_HOUR: process.env.REVIEWS_MAX_SUBMISSIONS_PER_IP_PER_HOUR,
+      REVIEWS_MAX_SUBMISSIONS_PER_EMAIL_PER_DAY: process.env.REVIEWS_MAX_SUBMISSIONS_PER_EMAIL_PER_DAY,
+      REVIEWS_BLOCKED_TERMS: process.env.REVIEWS_BLOCKED_TERMS,
+      REVIEWS_MEDIA_MAX_IMAGES_PER_REVIEW: process.env.REVIEWS_MEDIA_MAX_IMAGES_PER_REVIEW,
+      REVIEWS_MEDIA_MAX_FILE_SIZE_BYTES: process.env.REVIEWS_MEDIA_MAX_FILE_SIZE_BYTES,
+      REVIEWS_MEDIA_MAX_WIDTH: process.env.REVIEWS_MEDIA_MAX_WIDTH,
+      REVIEWS_MEDIA_MAX_HEIGHT: process.env.REVIEWS_MEDIA_MAX_HEIGHT,
       VERCEL_API_TOKEN: process.env.VERCEL_API_TOKEN,
       VERCEL_PROJECT_ID: process.env.VERCEL_PROJECT_ID,
       VERCEL_TEAM_ID: process.env.VERCEL_TEAM_ID
@@ -99,7 +125,11 @@ export function getShippingEnv() {
     cachedShippingEnv = shippingEnvSchema.parse({
       SHIPPING_PROVIDER: process.env.SHIPPING_PROVIDER,
       EASYPOST_API_KEY: process.env.EASYPOST_API_KEY,
-      SHIPPING_WEBHOOK_SECRET: process.env.SHIPPING_WEBHOOK_SECRET
+      SHIPPING_WEBHOOK_SECRET: process.env.SHIPPING_WEBHOOK_SECRET,
+      SHIPPING_ALLOW_QUERY_TOKEN: process.env.SHIPPING_ALLOW_QUERY_TOKEN,
+      SHIPPING_WEBHOOK_SIGNING_SECRET: process.env.SHIPPING_WEBHOOK_SIGNING_SECRET,
+      SHIPPING_WEBHOOK_REQUIRE_SIGNATURE: process.env.SHIPPING_WEBHOOK_REQUIRE_SIGNATURE,
+      SHIPPING_WEBHOOK_SIGNATURE_TOLERANCE_SECONDS: process.env.SHIPPING_WEBHOOK_SIGNATURE_TOLERANCE_SECONDS
     });
   }
 

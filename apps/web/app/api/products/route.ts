@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { logAuditEvent } from "@/lib/audit/log";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
+import { notifyOwnersInventoryLevel } from "@/lib/notifications/owner-notifications";
+import { buildProductSlug, normalizeProductSlug } from "@/lib/products/slug";
 import { buildProductVariantRollup, normalizeVariantInputs, type VariantInput } from "@/lib/products/variants";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
@@ -42,8 +44,12 @@ type NestedVariantPayload = z.infer<typeof nestedVariantSchema>;
 const createProductSchema = z.object({
   title: z.string().min(2),
   description: z.string().min(1),
+  slug: z.string().max(120).optional().nullable(),
   sku: z.string().max(120).nullable().optional(),
   imageUrls: z.array(z.string().url()).optional().default([]),
+  imageAltText: z.string().max(240).optional().nullable(),
+  seoTitle: z.string().max(120).optional().nullable(),
+  seoDescription: z.string().max(320).optional().nullable(),
   isFeatured: z.boolean().optional().default(false),
   hasVariants: z.boolean(),
   variantTiersCount: z.union([z.literal(0), z.literal(1), z.literal(2)]),
@@ -57,8 +63,12 @@ const updateProductSchema = z.object({
   productId: z.string().uuid(),
   title: z.string().min(2).optional(),
   description: z.string().min(1).optional(),
+  slug: z.string().max(120).optional().nullable(),
   sku: z.string().max(120).nullable().optional(),
   imageUrls: z.array(z.string().url()).optional(),
+  imageAltText: z.string().max(240).optional().nullable(),
+  seoTitle: z.string().max(120).optional().nullable(),
+  seoDescription: z.string().max(320).optional().nullable(),
   isFeatured: z.boolean().optional(),
   hasVariants: z.boolean().optional(),
   variantTiersCount: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(),
@@ -74,7 +84,7 @@ const deleteProductSchema = z.object({
 });
 
 const productSelectWithVariantImages =
-  "id,title,description,sku,image_urls,is_featured,price_cents,inventory_qty,status,created_at,product_variants(id,title,sku,sku_mode,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_made_to_order,is_default,status,sort_order,created_at),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))";
+  "id,title,description,slug,sku,image_urls,image_alt_text,seo_title,seo_description,is_featured,price_cents,inventory_qty,status,created_at,product_variants(id,title,sku,sku_mode,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_made_to_order,is_default,status,sort_order,created_at),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))";
 const productSelectWithVariantImagesLegacy =
   "id,title,description,sku,image_urls,is_featured,price_cents,inventory_qty,status,created_at,product_variants(id,title,sku,sku_mode,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_default,status,sort_order,created_at),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))";
 
@@ -82,8 +92,12 @@ type ProductWithVariantsRow = {
   id: string;
   title: string;
   description: string;
+  slug: string;
   sku: string | null;
   image_urls: string[] | null;
+  image_alt_text: string | null;
+  seo_title: string | null;
+  seo_description: string | null;
   is_featured: boolean;
   price_cents: number;
   inventory_qty: number;
@@ -318,6 +332,33 @@ function formatDuplicateSkuErrorMessage(message: string) {
   return "Duplicate SKU detected. SKUs must be unique (case-insensitive) across this store.";
 }
 
+async function ensureUniqueProductSlug(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  storeId: string,
+  title: string,
+  requestedSlug?: string | null,
+  excludingProductId?: string
+) {
+  const base = normalizeProductSlug(requestedSlug ?? title) || "product";
+
+  for (let suffix = 1; suffix <= 200; suffix += 1) {
+    const candidate = buildProductSlug(base, suffix);
+    let query = supabase.from("products").select("id").eq("store_id", storeId).eq("slug", candidate).limit(1);
+    if (excludingProductId) {
+      query = query.neq("id", excludingProductId);
+    }
+    const { data, error } = await query.returns<Array<{ id: string }>>();
+    if (error) {
+      throw new Error(error.message);
+    }
+    if (!data || data.length === 0) {
+      return candidate;
+    }
+  }
+
+  throw new Error("Unable to generate a unique product slug.");
+}
+
 async function assertProductCanBeActive(
   supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
   storeId: string,
@@ -460,11 +501,19 @@ async function selectProductWithVariants(supabase: Awaited<ReturnType<typeof cre
       .eq("id", productId)
       .eq("store_id", storeId)
       .single<
-        Omit<ProductWithVariantsRow, "product_variants"> & {
+        Omit<ProductWithVariantsRow, "slug" | "image_alt_text" | "seo_title" | "seo_description" | "product_variants"> & {
           product_variants: Array<Omit<ProductWithVariantsRow["product_variants"][number], "is_made_to_order">>;
         }
       >();
-    data = legacy.data as ProductWithVariantsRow | null;
+    data = legacy.data
+      ? ({
+          ...legacy.data,
+          slug: legacy.data.id,
+          image_alt_text: null,
+          seo_title: null,
+          seo_description: null
+        } as ProductWithVariantsRow)
+      : null;
     error = legacy.error;
   }
 
@@ -478,6 +527,10 @@ async function selectProductWithVariants(supabase: Awaited<ReturnType<typeof cre
 
   return {
     ...data,
+    slug: data.slug || data.id,
+    image_alt_text: data.image_alt_text ?? null,
+    seo_title: data.seo_title ?? null,
+    seo_description: data.seo_description ?? null,
     image_urls: data.image_urls ?? [],
     product_variants: [...(data.product_variants ?? [])]
       .map((variant) => ({ ...variant, is_made_to_order: variant.is_made_to_order ?? false }))
@@ -934,7 +987,7 @@ async function resolveOwnedStoreId() {
     return { error: NextResponse.json({ error: "No store found for account" }, { status: 404 }) } as const;
   }
 
-  return { supabase, storeId: bundle.store.id, userId: user.id } as const;
+  return { supabase, storeId: bundle.store.id, storeSlug: bundle.store.slug, userId: user.id } as const;
 }
 
 export async function GET() {
@@ -959,12 +1012,21 @@ export async function GET() {
       .order("created_at", { ascending: false })
       .returns<
         Array<
-          Omit<ProductWithVariantsRow, "product_variants"> & {
+          Omit<ProductWithVariantsRow, "slug" | "image_alt_text" | "seo_title" | "seo_description" | "product_variants"> & {
             product_variants: Array<Omit<ProductWithVariantsRow["product_variants"][number], "is_made_to_order">>;
           }
         >
       >();
-    data = legacy.data as ProductWithVariantsRow[] | null;
+    data = (legacy.data ?? []).map(
+      (product) =>
+        ({
+          ...product,
+          slug: product.id,
+          image_alt_text: null,
+          seo_title: null,
+          seo_description: null
+        }) as ProductWithVariantsRow
+    );
     error = legacy.error;
   }
 
@@ -974,6 +1036,10 @@ export async function GET() {
 
   const products = (data ?? []).map((product) => ({
       ...product,
+      slug: product.slug || product.id,
+      image_alt_text: product.image_alt_text ?? null,
+      seo_title: product.seo_title ?? null,
+      seo_description: product.seo_description ?? null,
       image_urls: product.image_urls ?? [],
       product_variants: [...(product.product_variants ?? [])]
         .map((variant) => ({ ...variant, is_made_to_order: variant.is_made_to_order ?? false }))
@@ -1039,14 +1105,19 @@ export async function POST(request: NextRequest) {
   }
 
   const { supabase } = resolved;
+  const productSlug = await ensureUniqueProductSlug(supabase, resolved.storeId, payload.data.title, payload.data.slug);
   const priceFromVariants = variants.length > 0 ? rollup.minPriceCents : payload.data.priceCents ?? 0;
   const inventoryFromVariants = variants.length > 0 ? rollup.totalInventoryQty : payload.data.inventoryQty ?? 0;
   const productInsert = {
     store_id: resolved.storeId,
     title: payload.data.title,
     description: payload.data.description,
+    slug: productSlug,
     sku: payload.data.hasVariants ? null : payload.data.sku ?? null,
     image_urls: payload.data.imageUrls,
+    image_alt_text: payload.data.imageAltText ?? null,
+    seo_title: payload.data.seoTitle ?? null,
+    seo_description: payload.data.seoDescription ?? null,
     is_featured: payload.data.isFeatured,
     price_cents: priceFromVariants,
     inventory_qty: inventoryFromVariants,
@@ -1060,6 +1131,17 @@ export async function POST(request: NextRequest) {
 
   if (productError || !createdProduct) {
     const message = productError?.message ?? "Unable to create product.";
+    if (
+      isMissingColumnInSchemaCache(productError, "slug") ||
+      isMissingColumnInSchemaCache(productError, "seo_title") ||
+      isMissingColumnInSchemaCache(productError, "seo_description") ||
+      isMissingColumnInSchemaCache(productError, "image_alt_text")
+    ) {
+      return NextResponse.json(
+        { error: "SEO product fields require the latest database migration. Please run migrations and try again." },
+        { status: 400 }
+      );
+    }
     if (message.toLowerCase().includes("duplicate key value")) {
       return NextResponse.json({ error: formatDuplicateSkuErrorMessage(message) }, { status: 400 });
     }
@@ -1148,10 +1230,10 @@ export async function PATCH(request: NextRequest) {
 
   const { data: existingProduct, error: existingProductError } = await resolved.supabase
     .from("products")
-    .select("status")
+    .select("title,status,inventory_qty")
     .eq("id", payload.data.productId)
     .eq("store_id", resolved.storeId)
-    .single<{ status: "draft" | "active" | "archived" }>();
+    .single<{ title: string; status: "draft" | "active" | "archived"; inventory_qty: number }>();
 
   if (existingProductError || !existingProduct) {
     return NextResponse.json({ error: "Product not found." }, { status: 404 });
@@ -1163,12 +1245,25 @@ export async function PATCH(request: NextRequest) {
 
   if (payload.data.title !== undefined) updates.title = payload.data.title;
   if (payload.data.description !== undefined) updates.description = payload.data.description;
+  if (payload.data.imageAltText !== undefined) updates.image_alt_text = payload.data.imageAltText;
+  if (payload.data.seoTitle !== undefined) updates.seo_title = payload.data.seoTitle;
+  if (payload.data.seoDescription !== undefined) updates.seo_description = payload.data.seoDescription;
   if (payload.data.sku !== undefined) updates.sku = payload.data.sku;
   if (payload.data.imageUrls !== undefined) updates.image_urls = payload.data.imageUrls;
   if (payload.data.isFeatured !== undefined) updates.is_featured = payload.data.isFeatured;
   if (payload.data.priceCents !== undefined) updates.price_cents = payload.data.priceCents;
   if (payload.data.inventoryQty !== undefined) updates.inventory_qty = payload.data.inventoryQty;
   if (payload.data.status !== undefined) updates.status = payload.data.status;
+
+  if (payload.data.slug !== undefined || payload.data.title !== undefined) {
+    updates.slug = await ensureUniqueProductSlug(
+      resolved.supabase,
+      resolved.storeId,
+      payload.data.title ?? existingProduct.title,
+      payload.data.slug,
+      payload.data.productId
+    );
+  }
 
   let rollupFromVariants: ReturnType<typeof buildProductVariantRollup> | null = null;
 
@@ -1241,6 +1336,17 @@ export async function PATCH(request: NextRequest) {
     .eq("store_id", resolved.storeId);
 
   if (productError) {
+    if (
+      isMissingColumnInSchemaCache(productError, "slug") ||
+      isMissingColumnInSchemaCache(productError, "seo_title") ||
+      isMissingColumnInSchemaCache(productError, "seo_description") ||
+      isMissingColumnInSchemaCache(productError, "image_alt_text")
+    ) {
+      return NextResponse.json(
+        { error: "SEO product fields require the latest database migration. Please run migrations and try again." },
+        { status: 400 }
+      );
+    }
     return NextResponse.json({ error: productError.message }, { status: 500 });
   }
 
@@ -1258,6 +1364,20 @@ export async function PATCH(request: NextRequest) {
       rolledUpFromVariants: Boolean(rollupFromVariants)
     }
   });
+
+  try {
+    await notifyOwnersInventoryLevel({
+      storeId: resolved.storeId,
+      storeSlug: resolved.storeSlug,
+      productId: product.id,
+      productTitle: product.title,
+      inventoryQty: product.inventory_qty,
+      previousInventoryQty: existingProduct.inventory_qty,
+      productStatus: product.status
+    });
+  } catch {
+    // Do not fail product updates if notification dispatch encounters a transient error.
+  }
 
   return NextResponse.json({ product });
 }

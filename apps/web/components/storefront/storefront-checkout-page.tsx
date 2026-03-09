@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { AppAlert } from "@/components/ui/app-alert";
 import { buildStorefrontThemeStyle, resolveStorefrontThemeConfig } from "@/lib/theme/storefront-theme";
 import { formatCopyTemplate, resolveStorefrontCopy } from "@/lib/storefront/copy";
 import { STOREFRONT_TEXT_LINK_EFFECT_CLASS } from "@/lib/storefront/link-effects";
@@ -22,6 +23,10 @@ type Props = {
     id: string;
     name: string;
     slug: string;
+  };
+  viewer?: {
+    isAuthenticated: boolean;
+    canManageStore: boolean;
   };
   branding: {
     logo_path: string | null;
@@ -53,7 +58,7 @@ const buttonRadiusClasses = {
   sharp: "!rounded-none"
 } as const;
 
-export function StorefrontCheckoutPage({ store, branding, settings }: Props) {
+export function StorefrontCheckoutPage({ store, viewer, branding, settings }: Props) {
   const searchParams = useSearchParams();
   const status = searchParams.get("status");
   const sessionId = searchParams.get("session_id");
@@ -143,7 +148,7 @@ export function StorefrontCheckoutPage({ store, branding, settings }: Props) {
       <main className={`mx-auto w-full ${pageWidthClasses[themeConfig.pageWidth]} space-y-4 px-6 py-10`}>
         <h1 className="text-3xl font-semibold [font-family:var(--storefront-font-heading)]">{copy.checkout.title}</h1>
         <p className="text-sm text-muted-foreground">{message}</p>
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        <AppAlert variant="error" message={error} />
         <div className="flex gap-4 text-sm">
           <Link href={`/cart?store=${encodeURIComponent(store.slug)}`} className={`font-medium ${STOREFRONT_TEXT_LINK_EFFECT_CLASS}`}>
             {copy.checkout.backToCart}
@@ -156,6 +161,7 @@ export function StorefrontCheckoutPage({ store, branding, settings }: Props) {
         <StorefrontFooter
           storeName={store.name}
           storeSlug={store.slug}
+          viewer={viewer}
           settings={settings}
           copy={copy}
           buttonRadiusClass={buttonRadiusClass}

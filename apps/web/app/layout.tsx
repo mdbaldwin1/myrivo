@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { headers } from "next/headers";
+import { Toaster } from "@/components/ui/toaster";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
 import "./globals.css";
 
@@ -37,7 +39,7 @@ export async function generateMetadata(): Promise<Metadata> {
     .maybeSingle<{
       id: string;
       name: string;
-      status: "draft" | "active" | "suspended";
+      status: "draft" | "pending_review" | "active" | "suspended";
       white_label_enabled: boolean;
     }>();
 
@@ -45,13 +47,45 @@ export async function generateMetadata(): Promise<Metadata> {
     return defaultMetadata();
   }
 
-  const { data: branding } = await admin
+  const brandingQuery = await admin
     .from("store_branding")
-    .select("logo_path")
+    .select("logo_path,favicon_path,apple_touch_icon_path,og_image_path,twitter_image_path")
     .eq("store_id", store.id)
-    .maybeSingle<{ logo_path: string | null }>();
+    .maybeSingle<{
+      logo_path: string | null;
+      favicon_path: string | null;
+      apple_touch_icon_path: string | null;
+      og_image_path: string | null;
+      twitter_image_path: string | null;
+    }>();
+  let branding = brandingQuery.data;
 
-  const favicon = branding?.logo_path?.trim() || "/brand/myrivo-favicon.svg";
+  if (
+    brandingQuery.error &&
+    (isMissingColumnInSchemaCache(brandingQuery.error, "favicon_path") ||
+      isMissingColumnInSchemaCache(brandingQuery.error, "apple_touch_icon_path") ||
+      isMissingColumnInSchemaCache(brandingQuery.error, "og_image_path") ||
+      isMissingColumnInSchemaCache(brandingQuery.error, "twitter_image_path"))
+  ) {
+    const fallback = await admin
+      .from("store_branding")
+      .select("logo_path")
+      .eq("store_id", store.id)
+      .maybeSingle<{ logo_path: string | null }>();
+    branding = fallback.data
+      ? {
+          logo_path: fallback.data.logo_path,
+          favicon_path: null,
+          apple_touch_icon_path: null,
+          og_image_path: null,
+          twitter_image_path: null
+        }
+      : null;
+  }
+
+  const favicon = branding?.favicon_path?.trim() || branding?.logo_path?.trim() || "/brand/myrivo-favicon.svg";
+  const appleTouchIcon = branding?.apple_touch_icon_path?.trim() || favicon;
+  const socialImage = branding?.og_image_path?.trim() || branding?.twitter_image_path?.trim() || null;
   const title = store.name || "Myrivo";
 
   return {
@@ -60,15 +94,20 @@ export async function generateMetadata(): Promise<Metadata> {
     icons: {
       icon: [{ url: favicon }],
       shortcut: [favicon],
-      apple: [favicon]
-    }
+      apple: [appleTouchIcon]
+    },
+    openGraph: socialImage ? { images: [{ url: socialImage }] } : undefined,
+    twitter: socialImage ? { images: [socialImage] } : undefined
   };
 }
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {children}
+        <Toaster />
+      </body>
     </html>
   );
 }

@@ -162,6 +162,72 @@ describe("store experience content route", () => {
     expect(response.status).toBe(400);
   });
 
+  test("PUT returns 400 for invalid home hero brandDisplay value", async () => {
+    const request = new NextRequest("http://localhost:3000/api/store-experience/content", {
+      method: "PUT",
+      body: JSON.stringify({
+        section: "home",
+        value: {
+          hero: {
+            brandDisplay: "wordmark"
+          }
+        }
+      }),
+      headers: {
+        "content-type": "application/json",
+        origin: "http://localhost:3000",
+        host: "localhost:3000"
+      }
+    });
+
+    const response = await callPutHandler(request);
+    expect(response.status).toBe(400);
+  });
+
+  test("PUT returns 400 for invalid products image fit value", async () => {
+    const request = new NextRequest("http://localhost:3000/api/store-experience/content", {
+      method: "PUT",
+      body: JSON.stringify({
+        section: "productsPage",
+        value: {
+          productCards: {
+            imageFit: "stretch"
+          }
+        }
+      }),
+      headers: {
+        "content-type": "application/json",
+        origin: "http://localhost:3000",
+        host: "localhost:3000"
+      }
+    });
+
+    const response = await callPutHandler(request);
+    expect(response.status).toBe(400);
+  });
+
+  test("PUT returns 400 for invalid emails reply-to address", async () => {
+    const request = new NextRequest("http://localhost:3000/api/store-experience/content", {
+      method: "PUT",
+      body: JSON.stringify({
+        section: "emails",
+        value: {
+          transactional: {
+            replyToEmail: "not-an-email"
+          }
+        }
+      }),
+      headers: {
+        "content-type": "application/json",
+        origin: "http://localhost:3000",
+        host: "localhost:3000"
+      }
+    });
+
+    const response = await callPutHandler(request);
+    expect(response.status).toBe(400);
+  });
+
   test("GET returns 401 when user is not authenticated", async () => {
     supabaseMock.auth.getUser.mockResolvedValueOnce({ data: { user: null } });
 

@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import { DashboardFormActionBar } from "@/components/dashboard/dashboard-form-action-bar";
-import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
 import { Select } from "@/components/ui/select";
+import { notify } from "@/lib/feedback/toast";
 import { resolveStorefrontThemeConfig, type StorefrontThemeConfig } from "@/lib/theme/storefront-theme";
 import type { StoreBrandingRecord } from "@/types/database";
 
@@ -32,7 +32,6 @@ export function StoreHeroContentForm({ initialBranding }: StoreHeroContentFormPr
   const [savedTheme, setSavedTheme] = useState(initialTheme);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
 
   const isDirty =
     heroBrandDisplay !== savedTheme.heroBrandDisplay ||
@@ -55,13 +54,11 @@ export function StoreHeroContentForm({ initialBranding }: StoreHeroContentFormPr
       setHeroBadgeTwo(savedTheme.heroBadgeTwo);
       setHeroBadgeThree(savedTheme.heroBadgeThree);
       setError(null);
-      setMessage(null);
       return;
     }
 
     setSaving(true);
     setError(null);
-    setMessage(null);
 
     const nextTheme: Partial<StorefrontThemeConfig> = {
       heroBrandDisplay,
@@ -96,13 +93,14 @@ export function StoreHeroContentForm({ initialBranding }: StoreHeroContentFormPr
     setHeroBadgeOne(resolved.heroBadgeOne);
     setHeroBadgeTwo(resolved.heroBadgeTwo);
     setHeroBadgeThree(resolved.heroBadgeThree);
-    setMessage("Hero content saved.");
+    notify.success("Hero content saved.");
   }
 
   return (
-    <SectionCard title="Hero Content">
-      <form id={formId} onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-2">
+    <SectionCard title="Hero Content" className="flex min-h-0 flex-1 flex-col" contentClassName="min-h-0 flex-1">
+      <form id={formId} onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="grid gap-3 sm:grid-cols-2">
           <FormField label="Hero Brand Display" description="Controls whether the hero shows logo, title, or both.">
             <Select value={heroBrandDisplay} onChange={(event) => setHeroBrandDisplay(event.target.value as typeof heroBrandDisplay)}>
               <option value="title">Store title</option>
@@ -133,6 +131,7 @@ export function StoreHeroContentForm({ initialBranding }: StoreHeroContentFormPr
             <Input value={heroBadgeThree} onChange={(event) => setHeroBadgeThree(event.target.value)} placeholder="Handmade" />
           </FormField>
         </div>
+        </div>
         <DashboardFormActionBar
           formId={formId}
           saveLabel="Save hero content"
@@ -140,9 +139,9 @@ export function StoreHeroContentForm({ initialBranding }: StoreHeroContentFormPr
           savePending={saving}
           saveDisabled={!isDirty || saving}
           discardDisabled={!isDirty || saving}
+          statusMessage={error}
+          statusVariant="error"
         />
-        <FeedbackMessage type="success" message={message} />
-        <FeedbackMessage type="error" message={error} />
       </form>
     </SectionCard>
   );

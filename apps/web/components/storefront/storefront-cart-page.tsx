@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -75,6 +76,10 @@ type Props = {
     name: string;
     slug: string;
   };
+  viewer?: {
+    isAuthenticated: boolean;
+    canManageStore: boolean;
+  };
   branding: {
     logo_path: string | null;
     primary_color: string | null;
@@ -130,7 +135,7 @@ function getDefaultVariant(product: StorefrontProduct) {
   return variants.find((variant) => variant.is_default) ?? variants[0] ?? null;
 }
 
-export function StorefrontCartPage({ store, branding, settings, products }: Props) {
+export function StorefrontCartPage({ store, viewer, branding, settings, products }: Props) {
   const themeConfig = resolveStorefrontThemeConfig(branding?.theme_json ?? {});
   const copy = resolveStorefrontCopy(settings?.storefront_copy_json ?? {});
   const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, store.slug);
@@ -658,7 +663,7 @@ export function StorefrontCartPage({ store, branding, settings, products }: Prop
                 <Button type="submit" disabled={pending || cartItems.length === 0} className={cn("h-11 w-full bg-[var(--storefront-accent)] text-[color:var(--storefront-accent-foreground)] hover:opacity-90", buttonRadiusClass)}>
                   {pending ? copy.cart.processing : copy.cart.checkout}
                 </Button>
-                {error ? <p className="text-sm text-red-600">{error}</p> : null}
+                <AppAlert variant="error" compact message={error} />
               </form>
               <Link href="/products" className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "mx-auto text-sm font-medium")}>
                 {copy.cart.continueShopping}
@@ -670,6 +675,7 @@ export function StorefrontCartPage({ store, branding, settings, products }: Prop
         <StorefrontFooter
           storeName={store.name}
           storeSlug={store.slug}
+          viewer={viewer}
           settings={settings}
           copy={copy}
           buttonRadiusClass={buttonRadiusClass}

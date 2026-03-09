@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusChip } from "@/components/ui/status-chip";
@@ -139,7 +140,7 @@ export function OrderDetailPanel({ orderId, onClose }: OrderDetailPanelProps) {
       </CardHeader>
       <CardContent>
         {loading ? <p className="text-sm text-muted-foreground">Loading order details...</p> : null}
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        <AppAlert variant="error" message={error} />
 
         {!loading && !error && payload?.order ? (
           <div className="space-y-3 text-sm">

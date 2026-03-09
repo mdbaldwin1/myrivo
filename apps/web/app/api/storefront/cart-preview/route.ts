@@ -40,12 +40,15 @@ export async function POST(request: NextRequest) {
 
   const supabase = createSupabaseAdminClient();
   const storeSlug = await resolveStoreSlugFromRequestAsync(request);
+  if (!storeSlug) {
+    return NextResponse.json({ items: [], subtotalCents: 0 });
+  }
 
   const { data: store, error: storeError } = await supabase
     .from("stores")
     .select("id,status")
     .eq("slug", storeSlug)
-    .maybeSingle<{ id: string; status: "draft" | "active" | "suspended" }>();
+    .maybeSingle<{ id: string; status: "draft" | "pending_review" | "active" | "suspended" }>();
 
   if (storeError || !store || store.status !== "active") {
     return NextResponse.json({ items: [], subtotalCents: 0 });

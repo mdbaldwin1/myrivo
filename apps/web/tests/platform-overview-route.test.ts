@@ -30,6 +30,16 @@ function buildTableQuery(data: unknown, error: { message: string } | null = null
   };
 }
 
+function buildCountQuery(count: number, error: { message: string } | null = null) {
+  const result = { count, error };
+  return {
+    select: vi.fn(() => ({
+      eq: vi.fn(async () => result),
+      then: (resolve: (value: typeof result) => unknown) => Promise.resolve(resolve(result))
+    }))
+  };
+}
+
 beforeEach(() => {
   requirePlatformRoleMock.mockReset();
   adminFromMock.mockReset();
@@ -53,30 +63,63 @@ describe("platform overview route", () => {
       response: null
     });
 
+    const storesCounts = [1, 1, 0, 0, 0];
+    const userCounts = [2, 1, 1, 0];
+    let storesCalls = 0;
+    let userCalls = 0;
+
     adminFromMock.mockImplementation((table: string) => {
       if (table === "stores") {
-        return buildTableQuery([
-          { id: "s1", name: "Store One", slug: "store-one", status: "active", mode: "live", created_at: "2026-01-01T00:00:00Z" }
-        ]);
+        storesCalls += 1;
+        if (storesCalls === 1) {
+          return buildTableQuery([
+            { id: "s1", name: "Store One", slug: "store-one", status: "active", mode: "live", created_at: "2026-01-01T00:00:00Z" }
+          ]);
+        }
+        if (storesCounts.length > 0) {
+          return buildCountQuery(storesCounts.shift() ?? 0);
+        }
+        throw new Error("Unexpected stores query count call");
       }
       if (table === "user_profiles") {
-        return buildTableQuery([
-          { id: "u1", email: "admin@example.com", display_name: "Admin", global_role: "admin", created_at: "2026-01-01T00:00:00Z" },
-          { id: "u2", email: "support@example.com", display_name: "Support", global_role: "support", created_at: "2026-01-02T00:00:00Z" }
-        ]);
+        userCalls += 1;
+        if (userCalls === 1) {
+          return buildTableQuery([
+            { id: "u1", email: "admin@example.com", display_name: "Admin", global_role: "admin", created_at: "2026-01-01T00:00:00Z" },
+            { id: "u2", email: "support@example.com", display_name: "Support", global_role: "support", created_at: "2026-01-02T00:00:00Z" }
+          ]);
+        }
+        if (userCounts.length > 0) {
+          return buildCountQuery(userCounts.shift() ?? 0);
+        }
+        throw new Error("Unexpected user_profiles query count call");
+      }
+      if (table === "reviews") {
+        return buildCountQuery(3);
       }
       throw new Error(`Unexpected table ${table}`);
     });
 
     const route = await import("@/app/api/platform/overview/route");
     const response = await route.GET();
-    const payload = (await response.json()) as { summary: { userRoleCounts: Record<string, number> }; stores: unknown[]; users: unknown[] };
+    const payload = (await response.json()) as {
+      summary: {
+        storesTotal: number;
+        usersTotal: number;
+        pendingReviewsCount: number;
+        userRoleCounts: Record<string, number>;
+      };
+      stores: unknown[];
+      users: unknown[];
+    };
 
     expect(response.status).toBe(200);
     expect(payload.stores).toHaveLength(1);
     expect(payload.users).toHaveLength(2);
+    expect(payload.summary.storesTotal).toBe(1);
+    expect(payload.summary.usersTotal).toBe(2);
+    expect(payload.summary.pendingReviewsCount).toBe(3);
     expect(payload.summary.userRoleCounts.admin).toBe(1);
     expect(payload.summary.userRoleCounts.support).toBe(1);
   });
 });
-
