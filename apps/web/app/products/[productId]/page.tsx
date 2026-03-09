@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { StorefrontProductDetailPage } from "@/components/storefront/storefront-product-detail-page";
+import { buildReviewSummary, listPublishedReviews } from "@/lib/reviews/read";
 import { loadStorefrontData } from "@/lib/storefront/load-storefront-data";
+import { buildAggregateRatingSchema, buildReviewSchemaList, resolveStorefrontReviewSeoConfig } from "@/lib/storefront/reviews-seo";
 import { buildStorefrontCanonicalUrl, resolveStorefrontCanonicalRedirect } from "@/lib/storefront/seo";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { isMissingRelationInSchemaCache } from "@/lib/supabase/error-classifiers";
 
 export const dynamic = "force-dynamic";
 
@@ -76,9 +80,31 @@ export default async function ProductDetailPage({ params, searchParams }: Params
   }
 
   const canonical = await buildStorefrontCanonicalUrl(`/products/${product.slug || product.id}`, requestedStoreSlug);
+  const reviewSeoConfig = resolveStorefrontReviewSeoConfig();
+  let productSummary: Awaited<ReturnType<typeof buildReviewSummary>> | null = null;
+  let productReviews: Awaited<ReturnType<typeof listPublishedReviews>>["items"] = [];
+  try {
+    const admin = createSupabaseAdminClient();
+    const [summary, recent] = await Promise.all([
+      buildReviewSummary(admin, { storeId: data.store.id, productId: product.id, verifiedOnly: false, hasMedia: false }),
+      listPublishedReviews(admin, {
+        storeId: data.store.id,
+        productId: product.id,
+        sort: "newest",
+        limit: reviewSeoConfig.maxRecentReviews,
+        offset: 0
+      })
+    ]);
+    productSummary = summary;
+    productReviews = recent.items;
+  } catch (error) {
+    if (!isMissingRelationInSchemaCache(error as { code?: string; message?: string })) {
+      console.warn("Failed to resolve product review schema payload.", error);
+    }
+  }
   const defaultVariant = product.product_variants.find((variant) => variant.is_default) ?? product.product_variants[0] ?? null;
   const productImage = (defaultVariant?.image_urls?.[0] ?? defaultVariant?.group_image_urls?.[0] ?? product.image_urls?.[0] ?? null) as string | null;
-  const productSchema = {
+  const productSchema: Record<string, unknown> = {
     "@context": "https://schema.org",
     "@type": "Product",
     name: product.seo_title || product.title,
@@ -97,6 +123,22 @@ export default async function ProductDetailPage({ params, searchParams }: Params
       availability: (defaultVariant?.inventory_qty ?? product.inventory_qty) > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock"
     }
   };
+  const aggregateRating = productSummary ? buildAggregateRatingSchema(productSummary, reviewSeoConfig.minReviewCount) : undefined;
+  if (aggregateRating) {
+    productSchema.aggregateRating = aggregateRating;
+  }
+  if (aggregateRating && productReviews.length > 0) {
+    productSchema.review = buildReviewSchemaList(
+      productReviews.map((item) => ({
+        rating: item.rating,
+        title: item.title,
+        body: item.body,
+        reviewerName: item.reviewerName,
+        createdAt: item.publishedAt ?? item.createdAt
+      })),
+      reviewSeoConfig.maxRecentReviews
+    );
+  }
   const breadcrumbSchema = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
