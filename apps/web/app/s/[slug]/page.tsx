@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { StorefrontPage } from "@/components/storefront/storefront-page";
+import { isReviewsEnabledForStoreSlug } from "@/lib/reviews/feature-gating";
 import { buildReviewSummary, listPublishedReviews } from "@/lib/reviews/read";
 import { loadStorefrontData } from "@/lib/storefront/load-storefront-data";
 import { buildAggregateRatingSchema, buildReviewSchemaList, resolveStorefrontReviewSeoConfig } from "@/lib/storefront/reviews-seo";
@@ -80,26 +81,29 @@ export default async function StorefrontSlugPage({ params }: StorefrontRoutePara
     logo: data.branding?.logo_path ?? undefined
   };
   const publicLocation = buildPublicLocationLabel(data.settings ?? {});
+  const reviewsEnabled = isReviewsEnabledForStoreSlug(data.store.slug);
   const reviewSeoConfig = resolveStorefrontReviewSeoConfig();
   let storeSummary: Awaited<ReturnType<typeof buildReviewSummary>> | null = null;
   let storeReviews: Awaited<ReturnType<typeof listPublishedReviews>>["items"] = [];
-  try {
-    const admin = createSupabaseAdminClient();
-    const [summary, recent] = await Promise.all([
-      buildReviewSummary(admin, { storeId: data.store.id, productId: null, verifiedOnly: false, hasMedia: false }),
-      listPublishedReviews(admin, {
-        storeId: data.store.id,
-        productId: null,
-        sort: "newest",
-        limit: reviewSeoConfig.maxRecentReviews,
-        offset: 0
-      })
-    ]);
-    storeSummary = summary;
-    storeReviews = recent.items;
-  } catch (error) {
-    if (!isMissingRelationInSchemaCache(error as { code?: string; message?: string })) {
-      console.warn("Failed to resolve storefront review schema payload.", error);
+  if (reviewsEnabled) {
+    try {
+      const admin = createSupabaseAdminClient();
+      const [summary, recent] = await Promise.all([
+        buildReviewSummary(admin, { storeId: data.store.id, productId: null, verifiedOnly: false, hasMedia: false }),
+        listPublishedReviews(admin, {
+          storeId: data.store.id,
+          productId: null,
+          sort: "newest",
+          limit: reviewSeoConfig.maxRecentReviews,
+          offset: 0
+        })
+      ]);
+      storeSummary = summary;
+      storeReviews = recent.items;
+    } catch (error) {
+      if (!isMissingRelationInSchemaCache(error as { code?: string; message?: string })) {
+        console.warn("Failed to resolve storefront review schema payload.", error);
+      }
     }
   }
 
@@ -151,6 +155,7 @@ export default async function StorefrontSlugPage({ params }: StorefrontRoutePara
         contentBlocks={data.contentBlocks}
         products={data.products}
         view="home"
+        reviewsEnabled={reviewsEnabled}
       />
     </>
   );

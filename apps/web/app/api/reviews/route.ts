@@ -20,6 +20,7 @@ import {
   hashReviewSignal,
   normalizeReviewText
 } from "@/lib/reviews/abuse";
+import { isReviewsEnabledForStoreSlug } from "@/lib/reviews/feature-gating";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { notifyOwnersReviewCreated } from "@/lib/notifications/owner-notifications";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -172,6 +173,10 @@ export async function POST(request: NextRequest) {
   }
 
   const payload = parsed.data;
+  if (!isReviewsEnabledForStoreSlug(payload.storeSlug)) {
+    return fail(404, "Reviews are not enabled for this store.");
+  }
+
   const store = await resolveActiveStoreBySlug(payload.storeSlug);
   if (!store) {
     return fail(404, "Store not found.");

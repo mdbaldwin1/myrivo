@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { StorefrontProductDetailPage } from "@/components/storefront/storefront-product-detail-page";
+import { isReviewsEnabledForStoreSlug } from "@/lib/reviews/feature-gating";
 import { buildReviewSummary, listPublishedReviews } from "@/lib/reviews/read";
 import { loadStorefrontData } from "@/lib/storefront/load-storefront-data";
 import { buildAggregateRatingSchema, buildReviewSchemaList, resolveStorefrontReviewSeoConfig } from "@/lib/storefront/reviews-seo";
@@ -80,26 +81,29 @@ export default async function ProductDetailPage({ params, searchParams }: Params
   }
 
   const canonical = await buildStorefrontCanonicalUrl(`/products/${product.slug || product.id}`, requestedStoreSlug);
+  const reviewsEnabled = isReviewsEnabledForStoreSlug(data.store.slug);
   const reviewSeoConfig = resolveStorefrontReviewSeoConfig();
   let productSummary: Awaited<ReturnType<typeof buildReviewSummary>> | null = null;
   let productReviews: Awaited<ReturnType<typeof listPublishedReviews>>["items"] = [];
-  try {
-    const admin = createSupabaseAdminClient();
-    const [summary, recent] = await Promise.all([
-      buildReviewSummary(admin, { storeId: data.store.id, productId: product.id, verifiedOnly: false, hasMedia: false }),
-      listPublishedReviews(admin, {
-        storeId: data.store.id,
-        productId: product.id,
-        sort: "newest",
-        limit: reviewSeoConfig.maxRecentReviews,
-        offset: 0
-      })
-    ]);
-    productSummary = summary;
-    productReviews = recent.items;
-  } catch (error) {
-    if (!isMissingRelationInSchemaCache(error as { code?: string; message?: string })) {
-      console.warn("Failed to resolve product review schema payload.", error);
+  if (reviewsEnabled) {
+    try {
+      const admin = createSupabaseAdminClient();
+      const [summary, recent] = await Promise.all([
+        buildReviewSummary(admin, { storeId: data.store.id, productId: product.id, verifiedOnly: false, hasMedia: false }),
+        listPublishedReviews(admin, {
+          storeId: data.store.id,
+          productId: product.id,
+          sort: "newest",
+          limit: reviewSeoConfig.maxRecentReviews,
+          offset: 0
+        })
+      ]);
+      productSummary = summary;
+      productReviews = recent.items;
+    } catch (error) {
+      if (!isMissingRelationInSchemaCache(error as { code?: string; message?: string })) {
+        console.warn("Failed to resolve product review schema payload.", error);
+      }
     }
   }
   const defaultVariant = product.product_variants.find((variant) => variant.is_default) ?? product.product_variants[0] ?? null;
@@ -153,7 +157,14 @@ export default async function ProductDetailPage({ params, searchParams }: Params
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(productSchema) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }} />
-      <StorefrontProductDetailPage store={data.store} viewer={data.viewer} branding={data.branding} settings={data.settings} product={product} />
+      <StorefrontProductDetailPage
+        store={data.store}
+        viewer={data.viewer}
+        branding={data.branding}
+        settings={data.settings}
+        product={product}
+        reviewsEnabled={reviewsEnabled}
+      />
     </>
   );
 }

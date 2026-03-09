@@ -107,6 +107,7 @@ type StorefrontPageProps = {
   }>;
   products: StorefrontProduct[];
   view?: "home" | "products";
+  reviewsEnabled?: boolean;
 };
 
 type AvailabilityFilterMode = "all" | "in-stock" | "made-to-order";
@@ -280,7 +281,7 @@ function getPrimaryCtaClass(themeConfig: StorefrontThemeConfig, buttonRadiusClas
 }
 
 export function StorefrontPage(props: StorefrontPageProps) {
-  const { store, viewer, branding, settings, products, contentBlocks, view = "home" } = props;
+  const { store, viewer, branding, settings, products, contentBlocks, view = "home", reviewsEnabled = true } = props;
   const themeConfig = resolveStorefrontThemeConfig(branding?.theme_json ?? {});
   const copy = resolveStorefrontCopy(settings?.storefront_copy_json ?? {});
   const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, store.slug);
@@ -829,7 +830,7 @@ export function StorefrontPage(props: StorefrontPageProps) {
         ) : null}
 
         <div className="space-y-8">
-          {themeConfig.reviewsShowOnHome ? (
+          {themeConfig.reviewsShowOnHome && reviewsEnabled ? (
             <StorefrontReviewsSection
               storeSlug={store.slug}
               buttonRadiusClass={buttonRadiusClass}
