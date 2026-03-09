@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { filterDashboardReviewsByMedia } from "@/lib/reviews/dashboard";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getOwnedStoreBundle, getOwnedStoreBundleForSlug } from "@/lib/stores/owner-store";
 
@@ -7,11 +8,9 @@ const querySchema = z.object({
   storeSlug: z.string().trim().min(1).max(120).optional(),
   status: z.enum(["all", "pending", "published", "rejected"]).default("all"),
   rating: z.coerce.number().int().min(1).max(5).optional(),
+  verified: z.enum(["true", "false"]).optional(),
   productId: z.string().uuid().optional(),
-  hasMedia: z
-    .enum(["true", "false"])
-    .optional()
-    .transform((value) => value === "true"),
+  hasMedia: z.enum(["true", "false"]).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(25),
   offset: z.coerce.number().int().min(0).max(5000).default(0)
 });
@@ -21,6 +20,7 @@ export async function GET(request: NextRequest) {
     storeSlug: request.nextUrl.searchParams.get("storeSlug") ?? undefined,
     status: request.nextUrl.searchParams.get("status") ?? undefined,
     rating: request.nextUrl.searchParams.get("rating") ?? undefined,
+    verified: request.nextUrl.searchParams.get("verified") ?? undefined,
     productId: request.nextUrl.searchParams.get("productId") ?? undefined,
     hasMedia: request.nextUrl.searchParams.get("hasMedia") ?? undefined,
     limit: request.nextUrl.searchParams.get("limit") ?? undefined,
@@ -67,7 +67,9 @@ export async function GET(request: NextRequest) {
 
     reviewIdsWithMedia = Array.from(new Set((mediaRows ?? []).map((row) => row.review_id).filter(Boolean)));
     if (reviewIdsWithMedia.length === 0) {
-      return NextResponse.json({ items: [], pagination: { limit: parsed.data.limit, offset: parsed.data.offset } });
+      if (parsed.data.hasMedia === "true") {
+        return NextResponse.json({ items: [], pagination: { limit: parsed.data.limit, offset: parsed.data.offset } });
+      }
     }
   }
 
@@ -87,11 +89,15 @@ export async function GET(request: NextRequest) {
     query = query.eq("rating", parsed.data.rating);
   }
 
+  if (parsed.data.verified) {
+    query = query.eq("verified_purchase", parsed.data.verified === "true");
+  }
+
   if (parsed.data.productId) {
     query = query.eq("product_id", parsed.data.productId);
   }
 
-  if (reviewIdsWithMedia) {
+  if (reviewIdsWithMedia && parsed.data.hasMedia === "true") {
     query = query.in("id", reviewIdsWithMedia);
   }
 
@@ -101,8 +107,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  const filteredItems = filterDashboardReviewsByMedia(items ?? [], parsed.data.hasMedia);
+
   return NextResponse.json({
-    items: items ?? [],
+    items: filteredItems,
     pagination: {
       limit: parsed.data.limit,
       offset: parsed.data.offset
