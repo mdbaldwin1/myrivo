@@ -40,6 +40,12 @@ export default async function HomePage() {
             <Link href="/pricing">
               <Button variant="outline">View pricing</Button>
             </Link>
+            <Link href="/features">
+              <Button variant="outline">Explore features</Button>
+            </Link>
+            <Link href="/compare">
+              <Button variant="outline">Compare options</Button>
+            </Link>
           </div>
         </section>
 
