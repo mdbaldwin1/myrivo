@@ -45,10 +45,7 @@ jobs:
       - name: Verify platform rollout (when Supabase secrets are configured)
         run: |
           if [ "$HAS_SUPABASE_SECRETS" = "true" ]; then
-            cat > .env.ci <<EOF
-            NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
-            SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY
-            EOF
+            printf "NEXT_PUBLIC_SUPABASE_URL=%s\nSUPABASE_SERVICE_ROLE_KEY=%s\n" "$NEXT_PUBLIC_SUPABASE_URL" "$SUPABASE_SERVICE_ROLE_KEY" > .env.ci
             node scripts/verify-platform-rollout.mjs --env-file=.env.ci
           else
             echo "Skipping rollout verification: missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY."
