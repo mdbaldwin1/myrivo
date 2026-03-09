@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { ContextHelpLink } from "@/components/dashboard/context-help-link";
 import { PlatformStoreGovernancePanel } from "@/components/dashboard/admin/platform-store-governance-panel";
 import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
 import { hasGlobalRole } from "@/lib/auth/roles";
@@ -29,7 +30,12 @@ export default async function DashboardAdminStoresPage() {
   }
 
   return (
-    <DashboardPageScaffold title="Store Governance" description="Approve, reject, and suspend stores with reasoned decisions and timeline visibility." className="p-4 lg:p-4">
+    <DashboardPageScaffold
+      title="Store Governance"
+      description="Approve, reject, and suspend stores with reasoned decisions and timeline visibility."
+      className="p-4 lg:p-4"
+      action={<ContextHelpLink href="/docs/store-governance-and-approvals#approval-workflow" context="admin_store_governance" label="Governance Docs" />}
+    >
       <PlatformStoreGovernancePanel />
     </DashboardPageScaffold>
   );

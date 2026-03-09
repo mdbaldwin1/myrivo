@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { ContextHelpLink } from "@/components/dashboard/context-help-link";
 import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
 import { PlatformConsole } from "@/components/dashboard/platform-console";
 import { hasGlobalRole } from "@/lib/auth/roles";
@@ -29,7 +30,12 @@ export default async function DashboardAdminPage() {
   }
 
   return (
-    <DashboardPageScaffold title="Admin Dashboard" description="Platform-wide governance, operations, and role controls." className="p-4 lg:p-4">
+    <DashboardPageScaffold
+      title="Admin Dashboard"
+      description="Platform-wide governance, operations, and role controls."
+      className="p-4 lg:p-4"
+      action={<ContextHelpLink href="/docs/admin-dashboard-and-operations#operations-checklist" context="admin_dashboard" label="Admin Docs" />}
+    >
       <PlatformConsole currentGlobalRole={globalRole} />
     </DashboardPageScaffold>
   );
