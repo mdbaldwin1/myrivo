@@ -10,6 +10,7 @@ import {
   normalizeReviewMediaPaths,
   resolveActiveStoreBySlug
 } from "@/lib/reviews/media";
+import { isReviewsEnabledForStoreSlug } from "@/lib/reviews/feature-gating";
 import { logReviewUploadError } from "@/lib/reviews/telemetry";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 
@@ -31,6 +32,9 @@ export async function POST(request: NextRequest) {
   }
 
   const payload = parsed.data;
+  if (!isReviewsEnabledForStoreSlug(payload.storeSlug)) {
+    return fail(404, "Reviews are not enabled for this store.");
+  }
   const store = await resolveActiveStoreBySlug(payload.storeSlug);
   if (!store) {
     return fail(404, "Store not found.");

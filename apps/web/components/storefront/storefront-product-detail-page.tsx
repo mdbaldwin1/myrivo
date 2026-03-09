@@ -87,6 +87,7 @@ type Props = {
     storefront_copy_json?: Record<string, unknown> | null;
   } | null;
   product: StorefrontProduct;
+  reviewsEnabled?: boolean;
 };
 
 const pageWidthClasses = {
@@ -253,7 +254,7 @@ function getAvailabilityLabel(
   return `${variant.inventory_qty} ${copy.availability.inStockSuffix}`;
 }
 
-export function StorefrontProductDetailPage({ store, viewer, branding, settings, product }: Props) {
+export function StorefrontProductDetailPage({ store, viewer, branding, settings, product, reviewsEnabled = true }: Props) {
   const themeConfig = resolveStorefrontThemeConfig(branding?.theme_json ?? {});
   const copy = resolveStorefrontCopy(settings?.storefront_copy_json ?? {});
   const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, store.slug);
@@ -409,7 +410,7 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
         </section>
 
         <div className="space-y-8 lg:col-span-2">
-          {themeConfig.reviewsShowOnProductDetail ? (
+          {themeConfig.reviewsShowOnProductDetail && reviewsEnabled ? (
             <StorefrontReviewsSection
               storeSlug={store.slug}
               productId={product.id}

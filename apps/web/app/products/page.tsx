@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { StorefrontPage } from "@/components/storefront/storefront-page";
+import { isReviewsEnabledForStoreSlug } from "@/lib/reviews/feature-gating";
 import { loadStorefrontData } from "@/lib/storefront/load-storefront-data";
 import { buildStorefrontCanonicalUrl, resolveStorefrontCanonicalRedirect } from "@/lib/storefront/seo";
 
@@ -53,6 +54,7 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
       contentBlocks={data.contentBlocks}
       products={data.products}
       view="products"
+      reviewsEnabled={isReviewsEnabledForStoreSlug(data.store.slug)}
     />
   );
 }

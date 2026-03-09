@@ -23,6 +23,8 @@ This checklist is for the final release cut from `develop` to `main`.
 - [ ] `npm run build` (Owner: Engineering, Target: 2026-03-10)
 - [ ] Latest Supabase migrations applied in target environment. (Owner: Engineering, Target: 2026-03-10)
 - [ ] `npm run verify:platform-rollout` passes in target environment. (Owner: Engineering, Target: 2026-03-10)
+- [ ] Reviews rollout gate configured (`REVIEWS_FEATURE_ENABLED`, `REVIEWS_ROLLOUT_STORE_SLUGS`) per launch phase. (Owner: Engineering, Target: 2026-03-12)
+- [ ] Reviews aggregate snapshot backfill completed using `scripts/reviews-backfill-aggregate-snapshots.mjs`. (Owner: Engineering, Target: 2026-03-12)
 - [ ] Stripe webhook endpoint verified reachable from production. (Owner: Engineering, Target: 2026-03-11)
 - [ ] Error monitoring + alerting enabled for checkout and webhooks. (Owner: Engineering, Target: 2026-03-13)
 

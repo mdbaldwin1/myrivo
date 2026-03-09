@@ -13,6 +13,7 @@ import {
   validateReviewMediaDimensions,
   REVIEW_MEDIA_BUCKET
 } from "@/lib/reviews/media";
+import { isReviewsEnabledForStoreSlug } from "@/lib/reviews/feature-gating";
 import { logReviewUploadError } from "@/lib/reviews/telemetry";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -39,6 +40,9 @@ export async function POST(request: NextRequest) {
   }
 
   const payload = parsed.data;
+  if (!isReviewsEnabledForStoreSlug(payload.storeSlug)) {
+    return fail(404, "Reviews are not enabled for this store.");
+  }
   if (!REVIEW_MEDIA_ALLOWED_MIME.has(payload.mimeType)) {
     return fail(400, "Unsupported file type. Use PNG, JPEG, or WEBP.");
   }
