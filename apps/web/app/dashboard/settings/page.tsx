@@ -3,5 +3,5 @@ import { redirectToActiveStoreWorkspace } from "@/app/dashboard/_lib/legacy-stor
 export const dynamic = "force-dynamic";
 
 export default async function DashboardSettingsRedirectPage() {
-  await redirectToActiveStoreWorkspace("/store-settings/general");
+  await redirectToActiveStoreWorkspace("/store-settings");
 }
