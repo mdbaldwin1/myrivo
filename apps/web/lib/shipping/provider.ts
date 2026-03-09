@@ -32,6 +32,8 @@ export type RegisteredTracker = {
   trackingUrl: string | null;
 };
 
+type FulfillmentStatus = "pending_fulfillment" | "packing" | "shipped" | "delivered";
+
 function normalizeCarrier(value: string | null | undefined): string | null {
   if (!value) {
     return null;
@@ -227,4 +229,27 @@ export function mapShipmentStatusToFulfillmentStatus(status: string): "shipped" 
   }
 
   return "shipped";
+}
+
+const fulfillmentStatusRank: Record<FulfillmentStatus, number> = {
+  pending_fulfillment: 0,
+  packing: 1,
+  shipped: 2,
+  delivered: 3
+};
+
+export function resolveMonotonicFulfillmentStatus(current: FulfillmentStatus, candidate: "shipped" | "delivered"): FulfillmentStatus {
+  return fulfillmentStatusRank[candidate] >= fulfillmentStatusRank[current] ? candidate : current;
+}
+
+export function resolveShippedAt(
+  currentShippedAt: string | null,
+  fulfillmentStatus: FulfillmentStatus,
+  occurredAtIso: string
+) {
+  if (fulfillmentStatus === "shipped" || fulfillmentStatus === "delivered") {
+    return currentShippedAt ?? occurredAtIso;
+  }
+
+  return null;
 }

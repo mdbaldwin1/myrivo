@@ -1,17 +1,7 @@
-import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
-import { StoreEmailSubscribersManager } from "@/components/dashboard/store-email-subscribers-manager";
+import { redirectToActiveStoreWorkspace } from "@/app/dashboard/_lib/legacy-store-route-redirect";
 
 export const dynamic = "force-dynamic";
 
-export default function DashboardMarketingSubscribersPage() {
-  return (
-    <section className="space-y-4">
-      <DashboardPageHeader
-        title="Marketing · Email Subscribers"
-        description="Manage newsletter signups captured from your storefront."
-      />
-      <StoreEmailSubscribersManager />
-    </section>
-  );
+export default async function DashboardMarketingSubscribersPage() {
+  await redirectToActiveStoreWorkspace("/subscribers");
 }
-

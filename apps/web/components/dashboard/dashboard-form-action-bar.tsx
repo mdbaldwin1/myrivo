@@ -1,5 +1,6 @@
 "use client";
 
+import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -12,6 +13,8 @@ type DashboardFormActionBarProps = {
   discardLabel?: string;
   saveDisabled?: boolean;
   discardDisabled?: boolean;
+  statusMessage?: string | null;
+  statusVariant?: "error" | "warning" | "info";
 };
 
 export function DashboardFormActionBar({
@@ -22,22 +25,29 @@ export function DashboardFormActionBar({
   savePending = false,
   discardLabel = "Discard",
   saveDisabled = false,
-  discardDisabled = false
+  discardDisabled = false,
+  statusMessage = null,
+  statusVariant = "error"
 }: DashboardFormActionBarProps) {
   return (
     <div
       className={cn(
-        "sticky bottom-0 z-30 -mx-4 mt-4 border-t border-border/70 bg-white/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-6px_20px_rgba(15,23,42,0.06)] supports-[backdrop-filter]:bg-white/90 supports-[backdrop-filter]:backdrop-blur lg:-mx-6 lg:px-6",
+        "shrink-0 border-t border-border/70 bg-white px-4 py-3 lg:px-6",
         className
       )}
     >
-      <div className="flex items-center justify-end gap-2">
-        <Button type="submit" form={formId} name="intent" value="discard" variant="outline" disabled={discardDisabled}>
-          {discardLabel}
-        </Button>
-        <Button type="submit" form={formId} name="intent" value="save" disabled={saveDisabled}>
-          {savePending && savePendingLabel ? savePendingLabel : saveLabel}
-        </Button>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-h-6 flex-1">
+          <AppAlert compact variant={statusVariant} message={statusMessage} className="text-sm" />
+        </div>
+        <div className="flex items-center gap-2">
+          <Button type="submit" form={formId} name="intent" value="discard" variant="outline" disabled={discardDisabled}>
+            {discardLabel}
+          </Button>
+          <Button type="submit" form={formId} name="intent" value="save" disabled={saveDisabled}>
+            {savePending && savePendingLabel ? savePendingLabel : saveLabel}
+          </Button>
+        </div>
       </div>
     </div>
   );

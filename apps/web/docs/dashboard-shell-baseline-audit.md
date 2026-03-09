@@ -72,7 +72,7 @@ Audited files:
    - Billing
    - Platform
    - Store Settings
-   - Content Studio
+   - Content Workspace
 7. Keyboard navigation and focus visibility remain correct.
 
 ## QA Checklist Template

@@ -13,7 +13,7 @@ let ownedStoreBundleMock:
         id: string;
         name: string;
         slug: string;
-        status: "draft" | "active" | "suspended";
+        status: "draft" | "pending_review" | "active" | "suspended";
         stripe_account_id: string | null;
       };
       branding: {
@@ -179,7 +179,7 @@ describe("store experience settings route", () => {
     const request = new NextRequest("http://localhost:3000/api/store-experience/settings", {
       method: "PUT",
       body: JSON.stringify({
-        profile: { name: "New Name", status: "active" },
+        profile: { name: "New Name" },
         checkoutRules: { checkoutEnableLocalPickup: true, checkoutLocalPickupFeeCents: 250 }
       }),
       headers: {
@@ -195,7 +195,7 @@ describe("store experience settings route", () => {
     expect(response.status).toBe(200);
     expect(payload.ok).toBe(true);
     expect(payload.updatedAreas).toEqual(expect.arrayContaining(["profile", "checkoutRules"]));
-    expect(storesUpdatePayload).toMatchObject({ name: "New Name", status: "active" });
+    expect(storesUpdatePayload).toMatchObject({ name: "New Name" });
     expect(settingsUpsertPayload).toMatchObject({
       store_id: "store-1",
       checkout_enable_local_pickup: true,

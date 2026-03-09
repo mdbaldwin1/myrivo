@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { AppAlert } from "@/components/ui/app-alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { Flyout } from "@/components/ui/flyout";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,7 @@ import { RowActionButton, RowActions } from "@/components/ui/row-actions";
 import { SectionCard } from "@/components/ui/section-card";
 import { Select } from "@/components/ui/select";
 import { StatusChip } from "@/components/ui/status-chip";
+import { notify } from "@/lib/feedback/toast";
 import type { PromotionRecord } from "@/types/database";
 
 type PromotionsManagerProps = {
@@ -102,6 +103,7 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
     setPromotions((current) => [payload.promotion!, ...current]);
     resetCreateDraft();
     setIsCreateFlyoutOpen(false);
+    notify.success("Promotion created.");
   }
 
   async function toggleActive(promotionId: string, isActive: boolean) {
@@ -121,6 +123,7 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
     }
 
     setPromotions((current) => current.map((item) => (item.id === promotionId ? payload.promotion! : item)));
+    notify.success(isActive ? "Promotion deactivated." : "Promotion activated.");
   }
 
   async function removePromotion(promotionId: string) {
@@ -140,11 +143,13 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
     }
 
     setPromotions((current) => current.filter((item) => item.id !== promotionId));
+    notify.success("Promotion removed.");
   }
 
   return (
     <SectionCard
-      title="Promotions"
+      title="Promotion List"
+      description="Review active and inactive promo codes, monitor usage, and manage availability."
       action={
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Button type="button" onClick={() => setIsCreateFlyoutOpen(true)}>
@@ -154,7 +159,7 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
       }
     >
       <div className="space-y-4">
-        <FeedbackMessage type="error" message={listError} />
+        <AppAlert variant="error" message={listError} />
         <ul className="space-y-2">
           {promotions.length === 0 ? (
             <li className="rounded-md border border-border bg-white px-3 py-2 text-sm text-muted-foreground">No promotions yet.</li>
@@ -195,18 +200,20 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
         title="Create promotion"
         description="Define the discount code and minimum spend requirements."
         footer={({ requestClose }) => (
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={requestClose}>
-              Close
-            </Button>
-            <Button type="submit" form="create-promotion-form" disabled={saving}>
-              {saving ? "Creating..." : "Create promotion"}
-            </Button>
+          <div className="flex items-center justify-between gap-3">
+            <AppAlert compact variant="error" message={createError} className="text-sm" />
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={requestClose}>
+                Close
+              </Button>
+              <Button type="submit" form="create-promotion-form" disabled={saving}>
+                {saving ? "Creating..." : "Create promotion"}
+              </Button>
+            </div>
           </div>
         )}
       >
         <form id="create-promotion-form" onSubmit={createPromotion} className="grid gap-3">
-          <FeedbackMessage type="error" message={createError} />
           <FormField label="Promo code" description="What customers enter at checkout. Letters and numbers only works best.">
             <Input required placeholder="WELCOME10" value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} />
           </FormField>

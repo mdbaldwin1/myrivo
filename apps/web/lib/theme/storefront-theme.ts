@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 
 const DEFAULT_PRIMARY = "#0F7B84";
 const DEFAULT_ACCENT = "#1AA3A8";
+const DEFAULT_ACTION_FOREGROUND = "#FFFFFF";
 const DEFAULT_BACKGROUND = "#F5FBFB";
 const DEFAULT_SURFACE = "#FFFFFF";
 const DEFAULT_TEXT = "#143435";
@@ -20,6 +21,7 @@ const FOOTER_ITEM_IDS = ["products", "cart", "about", "policies"] as const;
 const FILTER_LAYOUT_OPTIONS = ["sidebar", "topbar"] as const;
 const CTA_STYLE_OPTIONS = ["primary", "accent", "outline"] as const;
 const IMAGE_FIT_OPTIONS = ["cover", "contain"] as const;
+const REVIEW_SORT_OPTIONS = ["newest", "highest", "lowest"] as const;
 
 export type PageWidth = (typeof PAGE_WIDTH_OPTIONS)[number];
 export type HeroLayout = (typeof HERO_LAYOUT_OPTIONS)[number];
@@ -35,6 +37,7 @@ export type FooterItemId = (typeof FOOTER_ITEM_IDS)[number];
 export type FilterLayout = (typeof FILTER_LAYOUT_OPTIONS)[number];
 export type CtaStyle = (typeof CTA_STYLE_OPTIONS)[number];
 export type ImageFit = (typeof IMAGE_FIT_OPTIONS)[number];
+export type ReviewSort = (typeof REVIEW_SORT_OPTIONS)[number];
 
 export type StorefrontThemeConfig = {
   pageWidth: PageWidth;
@@ -85,6 +88,15 @@ export type StorefrontThemeConfig = {
   productCardShowCarouselDots: boolean;
   productCardImageFit: ImageFit;
   primaryCtaStyle: CtaStyle;
+  reviewsEnabled: boolean;
+  reviewsShowOnHome: boolean;
+  reviewsShowOnProductDetail: boolean;
+  reviewsFormEnabled: boolean;
+  reviewsDefaultSort: ReviewSort;
+  reviewsItemsPerPage: number;
+  reviewsShowVerifiedBadge: boolean;
+  reviewsShowMediaGallery: boolean;
+  reviewsShowSummary: boolean;
 };
 
 export type StorefrontThemeInput = {
@@ -141,7 +153,16 @@ export const DEFAULT_STOREFRONT_THEME_CONFIG: StorefrontThemeConfig = {
   productCardShowCarouselArrows: true,
   productCardShowCarouselDots: true,
   productCardImageFit: "cover",
-  primaryCtaStyle: "primary"
+  primaryCtaStyle: "primary",
+  reviewsEnabled: true,
+  reviewsShowOnHome: true,
+  reviewsShowOnProductDetail: true,
+  reviewsFormEnabled: true,
+  reviewsDefaultSort: "newest",
+  reviewsItemsPerPage: 10,
+  reviewsShowVerifiedBadge: true,
+  reviewsShowMediaGallery: true,
+  reviewsShowSummary: true
 };
 
 function normalizeHex(input: string | null | undefined): string | null {
@@ -419,7 +440,29 @@ export function resolveStorefrontThemeConfig(raw: unknown): StorefrontThemeConfi
       candidate.primaryCtaStyle,
       CTA_STYLE_OPTIONS,
       DEFAULT_STOREFRONT_THEME_CONFIG.primaryCtaStyle
-    )
+    ),
+    reviewsEnabled: pickBoolean(candidate.reviewsEnabled, DEFAULT_STOREFRONT_THEME_CONFIG.reviewsEnabled),
+    reviewsShowOnHome: pickBoolean(candidate.reviewsShowOnHome, DEFAULT_STOREFRONT_THEME_CONFIG.reviewsShowOnHome),
+    reviewsShowOnProductDetail: pickBoolean(
+      candidate.reviewsShowOnProductDetail,
+      DEFAULT_STOREFRONT_THEME_CONFIG.reviewsShowOnProductDetail
+    ),
+    reviewsFormEnabled: pickBoolean(candidate.reviewsFormEnabled, DEFAULT_STOREFRONT_THEME_CONFIG.reviewsFormEnabled),
+    reviewsDefaultSort: pickStringOption(
+      candidate.reviewsDefaultSort,
+      REVIEW_SORT_OPTIONS,
+      DEFAULT_STOREFRONT_THEME_CONFIG.reviewsDefaultSort
+    ),
+    reviewsItemsPerPage: pickInteger(candidate.reviewsItemsPerPage, DEFAULT_STOREFRONT_THEME_CONFIG.reviewsItemsPerPage, 1, 50),
+    reviewsShowVerifiedBadge: pickBoolean(
+      candidate.reviewsShowVerifiedBadge,
+      DEFAULT_STOREFRONT_THEME_CONFIG.reviewsShowVerifiedBadge
+    ),
+    reviewsShowMediaGallery: pickBoolean(
+      candidate.reviewsShowMediaGallery,
+      DEFAULT_STOREFRONT_THEME_CONFIG.reviewsShowMediaGallery
+    ),
+    reviewsShowSummary: pickBoolean(candidate.reviewsShowSummary, DEFAULT_STOREFRONT_THEME_CONFIG.reviewsShowSummary)
   };
 }
 
@@ -429,8 +472,8 @@ export function buildStorefrontThemeStyle(input: StorefrontThemeInput): CSSPrope
   const config = resolveStorefrontThemeConfig(input.themeConfig);
   const primaryRgb = hexToRgbTriplet(primary);
   const accentRgb = hexToRgbTriplet(accent);
-  const primaryForeground = config.primaryForegroundColor ?? resolveContrastingForeground(primary);
-  const accentForeground = config.accentForegroundColor ?? resolveContrastingForeground(accent);
+  const primaryForeground = config.primaryForegroundColor ?? DEFAULT_ACTION_FOREGROUND;
+  const accentForeground = config.accentForegroundColor ?? DEFAULT_ACTION_FOREGROUND;
   const headerForeground = config.headerForegroundColor ?? resolveContrastingForeground(config.headerBackgroundColor);
   const border = mixHex(config.textColor, config.surfaceColor, 0.2);
   const muted = mixHex(primary, config.surfaceColor, 0.12);

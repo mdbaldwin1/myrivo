@@ -1,22 +1,7 @@
-import { BillingPlanSettings } from "@/components/dashboard/billing-plan-settings";
-import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
-import { DomainManager } from "@/components/dashboard/domain-manager";
-import { StorePaymentsSettings } from "@/components/dashboard/store-payments-settings";
-import { StoreShippingSettings } from "@/components/dashboard/store-shipping-settings";
+import { redirectToActiveStoreWorkspace } from "@/app/dashboard/_lib/legacy-store-route-redirect";
 
 export const dynamic = "force-dynamic";
 
-export default function DashboardStoreSettingsIntegrationsPage() {
-  return (
-    <section className="space-y-4">
-      <DashboardPageHeader
-        title="Integrations"
-        description="Payment and shipping-provider configuration for storefront operations."
-      />
-      <BillingPlanSettings title="Billing Plan" editable />
-      <DomainManager />
-      <StorePaymentsSettings />
-      <StoreShippingSettings />
-    </section>
-  );
+export default async function DashboardStoreSettingsIntegrationsPage() {
+  await redirectToActiveStoreWorkspace("/store-settings/integrations");
 }

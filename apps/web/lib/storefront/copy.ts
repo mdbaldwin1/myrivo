@@ -55,6 +55,25 @@ export type StorefrontCopyConfig = {
     outOfStockButton: string;
     backToAllProducts: string;
   };
+  reviews: {
+    sectionTitle: string;
+    summaryTemplate: string;
+    emptyState: string;
+    loadMore: string;
+    formTitle: string;
+    anonymousReviewer: string;
+    verifiedPurchaseBadge: string;
+    submitButton: string;
+    submittingButton: string;
+    moderationSuccessMessage: string;
+    loadingMessage: string;
+    namePlaceholder: string;
+    emailPlaceholder: string;
+    titlePlaceholder: string;
+    bodyPlaceholder: string;
+    imageHelperText: string;
+    imageCountTemplate: string;
+  };
   about: {
     aboutPrefix: string;
     shopProductsCta: string;
@@ -205,6 +224,25 @@ export const DEFAULT_STOREFRONT_COPY: StorefrontCopyConfig = {
     addToCartMadeToOrder: "Add to cart (made to order)",
     outOfStockButton: "Out of stock",
     backToAllProducts: "Back to all products"
+  },
+  reviews: {
+    sectionTitle: "Reviews",
+    summaryTemplate: "{average} average from {count} reviews",
+    emptyState: "No published reviews yet.",
+    loadMore: "Load more",
+    formTitle: "Write a review",
+    anonymousReviewer: "Anonymous",
+    verifiedPurchaseBadge: "Verified purchase",
+    submitButton: "Submit review",
+    submittingButton: "Submitting...",
+    moderationSuccessMessage: "Thanks. Your review was submitted and is awaiting moderation.",
+    loadingMessage: "Loading reviews...",
+    namePlaceholder: "Your name",
+    emailPlaceholder: "you@example.com",
+    titlePlaceholder: "Review title (optional)",
+    bodyPlaceholder: "Tell other buyers about your experience",
+    imageHelperText: "Drag to reorder. Click an image to replace it.",
+    imageCountTemplate: "{current}/{max} images selected."
   },
   about: {
     aboutPrefix: "About",

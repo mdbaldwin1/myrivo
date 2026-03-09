@@ -22,7 +22,7 @@ export function DashboardPageScaffold({
   contentClassName
 }: DashboardPageScaffoldProps) {
   return (
-    <section className={cn("space-y-4", className)}>
+    <section className={cn("space-y-4 px-4 py-4 lg:px-6 lg:py-5", className)}>
       <DashboardPageHeader title={title} description={description} action={action} className={headerClassName} />
       <div className={cn("space-y-4", contentClassName)}>{children}</div>
     </section>

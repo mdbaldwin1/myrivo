@@ -19,7 +19,20 @@ export type ProductVariantListItem = {
 
 export type ProductListItem = Pick<
   ProductRecord,
-  "id" | "title" | "description" | "sku" | "image_urls" | "is_featured" | "price_cents" | "inventory_qty" | "status" | "created_at"
+  | "id"
+  | "title"
+  | "description"
+  | "slug"
+  | "sku"
+  | "image_urls"
+  | "image_alt_text"
+  | "seo_title"
+  | "seo_description"
+  | "is_featured"
+  | "price_cents"
+  | "inventory_qty"
+  | "status"
+  | "created_at"
 > & {
   product_variants: ProductVariantListItem[];
   product_option_axes?: Array<{

@@ -10,7 +10,7 @@ Fixed-shell compatibility review for dashboard routes:
 - Billing
 - Platform
 - Store Settings
-- Content Studio
+- Content Workspace
 
 ## Findings and Fixes
 

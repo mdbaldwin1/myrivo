@@ -14,6 +14,7 @@ import { StorefrontHeader } from "@/components/storefront/storefront-header";
 import { StorefrontImageCarousel } from "@/components/storefront/storefront-image-carousel";
 import { StorefrontCartButton } from "@/components/storefront/storefront-cart-button";
 import { StorefrontFooter } from "@/components/storefront/storefront-footer";
+import { StorefrontReviewsSection } from "@/components/storefront/storefront-reviews-section";
 import { readStorefrontCart, writeStorefrontCart, type StorefrontCartEntry } from "@/lib/storefront/cart";
 import { formatCopyTemplate, resolveStorefrontCopy } from "@/lib/storefront/copy";
 import { STOREFRONT_TEXT_LINK_EFFECT_CLASS } from "@/lib/storefront/link-effects";
@@ -38,7 +39,11 @@ type StorefrontProduct = {
   id: string;
   title: string;
   description: string;
+  slug: string;
   image_urls: string[];
+  image_alt_text: string | null;
+  seo_title: string | null;
+  seo_description: string | null;
   is_featured: boolean;
   created_at: string;
   price_cents: number;
@@ -64,6 +69,10 @@ type StorefrontPageProps = {
     name: string;
     slug: string;
   };
+  viewer?: {
+    isAuthenticated: boolean;
+    canManageStore: boolean;
+  };
   branding: {
     logo_path: string | null;
     primary_color: string | null;
@@ -76,6 +85,9 @@ type StorefrontPageProps = {
     shipping_policy: string | null;
     return_policy: string | null;
     announcement: string | null;
+    seo_title?: string | null;
+    seo_description?: string | null;
+    seo_noindex?: boolean;
     footer_tagline: string | null;
     footer_note: string | null;
     instagram_url: string | null;
@@ -223,6 +235,11 @@ function truncateWithEllipsis(content: string, maxLength: number) {
   return `${content.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
+function buildProductHref(product: StorefrontProduct, storeSlug: string) {
+  const key = product.slug || product.id;
+  return `/products/${key}?store=${encodeURIComponent(storeSlug)}`;
+}
+
 function getAvailabilityLabel(
   variant: StorefrontVariant | null,
   fulfillmentMessage: string | null,
@@ -263,7 +280,7 @@ function getPrimaryCtaClass(themeConfig: StorefrontThemeConfig, buttonRadiusClas
 }
 
 export function StorefrontPage(props: StorefrontPageProps) {
-  const { store, branding, settings, products, contentBlocks, view = "home" } = props;
+  const { store, viewer, branding, settings, products, contentBlocks, view = "home" } = props;
   const themeConfig = resolveStorefrontThemeConfig(branding?.theme_json ?? {});
   const copy = resolveStorefrontCopy(settings?.storefront_copy_json ?? {});
   const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, store.slug);
@@ -735,12 +752,12 @@ export function StorefrontPage(props: StorefrontPageProps) {
                             isIntegrated ? "border-0" : "border border-border/60 p-4"
                           )}
                         >
-                          <Link href={`/products/${product.id}`} className="block space-y-3">
+                          <Link href={buildProductHref(product, store.slug)} className="block space-y-3">
                             {cardImages.length > 0 ? (
                               <StorefrontImageCarousel
                                 key={`${product.id}:${cardImages.join("|")}`}
                                 images={cardImages}
-                                alt={`${product.title} image`}
+                                alt={product.image_alt_text || `${product.title} image`}
                                 imageClassName={cn("aspect-square w-full", isIntegrated ? "" : "border border-border/60")}
                                 showArrowsOnHover
                                 allowPointerSwipe={false}
@@ -753,7 +770,7 @@ export function StorefrontPage(props: StorefrontPageProps) {
                           </Link>
                           <div className="space-y-1">
                             <div className="flex flex-wrap items-center gap-2">
-                              <Link href={`/products/${product.id}`} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "font-semibold")}>
+                              <Link href={buildProductHref(product, store.slug)} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "font-semibold")}>
                                 {product.title}
                               </Link>
                             </div>
@@ -811,16 +828,28 @@ export function StorefrontPage(props: StorefrontPageProps) {
           </section>
         ) : null}
 
-        <StorefrontFooter
-          storeName={store.name}
-          storeSlug={store.slug}
-          settings={settings}
-          buttonRadiusClass={buttonRadiusClass}
-          copy={copy}
-          navLinks={footerNavLinks}
-          showBackToTop={themeConfig.showFooterBackToTop}
-          showOwnerLogin={themeConfig.showFooterOwnerLogin}
-        />
+        <div className="space-y-8">
+          {themeConfig.reviewsShowOnHome ? (
+            <StorefrontReviewsSection
+              storeSlug={store.slug}
+              buttonRadiusClass={buttonRadiusClass}
+              reviewCardClassName={cardClass}
+              reviewsTheme={themeConfig}
+              reviewsCopy={copy.reviews}
+            />
+          ) : null}
+          <StorefrontFooter
+            storeName={store.name}
+            storeSlug={store.slug}
+            viewer={viewer}
+            settings={settings}
+            buttonRadiusClass={buttonRadiusClass}
+            copy={copy}
+            navLinks={footerNavLinks}
+            showBackToTop={themeConfig.showFooterBackToTop}
+            showOwnerLogin={themeConfig.showFooterOwnerLogin}
+          />
+        </div>
       </main>
     </div>
   );

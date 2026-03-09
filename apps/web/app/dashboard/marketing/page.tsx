@@ -1,8 +1,7 @@
-import { redirect } from "next/navigation";
+import { redirectToActiveStoreWorkspace } from "@/app/dashboard/_lib/legacy-store-route-redirect";
 
 export const dynamic = "force-dynamic";
 
-export default function DashboardMarketingPage() {
-  redirect("/dashboard/marketing/promotions");
+export default async function DashboardMarketingPage() {
+  await redirectToActiveStoreWorkspace("/promotions");
 }
-

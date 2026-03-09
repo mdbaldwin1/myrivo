@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { logAuditEvent } from "@/lib/audit/log";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
+import { notifyOwnersInventoryLevel } from "@/lib/notifications/owner-notifications";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -148,6 +149,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Variant not found" }, { status: 404 });
   }
 
+  const { data: previousProduct, error: previousProductError } = await supabase
+    .from("products")
+    .select("id,title,inventory_qty,status")
+    .eq("id", targetVariant.product_id)
+    .eq("store_id", bundle.store.id)
+    .maybeSingle<{ id: string; title: string; inventory_qty: number; status: "draft" | "active" | "archived" }>();
+
+  if (previousProductError) {
+    return NextResponse.json({ error: previousProductError.message }, { status: 500 });
+  }
+
+  if (!previousProduct) {
+    return NextResponse.json({ error: "Product not found" }, { status: 404 });
+  }
+
   const nextInventory = targetVariant.inventory_qty + payload.data.deltaQty;
 
   if (nextInventory < 0) {
@@ -250,6 +266,22 @@ export async function POST(request: NextRequest) {
         .filter((value) => value.is_active)
         .sort((left, right) => left.sort_order - right.sort_order)
     }));
+
+  try {
+    await notifyOwnersInventoryLevel({
+      storeId: bundle.store.id,
+      storeSlug: bundle.store.slug,
+      productId: updatedProduct.id,
+      productTitle: updatedProduct.title,
+      inventoryQty: nextInventory,
+      previousInventoryQty: targetVariant.inventory_qty,
+      productStatus: updatedProduct.status,
+      variantId: targetVariant.id,
+      variantTitle: targetVariant.title
+    });
+  } catch {
+    // Inventory updates should still succeed if notifications fail.
+  }
 
   return NextResponse.json({ product: updatedProduct });
 }

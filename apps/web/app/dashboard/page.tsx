@@ -1,7 +1,9 @@
-import { DashboardOverview } from "@/components/dashboard/dashboard-overview";
+import { DashboardHomeShell } from "@/components/dashboard/dashboard-home-shell";
 import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
-import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
+import { getDashboardHomeData } from "@/lib/dashboard/home/get-dashboard-home-data";
+import { resolveCustomerStorefrontLinksBySlug } from "@/lib/customer/storefront-links";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { GlobalUserRole } from "@/types/database";
 
 export const dynamic = "force-dynamic";
 
@@ -15,42 +17,61 @@ export default async function DashboardPage() {
     return null;
   }
 
-  const bundle = await getOwnedStoreBundle(user.id);
-  const store = bundle?.store;
+  const [{ data: profile }, { data: savedStores }, { data: savedItems }, { data: carts }, { data: orders }] = await Promise.all([
+    supabase.from("user_profiles").select("global_role").eq("id", user.id).maybeSingle<{ global_role: GlobalUserRole }>(),
+    supabase.from("customer_saved_stores").select("id,stores(id,name,slug,status),store_id").eq("user_id", user.id),
+    supabase.from("customer_saved_items").select("id,products(id,title),product_variants(id,title),stores(id,name,slug,status)").eq("user_id", user.id),
+    supabase.from("customer_carts").select("id,stores(id,name,slug),updated_at").eq("user_id", user.id).eq("status", "active"),
+    supabase
+      .from("orders")
+      .select("id,total_cents,status,fulfillment_status,created_at,stores(name,slug)")
+      .eq("customer_email", user.email ?? "")
+      .order("created_at", { ascending: false })
+      .limit(15)
+  ]);
 
-  if (!store) {
-    return null;
-  }
-
-  const { data: products, error: productsError } = await supabase
-    .from("products")
-    .select("id,title,description,sku,image_urls,is_featured,price_cents,inventory_qty,status,created_at")
-    .eq("store_id", store.id)
-    .order("created_at", { ascending: false });
-
-  if (productsError) {
-    throw new Error(productsError.message);
-  }
-
-  const { data: recentOrders, error: ordersError } = await supabase
-    .from("orders")
-    .select("id,total_cents,status,fulfillment_status,shipment_status,tracking_number,discount_cents,created_at")
-    .eq("store_id", store.id)
-    .order("created_at", { ascending: false })
-    .limit(30);
-
-  if (ordersError) {
-    throw new Error(ordersError.message);
-  }
+  const role = profile?.global_role ?? "user";
+  const dashboardHomeData = await getDashboardHomeData({
+    supabase,
+    userId: user.id,
+    userEmail: user.email ?? null,
+    role
+  });
+  const storeSlugs = [
+    ...(savedStores ?? []).map((entry) => {
+      const store = Array.isArray(entry.stores) ? entry.stores[0] : entry.stores;
+      return store?.slug ?? "";
+    }),
+    ...(savedItems ?? []).map((entry) => {
+      const store = Array.isArray(entry.stores) ? entry.stores[0] : entry.stores;
+      return store?.slug ?? "";
+    }),
+    ...(carts ?? []).map((entry) => {
+      const store = Array.isArray(entry.stores) ? entry.stores[0] : entry.stores;
+      return store?.slug ?? "";
+    }),
+    ...(orders ?? []).map((entry) => {
+      const store = Array.isArray(entry.stores) ? entry.stores[0] : entry.stores;
+      return store?.slug ?? "";
+    })
+  ];
+  const storefrontLinksBySlug = await resolveCustomerStorefrontLinksBySlug(storeSlugs);
 
   return (
     <DashboardPageScaffold
-      title="Overview"
-      description={`Performance and operational snapshot for ${store.name}.`}
+      title="Dashboard"
+      description="Your personal home for customer activity, workspace signals, and immediate next actions."
+      className="p-4 lg:p-4"
     >
-      <DashboardOverview
-        products={products ?? []}
-        recentOrders={recentOrders ?? []}
+      <DashboardHomeShell
+        data={dashboardHomeData}
+        storefrontLinksBySlug={storefrontLinksBySlug}
+        legacyPanelProps={{
+          initialSavedStores: savedStores ?? [],
+          initialSavedItems: savedItems ?? [],
+          carts: carts ?? [],
+          orders: orders ?? []
+        }}
       />
     </DashboardPageScaffold>
   );

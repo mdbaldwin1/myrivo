@@ -10,6 +10,10 @@ const hexColor = z.string().regex(/^#([0-9a-fA-F]{6})$/, "Expected 6-digit hex c
 
 const brandingSchema = z.object({
   logoPath: z.string().max(500).nullable().optional(),
+  faviconPath: z.string().max(500).nullable().optional(),
+  appleTouchIconPath: z.string().max(500).nullable().optional(),
+  ogImagePath: z.string().max(500).nullable().optional(),
+  twitterImagePath: z.string().max(500).nullable().optional(),
   primaryColor: hexColor.nullable().optional(),
   accentColor: hexColor.nullable().optional(),
   themeJson: z.record(z.string(), z.unknown()).nullable().optional()
@@ -75,13 +79,21 @@ export async function PUT(request: NextRequest) {
       {
         store_id: bundle.store.id,
         logo_path: hasField("logoPath") ? payload.data.logoPath ?? null : bundle.branding?.logo_path ?? null,
+        favicon_path: hasField("faviconPath") ? payload.data.faviconPath ?? null : bundle.branding?.favicon_path ?? null,
+        apple_touch_icon_path: hasField("appleTouchIconPath")
+          ? payload.data.appleTouchIconPath ?? null
+          : bundle.branding?.apple_touch_icon_path ?? null,
+        og_image_path: hasField("ogImagePath") ? payload.data.ogImagePath ?? null : bundle.branding?.og_image_path ?? null,
+        twitter_image_path: hasField("twitterImagePath")
+          ? payload.data.twitterImagePath ?? null
+          : bundle.branding?.twitter_image_path ?? null,
         primary_color: hasField("primaryColor") ? payload.data.primaryColor ?? null : bundle.branding?.primary_color ?? null,
         accent_color: hasField("accentColor") ? payload.data.accentColor ?? null : bundle.branding?.accent_color ?? null,
         theme_json: themeJson
       },
       { onConflict: "store_id" }
     )
-    .select("store_id,logo_path,primary_color,accent_color,theme_json")
+    .select("store_id,logo_path,favicon_path,apple_touch_icon_path,og_image_path,twitter_image_path,primary_color,accent_color,theme_json")
     .single();
 
   if (error) {

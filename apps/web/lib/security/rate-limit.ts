@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type Bucket = {
   count: number;
@@ -18,42 +19,71 @@ function getClientIp(request: NextRequest): string {
   return realIp?.trim() || "unknown";
 }
 
-export function checkRateLimit(
+function buildRateLimitResponse(retryAfterSeconds: number) {
+  return NextResponse.json(
+    {
+      error: "Too many requests. Please retry shortly."
+    },
+    {
+      status: 429,
+      headers: {
+        "Retry-After": String(retryAfterSeconds)
+      }
+    }
+  );
+}
+
+function checkRateLimitInMemory(bucketKey: string, windowMs: number, limit: number): NextResponse | null {
+  const now = Date.now();
+  const existing = buckets.get(bucketKey);
+
+  if (!existing || existing.resetAt <= now) {
+    buckets.set(bucketKey, {
+      count: 1,
+      resetAt: now + windowMs
+    });
+    return null;
+  }
+
+  if (existing.count >= limit) {
+    return buildRateLimitResponse(Math.ceil((existing.resetAt - now) / 1000));
+  }
+
+  existing.count += 1;
+  buckets.set(bucketKey, existing);
+  return null;
+}
+
+export async function checkRateLimit(
   request: NextRequest,
   options: {
     key: string;
     limit: number;
     windowMs: number;
   }
-): NextResponse | null {
-  const now = Date.now();
+): Promise<NextResponse | null> {
   const ip = getClientIp(request);
   const bucketKey = `${options.key}:${ip}`;
-  const existing = buckets.get(bucketKey);
-
-  if (!existing || existing.resetAt <= now) {
-    buckets.set(bucketKey, {
-      count: 1,
-      resetAt: now + options.windowMs
+  try {
+    const admin = createSupabaseAdminClient();
+    const { data, error } = await admin.rpc("check_api_rate_limit", {
+      p_bucket_key: bucketKey,
+      p_limit: options.limit,
+      p_window_ms: options.windowMs
     });
+
+    if (error) {
+      console.error("shared rate-limit rpc failed; using in-memory fallback", error.message);
+      return checkRateLimitInMemory(bucketKey, options.windowMs, options.limit);
+    }
+
+    const row = (Array.isArray(data) ? data[0] : data) as { allowed?: boolean; retry_after_seconds?: number } | null;
+    if (row?.allowed === false) {
+      return buildRateLimitResponse(Math.max(1, row.retry_after_seconds ?? 1));
+    }
     return null;
+  } catch (error) {
+    console.error("shared rate-limit execution failed; using in-memory fallback", error);
+    return checkRateLimitInMemory(bucketKey, options.windowMs, options.limit);
   }
-
-  if (existing.count >= options.limit) {
-    return NextResponse.json(
-      {
-        error: "Too many requests. Please retry shortly."
-      },
-      {
-        status: 429,
-        headers: {
-          "Retry-After": String(Math.ceil((existing.resetAt - now) / 1000))
-        }
-      }
-    );
-  }
-
-  existing.count += 1;
-  buckets.set(bucketKey, existing);
-  return null;
 }

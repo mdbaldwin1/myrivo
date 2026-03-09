@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { STOREFRONT_TEXT_LINK_EFFECT_CLASS } from "@/lib/storefront/link-effects";
@@ -34,6 +35,16 @@ export function StorefrontHeader(props: StorefrontHeaderProps) {
     topOffsetPx = 0
   } = props;
   const [isCompact, setIsCompact] = useState(false);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const currentStoreParam = searchParams?.get("store")?.trim() ?? "";
+  const previewPathMatch = pathname?.match(/^\/s\/([^/]+)$/);
+  const previewStoreSlug = previewPathMatch?.[1]?.trim() ?? "";
+  const homeHref = previewStoreSlug
+    ? `/s/${encodeURIComponent(previewStoreSlug)}`
+    : currentStoreParam
+      ? `/s/${encodeURIComponent(currentStoreParam)}`
+      : "/";
 
   useEffect(() => {
     const COMPACT_ENTER_Y = 96;
@@ -75,7 +86,7 @@ export function StorefrontHeader(props: StorefrontHeaderProps) {
             isCompact ? "py-2.5" : "py-12"
           )}
         >
-          <Link href="/" className="flex items-center gap-3">
+          <Link href={homeHref} className="flex items-center gap-3">
           {logoPath ? (
             <Image
               src={logoPath}

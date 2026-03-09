@@ -244,6 +244,7 @@ export default async function PoliciesPage({ searchParams }: PoliciesPageProps) 
         <StorefrontFooter
           storeName={data.store.name}
           storeSlug={data.store.slug}
+          viewer={data.viewer}
           settings={data.settings}
           copy={copy}
           buttonRadiusClass={buttonRadiusClass}

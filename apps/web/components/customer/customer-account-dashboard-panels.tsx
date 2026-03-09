@@ -2,9 +2,13 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { FeedbackMessage } from "@/components/ui/feedback-message";
+import { usePathname } from "next/navigation";
+import { AppAlert } from "@/components/ui/app-alert";
 import { SectionCard } from "@/components/ui/section-card";
 import { Button } from "@/components/ui/button";
+import { withReturnTo } from "@/lib/auth/return-to";
+import { notify } from "@/lib/feedback/toast";
+import { parseApiError } from "@/lib/http/client-error";
 
 type StoreReference = {
   id: string;
@@ -35,6 +39,7 @@ type RecentOrderEntry = {
   id: string;
   total_cents: number;
   status: string;
+  fulfillment_status?: "pending_fulfillment" | "packing" | "shipped" | "delivered";
   created_at: string;
   stores: Pick<StoreReference, "name" | "slug"> | Pick<StoreReference, "name" | "slug">[] | null;
 };
@@ -44,6 +49,13 @@ type CustomerAccountDashboardPanelsProps = {
   initialSavedItems: SavedItemEntry[];
   carts: ActiveCartEntry[];
   orders: RecentOrderEntry[];
+  storefrontLinksBySlug?: Record<
+    string,
+    {
+      storefrontHref: string;
+      cartHref: string;
+    }
+  >;
 };
 
 function firstRelation<T>(value: T | T[] | null | undefined): T | null {
@@ -57,20 +69,19 @@ export function CustomerAccountDashboardPanels({
   initialSavedStores,
   initialSavedItems,
   carts,
-  orders
+  orders,
+  storefrontLinksBySlug = {}
 }: CustomerAccountDashboardPanelsProps) {
+  const pathname = usePathname();
   const [savedStores, setSavedStores] = useState(initialSavedStores);
   const [savedItems, setSavedItems] = useState(initialSavedItems);
   const [pendingStoreIds, setPendingStoreIds] = useState<string[]>([]);
   const [pendingItemIds, setPendingItemIds] = useState<string[]>([]);
   const [savedStoresError, setSavedStoresError] = useState<string | null>(null);
-  const [savedStoresMessage, setSavedStoresMessage] = useState<string | null>(null);
   const [savedItemsError, setSavedItemsError] = useState<string | null>(null);
-  const [savedItemsMessage, setSavedItemsMessage] = useState<string | null>(null);
   const [activeCarts, setActiveCarts] = useState(carts);
   const [pendingCartIds, setPendingCartIds] = useState<string[]>([]);
   const [cartsError, setCartsError] = useState<string | null>(null);
-  const [cartsMessage, setCartsMessage] = useState<string | null>(null);
 
   const savedStoreRows = useMemo(
     () =>
@@ -90,6 +101,15 @@ export function CustomerAccountDashboardPanels({
       })),
     [savedItems]
   );
+  const openOrders = useMemo(
+    () =>
+      orders.filter(
+        (order) =>
+          (order.status === "pending" || order.status === "paid") &&
+          (!order.fulfillment_status || order.fulfillment_status !== "delivered")
+      ),
+    [orders]
+  );
 
   async function removeSavedStore(entryId: string, storeId: string) {
     if (pendingStoreIds.includes(entryId)) {
@@ -97,7 +117,6 @@ export function CustomerAccountDashboardPanels({
     }
 
     setSavedStoresError(null);
-    setSavedStoresMessage(null);
     const snapshot = savedStores;
     setPendingStoreIds((current) => [...current, entryId]);
     setSavedStores((current) => current.filter((entry) => entry.id !== entryId));
@@ -106,11 +125,10 @@ export function CustomerAccountDashboardPanels({
       const response = await fetch(`/api/customer/saved-stores?storeId=${encodeURIComponent(storeId)}`, {
         method: "DELETE"
       });
-      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
       if (!response.ok) {
-        throw new Error(payload?.error ?? "Unable to remove saved store.");
+        throw new Error(await parseApiError(response, "Unable to remove saved store."));
       }
-      setSavedStoresMessage("Saved store removed.");
+      notify.success("Saved store removed.");
     } catch (error) {
       setSavedStores(snapshot);
       setSavedStoresError(error instanceof Error ? error.message : "Unable to remove saved store.");
@@ -125,7 +143,6 @@ export function CustomerAccountDashboardPanels({
     }
 
     setSavedItemsError(null);
-    setSavedItemsMessage(null);
     const snapshot = savedItems;
     setPendingItemIds((current) => [...current, entryId]);
     setSavedItems((current) => current.filter((entry) => entry.id !== entryId));
@@ -134,11 +151,10 @@ export function CustomerAccountDashboardPanels({
       const response = await fetch(`/api/customer/saved-items?id=${encodeURIComponent(entryId)}`, {
         method: "DELETE"
       });
-      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
       if (!response.ok) {
-        throw new Error(payload?.error ?? "Unable to remove saved item.");
+        throw new Error(await parseApiError(response, "Unable to remove saved item."));
       }
-      setSavedItemsMessage("Saved item removed.");
+      notify.success("Saved item removed.");
     } catch (error) {
       setSavedItems(snapshot);
       setSavedItemsError(error instanceof Error ? error.message : "Unable to remove saved item.");
@@ -153,7 +169,6 @@ export function CustomerAccountDashboardPanels({
     }
 
     setCartsError(null);
-    setCartsMessage(null);
     const snapshot = activeCarts;
     setPendingCartIds((current) => [...current, cartId]);
     setActiveCarts((current) => current.filter((cart) => cart.id !== cartId));
@@ -162,11 +177,10 @@ export function CustomerAccountDashboardPanels({
       const response = await fetch(`/api/customer/cart?cartId=${encodeURIComponent(cartId)}`, {
         method: "DELETE"
       });
-      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
       if (!response.ok) {
-        throw new Error(payload?.error ?? "Unable to remove active cart.");
+        throw new Error(await parseApiError(response, "Unable to remove active cart."));
       }
-      setCartsMessage("Active cart removed.");
+      notify.success("Active cart removed.");
     } catch (error) {
       setActiveCarts(snapshot);
       setCartsError(error instanceof Error ? error.message : "Unable to remove active cart.");
@@ -189,7 +203,7 @@ export function CustomerAccountDashboardPanels({
               const isPending = pendingStoreIds.includes(entry.entryId);
               return (
                 <li key={entry.entryId} className="flex items-center justify-between gap-3 rounded-md border border-border/60 px-3 py-2">
-                  <Link href={`/s/${store.slug}`} className="truncate font-medium underline-offset-4 hover:underline">
+                  <Link href={storefrontLinksBySlug[store.slug]?.storefrontHref ?? `/s/${store.slug}`} className="truncate font-medium underline-offset-4 hover:underline">
                     {store.name}
                   </Link>
                   <Button type="button" size="sm" variant="ghost" onClick={() => void removeSavedStore(entry.entryId, store.id)} disabled={isPending}>
@@ -199,8 +213,7 @@ export function CustomerAccountDashboardPanels({
               );
             })}
           </ul>
-          <FeedbackMessage type="success" message={savedStoresMessage} className="mt-3" />
-          <FeedbackMessage type="error" message={savedStoresError} className="mt-3" />
+          <AppAlert variant="error" message={savedStoresError} className="mt-3" />
         </SectionCard>
 
         <SectionCard title="Saved Items" description="Products you bookmarked for later.">
@@ -227,13 +240,12 @@ export function CustomerAccountDashboardPanels({
               );
             })}
           </ul>
-          <FeedbackMessage type="success" message={savedItemsMessage} className="mt-3" />
-          <FeedbackMessage type="error" message={savedItemsError} className="mt-3" />
+          <AppAlert variant="error" message={savedItemsError} className="mt-3" />
         </SectionCard>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <SectionCard title="Active Carts" description="Continue where you left off in checkout.">
+        <SectionCard title="Active Carts" description="Jump back into checkout for stores where you still have items in cart.">
           <ul className="space-y-2 text-sm">
             {activeCarts.length === 0 ? <li className="text-muted-foreground">No active carts.</li> : null}
             {activeCarts.map((cart) => {
@@ -250,7 +262,7 @@ export function CustomerAccountDashboardPanels({
                   <div className="flex items-center gap-2">
                     {store?.slug ? (
                       <Button asChild variant="outline" size="sm">
-                        <Link href={`/cart?store=${encodeURIComponent(store.slug)}`}>Open cart</Link>
+                        <Link href={storefrontLinksBySlug[store.slug]?.cartHref ?? `/cart?store=${encodeURIComponent(store.slug)}`}>Open cart</Link>
                       </Button>
                     ) : null}
                     <Button type="button" size="sm" variant="ghost" onClick={() => void removeCart(cart.id)} disabled={isPending}>
@@ -261,11 +273,33 @@ export function CustomerAccountDashboardPanels({
               );
             })}
           </ul>
-          <FeedbackMessage type="success" message={cartsMessage} className="mt-3" />
-          <FeedbackMessage type="error" message={cartsError} className="mt-3" />
+          <AppAlert variant="error" message={cartsError} className="mt-3" />
         </SectionCard>
 
-        <SectionCard title="Recent Orders" description="Your latest purchases across stores.">
+        <SectionCard title="Orders In Progress" description="Orders that still need fulfillment or delivery updates.">
+          <ul className="space-y-2 text-sm">
+            {openOrders.length === 0 ? <li className="text-muted-foreground">No active orders in progress.</li> : null}
+            {openOrders.map((order) => {
+              return (
+                <li key={`open-${order.id}`} className="flex items-center justify-between gap-3 rounded-md border border-border/60 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">#{order.id.slice(0, 8)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      ${(order.total_cents / 100).toFixed(2)} · {order.status}
+                      {order.fulfillment_status ? ` · ${order.fulfillment_status.replaceAll("_", " ")}` : ""}
+                    </p>
+                  </div>
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={withReturnTo(`/dashboard/customer-orders/${order.id}`, pathname || "/dashboard")}>View</Link>
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        </SectionCard>
+      </div>
+
+      <SectionCard title="Recent Orders" description="Your latest purchases across stores.">
           <ul className="space-y-2 text-sm">
             {orders.length === 0 ? <li className="text-muted-foreground">No recent orders.</li> : null}
             {orders.map((order) => {
@@ -278,17 +312,21 @@ export function CustomerAccountDashboardPanels({
                       ${(order.total_cents / 100).toFixed(2)} · {order.status} · {new Date(order.created_at).toLocaleDateString()}
                     </p>
                   </div>
-                  {store?.slug ? (
+                  <div className="flex items-center gap-2">
                     <Button asChild variant="outline" size="sm">
-                      <Link href={`/s/${store.slug}`}>{store.name}</Link>
+                      <Link href={withReturnTo(`/dashboard/customer-orders/${order.id}`, pathname || "/dashboard")}>View order</Link>
                     </Button>
-                  ) : null}
+                    {store?.slug ? (
+                      <Button asChild variant="ghost" size="sm">
+                        <Link href={storefrontLinksBySlug[store.slug]?.storefrontHref ?? `/s/${store.slug}`}>{store.name}</Link>
+                      </Button>
+                    ) : null}
+                  </div>
                 </li>
               );
             })}
           </ul>
-        </SectionCard>
-      </div>
+      </SectionCard>
     </>
   );
 }

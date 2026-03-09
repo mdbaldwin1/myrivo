@@ -5,12 +5,12 @@ import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getStoreShippingConfig } from "@/lib/shipping/store-config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
+import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
 
 const settingsUpdateSchema = z.object({
   profile: z
     .object({
-      name: z.string().trim().min(2).max(120).optional(),
-      status: z.enum(["draft", "active", "suspended"]).optional()
+      name: z.string().trim().min(2).max(120).optional()
     })
     .optional(),
   branding: z
@@ -18,6 +18,10 @@ const settingsUpdateSchema = z.object({
       primaryColor: z.string().regex(/^#([0-9a-fA-F]{6})$/).nullable().optional(),
       accentColor: z.string().regex(/^#([0-9a-fA-F]{6})$/).nullable().optional(),
       logoPath: z.string().max(500).nullable().optional(),
+      faviconPath: z.string().max(500).nullable().optional(),
+      appleTouchIconPath: z.string().max(500).nullable().optional(),
+      ogImagePath: z.string().max(500).nullable().optional(),
+      twitterImagePath: z.string().max(500).nullable().optional(),
       themeJson: z.record(z.string(), z.unknown()).optional()
     })
     .optional(),
@@ -32,6 +36,25 @@ const settingsUpdateSchema = z.object({
       checkoutFlatRateShippingFeeCents: z.number().int().min(0).max(250000).optional(),
       checkoutAllowOrderNote: z.boolean().optional(),
       checkoutOrderNotePrompt: z.string().max(300).nullable().optional()
+    })
+    .optional(),
+  seo: z
+    .object({
+      title: z.string().max(120).nullable().optional(),
+      description: z.string().max(320).nullable().optional(),
+      noindex: z.boolean().optional(),
+      location: z
+        .object({
+          city: z.string().max(120).nullable().optional(),
+          region: z.string().max(120).nullable().optional(),
+          state: z.string().max(120).nullable().optional(),
+          postalCode: z.string().max(32).nullable().optional(),
+          countryCode: z.string().max(2).nullable().optional(),
+          addressLine1: z.string().max(200).nullable().optional(),
+          addressLine2: z.string().max(200).nullable().optional(),
+          showFullAddress: z.boolean().optional()
+        })
+        .optional()
     })
     .optional()
 });
@@ -85,6 +108,21 @@ export async function GET() {
             checkoutOrderNotePrompt: bundle.settings.checkout_order_note_prompt
           }
         : null,
+      seo: {
+        title: bundle.settings?.seo_title ?? null,
+        description: bundle.settings?.seo_description ?? null,
+        noindex: bundle.settings?.seo_noindex ?? false,
+        location: {
+          city: bundle.settings?.seo_location_city ?? null,
+          region: bundle.settings?.seo_location_region ?? null,
+          state: bundle.settings?.seo_location_state ?? null,
+          postalCode: bundle.settings?.seo_location_postal_code ?? null,
+          countryCode: bundle.settings?.seo_location_country_code ?? null,
+          addressLine1: bundle.settings?.seo_location_address_line1 ?? null,
+          addressLine2: bundle.settings?.seo_location_address_line2 ?? null,
+          showFullAddress: bundle.settings?.seo_location_show_full_address ?? false
+        }
+      },
       integrations: {
         payments: {
           stripeAccountId: bundle.store.stripe_account_id
@@ -124,10 +162,6 @@ export async function PUT(request: NextRequest) {
     if (payload.data.profile.name !== undefined) {
       updates.name = payload.data.profile.name;
     }
-    if (payload.data.profile.status !== undefined) {
-      updates.status = payload.data.profile.status;
-    }
-
     if (Object.keys(updates).length > 0) {
       const { error } = await supabase.from("stores").update(updates).eq("id", bundle.store.id);
       if (error) {
@@ -142,6 +176,10 @@ export async function PUT(request: NextRequest) {
     const brandingRecord = {
       store_id: bundle.store.id,
       logo_path: payload.data.branding.logoPath ?? bundle.branding?.logo_path ?? null,
+      favicon_path: payload.data.branding.faviconPath ?? bundle.branding?.favicon_path ?? null,
+      apple_touch_icon_path: payload.data.branding.appleTouchIconPath ?? bundle.branding?.apple_touch_icon_path ?? null,
+      og_image_path: payload.data.branding.ogImagePath ?? bundle.branding?.og_image_path ?? null,
+      twitter_image_path: payload.data.branding.twitterImagePath ?? bundle.branding?.twitter_image_path ?? null,
       primary_color: payload.data.branding.primaryColor ?? bundle.branding?.primary_color ?? null,
       accent_color: payload.data.branding.accentColor ?? bundle.branding?.accent_color ?? null,
       theme_json: payload.data.branding.themeJson ? { ...currentTheme, ...payload.data.branding.themeJson } : currentTheme
@@ -149,6 +187,16 @@ export async function PUT(request: NextRequest) {
 
     const { error } = await supabase.from("store_branding").upsert(brandingRecord, { onConflict: "store_id" });
     if (error) {
+      if (
+        isMissingColumnInSchemaCache(error, "seo_title") ||
+        isMissingColumnInSchemaCache(error, "seo_description") ||
+        isMissingColumnInSchemaCache(error, "seo_noindex")
+      ) {
+        return NextResponse.json(
+          { error: "Store SEO fields require the latest database migration. Please run migrations and try again." },
+          { status: 400 }
+        );
+      }
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
     updatedAreas.push("branding");
@@ -183,6 +231,41 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
     updatedAreas.push("checkoutRules");
+  }
+
+  if (payload.data.seo) {
+    const current = bundle.settings;
+    const next = payload.data.seo;
+    const { error } = await supabase
+      .from("store_settings")
+      .upsert(
+        {
+          store_id: bundle.store.id,
+          seo_title: next.title ?? current?.seo_title ?? null,
+          seo_description: next.description ?? current?.seo_description ?? null,
+          seo_noindex: next.noindex ?? current?.seo_noindex ?? false,
+          seo_location_city: next.location?.city ?? current?.seo_location_city ?? null,
+          seo_location_region: next.location?.region ?? current?.seo_location_region ?? null,
+          seo_location_state: next.location?.state ?? current?.seo_location_state ?? null,
+          seo_location_postal_code: next.location?.postalCode ?? current?.seo_location_postal_code ?? null,
+          seo_location_country_code: next.location?.countryCode ?? current?.seo_location_country_code ?? null,
+          seo_location_address_line1: next.location?.addressLine1 ?? current?.seo_location_address_line1 ?? null,
+          seo_location_address_line2: next.location?.addressLine2 ?? current?.seo_location_address_line2 ?? null,
+          seo_location_show_full_address: next.location?.showFullAddress ?? current?.seo_location_show_full_address ?? false
+        },
+        { onConflict: "store_id" }
+      );
+
+    if (error) {
+      if (isMissingColumnInSchemaCache(error, "seo_location_city") || isMissingColumnInSchemaCache(error, "seo_location_show_full_address")) {
+        return NextResponse.json(
+          { error: "Store SEO location fields require the latest database migration. Please run migrations and try again." },
+          { status: 400 }
+        );
+      }
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    updatedAreas.push("seo");
   }
 
   return NextResponse.json({ ok: true, updatedAreas });

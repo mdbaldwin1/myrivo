@@ -6,17 +6,29 @@ import { Button } from "@/components/ui/button";
 
 function resolveBackHref(pathname: string): string | null {
   const normalized = pathname.replace(/\/$/, "") || "/";
-
-  if (normalized.startsWith("/dashboard/content-studio/")) {
+  if (normalized === "/dashboard/admin" || normalized.startsWith("/dashboard/admin/")) {
     return "/dashboard";
+  }
+  const storeWorkspaceMatch = normalized.match(/^\/dashboard\/stores\/([^/]+)(?:\/.*)?$/);
+
+  if (storeWorkspaceMatch) {
+    const storeSlug = storeWorkspaceMatch[1];
+    if (
+      normalized.startsWith(`/dashboard/stores/${storeSlug}/content-workspace/`) ||
+      normalized.startsWith(`/dashboard/stores/${storeSlug}/store-settings/`) ||
+      normalized.startsWith(`/dashboard/stores/${storeSlug}/reports/`)
+    ) {
+      return `/dashboard/stores/${storeSlug}`;
+    }
+    return "/dashboard/stores";
   }
 
   if (normalized.startsWith("/dashboard/store-settings/")) {
-    return "/dashboard";
+    return "/dashboard/stores";
   }
 
   if (normalized.startsWith("/dashboard/reports/")) {
-    return "/dashboard";
+    return "/dashboard/stores";
   }
 
   return null;

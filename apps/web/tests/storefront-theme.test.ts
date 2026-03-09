@@ -47,7 +47,7 @@ describe("storefront theme style", () => {
       accentColor: "#1C2A39"
     }) as Record<string, string>;
 
-    expect(style["--storefront-primary-foreground"]).toBe("#111111");
+    expect(style["--storefront-primary-foreground"]).toBe("#FFFFFF");
     expect(style["--storefront-accent-foreground"]).toBe("#FFFFFF");
   });
 });

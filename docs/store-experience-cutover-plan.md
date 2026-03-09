@@ -5,7 +5,7 @@
 Replace the current mixed settings architecture with a clean split:
 
 - `Store Settings`: low-frequency controls (look + behavior defaults)
-- `Content Studio`: high-frequency content editing
+- `Content Workspace`: high-frequency content editing
 - `Marketing`: promotions and subscriber operations
 
 This cutover intentionally does **not** preserve backward compatibility in app architecture. We will migrate existing single-store data into the new model and switch all reads/writes to the new model.
@@ -29,7 +29,7 @@ This cutover intentionally does **not** preserve backward compatibility in app a
   - Stripe Connect status/actions
   - Shipping provider credentials/webhooks
 
-### Content Studio (frequently changed)
+### Content Workspace (frequently changed)
 
 - Home
   - Hero copy
@@ -83,7 +83,7 @@ Existing operational tables remain:
 ### Bead A: Architecture and Contracts
 
 - Deliverables
-  - Final route map for Store Settings / Content Studio / Marketing
+  - Final route map for Store Settings / Content Workspace / Marketing
   - Domain types and zod contracts for every section payload
   - Error taxonomy and API response standard
 - Acceptance
@@ -123,7 +123,7 @@ Existing operational tables remain:
 
 - Deliverables
   - New nav groups and pages
-  - Content Studio editors replacing raw JSON editing
+  - Content Workspace editors replacing raw JSON editing
   - Promotions moved into Marketing
 - Acceptance
   - All experience configuration reachable from the new IA

@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { AppAlert } from "@/components/ui/app-alert";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SectionCard } from "@/components/ui/section-card";
 
 type InventoryMovement = {
   id: string;
@@ -83,45 +84,43 @@ export function InventoryMovementsPanel() {
   }, [loadMovements]);
 
   return (
-    <Card className="bg-card">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-lg">Inventory Ledger</CardTitle>
-        <CardDescription>Last 50 inventory movements for audit and support workflows.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <SectionCard
+      title="Inventory Ledger"
+      description="Last 50 inventory movements for audit and support workflows."
+    >
+      <div className="space-y-3">
+        {loading ? <p className="text-sm text-muted-foreground">Loading ledger...</p> : null}
+        <AppAlert variant="error" message={error} />
 
-      {loading ? <p className="text-sm text-muted-foreground">Loading ledger...</p> : null}
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
-
-      {!loading && !error ? (
-        <ul className="space-y-2">
-          {movements.length === 0 ? (
-            <li className="rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground">No inventory events yet.</li>
-          ) : (
-            movements.map((movement) => (
-              <li key={movement.id} className="rounded-md border border-border bg-background px-3 py-2 text-sm">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{movement.products?.title ?? movement.product_id}</span>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs ${
-                      movement.delta_qty < 0 ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"
-                    }`}
-                  >
-                    {movement.delta_qty > 0 ? `+${movement.delta_qty}` : movement.delta_qty}
-                  </span>
-                  <Badge variant="outline">{movement.reason}</Badge>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {new Date(movement.created_at).toLocaleString()}
-                  {movement.order_id ? ` • order ${movement.order_id}` : ""}
-                  {movement.note ? ` • ${movement.note}` : ""}
-                </p>
-              </li>
-            ))
-          )}
-        </ul>
-      ) : null}
-      </CardContent>
-    </Card>
+        {!loading && !error ? (
+          <ul className="space-y-2">
+            {movements.length === 0 ? (
+              <li className="rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground">No inventory events yet.</li>
+            ) : (
+              movements.map((movement) => (
+                <li key={movement.id} className="rounded-md border border-border bg-background px-3 py-2 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{movement.products?.title ?? movement.product_id}</span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs ${
+                        movement.delta_qty < 0 ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"
+                      }`}
+                    >
+                      {movement.delta_qty > 0 ? `+${movement.delta_qty}` : movement.delta_qty}
+                    </span>
+                    <Badge variant="outline">{movement.reason}</Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(movement.created_at).toLocaleString()}
+                    {movement.order_id ? ` • order ${movement.order_id}` : ""}
+                    {movement.note ? ` • ${movement.note}` : ""}
+                  </p>
+                </li>
+              ))
+            )}
+          </ul>
+        ) : null}
+      </div>
+    </SectionCard>
   );
 }

@@ -17,5 +17,5 @@ export default async function CheckoutPage({ searchParams }: CheckoutPageProps) 
     notFound();
   }
 
-  return <StorefrontCheckoutPage store={data.store} branding={data.branding} settings={data.settings} />;
+  return <StorefrontCheckoutPage store={data.store} viewer={data.viewer} branding={data.branding} settings={data.settings} />;
 }

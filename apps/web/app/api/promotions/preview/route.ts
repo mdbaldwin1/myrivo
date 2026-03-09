@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     return trustedOriginResponse;
   }
 
-  const rateLimitResponse = checkRateLimit(request, {
+  const rateLimitResponse = await checkRateLimit(request, {
     key: "promo-preview",
     limit: 60,
     windowMs: 60_000
@@ -37,6 +37,9 @@ export async function POST(request: NextRequest) {
   const supabase = createSupabaseAdminClient();
   const { promoCode, subtotalCents } = payload.data;
   const storeSlug = await resolveStoreSlugFromRequestAsync(request);
+  if (!storeSlug) {
+    return NextResponse.json({ error: "Store context is required." }, { status: 400 });
+  }
 
   const { data: store, error: storeError } = await supabase
     .from("stores")

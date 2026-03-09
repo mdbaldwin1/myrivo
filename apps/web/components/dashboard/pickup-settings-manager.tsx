@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
+import type { ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DashboardFormActionBar } from "@/components/dashboard/dashboard-form-action-bar";
-import { FeedbackMessage } from "@/components/ui/feedback-message";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { notify } from "@/lib/feedback/toast";
 
 type PickupSettings = {
   pickup_enabled: boolean;
@@ -21,6 +23,12 @@ type PickupSettings = {
   show_pickup_times: boolean;
   timezone: string;
   instructions: string | null;
+};
+
+type CheckoutPickupSettings = {
+  checkout_enable_local_pickup: boolean;
+  checkout_local_pickup_label: string | null;
+  checkout_local_pickup_fee_cents: number;
 };
 
 type PickupLocation = {
@@ -51,19 +59,48 @@ type PickupBlackoutRow = {
   reason: string | null;
 };
 
-export function PickupSettingsManager() {
+type PickupScheduleDraft = {
+  dayOfWeek: number;
+  opensAt: string;
+  closesAt: string;
+};
+
+const DAY_OPTIONS = [
+  { value: 0, label: "Sunday" },
+  { value: 1, label: "Monday" },
+  { value: 2, label: "Tuesday" },
+  { value: 3, label: "Wednesday" },
+  { value: 4, label: "Thursday" },
+  { value: 5, label: "Friday" },
+  { value: 6, label: "Saturday" }
+];
+
+function createDefaultScheduleWindow(): PickupScheduleDraft {
+  return { dayOfWeek: 1, opensAt: "09:00", closesAt: "17:00" };
+}
+
+type PickupSettingsManagerProps = {
+  header?: ReactNode;
+};
+
+export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
   const formId = "pickup-config-form";
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [settings, setSettings] = useState<PickupSettings | null>(null);
-  const [savedSettings, setSavedSettings] = useState<PickupSettings | null>(null);
+
+  const [pickupSettings, setPickupSettings] = useState<PickupSettings | null>(null);
+  const [savedPickupSettings, setSavedPickupSettings] = useState<PickupSettings | null>(null);
+  const [checkoutSettings, setCheckoutSettings] = useState<CheckoutPickupSettings | null>(null);
+  const [savedCheckoutSettings, setSavedCheckoutSettings] = useState<CheckoutPickupSettings | null>(null);
+
   const [locations, setLocations] = useState<PickupLocation[]>([]);
   const [hours, setHours] = useState<PickupHoursRow[]>([]);
   const [blackouts, setBlackouts] = useState<PickupBlackoutRow[]>([]);
-  const [hoursLocationId, setHoursLocationId] = useState<string>("");
-  const [hoursText, setHoursText] = useState<string>("[]");
+
+  const [selectedHoursLocationId, setSelectedHoursLocationId] = useState<string>("");
+  const [hoursDraft, setHoursDraft] = useState<PickupScheduleDraft[]>([]);
+
   const [blackoutLocationId, setBlackoutLocationId] = useState<string>("all");
   const [blackoutStartAt, setBlackoutStartAt] = useState<string>("");
   const [blackoutEndAt, setBlackoutEndAt] = useState<string>("");
@@ -76,125 +113,214 @@ export function PickupSettingsManager() {
   const [newLocationPostal, setNewLocationPostal] = useState("");
   const [newLocationLat, setNewLocationLat] = useState("");
   const [newLocationLng, setNewLocationLng] = useState("");
-  const isConfigDirty = Boolean(
-    settings &&
-      savedSettings &&
-      JSON.stringify(settings) !== JSON.stringify(savedSettings)
+
+  const isDirty = Boolean(
+    pickupSettings &&
+      savedPickupSettings &&
+      checkoutSettings &&
+      savedCheckoutSettings &&
+      (JSON.stringify(pickupSettings) !== JSON.stringify(savedPickupSettings) ||
+        JSON.stringify(checkoutSettings) !== JSON.stringify(savedCheckoutSettings))
   );
 
   async function loadData() {
     setLoading(true);
     setError(null);
-    setSuccessMessage(null);
 
-    const [settingsResponse, locationsResponse, hoursResponse, blackoutsResponse] = await Promise.all([
+    const [settingsResponse, pickupResponse, locationsResponse, hoursResponse, blackoutsResponse] = await Promise.all([
+      fetch("/api/stores/settings", { cache: "no-store" }),
       fetch("/api/stores/pickup/settings", { cache: "no-store" }),
       fetch("/api/stores/pickup/locations", { cache: "no-store" }),
       fetch("/api/stores/pickup/hours", { cache: "no-store" }),
       fetch("/api/stores/pickup/blackouts", { cache: "no-store" })
     ]);
 
-    const settingsPayload = (await settingsResponse.json()) as { settings?: PickupSettings; error?: string };
+    const settingsPayload = (await settingsResponse.json()) as {
+      settings?: {
+        checkout_enable_local_pickup?: boolean;
+        checkout_local_pickup_label?: string | null;
+        checkout_local_pickup_fee_cents?: number;
+      };
+      error?: string;
+    };
+    const pickupPayload = (await pickupResponse.json()) as { settings?: PickupSettings; error?: string };
     const locationsPayload = (await locationsResponse.json()) as { locations?: PickupLocation[]; error?: string };
     const hoursPayload = (await hoursResponse.json()) as { hours?: PickupHoursRow[]; error?: string };
     const blackoutsPayload = (await blackoutsResponse.json()) as { blackouts?: PickupBlackoutRow[]; error?: string };
 
     if (!settingsResponse.ok) {
-      setError(settingsPayload.error ?? "Unable to load pickup settings.");
+      setError(settingsPayload.error ?? "Unable to load pickup checkout settings.");
       setLoading(false);
       return;
     }
-
+    if (!pickupResponse.ok) {
+      setError(pickupPayload.error ?? "Unable to load pickup settings.");
+      setLoading(false);
+      return;
+    }
     if (!locationsResponse.ok) {
       setError(locationsPayload.error ?? "Unable to load pickup locations.");
       setLoading(false);
       return;
     }
-
     if (!hoursResponse.ok) {
       setError(hoursPayload.error ?? "Unable to load pickup hours.");
       setLoading(false);
       return;
     }
-
     if (!blackoutsResponse.ok) {
       setError(blackoutsPayload.error ?? "Unable to load pickup blackouts.");
       setLoading(false);
       return;
     }
 
-    setSettings(settingsPayload.settings ?? null);
-    setSavedSettings(settingsPayload.settings ?? null);
+    const resolvedCheckout: CheckoutPickupSettings = {
+      checkout_enable_local_pickup: settingsPayload.settings?.checkout_enable_local_pickup ?? false,
+      checkout_local_pickup_label: settingsPayload.settings?.checkout_local_pickup_label ?? "Local pickup",
+      checkout_local_pickup_fee_cents: settingsPayload.settings?.checkout_local_pickup_fee_cents ?? 0
+    };
+
+    setCheckoutSettings(resolvedCheckout);
+    setSavedCheckoutSettings(resolvedCheckout);
+
+    setPickupSettings(pickupPayload.settings ?? null);
+    setSavedPickupSettings(pickupPayload.settings ?? null);
+
     const nextLocations = locationsPayload.locations ?? [];
+    const nextHours = hoursPayload.hours ?? [];
     setLocations(nextLocations);
-    setHours(hoursPayload.hours ?? []);
+    setHours(nextHours);
     setBlackouts(blackoutsPayload.blackouts ?? []);
+
     const defaultLocationId = nextLocations[0]?.id ?? "";
-    setHoursLocationId(defaultLocationId);
-    const locationHours = (hoursPayload.hours ?? []).filter((row) => row.pickup_location_id === defaultLocationId);
-    setHoursText(
-      JSON.stringify(
-        locationHours.map((row) => ({
+    setSelectedHoursLocationId(defaultLocationId);
+    setHoursDraft(
+      nextHours
+        .filter((row) => row.pickup_location_id === defaultLocationId)
+        .map((row) => ({
           dayOfWeek: row.day_of_week,
           opensAt: row.opens_at,
           closesAt: row.closes_at
-        })),
-        null,
-        2
-      )
+        }))
     );
+
     setLoading(false);
   }
 
   useEffect(() => {
-    void loadData();
+    const timeout = setTimeout(() => {
+      void loadData();
+    }, 0);
+
+    return () => clearTimeout(timeout);
   }, []);
 
-  async function saveSettings() {
-    if (!settings) {
+  function resetCoreChanges() {
+    if (!savedPickupSettings || !savedCheckoutSettings) {
+      return;
+    }
+
+    setPickupSettings(savedPickupSettings);
+    setCheckoutSettings(savedCheckoutSettings);
+    setError(null);
+  }
+
+  async function saveCoreConfig() {
+    if (!pickupSettings || !checkoutSettings) {
+      return;
+    }
+
+    const localPickupFeeCents = Number.parseInt(String(checkoutSettings.checkout_local_pickup_fee_cents ?? 0), 10);
+
+    if (!Number.isInteger(localPickupFeeCents) || localPickupFeeCents < 0) {
+      setError("Pickup fee must be a non-negative integer amount in cents.");
       return;
     }
 
     setSaving(true);
     setError(null);
-    setSuccessMessage(null);
 
-    const response = await fetch("/api/stores/pickup/settings", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        pickupEnabled: settings.pickup_enabled,
-        selectionMode: settings.selection_mode,
-        geolocationFallbackMode: settings.geolocation_fallback_mode,
-        outOfRadiusBehavior: settings.out_of_radius_behavior,
-        eligibilityRadiusMiles: settings.eligibility_radius_miles,
-        leadTimeHours: settings.lead_time_hours,
-        slotIntervalMinutes: settings.slot_interval_minutes,
-        showPickupTimes: settings.show_pickup_times,
-        timezone: settings.timezone,
-        instructions: settings.instructions
+    const [settingsResponse, pickupResponse] = await Promise.all([
+      fetch("/api/stores/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          checkoutEnableLocalPickup: checkoutSettings.checkout_enable_local_pickup,
+          checkoutLocalPickupLabel: checkoutSettings.checkout_local_pickup_label?.trim() || null,
+          checkoutLocalPickupFeeCents: localPickupFeeCents
+        })
+      }),
+      fetch("/api/stores/pickup/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pickupEnabled: pickupSettings.pickup_enabled,
+          selectionMode: pickupSettings.selection_mode,
+          geolocationFallbackMode: pickupSettings.geolocation_fallback_mode,
+          outOfRadiusBehavior: pickupSettings.out_of_radius_behavior,
+          eligibilityRadiusMiles: pickupSettings.eligibility_radius_miles,
+          leadTimeHours: pickupSettings.lead_time_hours,
+          slotIntervalMinutes: pickupSettings.slot_interval_minutes,
+          showPickupTimes: pickupSettings.show_pickup_times,
+          timezone: pickupSettings.timezone.trim(),
+          instructions: pickupSettings.instructions?.trim() || null
+        })
       })
-    });
+    ]);
 
-    const payload = (await response.json()) as { settings?: PickupSettings; error?: string };
+    const settingsPayload = (await settingsResponse.json()) as {
+      settings?: {
+        checkout_enable_local_pickup?: boolean;
+        checkout_local_pickup_label?: string | null;
+        checkout_local_pickup_fee_cents?: number;
+      };
+      error?: string;
+    };
+    const pickupPayload = (await pickupResponse.json()) as { settings?: PickupSettings; error?: string };
 
-    if (!response.ok) {
-      setError(payload.error ?? "Unable to save pickup settings.");
+    if (!settingsResponse.ok) {
+      setError(settingsPayload.error ?? "Unable to save pickup checkout settings.");
       setSaving(false);
       return;
     }
 
-    const nextSettings = payload.settings ?? settings;
-    setSettings(nextSettings);
-    setSavedSettings(nextSettings);
-    setSuccessMessage("Pickup configuration saved.");
+    if (!pickupResponse.ok) {
+      setError(pickupPayload.error ?? "Unable to save pickup settings.");
+      setSaving(false);
+      return;
+    }
+
+    const nextCheckout: CheckoutPickupSettings = {
+      checkout_enable_local_pickup: settingsPayload.settings?.checkout_enable_local_pickup ?? checkoutSettings.checkout_enable_local_pickup,
+      checkout_local_pickup_label: settingsPayload.settings?.checkout_local_pickup_label ?? checkoutSettings.checkout_local_pickup_label,
+      checkout_local_pickup_fee_cents: settingsPayload.settings?.checkout_local_pickup_fee_cents ?? checkoutSettings.checkout_local_pickup_fee_cents
+    };
+
+    const nextPickup = pickupPayload.settings ?? pickupSettings;
+
+    setCheckoutSettings(nextCheckout);
+    setSavedCheckoutSettings(nextCheckout);
+    setPickupSettings(nextPickup);
+    setSavedPickupSettings(nextPickup);
     setSaving(false);
+    notify.success("Pickup settings saved.");
+  }
+
+  async function handleCoreConfigSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+
+    if (submitter?.value === "discard") {
+      resetCoreChanges();
+      return;
+    }
+
+    await saveCoreConfig();
   }
 
   async function addLocation() {
     setSaving(true);
     setError(null);
-    setSuccessMessage(null);
 
     const response = await fetch("/api/stores/pickup/locations", {
       method: "POST",
@@ -228,12 +354,12 @@ export function PickupSettingsManager() {
     setNewLocationLat("");
     setNewLocationLng("");
     setSaving(false);
+    notify.success("Pickup location added.");
   }
 
   async function removeLocation(id: string) {
     setSaving(true);
     setError(null);
-    setSuccessMessage(null);
 
     const response = await fetch(`/api/stores/pickup/locations/${id}`, { method: "DELETE" });
     const payload = (await response.json()) as { ok?: boolean; error?: string };
@@ -245,42 +371,48 @@ export function PickupSettingsManager() {
     }
 
     setLocations((current) => current.filter((entry) => entry.id !== id));
+
+    if (selectedHoursLocationId === id) {
+      const nextLocationId = locations.find((entry) => entry.id !== id)?.id ?? "";
+      setSelectedHoursLocationId(nextLocationId);
+      setHoursDraft(
+        hours
+          .filter((entry) => entry.pickup_location_id === nextLocationId)
+          .map((entry) => ({ dayOfWeek: entry.day_of_week, opensAt: entry.opens_at, closesAt: entry.closes_at }))
+      );
+    }
+
     setSaving(false);
+    notify.success("Pickup location removed.");
   }
 
   async function saveHours() {
-    if (!hoursLocationId) {
+    if (!selectedHoursLocationId) {
       setError("Select a pickup location before saving hours.");
       return;
     }
 
+    for (const slot of hoursDraft) {
+      if (!/^\d{2}:\d{2}$/.test(slot.opensAt) || !/^\d{2}:\d{2}$/.test(slot.closesAt) || slot.opensAt >= slot.closesAt) {
+        setError("Each pickup time window must have valid HH:MM times and opens before closes.");
+        return;
+      }
+    }
+
     setSaving(true);
     setError(null);
-    setSuccessMessage(null);
-
-    let parsedHours: Array<{ dayOfWeek: number; opensAt: string; closesAt: string }> = [];
-    try {
-      const parsed = JSON.parse(hoursText) as unknown;
-      if (!Array.isArray(parsed)) {
-        throw new Error("Hours payload must be an array.");
-      }
-      parsedHours = parsed as Array<{ dayOfWeek: number; opensAt: string; closesAt: string }>;
-    } catch (parseError) {
-      setSaving(false);
-      setError(parseError instanceof Error ? parseError.message : "Pickup hours JSON is invalid.");
-      return;
-    }
 
     const response = await fetch("/api/stores/pickup/hours", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        locationId: hoursLocationId,
-        hours: parsedHours
+        locationId: selectedHoursLocationId,
+        hours: hoursDraft
       })
     });
 
     const payload = (await response.json()) as { hours?: PickupHoursRow[]; error?: string };
+
     if (!response.ok) {
       setError(payload.error ?? "Unable to save pickup hours.");
       setSaving(false);
@@ -289,6 +421,7 @@ export function PickupSettingsManager() {
 
     setHours(payload.hours ?? []);
     setSaving(false);
+    notify.success("Pickup schedule saved.");
   }
 
   async function addBlackout() {
@@ -299,7 +432,6 @@ export function PickupSettingsManager() {
 
     setSaving(true);
     setError(null);
-    setSuccessMessage(null);
 
     const response = await fetch("/api/stores/pickup/blackouts", {
       method: "POST",
@@ -313,6 +445,7 @@ export function PickupSettingsManager() {
     });
 
     const payload = (await response.json()) as { blackout?: PickupBlackoutRow; error?: string };
+
     if (!response.ok || !payload.blackout) {
       setError(payload.error ?? "Unable to create blackout.");
       setSaving(false);
@@ -324,15 +457,16 @@ export function PickupSettingsManager() {
     setBlackoutEndAt("");
     setBlackoutReason("");
     setSaving(false);
+    notify.success("Pickup blackout added.");
   }
 
   async function removeBlackout(id: string) {
     setSaving(true);
     setError(null);
-    setSuccessMessage(null);
 
     const response = await fetch(`/api/stores/pickup/blackouts/${id}`, { method: "DELETE" });
     const payload = (await response.json()) as { ok?: boolean; error?: string };
+
     if (!response.ok) {
       setError(payload.error ?? "Unable to remove blackout.");
       setSaving(false);
@@ -341,302 +475,397 @@ export function PickupSettingsManager() {
 
     setBlackouts((current) => current.filter((entry) => entry.id !== id));
     setSaving(false);
+    notify.success("Pickup blackout removed.");
   }
 
-  function discardConfigChanges() {
-    if (!savedSettings) {
-      return;
-    }
-    setSettings(savedSettings);
-    setError(null);
-    setSuccessMessage(null);
-  }
-
-  async function handleConfigSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
-    if (submitter?.value === "discard") {
-      discardConfigChanges();
-      return;
-    }
-    await saveSettings();
-  }
+  const hoursBySelectedLocation = useMemo(
+    () => hours.filter((entry) => entry.pickup_location_id === selectedHoursLocationId),
+    [hours, selectedHoursLocationId]
+  );
 
   return (
-    <SectionCard title="Pickup Locations & Rules">
-      {loading ? <p className="text-sm text-muted-foreground">Loading pickup configuration...</p> : null}
-      {settings ? (
-        <form
-          id={formId}
-          className="space-y-4"
-          onSubmit={handleConfigSubmit}
-        >
-          <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
-            <p className="text-sm font-medium">Pickup Rules</p>
-            <p className="mt-1 text-xs text-muted-foreground">Set when pickup appears at checkout and how buyer availability is calculated.</p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <FormField label="Pickup Enabled" description="Turn pickup on or off for checkout.">
-                <Select
-                  value={settings.pickup_enabled ? "true" : "false"}
-                  onChange={(event) => setSettings((current) => (current ? { ...current, pickup_enabled: event.target.value === "true" } : current))}
-                >
-                  <option value="false">Disabled</option>
-                  <option value="true">Enabled</option>
-                </Select>
-              </FormField>
-              <FormField label="Selection Mode" description="Hide options and auto-select nearest, or allow buyer choice.">
-                <Select
-                  value={settings.selection_mode}
-                  onChange={(event) =>
-                    setSettings((current) =>
-                      current ? { ...current, selection_mode: event.target.value as "buyer_select" | "hidden_nearest" } : current
-                    )
-                  }
-                >
-                  <option value="buyer_select">Buyer selects</option>
-                  <option value="hidden_nearest">Hidden nearest</option>
-                </Select>
-              </FormField>
-              <FormField label="Eligibility Radius (miles)" description="Hide pickup if buyer is outside this radius.">
-                <Input
-                  type="number"
-                  min={1}
-                  max={1000}
-                  value={settings.eligibility_radius_miles}
-                  onChange={(event) =>
-                    setSettings((current) =>
-                      current
-                        ? {
-                            ...current,
-                            eligibility_radius_miles: Number.parseInt(event.target.value || "100", 10)
-                          }
-                        : current
-                    )
-                  }
-                />
-              </FormField>
-              <FormField label="No Geolocation Behavior" description="Control pickup behavior when buyer location is unavailable.">
-                <Select
-                  value={settings.geolocation_fallback_mode}
-                  onChange={(event) =>
-                    setSettings((current) =>
-                      current
-                        ? {
-                            ...current,
-                            geolocation_fallback_mode: event.target.value as "allow_without_distance" | "disable_pickup"
-                          }
-                        : current
-                    )
-                  }
-                >
-                  <option value="allow_without_distance">Allow pickup without distance checks</option>
-                  <option value="disable_pickup">Disable pickup until location is shared</option>
-                </Select>
-              </FormField>
-              <FormField label="Outside Radius Behavior" description="Control pickup behavior when no location falls within the radius.">
-                <Select
-                  value={settings.out_of_radius_behavior}
-                  onChange={(event) =>
-                    setSettings((current) =>
-                      current
-                        ? {
-                            ...current,
-                            out_of_radius_behavior: event.target.value as "disable_pickup" | "allow_all_locations"
-                          }
-                        : current
-                    )
-                  }
-                >
-                  <option value="disable_pickup">Disable pickup</option>
-                  <option value="allow_all_locations">Allow all pickup locations</option>
-                </Select>
-              </FormField>
-              <FormField label="Lead Time (hours)" description="Minimum prep time before the first available slot.">
-                <Input
-                  type="number"
-                  min={0}
-                  max={720}
-                  value={settings.lead_time_hours}
-                  onChange={(event) =>
-                    setSettings((current) =>
-                      current
-                        ? {
-                            ...current,
-                            lead_time_hours: Number.parseInt(event.target.value || "48", 10)
-                          }
-                        : current
-                    )
-                  }
-                />
-              </FormField>
-              <FormField label="Slot Interval" description="Time slot duration shown to buyers.">
-                <Select
-                  value={String(settings.slot_interval_minutes)}
-                  onChange={(event) =>
-                    setSettings((current) =>
-                      current
-                        ? {
-                            ...current,
-                            slot_interval_minutes: Number.parseInt(event.target.value, 10) as 15 | 30 | 60 | 120
-                          }
-                        : current
-                    )
-                  }
-                >
-                  <option value="15">15 minutes</option>
-                  <option value="30">30 minutes</option>
-                  <option value="60">60 minutes</option>
-                  <option value="120">120 minutes</option>
-                </Select>
-              </FormField>
-              <FormField label="Timezone" description="Used for pickup slot display and order confirmations.">
-                <Input
-                  value={settings.timezone}
-                  onChange={(event) => setSettings((current) => (current ? { ...current, timezone: event.target.value } : current))}
-                />
-              </FormField>
-              <FormField label="Instructions" className="sm:col-span-2" description="Shown in checkout and confirmation email.">
-                <Input
-                  value={settings.instructions ?? ""}
-                  onChange={(event) => setSettings((current) => (current ? { ...current, instructions: event.target.value } : current))}
-                  placeholder="Bring order confirmation and photo ID to pickup."
-                />
-              </FormField>
-            </div>
-          </div>
-          <DashboardFormActionBar
-            formId={formId}
-            saveLabel="Save pickup config"
-            savePendingLabel="Saving..."
-            savePending={saving}
-            saveDisabled={!isConfigDirty || loading || saving}
-            discardDisabled={!isConfigDirty || saving}
-          />
-        </form>
-      ) : null}
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 lg:p-4">
+        {header}
+        {loading ? <p className="text-sm text-muted-foreground">Loading pickup settings...</p> : null}
 
-      <div className="mt-4 space-y-3 rounded-lg border border-border/70 bg-muted/20 p-4">
-        <div>
-          <p className="text-sm font-medium">Pickup Locations</p>
-          <p className="mt-1 text-xs text-muted-foreground">Add and manage physical pickup addresses available to buyers.</p>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <Input value={newLocationName} onChange={(event) => setNewLocationName(event.target.value)} placeholder="Location name" />
-          <Input value={newLocationAddress} onChange={(event) => setNewLocationAddress(event.target.value)} placeholder="Address line 1" />
-          <Input value={newLocationCity} onChange={(event) => setNewLocationCity(event.target.value)} placeholder="City" />
-          <Input value={newLocationState} onChange={(event) => setNewLocationState(event.target.value)} placeholder="State/Region" />
-          <Input value={newLocationPostal} onChange={(event) => setNewLocationPostal(event.target.value)} placeholder="Postal code" />
-          <Input value={newLocationLat} onChange={(event) => setNewLocationLat(event.target.value)} placeholder="Latitude (optional)" />
-          <Input value={newLocationLng} onChange={(event) => setNewLocationLng(event.target.value)} placeholder="Longitude (optional)" />
-        </div>
-        <Button type="button" variant="outline" size="sm" onClick={() => void addLocation()} disabled={saving || !newLocationName || !newLocationAddress}>
-          Add pickup location
-        </Button>
+        {!loading && pickupSettings && checkoutSettings ? (
+          <form id={formId} className="space-y-4" onSubmit={handleCoreConfigSubmit}>
+            <SectionCard
+              title="Local Pickup"
+              description="Configure pickup availability, buyer rules, locations, schedule, and blackout windows."
+            >
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="sm:col-span-2 flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={checkoutSettings.checkout_enable_local_pickup}
+                    onChange={(event) =>
+                      setCheckoutSettings((current) =>
+                        current ? { ...current, checkout_enable_local_pickup: event.target.checked } : current
+                      )
+                    }
+                  />
+                  Enable local pickup option
+                </label>
 
-        <ul className="space-y-2">
-          {locations.length === 0 ? <li className="text-sm text-muted-foreground">No pickup locations configured yet.</li> : null}
-          {locations.map((location) => (
-            <li key={location.id} className="flex items-center justify-between gap-3 border border-border/60 px-3 py-2 text-sm">
-              <div>
-                <p className="font-medium">{location.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {location.address_line1}, {location.city}, {location.state_region} {location.postal_code}
-                </p>
+                {checkoutSettings.checkout_enable_local_pickup ? (
+                  <>
+                    <FormField label="Pickup Label">
+                      <Input
+                        value={checkoutSettings.checkout_local_pickup_label ?? ""}
+                        onChange={(event) =>
+                          setCheckoutSettings((current) =>
+                            current ? { ...current, checkout_local_pickup_label: event.target.value } : current
+                          )
+                        }
+                        placeholder="Local pickup"
+                      />
+                    </FormField>
+
+                    <FormField label="Pickup Fee (cents)">
+                      <Input
+                        type="number"
+                        min={0}
+                        value={checkoutSettings.checkout_local_pickup_fee_cents}
+                        onChange={(event) =>
+                          setCheckoutSettings((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  checkout_local_pickup_fee_cents: Number.parseInt(event.target.value || "0", 10)
+                                }
+                              : current
+                          )
+                        }
+                      />
+                    </FormField>
+
+                    <label className="sm:col-span-2 flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={pickupSettings.pickup_enabled}
+                        onChange={(event) =>
+                          setPickupSettings((current) =>
+                            current ? { ...current, pickup_enabled: event.target.checked } : current
+                          )
+                        }
+                      />
+                      Enable pickup availability rules
+                    </label>
+
+                    <FormField label="Selection Mode">
+                      <Select
+                        value={pickupSettings.selection_mode}
+                        onChange={(event) =>
+                          setPickupSettings((current) =>
+                            current ? { ...current, selection_mode: event.target.value as PickupSettings["selection_mode"] } : current
+                          )
+                        }
+                      >
+                        <option value="buyer_select">Buyer selects location</option>
+                        <option value="hidden_nearest">Auto-select nearest location</option>
+                      </Select>
+                    </FormField>
+
+                    <FormField label="Eligibility Radius (miles)">
+                      <Input
+                        type="number"
+                        min={1}
+                        max={1000}
+                        value={pickupSettings.eligibility_radius_miles}
+                        onChange={(event) =>
+                          setPickupSettings((current) =>
+                            current
+                              ? { ...current, eligibility_radius_miles: Number.parseInt(event.target.value || "100", 10) }
+                              : current
+                          )
+                        }
+                      />
+                    </FormField>
+
+                    <FormField label="No Geolocation Behavior">
+                      <Select
+                        value={pickupSettings.geolocation_fallback_mode}
+                        onChange={(event) =>
+                          setPickupSettings((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  geolocation_fallback_mode: event.target.value as PickupSettings["geolocation_fallback_mode"]
+                                }
+                              : current
+                          )
+                        }
+                      >
+                        <option value="allow_without_distance">Allow pickup without distance checks</option>
+                        <option value="disable_pickup">Disable pickup until location is shared</option>
+                      </Select>
+                    </FormField>
+
+                    <FormField label="Outside Radius Behavior">
+                      <Select
+                        value={pickupSettings.out_of_radius_behavior}
+                        onChange={(event) =>
+                          setPickupSettings((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  out_of_radius_behavior: event.target.value as PickupSettings["out_of_radius_behavior"]
+                                }
+                              : current
+                          )
+                        }
+                      >
+                        <option value="disable_pickup">Disable pickup</option>
+                        <option value="allow_all_locations">Allow all pickup locations</option>
+                      </Select>
+                    </FormField>
+
+                    <FormField label="Lead Time (hours)">
+                      <Input
+                        type="number"
+                        min={0}
+                        max={720}
+                        value={pickupSettings.lead_time_hours}
+                        onChange={(event) =>
+                          setPickupSettings((current) =>
+                            current ? { ...current, lead_time_hours: Number.parseInt(event.target.value || "48", 10) } : current
+                          )
+                        }
+                      />
+                    </FormField>
+
+                    <FormField label="Slot Interval">
+                      <Select
+                        value={String(pickupSettings.slot_interval_minutes)}
+                        onChange={(event) =>
+                          setPickupSettings((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  slot_interval_minutes: Number.parseInt(event.target.value, 10) as PickupSettings["slot_interval_minutes"]
+                                }
+                              : current
+                          )
+                        }
+                      >
+                        <option value="15">15 minutes</option>
+                        <option value="30">30 minutes</option>
+                        <option value="60">60 minutes</option>
+                        <option value="120">120 minutes</option>
+                      </Select>
+                    </FormField>
+
+                    <FormField label="Timezone">
+                      <Input
+                        value={pickupSettings.timezone}
+                        onChange={(event) =>
+                          setPickupSettings((current) => (current ? { ...current, timezone: event.target.value } : current))
+                        }
+                      />
+                    </FormField>
+
+                    <label className="sm:col-span-2 flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={pickupSettings.show_pickup_times}
+                        onChange={(event) =>
+                          setPickupSettings((current) =>
+                            current ? { ...current, show_pickup_times: event.target.checked } : current
+                          )
+                        }
+                      />
+                      Show pickup times to buyers
+                    </label>
+
+                    <FormField className="sm:col-span-2" label="Pickup Instructions">
+                      <Textarea
+                        rows={2}
+                        value={pickupSettings.instructions ?? ""}
+                        onChange={(event) =>
+                          setPickupSettings((current) =>
+                            current ? { ...current, instructions: event.target.value } : current
+                          )
+                        }
+                        placeholder="Bring order confirmation and photo ID to pickup."
+                      />
+                    </FormField>
+
+                    <div className="sm:col-span-2 mt-2 space-y-3 border-t border-border/60 pt-3">
+                      <p className="text-sm font-medium">Pickup Locations</p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <Input value={newLocationName} onChange={(event) => setNewLocationName(event.target.value)} placeholder="Location name" />
+                        <Input value={newLocationAddress} onChange={(event) => setNewLocationAddress(event.target.value)} placeholder="Address line 1" />
+                        <Input value={newLocationCity} onChange={(event) => setNewLocationCity(event.target.value)} placeholder="City" />
+                        <Input value={newLocationState} onChange={(event) => setNewLocationState(event.target.value)} placeholder="State/Region" />
+                        <Input value={newLocationPostal} onChange={(event) => setNewLocationPostal(event.target.value)} placeholder="Postal code" />
+                        <Input value={newLocationLat} onChange={(event) => setNewLocationLat(event.target.value)} placeholder="Latitude (optional)" />
+                        <Input value={newLocationLng} onChange={(event) => setNewLocationLng(event.target.value)} placeholder="Longitude (optional)" />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void addLocation()}
+                        disabled={saving || !newLocationName || !newLocationAddress}
+                      >
+                        Add pickup location
+                      </Button>
+                      <ul className="space-y-2">
+                        {locations.length === 0 ? <li className="text-sm text-muted-foreground">No pickup locations configured yet.</li> : null}
+                        {locations.map((location) => (
+                          <li key={location.id} className="flex items-center justify-between gap-3 border border-border/60 px-3 py-2 text-sm">
+                            <div>
+                              <p className="font-medium">{location.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {location.address_line1}, {location.city}, {location.state_region} {location.postal_code}
+                              </p>
+                            </div>
+                            <Button type="button" variant="ghost" size="sm" onClick={() => void removeLocation(location.id)} disabled={saving}>
+                              Remove
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="sm:col-span-2 mt-2 space-y-3 border-t border-border/60 pt-3">
+                      <p className="text-sm font-medium">Pickup Schedule</p>
+                      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                        <Select
+                          value={selectedHoursLocationId}
+                          onChange={(event) => {
+                            const nextLocationId = event.target.value;
+                            setSelectedHoursLocationId(nextLocationId);
+                            setHoursDraft(
+                              hours
+                                .filter((entry) => entry.pickup_location_id === nextLocationId)
+                                .map((entry) => ({ dayOfWeek: entry.day_of_week, opensAt: entry.opens_at, closesAt: entry.closes_at }))
+                            );
+                          }}
+                        >
+                          {locations.map((location) => (
+                            <option key={location.id} value={location.id}>
+                              {location.name}
+                            </option>
+                          ))}
+                        </Select>
+                        <Button type="button" variant="outline" size="sm" onClick={() => void saveHours()} disabled={saving || !selectedHoursLocationId}>
+                          Save schedule
+                        </Button>
+                      </div>
+                      {selectedHoursLocationId ? (
+                        <div className="space-y-2">
+                          {hoursDraft.map((slot, index) => (
+                            <div key={`${slot.dayOfWeek}-${slot.opensAt}-${slot.closesAt}-${index}`} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_130px_130px_auto]">
+                              <Select
+                                value={String(slot.dayOfWeek)}
+                                onChange={(event) =>
+                                  setHoursDraft((current) =>
+                                    current.map((entry, entryIndex) =>
+                                      entryIndex === index ? { ...entry, dayOfWeek: Number.parseInt(event.target.value, 10) } : entry
+                                    )
+                                  )
+                                }
+                              >
+                                {DAY_OPTIONS.map((option) => (
+                                  <option key={option.value} value={String(option.value)}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </Select>
+                              <Input
+                                type="time"
+                                value={slot.opensAt}
+                                onChange={(event) =>
+                                  setHoursDraft((current) =>
+                                    current.map((entry, entryIndex) => (entryIndex === index ? { ...entry, opensAt: event.target.value } : entry))
+                                  )
+                                }
+                              />
+                              <Input
+                                type="time"
+                                value={slot.closesAt}
+                                onChange={(event) =>
+                                  setHoursDraft((current) =>
+                                    current.map((entry, entryIndex) => (entryIndex === index ? { ...entry, closesAt: event.target.value } : entry))
+                                  )
+                                }
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setHoursDraft((current) => current.filter((_, entryIndex) => entryIndex !== index))}
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                          ))}
+                          <Button type="button" variant="outline" size="sm" onClick={() => setHoursDraft((current) => [...current, createDefaultScheduleWindow()])}>
+                            Add time window
+                          </Button>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">Add a pickup location first to configure its schedule.</p>
+                      )}
+                      {selectedHoursLocationId && hoursBySelectedLocation.length === 0 && hoursDraft.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">No schedule saved for this location yet.</p>
+                      ) : null}
+                    </div>
+
+                    <div className="sm:col-span-2 mt-2 space-y-3 border-t border-border/60 pt-3">
+                      <p className="text-sm font-medium">Pickup Blackout Windows</p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <Select value={blackoutLocationId} onChange={(event) => setBlackoutLocationId(event.target.value)}>
+                          <option value="all">All pickup locations</option>
+                          {locations.map((location) => (
+                            <option key={location.id} value={location.id}>
+                              {location.name}
+                            </option>
+                          ))}
+                        </Select>
+                        <Input value={blackoutReason} onChange={(event) => setBlackoutReason(event.target.value)} placeholder="Reason (optional)" />
+                        <Input type="datetime-local" value={blackoutStartAt} onChange={(event) => setBlackoutStartAt(event.target.value)} />
+                        <Input type="datetime-local" value={blackoutEndAt} onChange={(event) => setBlackoutEndAt(event.target.value)} />
+                      </div>
+                      <Button type="button" variant="outline" size="sm" onClick={() => void addBlackout()} disabled={saving || !blackoutStartAt || !blackoutEndAt}>
+                        Add blackout
+                      </Button>
+                      <ul className="space-y-2">
+                        {blackouts.length === 0 ? <li className="text-sm text-muted-foreground">No blackout windows configured.</li> : null}
+                        {blackouts.map((blackout) => (
+                          <li key={blackout.id} className="flex items-center justify-between gap-2 border border-border/60 px-3 py-2 text-xs">
+                            <span>
+                              {new Date(blackout.starts_at).toLocaleString()} - {new Date(blackout.ends_at).toLocaleString()}
+                              {blackout.reason ? ` (${blackout.reason})` : ""}
+                            </span>
+                            <Button type="button" variant="ghost" size="sm" onClick={() => void removeBlackout(blackout.id)} disabled={saving}>
+                              Remove
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </>
+                ) : null}
               </div>
-              <Button type="button" variant="ghost" size="sm" onClick={() => void removeLocation(location.id)} disabled={saving}>
-                Remove
-              </Button>
-            </li>
-          ))}
-        </ul>
+            </SectionCard>
+          </form>
+        ) : null}
+
       </div>
 
-      <div className="mt-4 space-y-3 rounded-lg border border-border/70 bg-muted/20 p-4">
-        <div>
-          <p className="text-sm font-medium">Pickup Hours</p>
-          <p className="mt-1 text-xs text-muted-foreground">Define open windows for each location using structured JSON.</p>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <Select
-            value={hoursLocationId}
-            onChange={(event) => {
-              const nextLocationId = event.target.value;
-              setHoursLocationId(nextLocationId);
-              const nextHours = hours.filter((row) => row.pickup_location_id === nextLocationId);
-              setHoursText(
-                JSON.stringify(
-                  nextHours.map((row) => ({
-                    dayOfWeek: row.day_of_week,
-                    opensAt: row.opens_at,
-                    closesAt: row.closes_at
-                  })),
-                  null,
-                  2
-                )
-              );
-            }}
-          >
-            {locations.map((location) => (
-              <option key={location.id} value={location.id}>
-                {location.name}
-              </option>
-            ))}
-          </Select>
-          <Button type="button" variant="outline" size="sm" onClick={() => void saveHours()} disabled={saving || !hoursLocationId}>
-            Save hours JSON
-          </Button>
-        </div>
-        <Textarea
-          rows={8}
-          value={hoursText}
-          onChange={(event) => setHoursText(event.target.value)}
-          placeholder='[{"dayOfWeek":1,"opensAt":"09:00","closesAt":"17:00"}]'
+      {!loading && pickupSettings && checkoutSettings ? (
+        <DashboardFormActionBar
+          formId={formId}
+          saveLabel="Save pickup settings"
+          savePendingLabel="Saving..."
+          savePending={saving}
+          saveDisabled={!isDirty || saving}
+          discardDisabled={!isDirty || saving}
+          statusMessage={error}
+          statusVariant="error"
         />
-        <p className="text-xs text-muted-foreground">
-          Format: JSON array of objects with `dayOfWeek` (0-6), `opensAt` and `closesAt` in 24h `HH:MM`.
-        </p>
-      </div>
-
-      <div className="mt-4 space-y-3 rounded-lg border border-border/70 bg-muted/20 p-4">
-        <div>
-          <p className="text-sm font-medium">Pickup Blackout Windows</p>
-          <p className="mt-1 text-xs text-muted-foreground">Block pickup during holidays, closures, or custom unavailable windows.</p>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <Select value={blackoutLocationId} onChange={(event) => setBlackoutLocationId(event.target.value)}>
-            <option value="all">All pickup locations</option>
-            {locations.map((location) => (
-              <option key={location.id} value={location.id}>
-                {location.name}
-              </option>
-            ))}
-          </Select>
-          <Input value={blackoutReason} onChange={(event) => setBlackoutReason(event.target.value)} placeholder="Reason (optional)" />
-          <Input type="datetime-local" value={blackoutStartAt} onChange={(event) => setBlackoutStartAt(event.target.value)} />
-          <Input type="datetime-local" value={blackoutEndAt} onChange={(event) => setBlackoutEndAt(event.target.value)} />
-        </div>
-        <Button type="button" variant="outline" size="sm" onClick={() => void addBlackout()} disabled={saving || !blackoutStartAt || !blackoutEndAt}>
-          Add blackout
-        </Button>
-        <ul className="space-y-2">
-          {blackouts.length === 0 ? <li className="text-sm text-muted-foreground">No blackout windows configured.</li> : null}
-          {blackouts.map((blackout) => (
-            <li key={blackout.id} className="flex items-center justify-between gap-2 border border-border/60 px-3 py-2 text-xs">
-              <span>
-                {new Date(blackout.starts_at).toLocaleString()} - {new Date(blackout.ends_at).toLocaleString()}
-                {blackout.reason ? ` (${blackout.reason})` : ""}
-              </span>
-              <Button type="button" variant="ghost" size="sm" onClick={() => void removeBlackout(blackout.id)} disabled={saving}>
-                Remove
-              </Button>
-            </li>
-          ))}
-        </ul>
-      </div>
-      <div className="mt-2 space-y-2">
-        <FeedbackMessage type="error" message={error} />
-        <FeedbackMessage type="success" message={successMessage} />
-      </div>
-    </SectionCard>
+      ) : null}
+    </section>
   );
 }

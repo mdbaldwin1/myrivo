@@ -1,29 +1,42 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { DashboardFormActionBar } from "@/components/dashboard/dashboard-form-action-bar";
 import { Checkbox } from "@/components/ui/checkbox";
-import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
 import { Select } from "@/components/ui/select";
+import { notify } from "@/lib/feedback/toast";
 import {
   resolveStorefrontThemeConfig,
   type CtaStyle,
-  type FilterLayout,
   type FooterItemId,
-  type ImageFit,
   type NavItemId
 } from "@/lib/theme/storefront-theme";
 import type { StoreBrandingRecord } from "@/types/database";
 
 type BrandingSettingsFormProps = {
-  initialBranding: Pick<StoreBrandingRecord, "primary_color" | "accent_color" | "theme_json"> | null;
+  initialBranding: Pick<
+    StoreBrandingRecord,
+    "primary_color" | "accent_color" | "theme_json" | "favicon_path" | "apple_touch_icon_path" | "og_image_path" | "twitter_image_path"
+  > | null;
+  header?: ReactNode;
 };
 
 type BrandingResponse = {
-  branding?: Pick<StoreBrandingRecord, "primary_color" | "accent_color" | "theme_json">;
+  branding?: Pick<
+    StoreBrandingRecord,
+    "primary_color" | "accent_color" | "theme_json" | "favicon_path" | "apple_touch_icon_path" | "og_image_path" | "twitter_image_path"
+  >;
+  error?: string;
+};
+
+type AssetType = "favicon" | "apple_touch_icon" | "og_image" | "twitter_image";
+type AssetUploadResponse = {
+  assetType?: AssetType;
+  assetPath?: string;
   error?: string;
 };
 
@@ -51,26 +64,19 @@ function normalizeHex(value: string): string | null {
   return /^#([0-9a-fA-F]{6})$/.test(hex) ? hex.toUpperCase() : null;
 }
 
-function resolveContrastingForeground(hex: string): string {
-  const normalized = normalizeHex(hex) ?? "#000000";
-  const red = Number.parseInt(normalized.slice(1, 3), 16) / 255;
-  const green = Number.parseInt(normalized.slice(3, 5), 16) / 255;
-  const blue = Number.parseInt(normalized.slice(5, 7), 16) / 255;
-  const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
-  return luminance > 0.6 ? "#111111" : "#FFFFFF";
-}
+const DEFAULT_ACTION_FOREGROUND = "#FFFFFF";
 
-export function BrandingSettingsForm({ initialBranding }: BrandingSettingsFormProps) {
+export function BrandingSettingsForm({ initialBranding, header }: BrandingSettingsFormProps) {
   const formId = "branding-form";
   const initialTheme = resolveStorefrontThemeConfig(initialBranding?.theme_json ?? {});
 
   const [primaryColor, setPrimaryColor] = useState(initialBranding?.primary_color ?? "#0F7B84");
   const [accentColor, setAccentColor] = useState(initialBranding?.accent_color ?? "#1AA3A8");
   const [primaryForegroundColor, setPrimaryForegroundColor] = useState(
-    initialTheme.primaryForegroundColor ?? resolveContrastingForeground(initialBranding?.primary_color ?? "#0F7B84")
+    initialTheme.primaryForegroundColor ?? DEFAULT_ACTION_FOREGROUND
   );
   const [accentForegroundColor, setAccentForegroundColor] = useState(
-    initialTheme.accentForegroundColor ?? resolveContrastingForeground(initialBranding?.accent_color ?? "#1AA3A8")
+    initialTheme.accentForegroundColor ?? DEFAULT_ACTION_FOREGROUND
   );
   const [backgroundColor, setBackgroundColor] = useState(initialTheme.backgroundColor);
   const [surfaceColor, setSurfaceColor] = useState(initialTheme.surfaceColor);
@@ -88,35 +94,15 @@ export function BrandingSettingsForm({ initialBranding }: BrandingSettingsFormPr
   const [fontPreset, setFontPreset] = useState(initialTheme.fontPreset);
   const [radiusScale, setRadiusScale] = useState(initialTheme.radiusScale);
 
-  const [showPolicyStrip, setShowPolicyStrip] = useState(initialTheme.showPolicyStrip);
-  const [showContentBlocks, setShowContentBlocks] = useState(initialTheme.showContentBlocks);
-  const [homeShowHero, setHomeShowHero] = useState(initialTheme.homeShowHero);
-  const [homeShowContentBlocks, setHomeShowContentBlocks] = useState(initialTheme.homeShowContentBlocks);
-  const [homeShowFeaturedProducts, setHomeShowFeaturedProducts] = useState(initialTheme.homeShowFeaturedProducts);
-  const [homeFeaturedProductsLimit, setHomeFeaturedProductsLimit] = useState(String(initialTheme.homeFeaturedProductsLimit));
-
-  const [productGridColumns, setProductGridColumns] = useState(String(initialTheme.productGridColumns));
-  const [productsFilterLayout, setProductsFilterLayout] = useState<FilterLayout>(initialTheme.productsFilterLayout);
-  const [productsFiltersDefaultOpen, setProductsFiltersDefaultOpen] = useState(initialTheme.productsFiltersDefaultOpen);
-  const [productsShowSearch, setProductsShowSearch] = useState(initialTheme.productsShowSearch);
-  const [productsShowSort, setProductsShowSort] = useState(initialTheme.productsShowSort);
-  const [productsShowAvailability, setProductsShowAvailability] = useState(initialTheme.productsShowAvailability);
-  const [productsShowOptionFilters, setProductsShowOptionFilters] = useState(initialTheme.productsShowOptionFilters);
-
   const [primaryCtaStyle, setPrimaryCtaStyle] = useState<CtaStyle>(initialTheme.primaryCtaStyle);
-  const [productCardImageFit, setProductCardImageFit] = useState<ImageFit>(initialTheme.productCardImageFit);
-  const [productCardDescriptionLines, setProductCardDescriptionLines] = useState(String(initialTheme.productCardDescriptionLines));
-  const [productCardShowDescription, setProductCardShowDescription] = useState(initialTheme.productCardShowDescription);
-  const [productCardShowFeaturedBadge, setProductCardShowFeaturedBadge] = useState(initialTheme.productCardShowFeaturedBadge);
-  const [productCardShowAvailability, setProductCardShowAvailability] = useState(initialTheme.productCardShowAvailability);
-  const [productCardShowQuickAdd, setProductCardShowQuickAdd] = useState(initialTheme.productCardShowQuickAdd);
-  const [productCardImageHoverZoom, setProductCardImageHoverZoom] = useState(initialTheme.productCardImageHoverZoom);
-  const [productCardShowCarouselArrows, setProductCardShowCarouselArrows] = useState(initialTheme.productCardShowCarouselArrows);
-  const [productCardShowCarouselDots, setProductCardShowCarouselDots] = useState(initialTheme.productCardShowCarouselDots);
+  const [faviconPath, setFaviconPath] = useState(initialBranding?.favicon_path ?? "");
+  const [appleTouchIconPath, setAppleTouchIconPath] = useState(initialBranding?.apple_touch_icon_path ?? "");
+  const [ogImagePath, setOgImagePath] = useState(initialBranding?.og_image_path ?? "");
+  const [twitterImagePath, setTwitterImagePath] = useState(initialBranding?.twitter_image_path ?? "");
 
-  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploadingAsset, setUploadingAsset] = useState<AssetType | null>(null);
 
   const snapshot = useMemo(
     () =>
@@ -137,29 +123,11 @@ export function BrandingSettingsForm({ initialBranding }: BrandingSettingsFormPr
         pageWidth,
         fontPreset,
         radiusScale,
-        showPolicyStrip,
-        showContentBlocks,
-        homeShowHero,
-        homeShowContentBlocks,
-        homeShowFeaturedProducts,
-        homeFeaturedProductsLimit,
-        productGridColumns,
-        productsFilterLayout,
-        productsFiltersDefaultOpen,
-        productsShowSearch,
-        productsShowSort,
-        productsShowAvailability,
-        productsShowOptionFilters,
         primaryCtaStyle,
-        productCardImageFit,
-        productCardDescriptionLines,
-        productCardShowDescription,
-        productCardShowFeaturedBadge,
-        productCardShowAvailability,
-        productCardShowQuickAdd,
-        productCardImageHoverZoom,
-        productCardShowCarouselArrows,
-        productCardShowCarouselDots
+        faviconPath,
+        appleTouchIconPath,
+        ogImagePath,
+        twitterImagePath
       }),
     [
       primaryColor,
@@ -178,29 +146,11 @@ export function BrandingSettingsForm({ initialBranding }: BrandingSettingsFormPr
       pageWidth,
       fontPreset,
       radiusScale,
-      showPolicyStrip,
-      showContentBlocks,
-      homeShowHero,
-      homeShowContentBlocks,
-      homeShowFeaturedProducts,
-      homeFeaturedProductsLimit,
-      productGridColumns,
-      productsFilterLayout,
-      productsFiltersDefaultOpen,
-      productsShowSearch,
-      productsShowSort,
-      productsShowAvailability,
-      productsShowOptionFilters,
       primaryCtaStyle,
-      productCardImageFit,
-      productCardDescriptionLines,
-      productCardShowDescription,
-      productCardShowFeaturedBadge,
-      productCardShowAvailability,
-      productCardShowQuickAdd,
-      productCardImageHoverZoom,
-      productCardShowCarouselArrows,
-      productCardShowCarouselDots
+      faviconPath,
+      appleTouchIconPath,
+      ogImagePath,
+      twitterImagePath
     ]
   );
 
@@ -225,29 +175,11 @@ export function BrandingSettingsForm({ initialBranding }: BrandingSettingsFormPr
       setPageWidth((parsed.pageWidth as typeof pageWidth) ?? pageWidth);
       setFontPreset((parsed.fontPreset as typeof fontPreset) ?? fontPreset);
       setRadiusScale((parsed.radiusScale as typeof radiusScale) ?? radiusScale);
-      setShowPolicyStrip(Boolean(parsed.showPolicyStrip));
-      setShowContentBlocks(Boolean(parsed.showContentBlocks));
-      setHomeShowHero(Boolean(parsed.homeShowHero));
-      setHomeShowContentBlocks(Boolean(parsed.homeShowContentBlocks));
-      setHomeShowFeaturedProducts(Boolean(parsed.homeShowFeaturedProducts));
-      setHomeFeaturedProductsLimit(String(parsed.homeFeaturedProductsLimit ?? homeFeaturedProductsLimit));
-      setProductGridColumns(String(parsed.productGridColumns ?? productGridColumns));
-      setProductsFilterLayout((parsed.productsFilterLayout as FilterLayout) ?? productsFilterLayout);
-      setProductsFiltersDefaultOpen(Boolean(parsed.productsFiltersDefaultOpen));
-      setProductsShowSearch(Boolean(parsed.productsShowSearch));
-      setProductsShowSort(Boolean(parsed.productsShowSort));
-      setProductsShowAvailability(Boolean(parsed.productsShowAvailability));
-      setProductsShowOptionFilters(Boolean(parsed.productsShowOptionFilters));
       setPrimaryCtaStyle((parsed.primaryCtaStyle as CtaStyle) ?? primaryCtaStyle);
-      setProductCardImageFit((parsed.productCardImageFit as ImageFit) ?? productCardImageFit);
-      setProductCardDescriptionLines(String(parsed.productCardDescriptionLines ?? productCardDescriptionLines));
-      setProductCardShowDescription(Boolean(parsed.productCardShowDescription));
-      setProductCardShowFeaturedBadge(Boolean(parsed.productCardShowFeaturedBadge));
-      setProductCardShowAvailability(Boolean(parsed.productCardShowAvailability));
-      setProductCardShowQuickAdd(Boolean(parsed.productCardShowQuickAdd));
-      setProductCardImageHoverZoom(Boolean(parsed.productCardImageHoverZoom));
-      setProductCardShowCarouselArrows(Boolean(parsed.productCardShowCarouselArrows));
-      setProductCardShowCarouselDots(Boolean(parsed.productCardShowCarouselDots));
+      setFaviconPath(String(parsed.faviconPath ?? faviconPath));
+      setAppleTouchIconPath(String(parsed.appleTouchIconPath ?? appleTouchIconPath));
+      setOgImagePath(String(parsed.ogImagePath ?? ogImagePath));
+      setTwitterImagePath(String(parsed.twitterImagePath ?? twitterImagePath));
     } catch {
       // no-op
     }
@@ -255,6 +187,35 @@ export function BrandingSettingsForm({ initialBranding }: BrandingSettingsFormPr
   }
 
   const isDirty = snapshot !== baseline;
+
+  async function uploadAsset(type: AssetType, file: File) {
+    setUploadingAsset(type);
+    setError(null);
+
+    const formData = new FormData();
+    formData.append("assetType", type);
+    formData.append("file", file);
+
+    const response = await fetch("/api/stores/branding/logo", {
+      method: "POST",
+      body: formData
+    });
+
+    const payload = (await response.json()) as AssetUploadResponse;
+    if (!response.ok || !payload.assetPath) {
+      setError(payload.error ?? "Unable to upload branding asset.");
+      setUploadingAsset(null);
+      return;
+    }
+
+    if (type === "favicon") setFaviconPath(payload.assetPath);
+    if (type === "apple_touch_icon") setAppleTouchIconPath(payload.assetPath);
+    if (type === "og_image") setOgImagePath(payload.assetPath);
+    if (type === "twitter_image") setTwitterImagePath(payload.assetPath);
+
+    notify.success("Branding asset uploaded.");
+    setUploadingAsset(null);
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -265,7 +226,6 @@ export function BrandingSettingsForm({ initialBranding }: BrandingSettingsFormPr
     }
 
     setError(null);
-    setMessage(null);
     setSaving(true);
 
     const parsedPrimary = normalizeHex(primaryColor);
@@ -294,28 +254,6 @@ export function BrandingSettingsForm({ initialBranding }: BrandingSettingsFormPr
       return;
     }
 
-    const parsedProductGridColumns = Number.parseInt(productGridColumns, 10);
-    const parsedHomeFeaturedProductsLimit = Number.parseInt(homeFeaturedProductsLimit, 10);
-    const parsedProductCardDescriptionLines = Number.parseInt(productCardDescriptionLines, 10);
-
-    if (!Number.isInteger(parsedProductGridColumns) || ![2, 3, 4].includes(parsedProductGridColumns)) {
-      setError("Product grid columns must be 2, 3, or 4.");
-      setSaving(false);
-      return;
-    }
-
-    if (!Number.isInteger(parsedHomeFeaturedProductsLimit) || parsedHomeFeaturedProductsLimit < 1 || parsedHomeFeaturedProductsLimit > 24) {
-      setError("Featured products limit must be between 1 and 24.");
-      setSaving(false);
-      return;
-    }
-
-    if (!Number.isInteger(parsedProductCardDescriptionLines) || parsedProductCardDescriptionLines < 1 || parsedProductCardDescriptionLines > 4) {
-      setError("Description line clamp must be between 1 and 4.");
-      setSaving(false);
-      return;
-    }
-
     const safeHeaderNavItems = headerNavItems.length > 0 ? headerNavItems : initialTheme.headerNavItems;
     const safeFooterNavItems = footerNavItems.length > 0 ? footerNavItems : initialTheme.footerNavItems;
 
@@ -325,25 +263,15 @@ export function BrandingSettingsForm({ initialBranding }: BrandingSettingsFormPr
       body: JSON.stringify({
         primaryColor: parsedPrimary,
         accentColor: parsedAccent,
+        faviconPath: faviconPath.trim() || null,
+        appleTouchIconPath: appleTouchIconPath.trim() || null,
+        ogImagePath: ogImagePath.trim() || null,
+        twitterImagePath: twitterImagePath.trim() || null,
         themeJson: {
           ...(initialBranding?.theme_json ?? {}),
           pageWidth,
-          heroLayout: initialTheme.heroLayout,
-          heroBrandDisplay: initialTheme.heroBrandDisplay,
-          productGridColumns: parsedProductGridColumns,
           radiusScale,
-          cardStyle: initialTheme.cardStyle,
-          buttonStyle: initialTheme.buttonStyle,
-          spacingScale: initialTheme.spacingScale,
           fontPreset,
-          showContentBlocks,
-          showPolicyStrip,
-          heroEyebrow: initialTheme.heroEyebrow,
-          heroHeadline: initialTheme.heroHeadline,
-          heroSubcopy: initialTheme.heroSubcopy,
-          heroBadgeOne: initialTheme.heroBadgeOne,
-          heroBadgeTwo: initialTheme.heroBadgeTwo,
-          heroBadgeThree: initialTheme.heroBadgeThree,
           primaryForegroundColor: parsedPrimaryForeground,
           accentForegroundColor: parsedAccentForeground,
           backgroundColor: parsedBackground,
@@ -355,25 +283,6 @@ export function BrandingSettingsForm({ initialBranding }: BrandingSettingsFormPr
           footerNavItems: safeFooterNavItems,
           showFooterBackToTop,
           showFooterOwnerLogin,
-          homeShowHero,
-          homeShowContentBlocks,
-          homeShowFeaturedProducts,
-          homeFeaturedProductsLimit: parsedHomeFeaturedProductsLimit,
-          productsFilterLayout,
-          productsFiltersDefaultOpen,
-          productsShowSearch,
-          productsShowSort,
-          productsShowAvailability,
-          productsShowOptionFilters,
-          productCardShowDescription,
-          productCardDescriptionLines: parsedProductCardDescriptionLines,
-          productCardShowFeaturedBadge,
-          productCardShowAvailability,
-          productCardShowQuickAdd,
-          productCardImageHoverZoom,
-          productCardShowCarouselArrows,
-          productCardShowCarouselDots,
-          productCardImageFit,
           primaryCtaStyle
         }
       })
@@ -388,232 +297,282 @@ export function BrandingSettingsForm({ initialBranding }: BrandingSettingsFormPr
     }
 
     setBaseline(snapshot);
-    setMessage("Branding settings saved.");
+    notify.success("Branding settings saved.");
     setSaving(false);
   }
 
   return (
-    <form id={formId} onSubmit={handleSubmit} className="space-y-4">
-      <SectionCard title="Color System">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <FormField label="Primary">
-            <div className="flex items-center gap-2">
-              <Input type="color" value={normalizeHex(primaryColor) ?? "#0F7B84"} onChange={(event) => setPrimaryColor(event.target.value)} className="h-10 w-14 p-1" />
-              <Input type="text" value={primaryColor} onChange={(event) => setPrimaryColor(event.target.value)} placeholder="#0F7B84" />
-            </div>
-          </FormField>
-          <FormField label="Primary Foreground">
-            <div className="flex items-center gap-2">
-              <Input type="color" value={normalizeHex(primaryForegroundColor) ?? "#FFFFFF"} onChange={(event) => setPrimaryForegroundColor(event.target.value)} className="h-10 w-14 p-1" />
-              <Input type="text" value={primaryForegroundColor} onChange={(event) => setPrimaryForegroundColor(event.target.value)} placeholder="#FFFFFF" />
-            </div>
-          </FormField>
-          <FormField label="Accent">
-            <div className="flex items-center gap-2">
-              <Input type="color" value={normalizeHex(accentColor) ?? "#1AA3A8"} onChange={(event) => setAccentColor(event.target.value)} className="h-10 w-14 p-1" />
-              <Input type="text" value={accentColor} onChange={(event) => setAccentColor(event.target.value)} placeholder="#1AA3A8" />
-            </div>
-          </FormField>
-          <FormField label="Accent Foreground">
-            <div className="flex items-center gap-2">
-              <Input type="color" value={normalizeHex(accentForegroundColor) ?? "#FFFFFF"} onChange={(event) => setAccentForegroundColor(event.target.value)} className="h-10 w-14 p-1" />
-              <Input type="text" value={accentForegroundColor} onChange={(event) => setAccentForegroundColor(event.target.value)} placeholder="#FFFFFF" />
-            </div>
-          </FormField>
-          <FormField label="Background">
-            <div className="flex items-center gap-2">
-              <Input type="color" value={normalizeHex(backgroundColor) ?? "#F5FBFB"} onChange={(event) => setBackgroundColor(event.target.value)} className="h-10 w-14 p-1" />
-              <Input type="text" value={backgroundColor} onChange={(event) => setBackgroundColor(event.target.value)} placeholder="#F5FBFB" />
-            </div>
-          </FormField>
-          <FormField label="Surface">
-            <div className="flex items-center gap-2">
-              <Input type="color" value={normalizeHex(surfaceColor) ?? "#FFFFFF"} onChange={(event) => setSurfaceColor(event.target.value)} className="h-10 w-14 p-1" />
-              <Input type="text" value={surfaceColor} onChange={(event) => setSurfaceColor(event.target.value)} placeholder="#FFFFFF" />
-            </div>
-          </FormField>
-          <FormField label="Text">
-            <div className="flex items-center gap-2">
-              <Input type="color" value={normalizeHex(textColor) ?? "#143435"} onChange={(event) => setTextColor(event.target.value)} className="h-10 w-14 p-1" />
-              <Input type="text" value={textColor} onChange={(event) => setTextColor(event.target.value)} placeholder="#143435" />
-            </div>
-          </FormField>
-        </div>
-      </SectionCard>
+    <form
+      id={formId}
+      onSubmit={handleSubmit}
+      className="flex min-h-0 flex-1 flex-col overflow-hidden"
+    >
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+        {header}
+        <SectionCard title="Color System" description="Set your storefront color palette for brand consistency across UI surfaces.">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormField label="Primary">
+              <div className="flex items-center gap-2">
+                <Input type="color" value={normalizeHex(primaryColor) ?? "#0F7B84"} onChange={(event) => setPrimaryColor(event.target.value)} className="h-10 w-14 p-1" />
+                <Input type="text" value={primaryColor} onChange={(event) => setPrimaryColor(event.target.value)} placeholder="#0F7B84" />
+              </div>
+            </FormField>
+            <FormField label="Primary Foreground">
+              <div className="flex items-center gap-2">
+                <Input type="color" value={normalizeHex(primaryForegroundColor) ?? "#FFFFFF"} onChange={(event) => setPrimaryForegroundColor(event.target.value)} className="h-10 w-14 p-1" />
+                <Input type="text" value={primaryForegroundColor} onChange={(event) => setPrimaryForegroundColor(event.target.value)} placeholder="#FFFFFF" />
+              </div>
+            </FormField>
+            <FormField label="Accent">
+              <div className="flex items-center gap-2">
+                <Input type="color" value={normalizeHex(accentColor) ?? "#1AA3A8"} onChange={(event) => setAccentColor(event.target.value)} className="h-10 w-14 p-1" />
+                <Input type="text" value={accentColor} onChange={(event) => setAccentColor(event.target.value)} placeholder="#1AA3A8" />
+              </div>
+            </FormField>
+            <FormField label="Accent Foreground">
+              <div className="flex items-center gap-2">
+                <Input type="color" value={normalizeHex(accentForegroundColor) ?? "#FFFFFF"} onChange={(event) => setAccentForegroundColor(event.target.value)} className="h-10 w-14 p-1" />
+                <Input type="text" value={accentForegroundColor} onChange={(event) => setAccentForegroundColor(event.target.value)} placeholder="#FFFFFF" />
+              </div>
+            </FormField>
+            <FormField label="Background">
+              <div className="flex items-center gap-2">
+                <Input type="color" value={normalizeHex(backgroundColor) ?? "#F5FBFB"} onChange={(event) => setBackgroundColor(event.target.value)} className="h-10 w-14 p-1" />
+                <Input type="text" value={backgroundColor} onChange={(event) => setBackgroundColor(event.target.value)} placeholder="#F5FBFB" />
+              </div>
+            </FormField>
+            <FormField label="Surface">
+              <div className="flex items-center gap-2">
+                <Input type="color" value={normalizeHex(surfaceColor) ?? "#FFFFFF"} onChange={(event) => setSurfaceColor(event.target.value)} className="h-10 w-14 p-1" />
+                <Input type="text" value={surfaceColor} onChange={(event) => setSurfaceColor(event.target.value)} placeholder="#FFFFFF" />
+              </div>
+            </FormField>
+            <FormField label="Text">
+              <div className="flex items-center gap-2">
+                <Input type="color" value={normalizeHex(textColor) ?? "#143435"} onChange={(event) => setTextColor(event.target.value)} className="h-10 w-14 p-1" />
+                <Input type="text" value={textColor} onChange={(event) => setTextColor(event.target.value)} placeholder="#143435" />
+              </div>
+            </FormField>
+          </div>
+        </SectionCard>
 
-      <SectionCard title="Global Layout">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <FormField label="Page Width">
-            <Select value={pageWidth} onChange={(event) => setPageWidth(event.target.value as typeof pageWidth)}>
-              <option value="narrow">Narrow</option>
-              <option value="standard">Standard</option>
-              <option value="wide">Wide</option>
-            </Select>
-          </FormField>
-          <FormField label="Font Style">
-            <Select value={fontPreset} onChange={(event) => setFontPreset(event.target.value as typeof fontPreset)}>
-              <option value="classic">Classic</option>
-              <option value="modern">Modern</option>
-              <option value="clean">Clean</option>
-            </Select>
-          </FormField>
-          <FormField label="Corner Radius">
-            <Select value={radiusScale} onChange={(event) => setRadiusScale(event.target.value as typeof radiusScale)}>
-              <option value="soft">Soft</option>
-              <option value="rounded">Rounded</option>
-              <option value="sharp">Sharp</option>
-            </Select>
-          </FormField>
-        </div>
-      </SectionCard>
+        <SectionCard title="White Label Assets" description="Configure browser icons and social preview images for your custom domain storefront.">
+          <div className="space-y-3">
+            <FormField
+              label="Favicon URL"
+              description="Shown in browser tabs and bookmarks. Recommended 64x64 PNG or ICO."
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <Input value={faviconPath} onChange={(event) => setFaviconPath(event.target.value)} placeholder="https://.../favicon.ico" />
+                <Input
+                  type="file"
+                  className="max-w-[220px]"
+                  accept=".ico,.png,.svg,image/x-icon,image/vnd.microsoft.icon,image/png,image/svg+xml"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    if (file) {
+                      void uploadAsset("favicon", file);
+                    }
+                    event.target.value = "";
+                  }}
+                  disabled={saving}
+                />
+              </div>
+            </FormField>
 
-      <SectionCard title="Home Page">
-        <div className="grid gap-2 sm:grid-cols-2">
-          <label className="flex items-center gap-2 text-sm"><Checkbox checked={showPolicyStrip} onChange={(event) => setShowPolicyStrip(event.target.checked)} />Show policy strip and announcement bar</label>
-          <label className="flex items-center gap-2 text-sm"><Checkbox checked={showContentBlocks} onChange={(event) => setShowContentBlocks(event.target.checked)} />Show content blocks section</label>
-          <label className="flex items-center gap-2 text-sm"><Checkbox checked={homeShowHero} onChange={(event) => setHomeShowHero(event.target.checked)} />Show home hero section</label>
-          <label className="flex items-center gap-2 text-sm"><Checkbox checked={homeShowContentBlocks} onChange={(event) => setHomeShowContentBlocks(event.target.checked)} />Show home content blocks row</label>
-          <label className="flex items-center gap-2 text-sm sm:col-span-2"><Checkbox checked={homeShowFeaturedProducts} onChange={(event) => setHomeShowFeaturedProducts(event.target.checked)} />Show featured products on home</label>
-        </div>
-        <FormField label="Featured Products Limit">
-          <Input type="number" min={1} max={24} value={homeFeaturedProductsLimit} onChange={(event) => setHomeFeaturedProductsLimit(event.target.value)} placeholder="6" />
-        </FormField>
-      </SectionCard>
+            <FormField
+              label="Apple Touch Icon URL"
+              description="Used when users save your storefront to iPhone/iPad home screens. Recommended 180x180 PNG."
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  value={appleTouchIconPath}
+                  onChange={(event) => setAppleTouchIconPath(event.target.value)}
+                  placeholder="https://.../apple-touch-icon.png"
+                />
+                <Input
+                  type="file"
+                  className="max-w-[220px]"
+                  accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    if (file) {
+                      void uploadAsset("apple_touch_icon", file);
+                    }
+                    event.target.value = "";
+                  }}
+                  disabled={saving}
+                />
+              </div>
+            </FormField>
 
-      <SectionCard title="Products Page">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <FormField label="Product Grid Columns">
-            <Select value={productGridColumns} onChange={(event) => setProductGridColumns(event.target.value)}>
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4">4</option>
-            </Select>
-          </FormField>
-          <FormField label="Filter Layout">
-            <Select value={productsFilterLayout} onChange={(event) => setProductsFilterLayout(event.target.value as FilterLayout)}>
-              <option value="sidebar">Sidebar</option>
-              <option value="topbar">Top bar</option>
-            </Select>
-          </FormField>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <label className="flex items-center gap-2 text-sm"><Checkbox checked={productsFiltersDefaultOpen} onChange={(event) => setProductsFiltersDefaultOpen(event.target.checked)} />Open filters by default</label>
-          <label className="flex items-center gap-2 text-sm"><Checkbox checked={productsShowSearch} onChange={(event) => setProductsShowSearch(event.target.checked)} />Show products search field</label>
-          <label className="flex items-center gap-2 text-sm"><Checkbox checked={productsShowSort} onChange={(event) => setProductsShowSort(event.target.checked)} />Show products sort control</label>
-          <label className="flex items-center gap-2 text-sm"><Checkbox checked={productsShowAvailability} onChange={(event) => setProductsShowAvailability(event.target.checked)} />Show availability filter</label>
-          <label className="flex items-center gap-2 text-sm sm:col-span-2"><Checkbox checked={productsShowOptionFilters} onChange={(event) => setProductsShowOptionFilters(event.target.checked)} />Show option filters</label>
-        </div>
-      </SectionCard>
+            <FormField
+              label="Open Graph Image URL"
+              description="Used by link previews (Facebook, Slack, Discord). Recommended 1200x630."
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <Input value={ogImagePath} onChange={(event) => setOgImagePath(event.target.value)} placeholder="https://.../og-image.png" />
+                <Input
+                  type="file"
+                  className="max-w-[220px]"
+                  accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    if (file) {
+                      void uploadAsset("og_image", file);
+                    }
+                    event.target.value = "";
+                  }}
+                  disabled={saving}
+                />
+              </div>
+            </FormField>
 
-      <SectionCard title="Product Cards & CTA">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <FormField label="Primary CTA Style">
+            <FormField
+              label="Twitter Image URL"
+              description="Used by X/Twitter card previews. Recommended 1200x600 or 1200x630."
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  value={twitterImagePath}
+                  onChange={(event) => setTwitterImagePath(event.target.value)}
+                  placeholder="https://.../twitter-image.png"
+                />
+                <Input
+                  type="file"
+                  className="max-w-[220px]"
+                  accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    if (file) {
+                      void uploadAsset("twitter_image", file);
+                    }
+                    event.target.value = "";
+                  }}
+                  disabled={saving}
+                />
+              </div>
+            </FormField>
+            {uploadingAsset ? <p className="text-xs text-muted-foreground">Uploading asset...</p> : null}
+          </div>
+        </SectionCard>
+
+        <SectionCard title="Global Layout" description="Control storefront width, typography preset, and overall corner style.">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormField label="Page Width">
+              <Select value={pageWidth} onChange={(event) => setPageWidth(event.target.value as typeof pageWidth)}>
+                <option value="narrow">Narrow</option>
+                <option value="standard">Standard</option>
+                <option value="wide">Wide</option>
+              </Select>
+            </FormField>
+            <FormField label="Font Style">
+              <Select value={fontPreset} onChange={(event) => setFontPreset(event.target.value as typeof fontPreset)}>
+                <option value="classic">Classic</option>
+                <option value="modern">Modern</option>
+                <option value="clean">Clean</option>
+              </Select>
+            </FormField>
+            <FormField label="Corner Radius">
+              <Select value={radiusScale} onChange={(event) => setRadiusScale(event.target.value as typeof radiusScale)}>
+                <option value="soft">Soft</option>
+                <option value="rounded">Rounded</option>
+                <option value="sharp">Sharp</option>
+              </Select>
+            </FormField>
+          </div>
+        </SectionCard>
+
+        <SectionCard title="Call To Action" description="Choose the default visual treatment for primary action buttons.">
+          <FormField label="Primary CTA Style" description="Global default style for primary storefront actions.">
             <Select value={primaryCtaStyle} onChange={(event) => setPrimaryCtaStyle(event.target.value as CtaStyle)}>
               <option value="primary">Primary</option>
               <option value="accent">Accent</option>
               <option value="outline">Outline</option>
             </Select>
           </FormField>
-          <FormField label="Product Image Fit">
-            <Select value={productCardImageFit} onChange={(event) => setProductCardImageFit(event.target.value as ImageFit)}>
-              <option value="cover">Cover</option>
-              <option value="contain">Contain</option>
-            </Select>
-          </FormField>
-          <FormField label="Card Description Lines">
-            <Input type="number" min={1} max={4} value={productCardDescriptionLines} onChange={(event) => setProductCardDescriptionLines(event.target.value)} placeholder="2" />
-          </FormField>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <label className="flex items-center gap-2 text-sm"><Checkbox checked={productCardShowDescription} onChange={(event) => setProductCardShowDescription(event.target.checked)} />Show card descriptions</label>
-          <label className="flex items-center gap-2 text-sm"><Checkbox checked={productCardShowFeaturedBadge} onChange={(event) => setProductCardShowFeaturedBadge(event.target.checked)} />Show featured badge on cards</label>
-          <label className="flex items-center gap-2 text-sm"><Checkbox checked={productCardShowAvailability} onChange={(event) => setProductCardShowAvailability(event.target.checked)} />Show card availability text</label>
-          <label className="flex items-center gap-2 text-sm"><Checkbox checked={productCardShowQuickAdd} onChange={(event) => setProductCardShowQuickAdd(event.target.checked)} />Show quick add button on cards</label>
-          <label className="flex items-center gap-2 text-sm"><Checkbox checked={productCardImageHoverZoom} onChange={(event) => setProductCardImageHoverZoom(event.target.checked)} />Enable image hover zoom</label>
-          <label className="flex items-center gap-2 text-sm"><Checkbox checked={productCardShowCarouselArrows} onChange={(event) => setProductCardShowCarouselArrows(event.target.checked)} />Show card carousel arrows</label>
-          <label className="flex items-center gap-2 text-sm sm:col-span-2"><Checkbox checked={productCardShowCarouselDots} onChange={(event) => setProductCardShowCarouselDots(event.target.checked)} />Show card carousel dots</label>
-        </div>
-      </SectionCard>
+        </SectionCard>
 
-      <SectionCard title="Header">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <FormField label="Header Background">
-            <div className="flex items-center gap-2">
-              <Input type="color" value={normalizeHex(headerBackgroundColor) ?? "#FFFFFF"} onChange={(event) => setHeaderBackgroundColor(event.target.value)} className="h-10 w-14 p-1" />
-              <Input type="text" value={headerBackgroundColor} onChange={(event) => setHeaderBackgroundColor(event.target.value)} placeholder="#FFFFFF" />
-            </div>
-          </FormField>
-          <FormField label="Header Foreground">
-            <div className="flex items-center gap-2">
-              <Input type="color" value={normalizeHex(headerForegroundColor) ?? "#143435"} onChange={(event) => setHeaderForegroundColor(event.target.value)} className="h-10 w-14 p-1" />
-              <Input type="text" value={headerForegroundColor} onChange={(event) => setHeaderForegroundColor(event.target.value)} placeholder="#143435" />
-            </div>
-          </FormField>
-        </div>
-        <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">Header links</p>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {HEADER_NAV_OPTIONS.map((option) => (
-              <label key={`header-${option.id}`} className="flex items-center gap-2 text-sm">
-                <Checkbox
-                  checked={headerNavItems.includes(option.id)}
-                  onChange={(event) =>
-                    setHeaderNavItems((current) => {
-                      if (event.target.checked) {
-                        return current.includes(option.id) ? current : [...current, option.id];
-                      }
-                      const next = current.filter((entry) => entry !== option.id);
-                      return next.length > 0 ? next : current;
-                    })
-                  }
-                />
-                {option.label}
-              </label>
-            ))}
+        <SectionCard title="Header" description="Configure header colors and which navigation links appear at the top of your storefront.">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormField label="Header Background">
+              <div className="flex items-center gap-2">
+                <Input type="color" value={normalizeHex(headerBackgroundColor) ?? "#FFFFFF"} onChange={(event) => setHeaderBackgroundColor(event.target.value)} className="h-10 w-14 p-1" />
+                <Input type="text" value={headerBackgroundColor} onChange={(event) => setHeaderBackgroundColor(event.target.value)} placeholder="#FFFFFF" />
+              </div>
+            </FormField>
+            <FormField label="Header Foreground">
+              <div className="flex items-center gap-2">
+                <Input type="color" value={normalizeHex(headerForegroundColor) ?? "#143435"} onChange={(event) => setHeaderForegroundColor(event.target.value)} className="h-10 w-14 p-1" />
+                <Input type="text" value={headerForegroundColor} onChange={(event) => setHeaderForegroundColor(event.target.value)} placeholder="#143435" />
+              </div>
+            </FormField>
           </div>
-        </div>
-      </SectionCard>
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">Header links</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {HEADER_NAV_OPTIONS.map((option) => (
+                <label key={`header-${option.id}`} className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={headerNavItems.includes(option.id)}
+                    onChange={(event) =>
+                      setHeaderNavItems((current) => {
+                        if (event.target.checked) {
+                          return current.includes(option.id) ? current : [...current, option.id];
+                        }
+                        const next = current.filter((entry) => entry !== option.id);
+                        return next.length > 0 ? next : current;
+                      })
+                    }
+                  />
+                  {option.label}
+                </label>
+              ))}
+            </div>
+          </div>
+        </SectionCard>
 
-      <SectionCard title="Footer">
-        <div className="grid gap-2 sm:grid-cols-2">
-          <label className="flex items-center gap-2 text-sm"><Checkbox checked={showFooterBackToTop} onChange={(event) => setShowFooterBackToTop(event.target.checked)} />Show footer “Back to top”</label>
-          <label className="flex items-center gap-2 text-sm"><Checkbox checked={showFooterOwnerLogin} onChange={(event) => setShowFooterOwnerLogin(event.target.checked)} />Show footer “Owner login”</label>
-        </div>
-        <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">Footer links</p>
+        <SectionCard title="Footer" description="Configure footer links and utility actions shown at the bottom of storefront pages.">
           <div className="grid gap-2 sm:grid-cols-2">
-            {FOOTER_NAV_OPTIONS.map((option) => (
-              <label key={`footer-${option.id}`} className="flex items-center gap-2 text-sm">
-                <Checkbox
-                  checked={footerNavItems.includes(option.id)}
-                  onChange={(event) =>
-                    setFooterNavItems((current) => {
-                      if (event.target.checked) {
-                        return current.includes(option.id) ? current : [...current, option.id];
-                      }
-                      const next = current.filter((entry) => entry !== option.id);
-                      return next.length > 0 ? next : current;
-                    })
-                  }
-                />
-                {option.label}
-              </label>
-            ))}
+            <label className="flex items-center gap-2 text-sm"><Checkbox checked={showFooterBackToTop} onChange={(event) => setShowFooterBackToTop(event.target.checked)} />Show footer “Back to top”</label>
+            <label className="flex items-center gap-2 text-sm"><Checkbox checked={showFooterOwnerLogin} onChange={(event) => setShowFooterOwnerLogin(event.target.checked)} />Show footer “Owner login”</label>
           </div>
-        </div>
-      </SectionCard>
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">Footer links</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {FOOTER_NAV_OPTIONS.map((option) => (
+                <label key={`footer-${option.id}`} className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={footerNavItems.includes(option.id)}
+                    onChange={(event) =>
+                      setFooterNavItems((current) => {
+                        if (event.target.checked) {
+                          return current.includes(option.id) ? current : [...current, option.id];
+                        }
+                        const next = current.filter((entry) => entry !== option.id);
+                        return next.length > 0 ? next : current;
+                      })
+                    }
+                  />
+                  {option.label}
+                </label>
+              ))}
+            </div>
+          </div>
+        </SectionCard>
+      </div>
 
       <DashboardFormActionBar
         formId={formId}
         saveLabel="Save branding"
         savePendingLabel="Saving..."
-        savePending={saving}
+        savePending={saving || uploadingAsset !== null}
         discardLabel="Discard changes"
-        saveDisabled={!isDirty || saving}
-        discardDisabled={!isDirty || saving}
+        saveDisabled={!isDirty || saving || uploadingAsset !== null}
+        discardDisabled={!isDirty || saving || uploadingAsset !== null}
+        statusMessage={error}
+        statusVariant="error"
       />
-      <FeedbackMessage type="error" message={error} />
-      <FeedbackMessage type="success" message={message} />
     </form>
   );
 }

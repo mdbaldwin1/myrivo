@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { fail } from "@/lib/http/api-response";
 import { readJsonBody } from "@/lib/http/read-json-body";
 
 type ParsedJsonRequestSuccess<T> = {
@@ -27,7 +28,7 @@ export async function parseJsonRequest<TSchema extends z.ZodTypeAny>(
   if (!parsed.success) {
     return {
       ok: false,
-      response: NextResponse.json({ error: "Invalid payload", details: parsed.error.flatten() }, { status: 400 })
+      response: fail(400, "Invalid payload", parsed.error.flatten())
     };
   }
 
