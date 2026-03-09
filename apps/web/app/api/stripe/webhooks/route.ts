@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { getStripeEnv, isStripeStubMode } from "@/lib/env";
-import { finalizeStorefrontCheckout } from "@/lib/storefront/checkout-finalization";
+import { finalizeStorefrontCheckout, markStorefrontCheckoutFailed } from "@/lib/storefront/checkout-finalization";
 import { getStripeClient } from "@/lib/stripe/server";
 
 export async function POST(request: Request) {
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Invalid signature: ${(error as Error).message}` }, { status: 400 });
   }
 
-  if (event.type === "checkout.session.completed") {
+  if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
     const session = event.data.object as Stripe.Checkout.Session;
     const checkoutKind = session.metadata?.checkout_kind;
 
@@ -34,9 +34,23 @@ export async function POST(request: Request) {
 
       if (checkoutId) {
         const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
-        await finalizeStorefrontCheckout(checkoutId, paymentIntentId);
+        if (session.payment_status === "paid") {
+          await finalizeStorefrontCheckout(checkoutId, paymentIntentId);
+        }
       }
 
+      return NextResponse.json({ received: true, checkoutKind });
+    }
+  }
+
+  if (event.type === "checkout.session.async_payment_failed") {
+    const session = event.data.object as Stripe.Checkout.Session;
+    const checkoutKind = session.metadata?.checkout_kind;
+    const checkoutId = session.metadata?.storefront_checkout_id;
+    const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
+
+    if (checkoutKind === "storefront_order" && checkoutId) {
+      await markStorefrontCheckoutFailed(checkoutId, "Checkout session payment failed.", paymentIntentId);
       return NextResponse.json({ received: true, checkoutKind });
     }
 

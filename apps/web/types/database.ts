@@ -1,4 +1,4 @@
-export type StoreStatus = "draft" | "active" | "suspended";
+export type StoreStatus = "draft" | "pending_review" | "active" | "suspended";
 export type GlobalUserRole = "user" | "admin" | "support";
 export type StoreMemberRole = "owner" | "admin" | "staff" | "customer";
 
@@ -44,8 +44,12 @@ export type ProductRecord = {
   store_id: string;
   title: string;
   description: string;
+  slug: string;
   sku: string | null;
   image_urls: string[];
+  image_alt_text: string | null;
+  seo_title: string | null;
+  seo_description: string | null;
   is_featured: boolean;
   price_cents: number;
   inventory_qty: number;
@@ -103,6 +107,10 @@ export type ProductOptionValueRecord = {
 export type StoreBrandingRecord = {
   store_id: string;
   logo_path: string | null;
+  favicon_path: string | null;
+  apple_touch_icon_path: string | null;
+  og_image_path: string | null;
+  twitter_image_path: string | null;
   primary_color: string | null;
   accent_color: string | null;
   theme_json: Record<string, unknown>;
@@ -117,6 +125,17 @@ export type StoreSettingsRecord = {
   shipping_policy: string | null;
   return_policy: string | null;
   announcement: string | null;
+  seo_title: string | null;
+  seo_description: string | null;
+  seo_noindex: boolean;
+  seo_location_city: string | null;
+  seo_location_region: string | null;
+  seo_location_state: string | null;
+  seo_location_postal_code: string | null;
+  seo_location_country_code: string | null;
+  seo_location_address_line1: string | null;
+  seo_location_address_line2: string | null;
+  seo_location_show_full_address: boolean;
   footer_tagline: string | null;
   footer_note: string | null;
   instagram_url: string | null;
@@ -381,6 +400,14 @@ export type StoreDomainRecord = {
   hosting_ready_at: string | null;
   hosting_error: string | null;
   hosting_metadata_json: Record<string, unknown>;
+  email_provider: "resend";
+  email_sender_enabled: boolean;
+  email_status: "pending" | "provisioning" | "ready" | "failed" | "not_configured";
+  email_domain_id: string | null;
+  email_last_checked_at: string | null;
+  email_ready_at: string | null;
+  email_error: string | null;
+  email_metadata_json: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 };
@@ -437,5 +464,41 @@ export type AuditEventRecord = {
   entity: string;
   entity_id: string | null;
   metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+export type NotificationSeverity = "info" | "warning" | "critical";
+export type NotificationStatus = "pending" | "sent" | "failed" | "dismissed" | "read";
+export type NotificationChannel = "in_app" | "email";
+export type NotificationDeliveryStatus = "sent" | "failed";
+
+export type NotificationRecord = {
+  id: string;
+  store_id: string | null;
+  recipient_user_id: string;
+  recipient_email: string | null;
+  event_type: string;
+  title: string;
+  body: string;
+  action_url: string | null;
+  severity: NotificationSeverity;
+  channel_targets: Record<string, unknown>;
+  status: NotificationStatus;
+  read_at: string | null;
+  sent_at: string | null;
+  dedupe_key: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type NotificationDeliveryAttemptRecord = {
+  id: string;
+  notification_id: string;
+  channel: NotificationChannel;
+  provider: string | null;
+  status: NotificationDeliveryStatus;
+  error: string | null;
+  response_json: Record<string, unknown>;
   created_at: string;
 };

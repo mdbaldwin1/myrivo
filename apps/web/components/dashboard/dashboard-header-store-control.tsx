@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ChevronsUpDown } from "lucide-react";
+import { ChevronsUpDown, Store } from "lucide-react";
 import { StoreSwitcher, type StoreOption } from "@/components/dashboard/store-switcher";
 import { Button } from "@/components/ui/button";
 
@@ -33,8 +33,9 @@ export function DashboardHeaderStoreControl({ activeStoreSlug, stores }: Dashboa
 
   return (
     <div className="flex min-w-0 items-center gap-1.5">
-      <Link href="/dashboard" className="truncate text-sm font-semibold text-foreground hover:underline">
-        {activeStore?.name ?? "Store"}
+      <Link href={`/dashboard/stores/${activeStoreSlug}`} className="flex min-w-0 items-center gap-2 truncate text-sm text-foreground hover:underline">
+        <Store className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <span className="truncate">{activeStore?.name ?? "Store"}</span>
       </Link>
       <Button
         type="button"

@@ -13,6 +13,7 @@ import { StorefrontHeader } from "@/components/storefront/storefront-header";
 import { StorefrontImageCarousel } from "@/components/storefront/storefront-image-carousel";
 import { StorefrontCartButton } from "@/components/storefront/storefront-cart-button";
 import { StorefrontFooter } from "@/components/storefront/storefront-footer";
+import { StorefrontReviewsSection } from "@/components/storefront/storefront-reviews-section";
 import { formatCopyTemplate, resolveStorefrontCopy } from "@/lib/storefront/copy";
 import { STOREFRONT_TEXT_LINK_EFFECT_CLASS } from "@/lib/storefront/link-effects";
 import { resolveFooterNavLinks, resolveHeaderNavLinks } from "@/lib/storefront/navigation";
@@ -36,7 +37,11 @@ type StorefrontProduct = {
   id: string;
   title: string;
   description: string;
+  slug: string;
   image_urls: string[];
+  image_alt_text: string | null;
+  seo_title: string | null;
+  seo_description: string | null;
   is_featured: boolean;
   created_at: string;
   product_variants: StorefrontVariant[];
@@ -59,6 +64,10 @@ type Props = {
     id: string;
     name: string;
     slug: string;
+  };
+  viewer?: {
+    isAuthenticated: boolean;
+    canManageStore: boolean;
   };
   branding: {
     logo_path: string | null;
@@ -90,6 +99,13 @@ const buttonRadiusClasses = {
   soft: "!rounded-2xl",
   rounded: "!rounded-xl",
   sharp: "!rounded-none"
+} as const;
+
+const cardStyleClasses = {
+  solid: "border border-border bg-[color:var(--storefront-surface)] shadow-sm",
+  outline: "border-2 border-border bg-transparent",
+  elevated: "border border-border bg-[color:var(--storefront-surface)] shadow-[0_10px_28px_rgba(var(--storefront-primary-rgb),0.18)]",
+  integrated: "border-0 bg-transparent shadow-none"
 } as const;
 
 function getSortedActiveVariants(product: StorefrontProduct) {
@@ -237,12 +253,13 @@ function getAvailabilityLabel(
   return `${variant.inventory_qty} ${copy.availability.inStockSuffix}`;
 }
 
-export function StorefrontProductDetailPage({ store, branding, settings, product }: Props) {
+export function StorefrontProductDetailPage({ store, viewer, branding, settings, product }: Props) {
   const themeConfig = resolveStorefrontThemeConfig(branding?.theme_json ?? {});
   const copy = resolveStorefrontCopy(settings?.storefront_copy_json ?? {});
   const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, store.slug);
   const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, store.slug);
   const buttonRadiusClass = buttonRadiusClasses[themeConfig.radiusScale];
+  const cardClass = cardStyleClasses[themeConfig.cardStyle];
   const storefrontThemeStyle = buildStorefrontThemeStyle({
     primaryColor: branding?.primary_color,
     accentColor: branding?.accent_color,
@@ -306,7 +323,11 @@ export function StorefrontProductDetailPage({ store, branding, settings, product
             <span>{product.title}</span>
           </div>
           {images.length > 0 ? (
-            <StorefrontImageCarousel images={images} alt={`${product.title} image`} imageClassName={`aspect-square w-full ${buttonRadiusClass}`} />
+            <StorefrontImageCarousel
+              images={images}
+              alt={product.image_alt_text || `${product.title} image`}
+              imageClassName={`aspect-square w-full ${buttonRadiusClass}`}
+            />
           ) : null}
         </div>
 
@@ -387,10 +408,21 @@ export function StorefrontProductDetailPage({ store, branding, settings, product
           </Link>
         </section>
 
-        <div className="lg:col-span-2">
+        <div className="space-y-8 lg:col-span-2">
+          {themeConfig.reviewsShowOnProductDetail ? (
+            <StorefrontReviewsSection
+              storeSlug={store.slug}
+              productId={product.id}
+              buttonRadiusClass={buttonRadiusClass}
+              reviewCardClassName={cardClass}
+              reviewsTheme={themeConfig}
+              reviewsCopy={copy.reviews}
+            />
+          ) : null}
           <StorefrontFooter
             storeName={store.name}
             storeSlug={store.slug}
+            viewer={viewer}
             settings={settings}
             copy={copy}
             buttonRadiusClass={buttonRadiusClass}

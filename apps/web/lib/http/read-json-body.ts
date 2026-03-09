@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { fail } from "@/lib/http/api-response";
 
 export type JsonBodyReadResult =
   | {
@@ -19,7 +20,7 @@ export async function readJsonBody(request: NextRequest): Promise<JsonBodyReadRe
   } catch {
     return {
       ok: false,
-      response: NextResponse.json({ error: "Invalid JSON payload." }, { status: 400 })
+      response: fail(400, "Invalid JSON payload.")
     };
   }
 }

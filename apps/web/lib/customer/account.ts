@@ -11,7 +11,7 @@ type SupabaseCustomerClient = {
   };
 };
 
-type StoreLookup = { id: string; slug: string; status: "draft" | "active" | "suspended" };
+type StoreLookup = { id: string; slug: string; status: "draft" | "pending_review" | "active" | "suspended" };
 type ProductLookup = { id: string; store_id: string; status: "draft" | "active" | "archived"; price_cents: number };
 type VariantLookup = {
   id: string;

@@ -7,8 +7,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 
 const updateStoreSchema = z.object({
-  name: z.string().min(2).max(120).optional(),
-  status: z.enum(["draft", "active", "suspended"]).optional()
+  name: z.string().min(2).max(120).optional()
 });
 
 export async function GET() {
@@ -61,10 +60,6 @@ export async function PATCH(request: NextRequest) {
 
   if (payload.data.name !== undefined) {
     updates.name = payload.data.name;
-  }
-
-  if (payload.data.status !== undefined) {
-    updates.status = payload.data.status;
   }
 
   if (Object.keys(updates).length === 0) {

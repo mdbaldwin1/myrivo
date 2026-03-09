@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
     return trustedOriginResponse;
   }
 
-  const rateLimitResponse = checkRateLimit(request, {
+  const rateLimitResponse = await checkRateLimit(request, {
     key: "checkout",
     limit: 20,
     windowMs: 60_000
@@ -106,6 +106,9 @@ export async function POST(request: NextRequest) {
     promoCode
   } = payload.data;
   const storeSlug = await resolveStoreSlugFromRequestAsync(request);
+  if (!storeSlug) {
+    return NextResponse.json({ error: "Store context is required." }, { status: 400 });
+  }
 
   const { data: store, error: storeError } = await supabase
     .from("stores")
@@ -639,8 +642,6 @@ export async function POST(request: NextRequest) {
         pickup_window_end_at: resolvedPickupWindowEndAt,
         pickup_timezone: resolvedPickupTimezone,
         shipping_fee_cents: shippingFeeCents,
-        platform_fee_bps: feeProfile.feeBps,
-        platform_fee_cents: platformFeeCents,
         total_cents: computedTotalCents
       })
       .eq("id", result.order_id);
@@ -676,6 +677,20 @@ export async function POST(request: NextRequest) {
 
   const applicationFeeAmount = platformFeeCents;
 
+  const stripe = getStripeClient();
+
+  try {
+    const account = await stripe.accounts.retrieve(store.stripe_account_id);
+    if (!account.charges_enabled || !account.payouts_enabled) {
+      return NextResponse.json({ error: "This store's Stripe account is not ready to accept live payments yet." }, { status: 409 });
+    }
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Unable to verify Stripe account readiness." },
+      { status: 502 }
+    );
+  }
+
   const { data: pendingCheckout, error: pendingCheckoutError } = await supabase
     .from("storefront_checkout_sessions")
     .insert({
@@ -695,6 +710,11 @@ export async function POST(request: NextRequest) {
       pickup_window_end_at: resolvedPickupWindowEndAt,
       pickup_timezone: resolvedPickupTimezone,
       promo_code: normalizedPromoCode,
+      fee_plan_key: feeProfile.planKey,
+      fee_bps: feeProfile.feeBps,
+      fee_fixed_cents: feeProfile.feeFixedCents,
+      item_total_cents: itemTotalCents,
+      platform_fee_cents: platformFeeCents,
       items: rpcItems,
       status: "pending"
     })
@@ -706,7 +726,6 @@ export async function POST(request: NextRequest) {
   }
 
   const appUrl = getAppUrl();
-  const stripe = getStripeClient();
 
   const paymentIntentData: {
     transfer_data: { destination: string };
@@ -731,47 +750,95 @@ export async function POST(request: NextRequest) {
     paymentIntentData.application_fee_amount = applicationFeeAmount;
   }
 
-  const session = await stripe.checkout.sessions.create({
-    mode: "payment",
-    customer_email: email,
-    line_items: [
-      {
-        price_data: {
-          currency: "usd",
-          product_data: { name: `${store.name} order` },
-          unit_amount: totalCents
-        },
-        quantity: 1
-      }
-    ],
-    success_url: `${appUrl}/checkout?status=success&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${appUrl}/checkout?status=cancelled`,
-    metadata: {
-      checkout_kind: "storefront_order",
-      storefront_checkout_id: pendingCheckout.id,
-      store_id: store.id,
-      store_slug: store.slug,
-      promo_code: normalizedPromoCode ?? "",
-      pickup_location_id: resolvedPickupLocationId ?? "",
-      pickup_window_start_at: resolvedPickupWindowStartAt ?? "",
-      pickup_window_end_at: resolvedPickupWindowEndAt ?? ""
-    },
-    payment_intent_data: paymentIntentData
-  });
+  let sessionId: string | null = null;
+  let sessionUrl: string | null = null;
+
+  try {
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      customer_email: email,
+      automatic_tax: {
+        enabled: true
+      },
+      billing_address_collection: "auto",
+      ...(selectedFulfillment.method === "shipping"
+        ? {
+            shipping_address_collection: {
+              allowed_countries: ["US"]
+            }
+          }
+        : {}),
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+            product_data: { name: `${store.name} order` },
+            unit_amount: totalCents
+          },
+          quantity: 1
+        }
+      ],
+      success_url: `${appUrl}/checkout?status=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${appUrl}/checkout?status=cancelled`,
+      metadata: {
+        checkout_kind: "storefront_order",
+        storefront_checkout_id: pendingCheckout.id,
+        store_id: store.id,
+        store_slug: store.slug,
+        promo_code: normalizedPromoCode ?? "",
+        pickup_location_id: resolvedPickupLocationId ?? "",
+        pickup_window_start_at: resolvedPickupWindowStartAt ?? "",
+        pickup_window_end_at: resolvedPickupWindowEndAt ?? ""
+      },
+      payment_intent_data: paymentIntentData
+    });
+
+    sessionId = session.id;
+    sessionUrl = session.url;
+  } catch (error) {
+    await supabase
+      .from("storefront_checkout_sessions")
+      .update({
+        status: "failed",
+        error_message: error instanceof Error ? error.message : "Stripe checkout session creation failed."
+      })
+      .eq("id", pendingCheckout.id);
+
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Unable to create Stripe checkout session." },
+      { status: 502 }
+    );
+  }
+
+  if (!sessionId || !sessionUrl) {
+    await supabase
+      .from("storefront_checkout_sessions")
+      .update({
+        status: "failed",
+        error_message: "Stripe checkout session did not return required session data."
+      })
+      .eq("id", pendingCheckout.id);
+
+    return NextResponse.json({ error: "Unable to create Stripe checkout session." }, { status: 502 });
+  }
 
   const { error: updateCheckoutError } = await supabase
     .from("storefront_checkout_sessions")
-    .update({ stripe_checkout_session_id: session.id })
+    .update({ stripe_checkout_session_id: sessionId })
     .eq("id", pendingCheckout.id);
 
   if (updateCheckoutError) {
+    await supabase
+      .from("storefront_checkout_sessions")
+      .update({ status: "failed", error_message: updateCheckoutError.message })
+      .eq("id", pendingCheckout.id);
     return NextResponse.json({ error: updateCheckoutError.message }, { status: 500 });
   }
 
   return NextResponse.json({
     mode: "checkout",
-    checkoutUrl: session.url,
-    sessionId: session.id,
+    checkoutUrl: sessionUrl,
+    sessionId,
     paymentMode: "stripe"
   });
 }

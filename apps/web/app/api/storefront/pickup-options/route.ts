@@ -13,6 +13,9 @@ const payloadSchema = z.object({
 
 export async function POST(request: NextRequest) {
   const storeSlug = await resolveStoreSlugFromRequestAsync(request);
+  if (!storeSlug) {
+    return NextResponse.json({ error: "Store context is required." }, { status: 400 });
+  }
   const payload = payloadSchema.safeParse(await request.json().catch(() => ({})));
 
   if (!payload.success) {

@@ -5,7 +5,7 @@ This roadmap covers the remaining work for production launch and post-launch har
 ## Current answers to open questions
 
 1. Admin portal exists?
-- Not yet. Current dashboard is merchant-facing only.
+- Yes. Admin workspace is available at `/dashboard/admin` with governance, moderation, and audit views.
 
 2. Should stores require approval before going live?
 - Yes. Use a hybrid model: AI pre-screen + human override for high-risk/flagged stores.
@@ -14,7 +14,7 @@ This roadmap covers the remaining work for production launch and post-launch har
 - Not complete. Promo/order data is present, but operational refund/dispute tooling and policy ownership are not fully implemented.
 
 4. Seller/customer messaging after purchase?
-- Not implemented yet.
+- Partially implemented. Transactional order lifecycle emails and customer in-app order notifications exist, but two-way order conversation tooling is not implemented yet.
 
 5. Fulfillment flow and digital delivery automation?
 - Partial only: fulfillment statuses exist. Configurable workflow states, automated email delivery, and digital fulfillment rules are not complete.

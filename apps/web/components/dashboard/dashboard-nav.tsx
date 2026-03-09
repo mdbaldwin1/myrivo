@@ -4,8 +4,35 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { ChevronDown, LayoutGrid, LogOut, UserCircle2 } from "lucide-react";
+import {
+  BarChart3,
+  BadgePercent,
+  ChevronDown,
+  ChevronRight,
+  ClipboardList,
+  Cog,
+  Globe,
+  Home,
+  Info,
+  LayoutDashboard,
+  Bell,
+  LogOut,
+  Mail,
+  Package,
+  Paintbrush,
+  Plug,
+  ReceiptText,
+  Settings,
+  Shield,
+  ShoppingCart,
+  Store,
+  Truck,
+  UserCircle2,
+  Users
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { StoreOption } from "@/components/dashboard/store-switcher";
+import { AppAlert } from "@/components/ui/app-alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -16,6 +43,7 @@ import {
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
+import { withReturnTo } from "@/lib/auth/return-to";
 import { cn } from "@/lib/utils";
 import type { GlobalUserRole } from "@/types/database";
 
@@ -33,41 +61,38 @@ type DashboardNavProps = {
   onNavigate?: () => void;
 };
 
-const globalLinks = [
-  { href: "/dashboard", label: "Overview" },
-  { href: "/dashboard/catalog", label: "Catalog" },
-  { href: "/dashboard/orders", label: "Orders" },
-  { href: "/dashboard/billing", label: "Billing" },
-  { href: "/dashboard/marketing/promotions", label: "Promotions" },
-  { href: "/dashboard/marketing/subscribers", label: "Email Subscribers" },
-  { href: "/dashboard/content-studio", label: "Content Studio" },
-  { href: "/dashboard/reports", label: "Reports" },
-  { href: "/dashboard/store-settings", label: "Store Settings" }
-];
-
-const storeSettingsLinks = [
-  { href: "/dashboard/store-settings/profile", label: "General" },
-  { href: "/dashboard/store-settings/branding", label: "Branding" },
-  { href: "/dashboard/store-settings/team", label: "Team" },
-  { href: "/dashboard/store-settings/checkout-rules", label: "Checkout Rules" },
-  { href: "/dashboard/store-settings/integrations", label: "Integrations" }
+const storeSettingsLinksBase = [
+  { href: "/store-settings/general", label: "General", icon: Cog },
+  { href: "/store-settings/branding", label: "Branding", icon: Paintbrush },
+  { href: "/store-settings/team", label: "Team", icon: Users },
+  { href: "/store-settings/shipping", label: "Shipping", icon: Truck },
+  { href: "/store-settings/pickup", label: "Pickup", icon: Store },
+  { href: "/store-settings/checkout-experience", label: "Checkout Experience", icon: ReceiptText },
+  { href: "/store-settings/domains", label: "Domains", icon: Globe },
+  { href: "/store-settings/integrations", label: "Integrations", icon: Plug }
 ] as const;
 
-const contentStudioLinks = [
-  { href: "/dashboard/content-studio/home", label: "Home" },
-  { href: "/dashboard/content-studio/products", label: "Products Page" },
-  { href: "/dashboard/content-studio/about", label: "About Page" },
-  { href: "/dashboard/content-studio/policies", label: "Policies Page" },
-  { href: "/dashboard/content-studio/cart", label: "Cart Page" },
-  { href: "/dashboard/content-studio/order-summary", label: "Order Summary" },
-  { href: "/dashboard/content-studio/emails", label: "Emails" }
+const contentWorkspaceLinks = [
+  { href: "/content-workspace/home", label: "Home Page", icon: Home },
+  { href: "/content-workspace/products", label: "Products Page", icon: Package },
+  { href: "/content-workspace/about", label: "About Page", icon: Info },
+  { href: "/content-workspace/policies", label: "Policies Page", icon: Shield },
+  { href: "/content-workspace/cart", label: "Cart Page", icon: ShoppingCart },
+  { href: "/content-workspace/order-summary", label: "Order Summary", icon: ClipboardList },
+  { href: "/content-workspace/emails", label: "Emails", icon: Mail }
 ] as const;
 
 const reportsLinks = [
-  { href: "/dashboard/reports/insights", label: "Insights" },
-  { href: "/dashboard/reports/inventory", label: "Inventory Ledger" },
-  { href: "/dashboard/reports/billing", label: "Billing Events" }
+  { href: "/reports/insights", label: "Insights", icon: BarChart3 },
+  { href: "/reports/inventory", label: "Inventory Ledger", icon: Package },
+  { href: "/reports/billing", label: "Billing Events", icon: ReceiptText }
 ] as const;
+
+type DashboardNavLink = {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+};
 
 function getInitials(name: string | null | undefined, email: string | null | undefined) {
   const trimmed = name?.trim();
@@ -97,6 +122,10 @@ export function DashboardNav({
   const pathname = usePathname();
   const normalizedPath = pathname?.replace(/\/$/, "") ?? "";
   const hasStoreAccess = stores.length > 0 && Boolean(activeStoreSlug);
+  const isStoreWorkspaceRoute = Boolean(
+    activeStoreSlug &&
+      (normalizedPath === `/dashboard/stores/${activeStoreSlug}` || normalizedPath.startsWith(`/dashboard/stores/${activeStoreSlug}/`))
+  );
   const canAccessPlatform = globalRole === "support" || globalRole === "admin";
   const [testModeEnabled, setTestModeEnabled] = useState(initialTestModeEnabled);
   const [testModeSaving, setTestModeSaving] = useState(false);
@@ -104,12 +133,13 @@ export function DashboardNav({
   const initials = getInitials(userDisplayName, userEmail);
   const accountName = userDisplayName?.trim() || "My Account";
   const accountEmail = userEmail?.trim() || "No email";
+  const accountReturnTo = pathname || "/dashboard";
 
   const isLinkActive = (href: string) => {
     const normalizedHref = href.replace(/\/$/, "");
-    const isOverviewLink = normalizedHref === "/dashboard";
-    return isOverviewLink
-      ? normalizedPath === "/dashboard"
+    const isExactOnlyLink = normalizedHref === "/dashboard" || normalizedHref === storeWorkspaceBaseHref || normalizedHref === "/dashboard/admin";
+    return isExactOnlyLink
+      ? normalizedPath === normalizedHref
       : normalizedPath === normalizedHref || normalizedPath.startsWith(`${normalizedHref}/`);
   };
 
@@ -117,6 +147,48 @@ export function DashboardNav({
     await fetch("/api/auth/signout", { method: "POST" });
     window.location.href = "/login";
   }
+
+  const storeWorkspaceBaseHref = activeStoreSlug ? `/dashboard/stores/${activeStoreSlug}` : "/dashboard/stores";
+  const accountLevelLinks = [
+    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/dashboard/stores", label: "Store Hub", icon: Store }
+  ];
+  const adminWorkspaceLinks: DashboardNavLink[] = [
+    { href: "/dashboard/admin", label: "Admin Dashboard", icon: LayoutDashboard },
+    { href: "/dashboard/admin/stores", label: "Store Governance", icon: Store },
+    { href: "/dashboard/admin/moderation", label: "Moderation", icon: ClipboardList },
+    { href: "/dashboard/admin/audit", label: "Audit Explorer", icon: Shield }
+  ];
+
+  const storeWorkspaceLinks: DashboardNavLink[] = [
+    { href: `${storeWorkspaceBaseHref}`, label: "Store Overview", icon: LayoutDashboard },
+    { href: `${storeWorkspaceBaseHref}/catalog`, label: "Catalog", icon: Package },
+    { href: `${storeWorkspaceBaseHref}/orders`, label: "Orders", icon: ReceiptText },
+    { href: `${storeWorkspaceBaseHref}/notifications`, label: "Notifications", icon: Bell },
+    { href: `${storeWorkspaceBaseHref}/promotions`, label: "Promotions", icon: BadgePercent },
+    { href: `${storeWorkspaceBaseHref}/subscribers`, label: "Subscribers", icon: Mail },
+    { href: `${storeWorkspaceBaseHref}/content-workspace`, label: "Content", icon: Home },
+    { href: `${storeWorkspaceBaseHref}/reports`, label: "Reports", icon: BarChart3 },
+    { href: `${storeWorkspaceBaseHref}/store-settings`, label: "Settings", icon: Cog }
+  ];
+  const subWorkspaceEntryHrefs = new Set([
+    `${storeWorkspaceBaseHref}/content-workspace`,
+    `${storeWorkspaceBaseHref}/reports`,
+    `${storeWorkspaceBaseHref}/store-settings`
+  ]);
+
+  const storeSettingsLinks: DashboardNavLink[] = storeSettingsLinksBase.map((link) => ({
+    ...link,
+    href: `${storeWorkspaceBaseHref}${link.href}`
+  }));
+  const contentWorkspaceWorkspaceLinks: DashboardNavLink[] = contentWorkspaceLinks.map((link) => ({
+    ...link,
+    href: `${storeWorkspaceBaseHref}${link.href}`
+  }));
+  const reportsWorkspaceLinks: DashboardNavLink[] = reportsLinks.map((link) => ({
+    ...link,
+    href: `${storeWorkspaceBaseHref}${link.href}`
+  }));
 
   async function toggleTestMode() {
     if (!canManageTestMode || testModeSaving) {
@@ -143,46 +215,44 @@ export function DashboardNav({
     setTestModeSaving(false);
   }
 
-  const isContentStudioMode =
-    normalizedPath === "/dashboard/content-studio" || normalizedPath.startsWith("/dashboard/content-studio/");
+  const isContentWorkspaceMode =
+    normalizedPath === `${storeWorkspaceBaseHref}/content-workspace` ||
+    normalizedPath.startsWith(`${storeWorkspaceBaseHref}/content-workspace/`);
   const isStoreSettingsMode =
-    normalizedPath === "/dashboard/store-settings" || normalizedPath.startsWith("/dashboard/store-settings/");
-  const isReportsMode = normalizedPath === "/dashboard/reports" || normalizedPath.startsWith("/dashboard/reports/");
-  const activeWorkspaceLinks = isContentStudioMode
-    ? { title: "Content Studio", links: contentStudioLinks }
-    : isStoreSettingsMode
-      ? { title: "Store Settings", links: storeSettingsLinks }
-      : isReportsMode
-        ? { title: "Reports", links: reportsLinks }
-        : null;
+    normalizedPath === `${storeWorkspaceBaseHref}/store-settings` || normalizedPath.startsWith(`${storeWorkspaceBaseHref}/store-settings/`);
+  const isReportsMode = normalizedPath === `${storeWorkspaceBaseHref}/reports` || normalizedPath.startsWith(`${storeWorkspaceBaseHref}/reports/`);
+  const isAdminWorkspaceMode = normalizedPath === "/dashboard/admin" || normalizedPath.startsWith("/dashboard/admin/");
 
   return (
     <nav className={cn("h-full min-h-0 flex flex-col", className)}>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="space-y-2">
-          {hasStoreAccess ? (
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Navigation</p>
-                {globalLinks.map((link) => (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    onClick={onNavigate}
-                    aria-current={isLinkActive(link.href) ? "page" : undefined}
-                    className={cn(buttonVariants({ variant: isLinkActive(link.href) ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
-                  >
-                    {link.label}
-                  </Link>
-                ))}
-              </div>
+          {canAccessPlatform && isAdminWorkspaceMode ? (
+            <div className="space-y-1">
+              <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Admin Workspace</p>
+              {adminWorkspaceLinks.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  onClick={onNavigate}
+                  aria-current={isLinkActive(link.href) ? "page" : undefined}
+                  className={cn(buttonVariants({ variant: isLinkActive(link.href) ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
+                >
+                  <span className="flex items-center gap-2">
+                    <link.icon className="h-4 w-4 shrink-0" />
+                    <span>{link.label}</span>
+                  </span>
+                </Link>
+              ))}
+            </div>
+          ) : null}
 
-              {activeWorkspaceLinks ? (
-                <div className="space-y-1 border-t border-border/70 pt-3">
-                  <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    {activeWorkspaceLinks.title}
-                  </p>
-                  {activeWorkspaceLinks.links.map((link) => (
+          {hasStoreAccess && isStoreWorkspaceRoute && !isAdminWorkspaceMode ? (
+            <div>
+              {isContentWorkspaceMode ? (
+                <div className="space-y-1">
+                  <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Content Workspace</p>
+                  {contentWorkspaceWorkspaceLinks.map((link) => (
                     <Link
                       key={link.href}
                       href={link.href}
@@ -190,50 +260,146 @@ export function DashboardNav({
                       aria-current={isLinkActive(link.href) ? "page" : undefined}
                       className={cn(buttonVariants({ variant: isLinkActive(link.href) ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
                     >
-                      {link.label}
+                      <span className="flex items-center gap-2">
+                        <link.icon className="h-4 w-4 shrink-0" />
+                        <span>{link.label}</span>
+                      </span>
                     </Link>
                   ))}
                 </div>
-              ) : null}
-
-              {canAccessPlatform ? (
-                <div className="space-y-1 border-t border-border/70 pt-3">
-                  <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Platform</p>
-                  <Link
-                    href="/dashboard/platform"
-                    onClick={onNavigate}
-                    aria-current={isLinkActive("/dashboard/platform") ? "page" : undefined}
-                    className={cn(
-                      buttonVariants({ variant: isLinkActive("/dashboard/platform") ? "default" : "ghost", size: "sm" }),
-                      "w-full justify-start"
-                    )}
-                  >
-                    Platform Console
-                  </Link>
+              ) : isStoreSettingsMode ? (
+                <div className="space-y-1">
+                  <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Settings Workspace</p>
+                  {storeSettingsLinks.map((link) => (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      onClick={onNavigate}
+                      aria-current={isLinkActive(link.href) ? "page" : undefined}
+                      className={cn(buttonVariants({ variant: isLinkActive(link.href) ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
+                    >
+                      <span className="flex items-center gap-2">
+                        <link.icon className="h-4 w-4 shrink-0" />
+                        <span>{link.label}</span>
+                      </span>
+                    </Link>
+                  ))}
                 </div>
-              ) : null}
+              ) : isReportsMode ? (
+                <div className="space-y-1">
+                  <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Reports Workspace</p>
+                  {reportsWorkspaceLinks.map((link) => (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      onClick={onNavigate}
+                      aria-current={isLinkActive(link.href) ? "page" : undefined}
+                      className={cn(buttonVariants({ variant: isLinkActive(link.href) ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
+                    >
+                      <span className="flex items-center gap-2">
+                        <link.icon className="h-4 w-4 shrink-0" />
+                        <span>{link.label}</span>
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    Store Workspace
+                  </p>
+                  {storeWorkspaceLinks.map((link) => (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      onClick={onNavigate}
+                      aria-current={isLinkActive(link.href) ? "page" : undefined}
+                      className={cn(buttonVariants({ variant: isLinkActive(link.href) ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
+                    >
+                      <span className="flex w-full items-center justify-between gap-2">
+                        <span className="flex items-center gap-2">
+                          <link.icon className="h-4 w-4 shrink-0" />
+                          <span>{link.label}</span>
+                        </span>
+                        {subWorkspaceEntryHrefs.has(link.href) ? <ChevronRight className="h-4 w-4 shrink-0" /> : null}
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              )}
             </div>
           ) : null}
 
-          {!hasStoreAccess && canAccessPlatform ? (
+          {hasStoreAccess && !isStoreWorkspaceRoute && !isAdminWorkspaceMode ? (
             <div>
-              <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Platform</p>
+              <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Myrivo Workspace</p>
               <div className="space-y-1">
-                <Link
-                  href="/dashboard/platform"
-                  onClick={onNavigate}
-                  aria-current={isLinkActive("/dashboard/platform") ? "page" : undefined}
-                  className={cn(buttonVariants({ variant: isLinkActive("/dashboard/platform") ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
-                >
-                  Platform Console
-                </Link>
+                {accountLevelLinks.map((link) => (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    onClick={onNavigate}
+                    aria-current={isLinkActive(link.href) ? "page" : undefined}
+                    className={cn(buttonVariants({ variant: isLinkActive(link.href) ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
+                  >
+                    <span className="flex items-center gap-2">
+                      <link.icon className="h-4 w-4 shrink-0" />
+                      <span>{link.label}</span>
+                    </span>
+                  </Link>
+                ))}
+                {canAccessPlatform ? (
+                  <Link
+                    href="/dashboard/admin"
+                    onClick={onNavigate}
+                    aria-current={isLinkActive("/dashboard/admin") ? "page" : undefined}
+                    className={cn(buttonVariants({ variant: isLinkActive("/dashboard/admin") ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Shield className="h-4 w-4 shrink-0" />
+                      <span>Admin Workspace</span>
+                    </span>
+                  </Link>
+                ) : null}
               </div>
             </div>
           ) : null}
+
+          {!hasStoreAccess && !isAdminWorkspaceMode && (
+            <div>
+              <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Myrivo Workspace</p>
+              <div className="space-y-1">
+                <Link
+                  href="/dashboard"
+                  onClick={onNavigate}
+                  aria-current={isLinkActive("/dashboard") ? "page" : undefined}
+                  className={cn(buttonVariants({ variant: isLinkActive("/dashboard") ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
+                >
+                  <span className="flex items-center gap-2">
+                    <LayoutDashboard className="h-4 w-4 shrink-0" />
+                    <span>Dashboard</span>
+                  </span>
+                </Link>
+                {canAccessPlatform ? (
+                  <Link
+                    href="/dashboard/admin"
+                    onClick={onNavigate}
+                    aria-current={isLinkActive("/dashboard/admin") ? "page" : undefined}
+                    className={cn(buttonVariants({ variant: isLinkActive("/dashboard/admin") ? "default" : "ghost", size: "sm" }), "w-full justify-start")}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Shield className="h-4 w-4 shrink-0" />
+                      <span>Admin Workspace</span>
+                    </span>
+                  </Link>
+                ) : null}
+              </div>
+            </div>
+          )}
         </div>
       </div>
       <div className="mt-4 shrink-0 space-y-2 border-t border-border pt-3">
-        {hasStoreAccess ? (
+        {hasStoreAccess && isStoreWorkspaceRoute ? (
           <div className="rounded-md border border-border/70 bg-background/70 p-2">
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs font-medium">Test Mode</p>
@@ -252,7 +418,7 @@ export function DashboardNav({
                 ? "Routes checkout through test credentials for this store."
                 : "Only billing admins can change this setting."}
             </p>
-            {testModeError ? <p className="mt-1 text-[11px] text-red-600">{testModeError}</p> : null}
+            <AppAlert variant="error" compact className="mt-1 text-[11px]" message={testModeError} />
           </div>
         ) : null}
 
@@ -275,7 +441,6 @@ export function DashboardNav({
                   </span>
                 )}
                 <span className="min-w-0 text-left">
-                  <span className="block truncate text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">My Account</span>
                   <span className="block truncate text-sm font-medium">{accountName}</span>
                   <span className="block truncate text-xs text-muted-foreground">{accountEmail}</span>
                 </span>
@@ -290,15 +455,21 @@ export function DashboardNav({
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
-              <Link href="/dashboard/account" onClick={onNavigate}>
+              <Link href={withReturnTo("/profile", accountReturnTo)} onClick={onNavigate}>
                 <UserCircle2 className="mr-2 h-4 w-4" />
-                Profile & Account
+                Profile
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link href="/account" onClick={onNavigate}>
-                <LayoutGrid className="mr-2 h-4 w-4" />
-                Customer Dashboard
+              <Link href={withReturnTo("/notifications", accountReturnTo)} onClick={onNavigate}>
+                <Bell className="mr-2 h-4 w-4" />
+                Notifications
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href={withReturnTo("/settings", accountReturnTo)} onClick={onNavigate}>
+                <Settings className="mr-2 h-4 w-4" />
+                Settings
               </Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />

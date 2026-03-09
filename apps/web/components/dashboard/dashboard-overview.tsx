@@ -5,7 +5,9 @@ import { OrderRecord, ProductRecord } from "@/types/database";
 
 type DashboardOverviewProps = {
   recentOrders: Array<
-    Pick<OrderRecord, "id" | "total_cents" | "status" | "fulfillment_status" | "shipment_status" | "tracking_number" | "discount_cents" | "created_at">
+    Pick<OrderRecord, "id" | "total_cents" | "status" | "fulfillment_status" | "shipment_status" | "tracking_number" | "discount_cents" | "created_at"> & {
+      order_fee_breakdowns?: { platform_fee_cents: number; net_payout_cents: number } | { platform_fee_cents: number; net_payout_cents: number }[] | null;
+    }
   >;
   products: Array<
     Pick<
@@ -20,16 +22,34 @@ export function DashboardOverview({ products, recentOrders }: DashboardOverviewP
   const paidOrders = recentOrders.filter((order) => order.status === "paid");
   const revenueCents = paidOrders.reduce((sum, order) => sum + order.total_cents, 0);
   const avgOrderCents = paidOrders.length > 0 ? Math.round(revenueCents / paidOrders.length) : 0;
+  const platformFeeCents = paidOrders.reduce((sum, order) => {
+    const fee = order.order_fee_breakdowns
+      ? Array.isArray(order.order_fee_breakdowns)
+        ? (order.order_fee_breakdowns[0]?.platform_fee_cents ?? 0)
+        : order.order_fee_breakdowns.platform_fee_cents
+      : 0;
+    return sum + fee;
+  }, 0);
+  const netPayoutCents = paidOrders.reduce((sum, order) => {
+    const payout = order.order_fee_breakdowns
+      ? Array.isArray(order.order_fee_breakdowns)
+        ? (order.order_fee_breakdowns[0]?.net_payout_cents ?? 0)
+        : order.order_fee_breakdowns.net_payout_cents
+      : order.total_cents;
+    return sum + payout;
+  }, 0);
   const needsPacking = recentOrders.filter((order) => order.fulfillment_status === "pending_fulfillment").length;
   const inPacking = recentOrders.filter((order) => order.fulfillment_status === "packing").length;
   const inTransit = recentOrders.filter((order) => order.fulfillment_status === "shipped").length;
 
   return (
     <section className="space-y-4">
-      <section className="grid gap-3 sm:grid-cols-3">
+      <section className="grid gap-3 sm:grid-cols-3 xl:grid-cols-5">
         <DataStat label="Recent Revenue" value={`$${(revenueCents / 100).toFixed(2)}`} className="bg-card" />
         <DataStat label="Recent Orders" value={String(recentOrders.length)} className="bg-card" />
         <DataStat label="Low Stock SKUs" value={String(lowStockProducts.length)} className="bg-card" />
+        <DataStat label="Platform Fees" value={`$${(platformFeeCents / 100).toFixed(2)}`} className="bg-card" />
+        <DataStat label="Net Payout" value={`$${(netPayoutCents / 100).toFixed(2)}`} className="bg-card" />
       </section>
 
       <section className="grid gap-3 sm:grid-cols-3">

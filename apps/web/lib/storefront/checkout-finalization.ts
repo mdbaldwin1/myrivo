@@ -20,10 +20,23 @@ type StorefrontCheckoutRecord = {
   pickup_timezone: string | null;
   shipping_fee_cents: number | null;
   promo_code: string | null;
+  fee_plan_key: string | null;
+  fee_bps: number | null;
+  fee_fixed_cents: number | null;
+  item_total_cents: number | null;
+  platform_fee_cents: number | null;
   items: unknown;
   order_id: string | null;
   status: "pending" | "completed" | "failed";
 };
+
+function resolveCheckoutFeeSnapshot(checkout: StorefrontCheckoutRecord, fallback: Awaited<ReturnType<typeof resolveStoreFeeProfile>>) {
+  return {
+    planKey: checkout.fee_plan_key ?? fallback.planKey,
+    feeBps: checkout.fee_bps ?? fallback.feeBps,
+    feeFixedCents: checkout.fee_fixed_cents ?? fallback.feeFixedCents
+  };
+}
 
 export async function finalizeStorefrontCheckout(checkoutId: string, paymentIntentId: string | null) {
   const supabase = createSupabaseAdminClient();
@@ -31,7 +44,7 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
   const { data: checkout, error: checkoutError } = await supabase
     .from("storefront_checkout_sessions")
     .select(
-      "id,store_id,store_slug,customer_email,customer_first_name,customer_last_name,customer_phone,customer_note,fulfillment_method,fulfillment_label,pickup_location_id,pickup_location_snapshot_json,pickup_window_start_at,pickup_window_end_at,pickup_timezone,shipping_fee_cents,promo_code,items,order_id,status"
+      "id,store_id,store_slug,customer_email,customer_first_name,customer_last_name,customer_phone,customer_note,fulfillment_method,fulfillment_label,pickup_location_id,pickup_location_snapshot_json,pickup_window_start_at,pickup_window_end_at,pickup_timezone,shipping_fee_cents,promo_code,fee_plan_key,fee_bps,fee_fixed_cents,item_total_cents,platform_fee_cents,items,order_id,status"
     )
     .eq("id", checkoutId)
     .maybeSingle<StorefrontCheckoutRecord>();
@@ -72,11 +85,11 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
 
       const shippingFeeCents = Math.max(0, checkout.shipping_fee_cents ?? 0);
       const computedTotalCents = Math.max(0, existingOrderRow.subtotal_cents - existingOrderRow.discount_cents) + shippingFeeCents;
-      const feeProfile = await resolveStoreFeeProfile(checkout.store_id);
-      const platformFeeCents = calculatePlatformFeeCents(
-        Math.max(0, existingOrderRow.subtotal_cents - existingOrderRow.discount_cents),
-        feeProfile
-      );
+      const fallbackFeeProfile = await resolveStoreFeeProfile(checkout.store_id);
+      const feeProfile = resolveCheckoutFeeSnapshot(checkout, fallbackFeeProfile);
+      const platformFeeCents =
+        checkout.platform_fee_cents ??
+        calculatePlatformFeeCents(Math.max(0, existingOrderRow.subtotal_cents - existingOrderRow.discount_cents), feeProfile);
 
       const { error: orderSyncError } = await supabase
         .from("orders")
@@ -93,8 +106,6 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
           pickup_window_end_at: checkout.pickup_window_end_at,
           pickup_timezone: checkout.pickup_timezone,
           shipping_fee_cents: shippingFeeCents,
-          platform_fee_bps: feeProfile.feeBps,
-          platform_fee_cents: platformFeeCents,
           total_cents: computedTotalCents
         })
         .eq("id", existingOrder.id);
@@ -172,11 +183,11 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
 
   const shippingFeeCents = Math.max(0, checkout.shipping_fee_cents ?? 0);
   const computedTotalCents = Math.max(0, createdOrderRow.subtotal_cents - createdOrderRow.discount_cents) + shippingFeeCents;
-  const feeProfile = await resolveStoreFeeProfile(checkout.store_id);
-  const platformFeeCents = calculatePlatformFeeCents(
-    Math.max(0, createdOrderRow.subtotal_cents - createdOrderRow.discount_cents),
-    feeProfile
-  );
+  const fallbackFeeProfile = await resolveStoreFeeProfile(checkout.store_id);
+  const feeProfile = resolveCheckoutFeeSnapshot(checkout, fallbackFeeProfile);
+  const platformFeeCents =
+    checkout.platform_fee_cents ??
+    calculatePlatformFeeCents(Math.max(0, createdOrderRow.subtotal_cents - createdOrderRow.discount_cents), feeProfile);
 
   const { error: orderSyncError } = await supabase
     .from("orders")
@@ -193,8 +204,6 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
       pickup_window_end_at: checkout.pickup_window_end_at,
       pickup_timezone: checkout.pickup_timezone,
       shipping_fee_cents: shippingFeeCents,
-      platform_fee_bps: feeProfile.feeBps,
-      platform_fee_cents: platformFeeCents,
       total_cents: computedTotalCents
     })
     .eq("id", orderId);
@@ -252,4 +261,21 @@ export async function getStorefrontCheckoutBySessionId(storeSlug: string, sessio
   }
 
   return data;
+}
+
+export async function markStorefrontCheckoutFailed(checkoutId: string, errorMessage: string, paymentIntentId: string | null = null) {
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase
+    .from("storefront_checkout_sessions")
+    .update({
+      status: "failed",
+      error_message: errorMessage,
+      stripe_payment_intent_id: paymentIntentId
+    })
+    .eq("id", checkoutId)
+    .eq("status", "pending");
+
+  if (error) {
+    throw new Error(error.message);
+  }
 }

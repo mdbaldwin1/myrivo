@@ -5,6 +5,7 @@ import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { AvatarPicker } from "@/components/ui/avatar-picker";
+import { notify } from "@/lib/feedback/toast";
 
 type CustomerProfileSettingsProps = {
   email: string | null;
@@ -16,7 +17,6 @@ export function CustomerProfileSettings({ email, displayName, initialAvatarPath 
   const [avatarPath, setAvatarPath] = useState(initialAvatarPath);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
   const fallbackLabel = useMemo(() => {
     const source = displayName?.trim() || email?.split("@")[0] || "ME";
     const parts = source.split(/\s+/).filter(Boolean);
@@ -55,7 +55,6 @@ export function CustomerProfileSettings({ email, displayName, initialAvatarPath 
   async function handleAvatarUpload(file: File) {
     setUploading(true);
     setError(null);
-    setMessage(null);
 
     const formData = new FormData();
     formData.append("file", file);
@@ -77,7 +76,7 @@ export function CustomerProfileSettings({ email, displayName, initialAvatarPath 
       await cleanupUploadedAvatar(payload.avatarPath);
     }
     if (persisted) {
-      setMessage("Avatar updated.");
+      notify.success("Avatar updated.");
     }
     setUploading(false);
   }
@@ -85,10 +84,9 @@ export function CustomerProfileSettings({ email, displayName, initialAvatarPath 
   async function handleAvatarRemove() {
     setUploading(true);
     setError(null);
-    setMessage(null);
     const persisted = await persistAvatar(null);
     if (persisted) {
-      setMessage("Avatar removed.");
+      notify.success("Avatar removed.");
     }
     setUploading(false);
   }
@@ -110,7 +108,6 @@ export function CustomerProfileSettings({ email, displayName, initialAvatarPath 
           onRemove={() => void handleAvatarRemove()}
         />
       </FormField>
-      <FeedbackMessage type="success" message={message} />
       <FeedbackMessage type="error" message={error} />
     </div>
   );

@@ -57,7 +57,7 @@ Applied:
    - `Store Settings > Checkout Rules`
 4. Applied bottom action bar pattern to:
    - `Account Settings`
-   - `Content Studio` section forms via `StoreExperienceSectionForm`
+   - `Content Workspace` dedicated section forms
 5. Applied bottom action bar pattern to:
    - `Platform Controls`
    - `Hero Content` form

@@ -1,14 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { readJsonBody } from "@/lib/http/read-json-body";
+import { resolveAccountNotificationPreferences } from "@/lib/notifications/preferences";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { GlobalUserRole } from "@/types/database";
 
 const preferencesSchema = z.object({
-  weeklyDigestEmails: z.boolean(),
-  productAnnouncements: z.boolean()
+  weeklyDigestEmails: z.boolean().optional(),
+  productAnnouncements: z.boolean().optional(),
+  notificationSoundEnabled: z.boolean().optional(),
+  orderAlertsEmail: z.boolean().optional(),
+  orderAlertsInApp: z.boolean().optional(),
+  inventoryAlertsEmail: z.boolean().optional(),
+  inventoryAlertsInApp: z.boolean().optional(),
+  systemAlertsEmail: z.boolean().optional(),
+  systemAlertsInApp: z.boolean().optional(),
+  teamAlertsEmail: z.boolean().optional(),
+  teamAlertsInApp: z.boolean().optional()
 });
 
 const updateSchema = z
@@ -49,19 +59,7 @@ function isValidAvatarUrlForUser(avatarUrl: string, userId: string): boolean {
 }
 
 function extractPreferences(metadata: Record<string, unknown> | null | undefined) {
-  const raw = metadata?.account_preferences;
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return {
-      weeklyDigestEmails: true,
-      productAnnouncements: true
-    };
-  }
-
-  const preferences = raw as Record<string, unknown>;
-  return {
-    weeklyDigestEmails: preferences.weeklyDigestEmails !== false,
-    productAnnouncements: preferences.productAnnouncements !== false
-  };
+  return resolveAccountNotificationPreferences(metadata);
 }
 
 function buildResponse(profile: ProfileRow) {
@@ -72,6 +70,29 @@ function buildResponse(profile: ProfileRow) {
     avatarPath: profile.avatar_path,
     globalRole: profile.global_role,
     preferences: extractPreferences(profile.metadata)
+  };
+}
+
+function buildDefaultProfile(user: { id: string; email?: string | null }) {
+  return {
+    id: user.id,
+    email: user.email ?? null,
+    displayName: null,
+    avatarPath: null,
+    globalRole: "user" as const,
+    preferences: {
+      weeklyDigestEmails: true,
+      productAnnouncements: true,
+      notificationSoundEnabled: false,
+      orderAlertsEmail: true,
+      orderAlertsInApp: true,
+      inventoryAlertsEmail: true,
+      inventoryAlertsInApp: true,
+      systemAlertsEmail: true,
+      systemAlertsInApp: true,
+      teamAlertsEmail: true,
+      teamAlertsInApp: true
+    }
   };
 }
 
@@ -96,7 +117,7 @@ export async function GET() {
   }
 
   if (!data) {
-    return NextResponse.json({ error: "User profile not found." }, { status: 404 });
+    return NextResponse.json({ profile: buildDefaultProfile(user) });
   }
 
   return NextResponse.json({ profile: buildResponse(data) });
@@ -116,6 +137,7 @@ export async function PUT(request: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const admin = createSupabaseAdminClient();
 
   const rawBody = await readJsonBody(request);
   if (!rawBody.ok) {
@@ -127,7 +149,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Invalid payload", details: payload.error.flatten() }, { status: 400 });
   }
 
-  const { data: currentProfile, error: currentProfileError } = await supabase
+  const { data: currentProfile, error: currentProfileError } = await admin
     .from("user_profiles")
     .select("id,email,display_name,avatar_path,global_role,metadata")
     .eq("id", user.id)
@@ -137,28 +159,38 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: currentProfileError.message }, { status: 500 });
   }
 
-  if (!currentProfile) {
-    return NextResponse.json({ error: "User profile not found." }, { status: 404 });
-  }
-
   const updates: {
+    id: string;
+    email?: string | null;
+    global_role?: GlobalUserRole;
     display_name?: string;
     avatar_path?: string | null;
     metadata?: Record<string, unknown>;
-  } = {};
+  } = { id: user.id };
+
+  if (!currentProfile) {
+    updates.id = user.id;
+    updates.email = user.email ?? null;
+    updates.global_role = "user";
+  }
 
   if (payload.data.displayName !== undefined) {
     updates.display_name = payload.data.displayName;
   }
 
   if (payload.data.preferences !== undefined) {
+    const currentMetadata = currentProfile?.metadata;
     const baseMetadata =
-      currentProfile.metadata && typeof currentProfile.metadata === "object" && !Array.isArray(currentProfile.metadata)
-        ? currentProfile.metadata
+      currentMetadata && typeof currentMetadata === "object" && !Array.isArray(currentMetadata)
+        ? currentMetadata
         : {};
+    const mergedPreferences = {
+      ...resolveAccountNotificationPreferences(baseMetadata),
+      ...payload.data.preferences
+    };
     updates.metadata = {
       ...baseMetadata,
-      account_preferences: payload.data.preferences
+      account_preferences: mergedPreferences
     };
   }
 
@@ -170,10 +202,9 @@ export async function PUT(request: NextRequest) {
     updates.avatar_path = nextAvatarPath;
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await admin
     .from("user_profiles")
-    .update(updates)
-    .eq("id", user.id)
+    .upsert(updates, { onConflict: "id" })
     .select("id,email,display_name,avatar_path,global_role,metadata")
     .single<ProfileRow>();
 
@@ -181,10 +212,9 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  if (payload.data.avatarPath !== undefined && currentProfile.avatar_path && currentProfile.avatar_path !== data.avatar_path) {
+  if (payload.data.avatarPath !== undefined && currentProfile?.avatar_path && currentProfile.avatar_path !== data.avatar_path) {
     const previousStoragePath = toStoragePath(currentProfile.avatar_path);
     if (previousStoragePath) {
-      const admin = createSupabaseAdminClient();
       await admin.storage.from(AVATAR_BUCKET).remove([previousStoragePath]);
     }
   }

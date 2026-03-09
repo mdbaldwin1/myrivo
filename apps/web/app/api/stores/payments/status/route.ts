@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { isStripeStubMode, stripeEnvSchema } from "@/lib/env";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import { getStripeClient } from "@/lib/stripe/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -20,40 +19,16 @@ export async function GET() {
     return NextResponse.json({ error: "No store found for account" }, { status: 404 });
   }
 
-  const { data: billingProfile, error: billingProfileError } = await supabase
-      .from("store_billing_profiles")
-      .select("test_mode_enabled")
-      .eq("store_id", bundle.store.id)
-      .maybeSingle<{ test_mode_enabled: boolean }>();
-
-  if (billingProfileError) {
-    return NextResponse.json({ error: billingProfileError.message }, { status: 500 });
-  }
-
-  const effectiveStubMode = isStripeStubMode() || Boolean(billingProfile?.test_mode_enabled);
-
   if (!bundle.store.stripe_account_id) {
-    const hasStripeEnv = stripeEnvSchema.safeParse({
-      STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
-      STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET
-    }).success;
-
     return NextResponse.json({
       connected: false,
-      hasStripeEnv,
-      mode: effectiveStubMode ? "stub" : "live",
       readyForLiveCheckout: false
     });
   }
 
   try {
     const account = await getStripeClient().accounts.retrieve(bundle.store.stripe_account_id);
-    const hasStripeEnv = stripeEnvSchema.safeParse({
-      STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
-      STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET
-    }).success;
-    const mode = effectiveStubMode ? "stub" : "live";
-    const readyForLiveCheckout = Boolean(account.charges_enabled && account.payouts_enabled && hasStripeEnv && mode === "live");
+    const readyForLiveCheckout = Boolean(account.charges_enabled && account.payouts_enabled);
 
     return NextResponse.json({
       connected: true,
@@ -61,16 +36,13 @@ export async function GET() {
       chargesEnabled: account.charges_enabled,
       payoutsEnabled: account.payouts_enabled,
       detailsSubmitted: account.details_submitted,
-      hasStripeEnv,
-      mode,
       readyForLiveCheckout
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json({
-      connected: false,
+      connected: true,
       accountId: bundle.store.stripe_account_id,
-      mode: effectiveStubMode ? "stub" : "live",
-      error: (error as Error).message
+      readyForLiveCheckout: false
     });
   }
 }

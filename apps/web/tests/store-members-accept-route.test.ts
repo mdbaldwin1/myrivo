@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 
 const hashInviteTokenMock = vi.fn();
 const logAuditEventMock = vi.fn();
+const notifyOwnersTeamInviteAcceptedMock = vi.fn();
 const adminFromMock = vi.fn();
 const authGetUserMock = vi.fn();
 
@@ -13,6 +14,10 @@ vi.mock("@/lib/stores/membership-invites", () => ({
 
 vi.mock("@/lib/audit/log", () => ({
   logAuditEvent: (...args: unknown[]) => logAuditEventMock(...args)
+}));
+
+vi.mock("@/lib/notifications/owner-notifications", () => ({
+  notifyOwnersTeamInviteAccepted: (...args: unknown[]) => notifyOwnersTeamInviteAcceptedMock(...args)
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -32,6 +37,7 @@ vi.mock("@/lib/supabase/server", () => ({
 beforeEach(() => {
   hashInviteTokenMock.mockReset();
   logAuditEventMock.mockReset();
+  notifyOwnersTeamInviteAcceptedMock.mockReset();
   adminFromMock.mockReset();
   authGetUserMock.mockReset();
 });
@@ -66,7 +72,8 @@ describe("store membership invite accept route", () => {
                   email: "staff@example.com",
                   role: "staff",
                   status: "pending",
-                  expires_at: "2030-01-01T00:00:00.000Z"
+                  expires_at: "2030-01-01T00:00:00.000Z",
+                  store: { slug: "demo-store" }
                 },
                 error: null
               }))
@@ -95,8 +102,8 @@ describe("store membership invite accept route", () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({ ok: true, role: "staff" });
+    await expect(response.json()).resolves.toMatchObject({ ok: true, role: "staff", storeSlug: "demo-store" });
     expect(logAuditEventMock).toHaveBeenCalledTimes(1);
+    expect(notifyOwnersTeamInviteAcceptedMock).toHaveBeenCalledTimes(1);
   });
 });
-

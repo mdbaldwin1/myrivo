@@ -1,18 +1,22 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
 import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
 import { Flyout } from "@/components/ui/flyout";
 import { OrderDetailPanel } from "@/components/dashboard/order-detail-panel";
+import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { RowActionButton, RowActions } from "@/components/ui/row-actions";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { notify } from "@/lib/feedback/toast";
+import { parseApiError } from "@/lib/http/client-error";
+import { buildStoreWorkspacePath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
 import type { OrderRecord } from "@/types/database";
 
 type OrdersManagerProps = {
@@ -84,6 +88,9 @@ function getFeeBreakdown(order: OrderRow): OrderFeeBreakdown | null {
 }
 
 export function OrdersManager({ initialOrders }: OrdersManagerProps) {
+  const pathname = usePathname();
+  const activeStoreSlug = getStoreSlugFromDashboardPathname(pathname);
+  const pickListHref = buildStoreWorkspacePath(activeStoreSlug, "/orders/pick-list", "/dashboard/stores");
   const [orders, setOrders] = useState(initialOrders);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [shippingOrderId, setShippingOrderId] = useState<string | null>(null);
@@ -97,7 +104,6 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
   const [syncingOrderId, setSyncingOrderId] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [shippingError, setShippingError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
 
   const visibleOrders = useMemo(
     () => (statusFilter === "all" ? orders : orders.filter((order) => order.status === statusFilter)),
@@ -116,7 +122,6 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
 
   async function updateStatus(orderId: string, status: OrderStatus) {
     setPageError(null);
-    setMessage(null);
 
     const response = await fetch("/api/orders", {
       method: "PATCH",
@@ -132,11 +137,11 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
     }
 
     setOrders((current) => current.map((order) => (order.id === orderId ? payload.order! : order)));
+    notify.success("Order status updated.");
   }
 
   async function updateFulfillment(orderId: string, fulfillmentStatus: OrderRecord["fulfillment_status"]) {
     setPageError(null);
-    setMessage(null);
 
     const response = await fetch("/api/orders", {
       method: "PATCH",
@@ -152,6 +157,7 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
     }
 
     setOrders((current) => current.map((order) => (order.id === orderId ? payload.order! : order)));
+    notify.success("Fulfillment status updated.");
   }
 
   async function saveShipmentDetails() {
@@ -162,7 +168,6 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
     setSavingShipment(true);
     setShippingError(null);
     setPageError(null);
-    setMessage(null);
 
     const response = await fetch("/api/orders/ship", {
       method: "POST",
@@ -185,12 +190,11 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
     setOrders((current) => current.map((order) => (order.id === shippingOrderId ? payload.order! : order)));
     setShippingOrderId(null);
     setTrackingNumber("");
-    setMessage("Shipment details saved.");
+    notify.success("Shipment details saved.");
   }
 
   async function refreshTracking(orderId: string) {
     setPageError(null);
-    setMessage(null);
     setSyncingOrderId(orderId);
 
     const response = await fetch("/api/orders/refresh-tracking", {
@@ -212,9 +216,9 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
     }
 
     if (payload.message) {
-      setMessage(payload.message);
+      notify.success(payload.message);
     } else {
-      setMessage("Tracking synced.");
+      notify.success("Tracking synced.");
     }
   }
 
@@ -225,8 +229,7 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
     const response = await fetch("/api/orders/export");
 
     if (!response.ok) {
-      const payload = (await response.json().catch(() => ({ error: "Unable to export orders." }))) as { error?: string };
-      setPageError(payload.error ?? "Unable to export orders.");
+      setPageError(await parseApiError(response, "Unable to export orders."));
       setExporting(false);
       return;
     }
@@ -240,6 +243,7 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
     anchor.click();
     anchor.remove();
     URL.revokeObjectURL(url);
+    notify.success("Orders exported.");
     setExporting(false);
   }
 
@@ -247,10 +251,11 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
     <DashboardPageScaffold
       title="Orders"
       description="Track order status, ship orders, and keep delivery status synced."
+      className="p-4 lg:p-4"
       action={
         <RowActions align="start">
           <Button type="button" variant="outline" size="sm" asChild>
-            <Link href="/dashboard/orders/pick-list" target="_blank" rel="noreferrer">
+            <Link href={pickListHref} target="_blank" rel="noreferrer">
               Daily Pick List
             </Link>
           </Button>
@@ -267,12 +272,7 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
               <CardTitle className="text-lg">Order List</CardTitle>
               <CardDescription>Update payment and fulfillment status, then manage shipping details per order.</CardDescription>
             </div>
-            <FormField
-              label="Filter status"
-              className="block w-full max-w-52"
-              labelClassName="text-xs uppercase tracking-wide text-muted-foreground"
-              description="Filter visible rows without changing order data."
-            >
+            <div className="w-full max-w-52">
               <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}>
                 <option value="all">All statuses</option>
                 {statusOptions.map((status) => (
@@ -281,12 +281,11 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
                   </option>
                 ))}
               </Select>
-            </FormField>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <FeedbackMessage type="error" message={pageError} />
-          <FeedbackMessage type="success" message={message} />
+          <AppAlert variant="error" message={pageError} />
 
           <div className="overflow-x-auto rounded-md border border-border">
             <Table>
@@ -389,7 +388,11 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
                             {syncingOrderId === order.id ? "Syncing..." : "Sync"}
                           </RowActionButton>
                           <RowActionButton type="button" asChild>
-                            <Link href={`/dashboard/orders/${order.id}/packing-slip`} target="_blank" rel="noreferrer">
+                            <Link
+                              href={buildStoreWorkspacePath(activeStoreSlug, `/orders/${order.id}/packing-slip`, "/dashboard/stores")}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
                               Slip
                             </Link>
                           </RowActionButton>
@@ -437,7 +440,7 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
             void saveShipmentDetails();
           }}
         >
-          <FeedbackMessage type="error" message={shippingError} />
+          <AppAlert variant="error" message={shippingError} />
           <FormField label="Carrier" description="Carrier name shown alongside tracking details in customer notifications.">
             <Select value={shippingCarrier} onChange={(event) => setShippingCarrier(event.target.value)}>
               <option value="usps">USPS</option>

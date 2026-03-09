@@ -11,7 +11,7 @@ const querySchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
-  const rateLimitResponse = checkRateLimit(request, {
+  const rateLimitResponse = await checkRateLimit(request, {
     key: "checkout-status",
     limit: 60,
     windowMs: 60_000
@@ -32,6 +32,9 @@ export async function GET(request: NextRequest) {
 
   const { sessionId } = parsed.data;
   const storeSlug = await resolveStoreSlugFromRequestAsync(request);
+  if (!storeSlug) {
+    return NextResponse.json({ error: "Store context is required." }, { status: 400 });
+  }
 
   try {
     const checkout = await getStorefrontCheckoutBySessionId(storeSlug, sessionId);

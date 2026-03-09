@@ -1,7 +1,6 @@
-import { isOwnerAccessEmail } from "@/lib/auth/owner-access";
 import { hasStoreRole } from "@/lib/auth/roles";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { isMissingRelationInSchemaCache } from "@/lib/supabase/error-classifiers";
+import { isMissingColumnInSchemaCache, isMissingRelationInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { readSelectedStoreSlugFromCookies, resolveActiveStoreFromList, type AccessibleStore } from "@/lib/stores/tenant-context";
 import type {
   StoreRecord,
@@ -16,7 +15,10 @@ export type OwnedStoreBundle = {
   role: StoreMemberRole | "support";
   availableStores: AccessibleStore[];
   permissionsJson: Record<string, unknown> | null;
-  branding: Pick<StoreBrandingRecord, "logo_path" | "primary_color" | "accent_color" | "theme_json"> | null;
+  branding: Pick<
+    StoreBrandingRecord,
+    "logo_path" | "favicon_path" | "apple_touch_icon_path" | "og_image_path" | "twitter_image_path" | "primary_color" | "accent_color" | "theme_json"
+  > | null;
   settings: Pick<
     StoreSettingsRecord,
     | "support_email"
@@ -24,6 +26,17 @@ export type OwnedStoreBundle = {
     | "shipping_policy"
     | "return_policy"
     | "announcement"
+    | "seo_title"
+    | "seo_description"
+    | "seo_noindex"
+    | "seo_location_city"
+    | "seo_location_region"
+    | "seo_location_state"
+    | "seo_location_postal_code"
+    | "seo_location_country_code"
+    | "seo_location_address_line1"
+    | "seo_location_address_line2"
+    | "seo_location_show_full_address"
     | "footer_tagline"
     | "footer_note"
     | "instagram_url"
@@ -101,60 +114,108 @@ async function resolveAccessibleStores(userId: string): Promise<AccessibleStore[
     return membershipStores.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  if (!isOwnerAccessEmail(user?.email)) {
-    return [];
-  }
-
-  const { data: allowlistedStores, error: allowlistedStoresError } = await supabase
-    .from("stores")
-    .select("id,name,slug,status,stripe_account_id")
-    .order("name", { ascending: true });
-
-  if (allowlistedStoresError) {
-    throw new Error(allowlistedStoresError.message);
-  }
-
-  return (allowlistedStores ?? []).map((store) => ({ ...store, role: "support" as const, permissions_json: { "*": true } }));
+  return [];
 }
 
-export async function getOwnedStoreBundle(
-  userId: string,
-  requiredRole: StoreMemberRole | "support" = "staff"
-): Promise<OwnedStoreBundle | null> {
-  const supabase = await createSupabaseServerClient();
-  const accessibleStores = await resolveAccessibleStores(userId);
-  const selectedStoreSlug = await readSelectedStoreSlugFromCookies();
-  const resolvedStore = resolveActiveStoreFromList(accessibleStores, selectedStoreSlug);
+async function buildOwnedStoreBundleFromResolvedStore(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  resolvedStore: AccessibleStore,
+  accessibleStores: AccessibleStore[]
+): Promise<OwnedStoreBundle> {
+  const readBranding = async () => {
+    const fullResult = await supabase
+      .from("store_branding")
+      .select("logo_path,favicon_path,apple_touch_icon_path,og_image_path,twitter_image_path,primary_color,accent_color,theme_json")
+      .eq("store_id", resolvedStore.id)
+      .maybeSingle();
 
-  if (!resolvedStore) {
-    return null;
-  }
+    if (
+      fullResult.error &&
+      (isMissingColumnInSchemaCache(fullResult.error, "favicon_path") ||
+        isMissingColumnInSchemaCache(fullResult.error, "apple_touch_icon_path") ||
+        isMissingColumnInSchemaCache(fullResult.error, "og_image_path") ||
+        isMissingColumnInSchemaCache(fullResult.error, "twitter_image_path"))
+    ) {
+      const fallbackResult = await supabase
+        .from("store_branding")
+        .select("logo_path,primary_color,accent_color,theme_json")
+        .eq("store_id", resolvedStore.id)
+        .maybeSingle<{ logo_path: string | null; primary_color: string | null; accent_color: string | null; theme_json: Record<string, unknown> }>();
 
-  if (!hasStoreRole(resolvedStore.role, requiredRole)) {
-    return null;
-  }
+      if (fallbackResult.error) {
+        return fallbackResult;
+      }
+
+      return {
+        data: fallbackResult.data
+          ? {
+              ...fallbackResult.data,
+              favicon_path: null,
+              apple_touch_icon_path: null,
+              og_image_path: null,
+              twitter_image_path: null
+            }
+          : null,
+        error: null
+      };
+    }
+
+    return fullResult;
+  };
 
   const [
     { data: branding, error: brandingError },
     { data: settings, error: settingsError },
     { data: contentBlocks, error: contentBlocksError }
   ] = await Promise.all([
-    supabase
-      .from("store_branding")
-      .select("logo_path,primary_color,accent_color,theme_json")
-      .eq("store_id", resolvedStore.id)
-      .maybeSingle(),
-    supabase
-      .from("store_settings")
-      .select(
-        "support_email,fulfillment_message,shipping_policy,return_policy,announcement,footer_tagline,footer_note,instagram_url,facebook_url,tiktok_url,policy_faqs,about_article_html,about_sections,storefront_copy_json,email_capture_enabled,email_capture_heading,email_capture_description,email_capture_success_message,checkout_enable_local_pickup,checkout_local_pickup_label,checkout_local_pickup_fee_cents,checkout_enable_flat_rate_shipping,checkout_flat_rate_shipping_label,checkout_flat_rate_shipping_fee_cents,checkout_allow_order_note,checkout_order_note_prompt"
-      )
-      .eq("store_id", resolvedStore.id)
-      .maybeSingle(),
+    readBranding(),
+    (async () => {
+      const full = await supabase
+        .from("store_settings")
+        .select(
+          "support_email,fulfillment_message,shipping_policy,return_policy,announcement,seo_title,seo_description,seo_noindex,seo_location_city,seo_location_region,seo_location_state,seo_location_postal_code,seo_location_country_code,seo_location_address_line1,seo_location_address_line2,seo_location_show_full_address,footer_tagline,footer_note,instagram_url,facebook_url,tiktok_url,policy_faqs,about_article_html,about_sections,storefront_copy_json,email_capture_enabled,email_capture_heading,email_capture_description,email_capture_success_message,checkout_enable_local_pickup,checkout_local_pickup_label,checkout_local_pickup_fee_cents,checkout_enable_flat_rate_shipping,checkout_flat_rate_shipping_label,checkout_flat_rate_shipping_fee_cents,checkout_allow_order_note,checkout_order_note_prompt"
+        )
+        .eq("store_id", resolvedStore.id)
+        .maybeSingle();
+
+      if (
+        isMissingColumnInSchemaCache(full.error, "seo_title") ||
+        isMissingColumnInSchemaCache(full.error, "seo_description") ||
+        isMissingColumnInSchemaCache(full.error, "seo_noindex") ||
+        isMissingColumnInSchemaCache(full.error, "seo_location_city") ||
+        isMissingColumnInSchemaCache(full.error, "seo_location_show_full_address")
+      ) {
+        const legacy = await supabase
+          .from("store_settings")
+          .select(
+            "support_email,fulfillment_message,shipping_policy,return_policy,announcement,footer_tagline,footer_note,instagram_url,facebook_url,tiktok_url,policy_faqs,about_article_html,about_sections,storefront_copy_json,email_capture_enabled,email_capture_heading,email_capture_description,email_capture_success_message,checkout_enable_local_pickup,checkout_local_pickup_label,checkout_local_pickup_fee_cents,checkout_enable_flat_rate_shipping,checkout_flat_rate_shipping_label,checkout_flat_rate_shipping_fee_cents,checkout_allow_order_note,checkout_order_note_prompt"
+          )
+          .eq("store_id", resolvedStore.id)
+          .maybeSingle();
+
+        return {
+          data: legacy.data
+            ? {
+                ...legacy.data,
+                seo_title: null,
+                seo_description: null,
+                seo_noindex: false,
+                seo_location_city: null,
+                seo_location_region: null,
+                seo_location_state: null,
+                seo_location_postal_code: null,
+                seo_location_country_code: null,
+                seo_location_address_line1: null,
+                seo_location_address_line2: null,
+                seo_location_show_full_address: false
+              }
+            : null,
+          error: legacy.error
+        };
+      }
+
+      return full;
+    })(),
     supabase
       .from("store_content_blocks")
       .select("id,sort_order,eyebrow,title,body,cta_label,cta_url,is_active")
@@ -191,6 +252,51 @@ export async function getOwnedStoreBundle(
     settings: settingsError ? null : settings,
     contentBlocks: contentBlocks ?? []
   };
+}
+
+export async function getOwnedStoreBundle(
+  userId: string,
+  requiredRole: StoreMemberRole | "support" = "staff"
+): Promise<OwnedStoreBundle | null> {
+  const supabase = await createSupabaseServerClient();
+  const accessibleStores = await resolveAccessibleStores(userId);
+  const selectedStoreSlug = await readSelectedStoreSlugFromCookies();
+  const resolvedStore = resolveActiveStoreFromList(accessibleStores, selectedStoreSlug);
+
+  if (!resolvedStore) {
+    return null;
+  }
+
+  if (!hasStoreRole(resolvedStore.role, requiredRole)) {
+    return null;
+  }
+
+  return await buildOwnedStoreBundleFromResolvedStore(supabase, resolvedStore, accessibleStores);
+}
+
+export async function getOwnedStoreBundleForSlug(
+  userId: string,
+  storeSlug: string,
+  requiredRole: StoreMemberRole | "support" = "staff"
+): Promise<OwnedStoreBundle | null> {
+  const normalizedSlug = storeSlug.trim().toLowerCase();
+  if (!normalizedSlug) {
+    return null;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const accessibleStores = await resolveAccessibleStores(userId);
+  const resolvedStore = accessibleStores.find((store) => store.slug === normalizedSlug);
+
+  if (!resolvedStore) {
+    return null;
+  }
+
+  if (!hasStoreRole(resolvedStore.role, requiredRole)) {
+    return null;
+  }
+
+  return await buildOwnedStoreBundleFromResolvedStore(supabase, resolvedStore, accessibleStores);
 }
 
 export async function getOwnedStoreId(userId: string): Promise<string | null> {

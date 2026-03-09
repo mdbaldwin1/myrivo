@@ -4,7 +4,7 @@ import { logAuditEvent } from "@/lib/audit/log";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { sendOrderShippingNotification } from "@/lib/notifications/order-emails";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
-import { mapShipmentStatusToFulfillmentStatus, refreshTracker } from "@/lib/shipping/provider";
+import { mapShipmentStatusToFulfillmentStatus, refreshTracker, resolveMonotonicFulfillmentStatus, resolveShippedAt } from "@/lib/shipping/provider";
 import { getStoreShippingConfig } from "@/lib/shipping/store-config";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
 
   const { data: order, error: orderError } = await supabase
     .from("orders")
-    .select("id,carrier,tracking_number,shipment_tracker_id,shipment_status,fulfillment_status")
+    .select("id,carrier,tracking_number,shipment_tracker_id,shipment_status,fulfillment_status,delivered_at,shipped_at")
     .eq("id", payload.data.orderId)
     .eq("store_id", bundle.store.id)
     .maybeSingle<{
@@ -51,7 +51,9 @@ export async function POST(request: NextRequest) {
       tracking_number: string | null;
       shipment_tracker_id: string | null;
       shipment_status: string | null;
-      fulfillment_status: string;
+      fulfillment_status: "pending_fulfillment" | "packing" | "shipped" | "delivered";
+      delivered_at: string | null;
+      shipped_at: string | null;
     }>();
 
   if (orderError) {
@@ -82,7 +84,8 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const nextFulfillment = mapShipmentStatusToFulfillmentStatus(tracker.shipmentStatus);
+  const candidateFulfillment = mapShipmentStatusToFulfillmentStatus(tracker.shipmentStatus);
+  const nextFulfillment = resolveMonotonicFulfillmentStatus(order.fulfillment_status, candidateFulfillment);
   const now = new Date().toISOString();
 
   const { data: updatedOrder, error: updateError } = await supabase
@@ -92,7 +95,8 @@ export async function POST(request: NextRequest) {
       tracking_url: tracker.trackingUrl,
       last_tracking_sync_at: now,
       fulfillment_status: nextFulfillment,
-      delivered_at: nextFulfillment === "delivered" ? now : null
+      delivered_at: nextFulfillment === "delivered" ? order.delivered_at ?? now : order.delivered_at,
+      shipped_at: resolveShippedAt(order.shipped_at, nextFulfillment, now)
     })
     .eq("id", order.id)
     .eq("store_id", bundle.store.id)
@@ -113,7 +117,9 @@ export async function POST(request: NextRequest) {
     entityId: order.id,
     metadata: {
       shipmentStatus: tracker.shipmentStatus,
-      fulfillmentStatus: nextFulfillment
+      candidateFulfillmentStatus: candidateFulfillment,
+      previousFulfillmentStatus: order.fulfillment_status,
+      resultingFulfillmentStatus: nextFulfillment
     }
   });
 

@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Facebook, Instagram, Music2 } from "lucide-react";
 import { type FormEvent, useState } from "react";
+import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { withReturnTo } from "@/lib/auth/return-to";
 import { DEFAULT_STOREFRONT_COPY, type StorefrontCopyConfig } from "@/lib/storefront/copy";
 import { STOREFRONT_TEXT_LINK_EFFECT_CLASS } from "@/lib/storefront/link-effects";
 
@@ -25,6 +28,10 @@ type FooterSettings = {
 type StorefrontFooterProps = {
   storeName: string;
   storeSlug?: string;
+  viewer?: {
+    isAuthenticated: boolean;
+    canManageStore: boolean;
+  };
   settings: FooterSettings;
   buttonRadiusClass?: string;
   copy?: StorefrontCopyConfig;
@@ -36,6 +43,7 @@ type StorefrontFooterProps = {
 export function StorefrontFooter({
   storeName,
   storeSlug,
+  viewer,
   settings,
   buttonRadiusClass = "rounded-md",
   copy = DEFAULT_STOREFRONT_COPY,
@@ -43,6 +51,8 @@ export function StorefrontFooter({
   showBackToTop = true,
   showOwnerLogin = true
 }: StorefrontFooterProps) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [subscribeError, setSubscribeError] = useState<string | null>(null);
@@ -71,10 +81,37 @@ export function StorefrontFooter({
       { label: copy.footer.policiesLink, href: "/policies" }
     ];
 
+  const normalizedStoreSlug = storeSlug?.trim() || "";
+  const unsubscribeHref = normalizedStoreSlug ? `/unsubscribe?store=${encodeURIComponent(normalizedStoreSlug)}` : "/unsubscribe";
   const navLinksWithStore = resolvedNavLinks.map((link) => ({
     ...link,
-    href: storeSlug ? `${link.href}${link.href.includes("?") ? "&" : "?"}store=${encodeURIComponent(storeSlug)}` : link.href
+    href:
+      normalizedStoreSlug && !link.href.includes("store=")
+        ? `${link.href}${link.href.includes("?") ? "&" : "?"}store=${encodeURIComponent(normalizedStoreSlug)}`
+        : link.href
   }));
+  const currentPath = pathname ?? "/";
+  const currentSearch = searchParams?.toString();
+  const currentReturnTo = currentSearch ? `${currentPath}?${currentSearch}` : currentPath;
+  const authCta = (() => {
+    if (viewer?.isAuthenticated) {
+      if (viewer.canManageStore && normalizedStoreSlug) {
+        return {
+          label: "Store Dashboard",
+          href: `/dashboard/stores/${encodeURIComponent(normalizedStoreSlug)}`
+        };
+      }
+      return {
+        label: "My Account",
+        href: "/account"
+      };
+    }
+
+    return {
+      label: "Sign in",
+      href: withReturnTo("/login", currentReturnTo)
+    };
+  })();
 
   async function subscribeToNewsletter(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -103,42 +140,14 @@ export function StorefrontFooter({
 
   return (
     <footer className="mt-10 border-t border-border/40 pt-10">
-      {settings?.email_capture_enabled ? (
-        <section className="space-y-3 border-b border-border/30 pb-8 text-center">
-          <div className="space-y-1">
-            <p className="text-lg font-semibold [font-family:var(--storefront-font-heading)]">
-              {settings.email_capture_heading?.trim() || "Get updates from the shop"}
-            </p>
-            <p className="mx-auto max-w-2xl text-sm text-muted-foreground">
-              {settings.email_capture_description?.trim() || "New releases, restocks, and occasional offers. Unsubscribe anytime."}
-            </p>
-          </div>
-          <form onSubmit={subscribeToNewsletter} className="mx-auto flex max-w-xl flex-col gap-2 sm:flex-row sm:items-center">
-            <Input
-              type="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="you@example.com"
-              className={cn("h-11 flex-1 border-border/60 bg-[color:var(--storefront-surface)]", buttonRadiusClass)}
-            />
-            <Button
-              type="submit"
-              disabled={submitting}
-              className={cn(
-                "h-11 px-5 bg-[var(--storefront-primary)] text-[color:var(--storefront-primary-foreground)] hover:opacity-90",
-                buttonRadiusClass
-              )}
-            >
-              {submitting ? "Submitting..." : "Subscribe"}
-            </Button>
-          </form>
-          {subscribeError ? <p className="text-xs text-red-600">{subscribeError}</p> : null}
-          {subscribeSuccess ? <p className="text-xs text-emerald-700">{subscribeSuccess}</p> : null}
-        </section>
-      ) : null}
-
-      <div className="grid gap-8 py-8 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)]">
+      <div
+        className={cn(
+          "grid gap-8 py-8 sm:grid-cols-2",
+          settings?.email_capture_enabled
+            ? "lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,0.85fr)_minmax(0,1.15fr)]"
+            : "lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)]"
+        )}
+      >
         <div className="space-y-3">
           <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{storeName}</p>
           <p className="max-w-md text-base leading-relaxed">{settings?.footer_tagline || copy.footer.defaultTagline}</p>
@@ -183,6 +192,48 @@ export function StorefrontFooter({
             </div>
           ) : null}
         </div>
+
+        {settings?.email_capture_enabled ? (
+          <section className="space-y-3">
+            <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Join our email list</p>
+            <div className="space-y-1">
+              <p className="text-base font-semibold [font-family:var(--storefront-font-heading)]">
+                {settings.email_capture_heading?.trim() || "Get updates from the shop"}
+              </p>
+              <p className="max-w-md text-sm text-muted-foreground">
+                {settings.email_capture_description?.trim() || "New releases, restocks, and occasional offers. Unsubscribe anytime."}
+              </p>
+            </div>
+            <form onSubmit={subscribeToNewsletter} className="flex max-w-md flex-col gap-2 sm:max-w-full">
+              <Input
+                type="email"
+                required
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="you@example.com"
+                className={cn("h-11 border-border/60 bg-[color:var(--storefront-surface)]", buttonRadiusClass)}
+              />
+              <Button
+                type="submit"
+                disabled={submitting}
+                className={cn(
+                  "h-11 w-full px-5 bg-[var(--storefront-primary)] text-[color:var(--storefront-primary-foreground)] hover:opacity-90",
+                  buttonRadiusClass
+                )}
+              >
+                {submitting ? "Submitting..." : "Subscribe"}
+              </Button>
+            </form>
+            <AppAlert variant="error" compact className="text-xs" message={subscribeError} />
+            <AppAlert variant="success" compact className="text-xs" message={subscribeSuccess} />
+            <p className="text-xs text-muted-foreground">
+              Already subscribed?{" "}
+              <Link href={unsubscribeHref} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "font-medium")}>
+                Unsubscribe
+              </Link>
+            </p>
+          </section>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/30 py-4 text-xs text-muted-foreground">
@@ -196,8 +247,8 @@ export function StorefrontFooter({
             </a>
           ) : null}
           {showOwnerLogin ? (
-            <Link href="/login" className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "font-medium")}>
-              {copy.footer.ownerLogin}
+            <Link href={authCta.href} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "font-medium")}>
+              {authCta.label}
             </Link>
           ) : null}
         </div>

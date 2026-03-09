@@ -1,19 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { logAuditEvent } from "@/lib/audit/log";
+import { sanitizeInviteToken } from "@/lib/auth/invite-token";
+import { notifyOwnersTeamInviteAccepted } from "@/lib/notifications/owner-notifications";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { hashInviteToken, normalizeInviteEmail } from "@/lib/stores/membership-invites";
 import type { StoreMemberRole } from "@/types/database";
 
 const acceptSchema = z.object({
-  token: z.string().min(20).max(256)
+  token: z.string()
 });
 
 export async function POST(request: NextRequest) {
   const payload = acceptSchema.safeParse(await request.json().catch(() => ({})));
   if (!payload.success) {
     return NextResponse.json({ error: "Invalid payload", details: payload.error.flatten() }, { status: 400 });
+  }
+  const inviteToken = sanitizeInviteToken(payload.data.token);
+  if (!inviteToken) {
+    return NextResponse.json({ error: "Invalid invite token." }, { status: 400 });
   }
 
   const supabase = await createSupabaseServerClient();
@@ -26,11 +32,11 @@ export async function POST(request: NextRequest) {
   }
 
   const admin = createSupabaseAdminClient();
-  const tokenHash = hashInviteToken(payload.data.token);
+  const tokenHash = hashInviteToken(inviteToken);
   const nowIso = new Date().toISOString();
   const { data: invite, error: inviteError } = await admin
     .from("store_membership_invites")
-    .select("id,store_id,email,role,status,expires_at")
+    .select("id,store_id,email,role,status,expires_at,store:stores!inner(slug)")
     .eq("token_hash", tokenHash)
     .maybeSingle<{
       id: string;
@@ -39,6 +45,7 @@ export async function POST(request: NextRequest) {
       role: Exclude<StoreMemberRole, "owner">;
       status: "pending" | "accepted" | "revoked" | "expired";
       expires_at: string;
+      store: { slug: string } | null;
     }>();
 
   if (inviteError) {
@@ -96,6 +103,19 @@ export async function POST(request: NextRequest) {
     }
   });
 
-  return NextResponse.json({ ok: true, storeId: invite.store_id, role: invite.role });
-}
+  await notifyOwnersTeamInviteAccepted({
+    storeId: invite.store_id,
+    storeSlug: invite.store?.slug ?? null,
+    acceptedInviteId: invite.id,
+    acceptedByUserId: user.id,
+    acceptedEmail: invite.email,
+    role: invite.role
+  });
 
+  return NextResponse.json({
+    ok: true,
+    storeId: invite.store_id,
+    storeSlug: invite.store?.slug ?? null,
+    role: invite.role
+  });
+}

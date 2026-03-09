@@ -31,6 +31,9 @@ export async function GET(request: NextRequest) {
   }
 
   const storeSlug = await resolveStoreSlugFromRequestAsync(request);
+  if (!storeSlug) {
+    return NextResponse.json({ items: [] });
+  }
   const storeLookup = await requireStoreBySlug(supabase, storeSlug);
   if (storeLookup.response) {
     return NextResponse.json({ items: [] });
@@ -91,6 +94,9 @@ export async function PUT(request: NextRequest) {
   }
 
   const storeSlug = await resolveStoreSlugFromRequestAsync(request);
+  if (!storeSlug) {
+    return NextResponse.json({ error: "Store context is required." }, { status: 400 });
+  }
   const storeLookup = await requireStoreBySlug(supabase, storeSlug);
   if (storeLookup.response) {
     return storeLookup.response;

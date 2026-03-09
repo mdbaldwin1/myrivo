@@ -293,6 +293,7 @@ export default async function StorefrontAboutPage({ searchParams }: AboutPagePro
         <StorefrontFooter
           storeName={data.store.name}
           storeSlug={data.store.slug}
+          viewer={data.viewer}
           settings={data.settings}
           buttonRadiusClass={buttonRadiusClass}
           copy={copy}
