@@ -2,23 +2,18 @@
 
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback } from "react";
 import { DashboardFormActionBar } from "@/components/dashboard/dashboard-form-action-bar";
+import { useStoreEditorDocument } from "@/components/dashboard/use-store-editor-document";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
-import { notify } from "@/lib/feedback/toast";
 import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
-
-type ShippingSettingsSnapshot = {
-  checkout_enable_flat_rate_shipping: boolean;
-  checkout_flat_rate_shipping_label: string | null;
-  checkout_flat_rate_shipping_fee_cents: number;
-};
+import { shippingRulesEditorSchema, type ShippingRulesEditorSnapshot } from "@/lib/store-editor/schemas";
 
 type SettingsResponse = {
-  settings?: Partial<ShippingSettingsSnapshot>;
+  settings?: Partial<ShippingRulesEditorSnapshot>;
   error?: string;
 };
 
@@ -30,71 +25,63 @@ export function StoreShippingRulesForm({ header }: StoreShippingRulesFormProps) 
   const formId = "shipping-rules-form";
   const pathname = usePathname();
   const storeSlug = getStoreSlugFromDashboardPathname(pathname);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const loadDocument = useCallback(async (): Promise<ShippingRulesEditorSnapshot> => {
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/settings", storeSlug), { cache: "no-store" });
+    const payload = (await response.json()) as SettingsResponse;
 
-  const [enabled, setEnabled] = useState(true);
-  const [label, setLabel] = useState("Shipping");
-  const [feeCents, setFeeCents] = useState(0);
-  const [baseline, setBaseline] = useState<ShippingSettingsSnapshot | null>(null);
+    if (!response.ok || !payload.settings) {
+      throw new Error(payload.error ?? "Unable to load shipping rules.");
+    }
 
-  const snapshot = useMemo<ShippingSettingsSnapshot>(
-    () => ({
-      checkout_enable_flat_rate_shipping: enabled,
-      checkout_flat_rate_shipping_label: label,
-      checkout_flat_rate_shipping_fee_cents: feeCents
-    }),
-    [enabled, label, feeCents]
-  );
-
-  const isDirty = baseline ? JSON.stringify(snapshot) !== JSON.stringify(baseline) : false;
-
-  useEffect(() => {
-    let cancelled = false;
-
-    void (async () => {
-      const response = await fetch(buildStoreScopedApiPath("/api/stores/settings", storeSlug), { cache: "no-store" });
-      const payload = (await response.json()) as SettingsResponse;
-
-      if (cancelled) {
-        return;
-      }
-
-      if (!response.ok || !payload.settings) {
-        setError(payload.error ?? "Unable to load shipping rules.");
-        setLoading(false);
-        return;
-      }
-
-      const next: ShippingSettingsSnapshot = {
-        checkout_enable_flat_rate_shipping: payload.settings.checkout_enable_flat_rate_shipping ?? true,
-        checkout_flat_rate_shipping_label: payload.settings.checkout_flat_rate_shipping_label ?? "Shipping",
-        checkout_flat_rate_shipping_fee_cents: payload.settings.checkout_flat_rate_shipping_fee_cents ?? 0
-      };
-
-      setEnabled(next.checkout_enable_flat_rate_shipping);
-      setLabel(next.checkout_flat_rate_shipping_label ?? "Shipping");
-      setFeeCents(next.checkout_flat_rate_shipping_fee_cents);
-      setBaseline(next);
-      setLoading(false);
-    })();
-
-    return () => {
-      cancelled = true;
+    return {
+      checkout_enable_flat_rate_shipping: payload.settings.checkout_enable_flat_rate_shipping ?? true,
+      checkout_flat_rate_shipping_label: payload.settings.checkout_flat_rate_shipping_label ?? "Shipping",
+      checkout_flat_rate_shipping_fee_cents: payload.settings.checkout_flat_rate_shipping_fee_cents ?? 0
     };
   }, [storeSlug]);
 
-  function discardChanges() {
-    if (!baseline) {
-      return;
-    }
+  const saveDocument = useCallback(
+    async (draft: ShippingRulesEditorSnapshot): Promise<ShippingRulesEditorSnapshot> => {
+      const response = await fetch(buildStoreScopedApiPath("/api/stores/settings", storeSlug), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          checkoutEnableFlatRateShipping: draft.checkout_enable_flat_rate_shipping,
+          checkoutFlatRateShippingLabel: draft.checkout_flat_rate_shipping_label.trim() || null,
+          checkoutFlatRateShippingFeeCents: draft.checkout_flat_rate_shipping_fee_cents
+        })
+      });
 
-    setEnabled(baseline.checkout_enable_flat_rate_shipping);
-    setLabel(baseline.checkout_flat_rate_shipping_label ?? "Shipping");
-    setFeeCents(baseline.checkout_flat_rate_shipping_fee_cents);
-    setError(null);
-  }
+      const payload = (await response.json()) as SettingsResponse;
+
+      if (!response.ok || !payload.settings) {
+        throw new Error(payload.error ?? "Unable to save shipping rules.");
+      }
+
+      return {
+        checkout_enable_flat_rate_shipping:
+          payload.settings.checkout_enable_flat_rate_shipping ?? draft.checkout_enable_flat_rate_shipping,
+        checkout_flat_rate_shipping_label:
+          payload.settings.checkout_flat_rate_shipping_label ?? (draft.checkout_flat_rate_shipping_label.trim() || "Shipping"),
+        checkout_flat_rate_shipping_fee_cents:
+          payload.settings.checkout_flat_rate_shipping_fee_cents ?? draft.checkout_flat_rate_shipping_fee_cents
+      };
+    },
+    [storeSlug]
+  );
+
+  const { draft, error, isDirty, loading, save, saving, setFieldValue, discardChanges } =
+    useStoreEditorDocument<ShippingRulesEditorSnapshot>({
+      emptyDraft: {
+        checkout_enable_flat_rate_shipping: true,
+        checkout_flat_rate_shipping_label: "Shipping",
+        checkout_flat_rate_shipping_fee_cents: 0
+      },
+      loadDocument,
+      saveDocument,
+      schema: shippingRulesEditorSchema,
+      successMessage: "Shipping rules saved."
+    });
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -104,46 +91,7 @@ export function StoreShippingRulesForm({ header }: StoreShippingRulesFormProps) 
       discardChanges();
       return;
     }
-
-    const parsedFee = Number.parseInt(String(feeCents ?? 0), 10);
-    if (!Number.isInteger(parsedFee) || parsedFee < 0) {
-      setError("Shipping fee must be a non-negative integer amount in cents.");
-      return;
-    }
-
-    setSaving(true);
-    setError(null);
-
-    const response = await fetch(buildStoreScopedApiPath("/api/stores/settings", storeSlug), {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        checkoutEnableFlatRateShipping: enabled,
-        checkoutFlatRateShippingLabel: label.trim() || null,
-        checkoutFlatRateShippingFeeCents: parsedFee
-      })
-    });
-
-    const payload = (await response.json()) as SettingsResponse;
-
-    if (!response.ok || !payload.settings) {
-      setError(payload.error ?? "Unable to save shipping rules.");
-      setSaving(false);
-      return;
-    }
-
-    const next: ShippingSettingsSnapshot = {
-      checkout_enable_flat_rate_shipping: payload.settings.checkout_enable_flat_rate_shipping ?? enabled,
-      checkout_flat_rate_shipping_label: payload.settings.checkout_flat_rate_shipping_label ?? (label.trim() || "Shipping"),
-      checkout_flat_rate_shipping_fee_cents: payload.settings.checkout_flat_rate_shipping_fee_cents ?? parsedFee
-    };
-
-    setEnabled(next.checkout_enable_flat_rate_shipping);
-    setLabel(next.checkout_flat_rate_shipping_label ?? "Shipping");
-    setFeeCents(next.checkout_flat_rate_shipping_fee_cents);
-    setBaseline(next);
-    notify.success("Shipping rules saved.");
-    setSaving(false);
+    await save();
   }
 
   return (
@@ -157,21 +105,30 @@ export function StoreShippingRulesForm({ header }: StoreShippingRulesFormProps) 
             <SectionCard title="Shipping Methods" description="Configure flat-rate shipping availability and base price.">
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="sm:col-span-2 flex items-center gap-2 text-sm">
-                  <Checkbox checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
+                  <Checkbox
+                    checked={draft.checkout_enable_flat_rate_shipping}
+                    onChange={(event) => setFieldValue("checkout_enable_flat_rate_shipping", event.target.checked)}
+                  />
                   Enable flat-rate shipping option
                 </label>
 
-                {enabled ? (
+                {draft.checkout_enable_flat_rate_shipping ? (
                   <>
                     <FormField label="Shipping Label">
-                      <Input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Shipping" />
+                      <Input
+                        value={draft.checkout_flat_rate_shipping_label}
+                        onChange={(event) => setFieldValue("checkout_flat_rate_shipping_label", event.target.value)}
+                        placeholder="Shipping"
+                      />
                     </FormField>
                     <FormField label="Shipping Fee (cents)">
                       <Input
                         type="number"
                         min={0}
-                        value={feeCents}
-                        onChange={(event) => setFeeCents(Number.parseInt(event.target.value || "0", 10))}
+                        value={draft.checkout_flat_rate_shipping_fee_cents}
+                        onChange={(event) =>
+                          setFieldValue("checkout_flat_rate_shipping_fee_cents", Number.parseInt(event.target.value || "0", 10))
+                        }
                       />
                     </FormField>
                   </>
