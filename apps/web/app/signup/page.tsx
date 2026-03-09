@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
 import { resolveAuthenticatedWorkspacePath } from "@/lib/auth/authenticated-workspace";
 import { sanitizeReturnTo } from "@/lib/auth/return-to";
+import { getSignupLegalRequirements } from "@/lib/legal/documents";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type SignupPageProps = {
@@ -23,9 +24,23 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
     redirect(sanitizeReturnTo(requestedReturnTo, fallbackPath));
   }
 
+  const legalRequirements = await getSignupLegalRequirements(supabase);
+  const legalUnavailable = !legalRequirements.terms || !legalRequirements.privacy;
+
   return (
     <PageShell maxWidthClassName="max-w-lg">
-      <SignupForm returnTo={returnTo} />
+      <SignupForm
+        returnTo={returnTo}
+        legalRequirements={
+          legalRequirements.terms && legalRequirements.privacy
+            ? {
+                terms: legalRequirements.terms,
+                privacy: legalRequirements.privacy
+              }
+            : null
+        }
+        legalUnavailable={legalUnavailable}
+      />
     </PageShell>
   );
 }
