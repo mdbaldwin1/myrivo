@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { StorefrontPage } from "@/components/storefront/storefront-page";
+import { buildReviewSummary, listPublishedReviews } from "@/lib/reviews/read";
 import { loadStorefrontData } from "@/lib/storefront/load-storefront-data";
+import { buildAggregateRatingSchema, buildReviewSchemaList, resolveStorefrontReviewSeoConfig } from "@/lib/storefront/reviews-seo";
 import { buildStorefrontCanonicalUrl, resolveStorefrontCanonicalRedirect } from "@/lib/storefront/seo";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { isMissingRelationInSchemaCache } from "@/lib/supabase/error-classifiers";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +80,29 @@ export default async function StorefrontSlugPage({ params }: StorefrontRoutePara
     logo: data.branding?.logo_path ?? undefined
   };
   const publicLocation = buildPublicLocationLabel(data.settings ?? {});
+  const reviewSeoConfig = resolveStorefrontReviewSeoConfig();
+  let storeSummary: Awaited<ReturnType<typeof buildReviewSummary>> | null = null;
+  let storeReviews: Awaited<ReturnType<typeof listPublishedReviews>>["items"] = [];
+  try {
+    const admin = createSupabaseAdminClient();
+    const [summary, recent] = await Promise.all([
+      buildReviewSummary(admin, { storeId: data.store.id, productId: null, verifiedOnly: false, hasMedia: false }),
+      listPublishedReviews(admin, {
+        storeId: data.store.id,
+        productId: null,
+        sort: "newest",
+        limit: reviewSeoConfig.maxRecentReviews,
+        offset: 0
+      })
+    ]);
+    storeSummary = summary;
+    storeReviews = recent.items;
+  } catch (error) {
+    if (!isMissingRelationInSchemaCache(error as { code?: string; message?: string })) {
+      console.warn("Failed to resolve storefront review schema payload.", error);
+    }
+  }
+
   const localBusinessSchema: Record<string, unknown> = {
     "@context": "https://schema.org",
     "@type": "LocalBusiness",
@@ -84,6 +111,22 @@ export default async function StorefrontSlugPage({ params }: StorefrontRoutePara
     image: data.branding?.logo_path ?? undefined,
     areaServed: publicLocation ?? undefined
   };
+  const aggregateRating = storeSummary ? buildAggregateRatingSchema(storeSummary, reviewSeoConfig.minReviewCount) : undefined;
+  if (aggregateRating) {
+    localBusinessSchema.aggregateRating = aggregateRating;
+  }
+  if (aggregateRating && storeReviews.length > 0) {
+    localBusinessSchema.review = buildReviewSchemaList(
+      storeReviews.map((item) => ({
+        rating: item.rating,
+        title: item.title,
+        body: item.body,
+        reviewerName: item.reviewerName,
+        createdAt: item.publishedAt ?? item.createdAt
+      })),
+      reviewSeoConfig.maxRecentReviews
+    );
+  }
   if (data.settings?.seo_location_show_full_address && data.settings?.seo_location_address_line1) {
     localBusinessSchema.address = {
       "@type": "PostalAddress",
