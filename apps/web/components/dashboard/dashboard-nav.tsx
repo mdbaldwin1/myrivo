@@ -11,6 +11,7 @@ import {
   ChevronRight,
   ClipboardList,
   Cog,
+  FileText,
   Globe,
   Home,
   Info,
@@ -157,7 +158,8 @@ export function DashboardNav({
     { href: "/dashboard/admin", label: "Admin Dashboard", icon: LayoutDashboard },
     { href: "/dashboard/admin/stores", label: "Store Governance", icon: Store },
     { href: "/dashboard/admin/moderation", label: "Moderation", icon: ClipboardList },
-    { href: "/dashboard/admin/audit", label: "Audit Explorer", icon: Shield }
+    { href: "/dashboard/admin/audit", label: "Audit Explorer", icon: Shield },
+    { href: "/dashboard/admin/legal", label: "Legal Governance", icon: FileText }
   ];
 
   const storeWorkspaceLinks: DashboardNavLink[] = [
