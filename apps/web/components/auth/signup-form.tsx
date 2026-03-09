@@ -4,20 +4,26 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
+import type { LegalRequirement } from "@/lib/legal/documents";
 import { withReturnTo } from "@/lib/auth/return-to";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 type SignupFormProps = {
   returnTo: string;
+  legalRequirements: { terms: LegalRequirement; privacy: LegalRequirement } | null;
+  legalUnavailable: boolean;
 };
 
-export function SignupForm({ returnTo }: SignupFormProps) {
+export function SignupForm({ returnTo, legalRequirements, legalUnavailable }: SignupFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -27,8 +33,20 @@ export function SignupForm({ returnTo }: SignupFormProps) {
     setError(null);
     setLoading(true);
 
+    if (legalUnavailable || !legalRequirements) {
+      setError("Legal configuration is unavailable. Please try again shortly.");
+      setLoading(false);
+      return;
+    }
+
+    if (!termsAccepted || !privacyAccepted) {
+      setError("You must accept the Terms and Privacy Policy to create an account.");
+      setLoading(false);
+      return;
+    }
+
     const supabase = createSupabaseBrowserClient();
-    const { error: signUpError } = await supabase.auth.signUp({
+    const { data: signupData, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -43,6 +61,33 @@ export function SignupForm({ returnTo }: SignupFormProps) {
       return;
     }
 
+    const userId = signupData.user?.id ?? signupData.session?.user?.id ?? null;
+    if (!userId) {
+      setError("Account created, but legal acceptance capture could not be completed. Please sign in and accept legal terms.");
+      return;
+    }
+
+    const acceptancePayload = [
+      {
+        legal_document_id: legalRequirements.terms.documentId,
+        legal_document_version_id: legalRequirements.terms.versionId,
+        user_id: userId,
+        acceptance_surface: "signup"
+      },
+      {
+        legal_document_id: legalRequirements.privacy.documentId,
+        legal_document_version_id: legalRequirements.privacy.versionId,
+        user_id: userId,
+        acceptance_surface: "signup"
+      }
+    ];
+
+    const { error: acceptanceError } = await supabase.from("legal_acceptances").insert(acceptancePayload);
+    if (acceptanceError) {
+      setError("Account created, but legal acceptance capture failed. Please contact support before continuing.");
+      return;
+    }
+
     router.push(returnTo);
     router.refresh();
   }
@@ -52,6 +97,9 @@ export function SignupForm({ returnTo }: SignupFormProps) {
       <CardHeader>
         <CardTitle>Create account</CardTitle>
         <CardDescription>Create your account, then set up your first store workspace.</CardDescription>
+        {legalUnavailable ? (
+          <p className="text-sm text-amber-700">Signup is temporarily unavailable while legal documents are being configured.</p>
+        ) : null}
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -68,8 +116,30 @@ export function SignupForm({ returnTo }: SignupFormProps) {
               onChange={(event) => setPassword(event.target.value)}
             />
           </FormField>
+          <div className="space-y-2 rounded-md border border-border/70 bg-muted/20 p-3">
+            <label className="flex items-start gap-2 text-sm text-muted-foreground">
+              <Checkbox checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)} />
+              <span>
+                I agree to the{" "}
+                <Link href="/terms" className="font-medium text-foreground underline-offset-4 hover:underline">
+                  Terms and Conditions
+                </Link>
+                .
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-sm text-muted-foreground">
+              <Checkbox checked={privacyAccepted} onChange={(event) => setPrivacyAccepted(event.target.checked)} />
+              <span>
+                I agree to the{" "}
+                <Link href="/privacy" className="font-medium text-foreground underline-offset-4 hover:underline">
+                  Privacy Policy
+                </Link>
+                .
+              </span>
+            </label>
+          </div>
           <FeedbackMessage type="error" message={error} />
-          <Button type="submit" disabled={loading} className="w-full">
+          <Button type="submit" disabled={loading || legalUnavailable} className="w-full">
             {loading ? "Creating account..." : "Create account"}
           </Button>
           <p className="text-center text-sm text-muted-foreground">
