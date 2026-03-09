@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { PlatformLegalPanel } from "@/components/dashboard/admin/platform-legal-panel";
+import { ContextHelpLink } from "@/components/dashboard/context-help-link";
 import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
 import { hasGlobalRole } from "@/lib/auth/roles";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -33,6 +34,7 @@ export default async function DashboardAdminLegalPage() {
       title="Legal Governance"
       description="Publish legal versions, inspect acceptance records, and export compliance reports."
       className="p-4 lg:p-4"
+      action={<ContextHelpLink href="/docs/legal-governance-and-consent-ops#publishing-and-communication" context="admin_legal" label="Legal Ops Docs" />}
     >
       <PlatformLegalPanel />
     </DashboardPageScaffold>
