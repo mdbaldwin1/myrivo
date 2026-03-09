@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { PlatformReviewsHealthPanel } from "@/components/dashboard/admin/platform-reviews-health-panel";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { SectionCard } from "@/components/ui/section-card";
@@ -207,6 +208,8 @@ export function PlatformConsole({ currentGlobalRole }: PlatformConsoleProps) {
           </div>
         ) : null}
       </SectionCard>
+
+      <PlatformReviewsHealthPanel />
 
       <SectionCard title="Approval Queue" description="Stores waiting for review before going live.">
         {overview ? (
