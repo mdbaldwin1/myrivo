@@ -1,4 +1,5 @@
 import { PageShell } from "@/components/layout/page-shell";
+import { LegalMarkdown } from "@/components/legal/legal-markdown";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getPublishedLegalDocumentByKey } from "@/lib/legal/documents";
 
@@ -20,9 +21,7 @@ export default async function PrivacyPage() {
             </p>
           ) : null}
         </header>
-        <div className="rounded-md border border-border/70 bg-card p-4 text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
-          {privacy?.content_markdown?.trim() || "Privacy Policy is being configured. Please check back soon."}
-        </div>
+        <LegalMarkdown content={privacy?.content_markdown?.trim() || "Privacy Policy is being configured. Please check back soon."} />
       </article>
     </PageShell>
   );
