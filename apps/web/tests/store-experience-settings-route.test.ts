@@ -7,6 +7,7 @@ type SupabaseMock = {
 };
 
 let supabaseMock: SupabaseMock;
+let lastRequestedStoreSlug: string | null = null;
 let ownedStoreBundleMock:
   | {
       store: {
@@ -47,7 +48,10 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 vi.mock("@/lib/stores/owner-store", () => ({
-  getOwnedStoreBundle: vi.fn(async () => ownedStoreBundleMock)
+  getOwnedStoreBundleForOptionalSlug: vi.fn(async (_userId: string, storeSlug?: string | null) => {
+    lastRequestedStoreSlug = storeSlug ?? null;
+    return ownedStoreBundleMock;
+  })
 }));
 
 vi.mock("@/lib/security/request-origin", () => ({
@@ -63,12 +67,12 @@ vi.mock("@/lib/shipping/store-config", () => ({
   }))
 }));
 
-async function callGetHandler(): Promise<Response> {
+async function callGetHandler(url = "http://localhost:3000/api/store-experience/settings"): Promise<Response> {
   const route = await import("@/app/api/store-experience/settings/route");
   if (!route.GET) {
     throw new Error("GET handler is not defined");
   }
-  const response = await route.GET();
+  const response = await route.GET(new NextRequest(url));
   if (!response) {
     throw new Error("GET handler returned no response");
   }
@@ -164,6 +168,7 @@ beforeEach(() => {
   storesUpdateErrorMessage = null;
   brandingUpsertErrorMessage = null;
   settingsUpsertErrorMessage = null;
+  lastRequestedStoreSlug = null;
 });
 
 describe("store experience settings route", () => {
@@ -173,6 +178,13 @@ describe("store experience settings route", () => {
 
     expect(response.status).toBe(200);
     expect(payload.settings.profile.id).toBe("store-1");
+  });
+
+  test("GET resolves the requested store slug when provided", async () => {
+    const response = await callGetHandler("http://localhost:3000/api/store-experience/settings?storeSlug=second-store");
+
+    expect(response.status).toBe(200);
+    expect(lastRequestedStoreSlug).toBe("second-store");
   });
 
   test("PUT validates and writes profile + checkout updates", async () => {

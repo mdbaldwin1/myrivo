@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashboardFormActionBar } from "@/components/dashboard/dashboard-form-action-bar";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { SectionCard } from "@/components/ui/section-card";
 import { notify } from "@/lib/feedback/toast";
+import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
 
 type BillingPlanConfigResponse = {
   billing?: {
@@ -24,6 +26,8 @@ type BillingPlanSettingsProps = {
 
 export function BillingPlanSettings({ title = "Billing Plan", editable = false }: BillingPlanSettingsProps) {
   const formId = "billing-plan-form";
+  const pathname = usePathname();
+  const storeSlug = getStoreSlugFromDashboardPathname(pathname);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,11 +45,11 @@ export function BillingPlanSettings({ title = "Billing Plan", editable = false }
     ? `${(selectedPlan.transaction_fee_bps / 100).toFixed(2)}% + $${(selectedPlan.transaction_fee_fixed_cents / 100).toFixed(2)} per successful order`
     : "";
 
-  async function fetchConfig() {
-    const response = await fetch("/api/stores/platform-config", { cache: "no-store" });
+  const fetchConfig = useCallback(async () => {
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/platform-config", storeSlug), { cache: "no-store" });
     const payload = (await response.json()) as BillingPlanConfigResponse;
     return { ok: response.ok, payload };
-  }
+  }, [storeSlug]);
 
   function normalizeBillingPlan(
     raw: BillingPlanConfigResponse["billing"] extends { billing_plans?: infer T } ? T : unknown
@@ -107,7 +111,7 @@ export function BillingPlanSettings({ title = "Billing Plan", editable = false }
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [fetchConfig]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -125,7 +129,7 @@ export function BillingPlanSettings({ title = "Billing Plan", editable = false }
     setSaving(true);
     setError(null);
 
-    const response = await fetch("/api/stores/platform-config", {
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/platform-config", storeSlug), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ billingPlanKey })

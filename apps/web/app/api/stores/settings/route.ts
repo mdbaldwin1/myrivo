@@ -4,7 +4,7 @@ import { logAuditEvent } from "@/lib/audit/log";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
+import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
 
 const settingsSchema = z.object({
   supportEmail: z.string().email().nullable().optional(),
@@ -59,7 +59,7 @@ const settingsSchema = z.object({
   checkoutOrderNotePrompt: z.string().max(300).nullable().optional()
 });
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user }
@@ -69,7 +69,7 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const bundle = await getOwnedStoreBundle(user.id, "staff");
+  const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, request.nextUrl.searchParams.get("storeSlug"), "staff");
 
   if (!bundle) {
     return NextResponse.json({ error: "No store found for account" }, { status: 404 });
@@ -99,7 +99,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const bundle = await getOwnedStoreBundle(user.id, "staff");
+  const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, request.nextUrl.searchParams.get("storeSlug"), "staff");
 
   if (!bundle) {
     return NextResponse.json({ error: "No store found for account" }, { status: 404 });

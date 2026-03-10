@@ -1,9 +1,11 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { SectionCard } from "@/components/ui/section-card";
+import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
 
 type PaymentsStatus = {
   connected: boolean;
@@ -16,6 +18,8 @@ type PaymentsStatus = {
 };
 
 export function StorePaymentsSettings() {
+  const pathname = usePathname();
+  const storeSlug = getStoreSlugFromDashboardPathname(pathname);
   const [status, setStatus] = useState<PaymentsStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<"connect" | "dashboard" | null>(null);
@@ -37,7 +41,7 @@ export function StorePaymentsSettings() {
     setLoading(true);
     setError(null);
 
-    const response = await fetch("/api/stores/payments/status", { cache: "no-store" });
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/payments/status", storeSlug), { cache: "no-store" });
     const payload = await readJsonSafe<PaymentsStatus & { error?: string }>(response);
 
     if (!response.ok) {
@@ -54,7 +58,7 @@ export function StorePaymentsSettings() {
 
     setStatus(payload);
     setLoading(false);
-  }, []);
+  }, [storeSlug]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -68,7 +72,7 @@ export function StorePaymentsSettings() {
     setPending("connect");
     setError(null);
 
-    const response = await fetch("/api/stores/payments/connect", { method: "POST" });
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/payments/connect", storeSlug), { method: "POST" });
     const payload = (await readJsonSafe<{ onboardingUrl?: string; error?: string }>(response)) ?? {};
 
     if (!response.ok || !payload.onboardingUrl) {
@@ -84,7 +88,7 @@ export function StorePaymentsSettings() {
     setPending("dashboard");
     setError(null);
 
-    const response = await fetch("/api/stores/payments/dashboard-link", { method: "POST" });
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/payments/dashboard-link", storeSlug), { method: "POST" });
     const payload = (await readJsonSafe<{ dashboardUrl?: string; error?: string }>(response)) ?? {};
 
     if (!response.ok || !payload.dashboardUrl) {

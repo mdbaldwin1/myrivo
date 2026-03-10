@@ -9,8 +9,8 @@ const updateSchema = z.object({
   enabled: z.boolean()
 });
 
-export async function GET() {
-  const auth = await requireStorePermission("store.manage_domains");
+export async function GET(request: NextRequest) {
+  const auth = await requireStorePermission("store.manage_domains", request.nextUrl.searchParams.get("storeSlug"));
   if (auth.response) {
     return auth.response;
   }
@@ -38,7 +38,7 @@ export async function PUT(request: NextRequest) {
     return trustedOriginResponse;
   }
 
-  const auth = await requireStorePermission("store.manage_domains");
+  const auth = await requireStorePermission("store.manage_domains", request.nextUrl.searchParams.get("storeSlug"));
   if (auth.response) {
     return auth.response;
   }

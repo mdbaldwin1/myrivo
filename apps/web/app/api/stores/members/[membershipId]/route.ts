@@ -32,7 +32,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return trustedOriginResponse;
   }
 
-  const auth = await requireStorePermission("store.manage_members");
+  const auth = await requireStorePermission("store.manage_members", request.nextUrl.searchParams.get("storeSlug"));
   if (auth.response) {
     return auth.response;
   }
@@ -126,7 +126,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     return trustedOriginResponse;
   }
 
-  const auth = await requireStorePermission("store.manage_members");
+  const auth = await requireStorePermission("store.manage_members", request.nextUrl.searchParams.get("storeSlug"));
   if (auth.response) {
     return auth.response;
   }

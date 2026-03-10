@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const enforceTrustedOriginMock = vi.fn<(request: NextRequest) => Response | null>();
-const getOwnedStoreBundleMock = vi.fn();
+const getOwnedStoreBundleForOptionalSlugMock = vi.fn();
 const logAuditEventMock = vi.fn();
 const notifyOwnersStoreSubmittedForReviewMock = vi.fn();
 const notifyPlatformAdminsStoreSubmittedForReviewMock = vi.fn();
@@ -14,7 +14,7 @@ vi.mock("@/lib/security/request-origin", () => ({
 }));
 
 vi.mock("@/lib/stores/owner-store", () => ({
-  getOwnedStoreBundle: (...args: unknown[]) => getOwnedStoreBundleMock(...args)
+  getOwnedStoreBundleForOptionalSlug: (...args: unknown[]) => getOwnedStoreBundleForOptionalSlugMock(...args)
 }));
 
 vi.mock("@/lib/audit/log", () => ({
@@ -47,7 +47,7 @@ vi.mock("@/lib/supabase/server", () => ({
 
 beforeEach(() => {
   enforceTrustedOriginMock.mockReset();
-  getOwnedStoreBundleMock.mockReset();
+  getOwnedStoreBundleForOptionalSlugMock.mockReset();
   logAuditEventMock.mockReset();
   notifyOwnersStoreSubmittedForReviewMock.mockReset();
   notifyPlatformAdminsStoreSubmittedForReviewMock.mockReset();
@@ -60,7 +60,7 @@ beforeEach(() => {
 
 describe("store submit-review route", () => {
   test("submits draft store for review", async () => {
-    getOwnedStoreBundleMock.mockResolvedValue({
+    getOwnedStoreBundleForOptionalSlugMock.mockResolvedValue({
       store: { id: "store-1", slug: "demo-store", name: "Demo Store", status: "draft" }
     });
     storesMaybeSingleMock.mockResolvedValue({
@@ -86,7 +86,7 @@ describe("store submit-review route", () => {
   });
 
   test("returns conflict when store is not draft", async () => {
-    getOwnedStoreBundleMock.mockResolvedValue({
+    getOwnedStoreBundleForOptionalSlugMock.mockResolvedValue({
       store: { id: "store-1", slug: "demo-store", name: "Demo Store", status: "active" }
     });
 

@@ -54,7 +54,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return trustedOriginResponse;
   }
 
-  const auth = await requireStorePermission("store.manage_domains");
+  const auth = await requireStorePermission("store.manage_domains", request.nextUrl.searchParams.get("storeSlug"));
   if (auth.response) {
     return auth.response;
   }

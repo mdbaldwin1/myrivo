@@ -299,6 +299,19 @@ export async function getOwnedStoreBundleForSlug(
   return await buildOwnedStoreBundleFromResolvedStore(supabase, resolvedStore, accessibleStores);
 }
 
+export async function getOwnedStoreBundleForOptionalSlug(
+  userId: string,
+  storeSlug: string | null | undefined,
+  requiredRole: StoreMemberRole | "support" = "staff"
+): Promise<OwnedStoreBundle | null> {
+  const normalizedSlug = storeSlug?.trim().toLowerCase() ?? "";
+  if (normalizedSlug) {
+    return getOwnedStoreBundleForSlug(userId, normalizedSlug, requiredRole);
+  }
+
+  return getOwnedStoreBundle(userId, requiredRole);
+}
+
 export async function getOwnedStoreId(userId: string): Promise<string | null> {
   const bundle = await getOwnedStoreBundle(userId, "staff");
   return bundle?.store.id ?? null;

@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useRef, useState } from "react";
 import { Pencil, Plus, X } from "lucide-react";
@@ -20,6 +21,7 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { setAtPath, useStoreExperienceSection } from "@/components/dashboard/use-store-experience-section";
 import { Button } from "@/components/ui/button";
+import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
 
 type ContentWorkspaceAboutFormProps = {
   header?: ReactNode;
@@ -127,6 +129,8 @@ function AboutSectionImagePicker({ imageUrl, disabled = false, uploading = false
 
 export function ContentWorkspaceAboutForm({ header }: ContentWorkspaceAboutFormProps) {
   const formId = "content-workspace-about-form";
+  const pathname = usePathname();
+  const storeSlug = getStoreSlugFromDashboardPathname(pathname);
   const { loading, saving, draft, setDraft, error, isDirty, save, discard } = useStoreExperienceSection("aboutPage");
   const aboutSections = parseAboutSections(draft.aboutSections);
   const [imageUploadingSectionId, setImageUploadingSectionId] = useState<string | null>(null);
@@ -152,7 +156,7 @@ export function ContentWorkspaceAboutForm({ header }: ContentWorkspaceAboutFormP
     formData.append("folder", "about");
 
     try {
-      const response = await fetch("/api/store-experience/image", {
+      const response = await fetch(buildStoreScopedApiPath("/api/store-experience/image", storeSlug), {
         method: "POST",
         body: formData
       });

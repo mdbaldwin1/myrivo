@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { Flyout } from "@/components/ui/flyout";
@@ -9,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
 import { Select } from "@/components/ui/select";
 import { notify } from "@/lib/feedback/toast";
+import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
 
 type ShippingSettingsResponse = {
   shippingProvider: "none" | "easypost";
@@ -21,6 +23,8 @@ type ShippingSettingsResponse = {
 };
 
 export function StoreShippingSettings() {
+  const pathname = usePathname();
+  const storeSlug = getStoreSlugFromDashboardPathname(pathname);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [provider, setProvider] = useState<"none" | "easypost">("none");
@@ -69,11 +73,11 @@ export function StoreShippingSettings() {
     setFlyoutError(null);
   }
 
-  async function loadSettings() {
+  const loadSettings = useCallback(async () => {
     setLoading(true);
     setPageError(null);
 
-    const response = await fetch("/api/stores/shipping", { cache: "no-store" });
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/shipping", storeSlug), { cache: "no-store" });
     const payload = (await response.json()) as ShippingSettingsResponse;
 
     if (!response.ok) {
@@ -89,7 +93,7 @@ export function StoreShippingSettings() {
     setHasWebhookSecret(payload.hasWebhookSecret);
     setSource(payload.source ?? null);
     setLoading(false);
-  }
+  }, [storeSlug]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -97,14 +101,14 @@ export function StoreShippingSettings() {
     }, 0);
 
     return () => clearTimeout(timeout);
-  }, []);
+  }, [loadSettings]);
 
   async function saveSettings(regenerateWebhookSecret = false) {
     setSaving(true);
     setFlyoutError(null);
     setPageError(null);
 
-    const response = await fetch("/api/stores/shipping", {
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/shipping", storeSlug), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
