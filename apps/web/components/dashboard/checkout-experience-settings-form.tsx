@@ -2,22 +2,18 @@
 
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback } from "react";
 import { DashboardFormActionBar } from "@/components/dashboard/dashboard-form-action-bar";
+import { useStoreEditorDocument } from "@/components/dashboard/use-store-editor-document";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
-import { notify } from "@/lib/feedback/toast";
 import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
-
-type CheckoutExperienceSnapshot = {
-  checkout_allow_order_note: boolean;
-  checkout_order_note_prompt: string | null;
-};
+import { checkoutExperienceEditorSchema, type CheckoutExperienceEditorSnapshot } from "@/lib/store-editor/schemas";
 
 type SettingsResponse = {
-  settings?: Partial<CheckoutExperienceSnapshot>;
+  settings?: Partial<CheckoutExperienceEditorSnapshot>;
   error?: string;
 };
 
@@ -29,66 +25,57 @@ export function CheckoutExperienceSettingsForm({ header }: CheckoutExperienceSet
   const formId = "checkout-experience-form";
   const pathname = usePathname();
   const storeSlug = getStoreSlugFromDashboardPathname(pathname);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const loadDocument = useCallback(async (): Promise<CheckoutExperienceEditorSnapshot> => {
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/settings", storeSlug), { cache: "no-store" });
+    const payload = (await response.json()) as SettingsResponse;
 
-  const [allowOrderNote, setAllowOrderNote] = useState(false);
-  const [orderNotePrompt, setOrderNotePrompt] = useState("Add any special requests for your order.");
-  const [baseline, setBaseline] = useState<CheckoutExperienceSnapshot | null>(null);
+    if (!response.ok || !payload.settings) {
+      throw new Error(payload.error ?? "Unable to load checkout experience settings.");
+    }
 
-  const snapshot = useMemo<CheckoutExperienceSnapshot>(
-    () => ({
-      checkout_allow_order_note: allowOrderNote,
-      checkout_order_note_prompt: orderNotePrompt
-    }),
-    [allowOrderNote, orderNotePrompt]
-  );
-
-  const isDirty = baseline ? JSON.stringify(snapshot) !== JSON.stringify(baseline) : false;
-
-  useEffect(() => {
-    let cancelled = false;
-
-    void (async () => {
-      const response = await fetch(buildStoreScopedApiPath("/api/stores/settings", storeSlug), { cache: "no-store" });
-      const payload = (await response.json()) as SettingsResponse;
-
-      if (cancelled) {
-        return;
-      }
-
-      if (!response.ok || !payload.settings) {
-        setError(payload.error ?? "Unable to load checkout experience settings.");
-        setLoading(false);
-        return;
-      }
-
-      const next: CheckoutExperienceSnapshot = {
-        checkout_allow_order_note: payload.settings.checkout_allow_order_note ?? false,
-        checkout_order_note_prompt: payload.settings.checkout_order_note_prompt ?? "Add any special requests for your order."
-      };
-
-      setAllowOrderNote(next.checkout_allow_order_note);
-      setOrderNotePrompt(next.checkout_order_note_prompt ?? "Add any special requests for your order.");
-      setBaseline(next);
-      setLoading(false);
-    })();
-
-    return () => {
-      cancelled = true;
+    return {
+      checkout_allow_order_note: payload.settings.checkout_allow_order_note ?? false,
+      checkout_order_note_prompt: payload.settings.checkout_order_note_prompt ?? "Add any special requests for your order."
     };
   }, [storeSlug]);
 
-  function discardChanges() {
-    if (!baseline) {
-      return;
-    }
+  const saveDocument = useCallback(
+    async (draft: CheckoutExperienceEditorSnapshot): Promise<CheckoutExperienceEditorSnapshot> => {
+      const response = await fetch(buildStoreScopedApiPath("/api/stores/settings", storeSlug), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          checkoutAllowOrderNote: draft.checkout_allow_order_note,
+          checkoutOrderNotePrompt: draft.checkout_order_note_prompt.trim() || null
+        })
+      });
 
-    setAllowOrderNote(baseline.checkout_allow_order_note);
-    setOrderNotePrompt(baseline.checkout_order_note_prompt ?? "Add any special requests for your order.");
-    setError(null);
-  }
+      const payload = (await response.json()) as SettingsResponse;
+
+      if (!response.ok || !payload.settings) {
+        throw new Error(payload.error ?? "Unable to save checkout experience settings.");
+      }
+
+      return {
+        checkout_allow_order_note: payload.settings.checkout_allow_order_note ?? draft.checkout_allow_order_note,
+        checkout_order_note_prompt:
+          payload.settings.checkout_order_note_prompt ?? (draft.checkout_order_note_prompt.trim() || "Add any special requests for your order.")
+      };
+    },
+    [storeSlug]
+  );
+
+  const { draft, error, isDirty, loading, save, saving, setFieldValue, discardChanges } =
+    useStoreEditorDocument<CheckoutExperienceEditorSnapshot>({
+      emptyDraft: {
+        checkout_allow_order_note: false,
+        checkout_order_note_prompt: "Add any special requests for your order."
+      },
+      loadDocument,
+      saveDocument,
+      schema: checkoutExperienceEditorSchema,
+      successMessage: "Checkout experience settings saved."
+    });
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -98,37 +85,7 @@ export function CheckoutExperienceSettingsForm({ header }: CheckoutExperienceSet
       discardChanges();
       return;
     }
-
-    setSaving(true);
-    setError(null);
-
-    const response = await fetch(buildStoreScopedApiPath("/api/stores/settings", storeSlug), {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        checkoutAllowOrderNote: allowOrderNote,
-        checkoutOrderNotePrompt: orderNotePrompt.trim() || null
-      })
-    });
-
-    const payload = (await response.json()) as SettingsResponse;
-
-    if (!response.ok || !payload.settings) {
-      setError(payload.error ?? "Unable to save checkout experience settings.");
-      setSaving(false);
-      return;
-    }
-
-    const next: CheckoutExperienceSnapshot = {
-      checkout_allow_order_note: payload.settings.checkout_allow_order_note ?? allowOrderNote,
-      checkout_order_note_prompt: payload.settings.checkout_order_note_prompt ?? (orderNotePrompt.trim() || null)
-    };
-
-    setAllowOrderNote(next.checkout_allow_order_note);
-    setOrderNotePrompt(next.checkout_order_note_prompt ?? "Add any special requests for your order.");
-    setBaseline(next);
-    notify.success("Checkout experience settings saved.");
-    setSaving(false);
+    await save();
   }
 
   return (
@@ -142,14 +99,17 @@ export function CheckoutExperienceSettingsForm({ header }: CheckoutExperienceSet
             <SectionCard title="Checkout Form Fields" description="Configure optional customer note behavior in checkout.">
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="sm:col-span-2 flex items-center gap-2 text-sm">
-                  <Checkbox checked={allowOrderNote} onChange={(event) => setAllowOrderNote(event.target.checked)} />
+                  <Checkbox
+                    checked={draft.checkout_allow_order_note}
+                    onChange={(event) => setFieldValue("checkout_allow_order_note", event.target.checked)}
+                  />
                   Allow buyer order note
                 </label>
-                {allowOrderNote ? (
+                {draft.checkout_allow_order_note ? (
                   <FormField className="sm:col-span-2" label="Order Note Prompt">
                     <Input
-                      value={orderNotePrompt}
-                      onChange={(event) => setOrderNotePrompt(event.target.value)}
+                      value={draft.checkout_order_note_prompt}
+                      onChange={(event) => setFieldValue("checkout_order_note_prompt", event.target.value)}
                       placeholder="Add any special requests for your order."
                     />
                   </FormField>

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getStoreShippingConfig } from "@/lib/shipping/store-config";
+import { buildStoreEditorSettingsPayload } from "@/lib/store-editor/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
 import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
@@ -87,54 +88,7 @@ export async function GET(request: NextRequest) {
   const shippingConfig = await getStoreShippingConfig(supabase, bundle.store.id, true);
 
   return NextResponse.json({
-    settings: {
-      profile: {
-        id: bundle.store.id,
-        name: bundle.store.name,
-        slug: bundle.store.slug,
-        status: bundle.store.status
-      },
-      branding: bundle.branding,
-      checkoutRules: bundle.settings
-        ? {
-            fulfillmentMessage: bundle.settings.fulfillment_message,
-            checkoutEnableLocalPickup: bundle.settings.checkout_enable_local_pickup,
-            checkoutLocalPickupLabel: bundle.settings.checkout_local_pickup_label,
-            checkoutLocalPickupFeeCents: bundle.settings.checkout_local_pickup_fee_cents,
-            checkoutEnableFlatRateShipping: bundle.settings.checkout_enable_flat_rate_shipping,
-            checkoutFlatRateShippingLabel: bundle.settings.checkout_flat_rate_shipping_label,
-            checkoutFlatRateShippingFeeCents: bundle.settings.checkout_flat_rate_shipping_fee_cents,
-            checkoutAllowOrderNote: bundle.settings.checkout_allow_order_note,
-            checkoutOrderNotePrompt: bundle.settings.checkout_order_note_prompt
-          }
-        : null,
-      seo: {
-        title: bundle.settings?.seo_title ?? null,
-        description: bundle.settings?.seo_description ?? null,
-        noindex: bundle.settings?.seo_noindex ?? false,
-        location: {
-          city: bundle.settings?.seo_location_city ?? null,
-          region: bundle.settings?.seo_location_region ?? null,
-          state: bundle.settings?.seo_location_state ?? null,
-          postalCode: bundle.settings?.seo_location_postal_code ?? null,
-          countryCode: bundle.settings?.seo_location_country_code ?? null,
-          addressLine1: bundle.settings?.seo_location_address_line1 ?? null,
-          addressLine2: bundle.settings?.seo_location_address_line2 ?? null,
-          showFullAddress: bundle.settings?.seo_location_show_full_address ?? false
-        }
-      },
-      integrations: {
-        payments: {
-          stripeAccountId: bundle.store.stripe_account_id
-        },
-        shipping: {
-          provider: shippingConfig.provider,
-          source: shippingConfig.source,
-          hasApiKey: Boolean(shippingConfig.apiKey),
-          hasWebhookSecret: Boolean(shippingConfig.webhookSecret)
-        }
-      }
-    }
+    settings: buildStoreEditorSettingsPayload(bundle, shippingConfig)
   });
 }
 
