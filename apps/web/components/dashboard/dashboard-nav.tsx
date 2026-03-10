@@ -12,7 +12,6 @@ import {
   ClipboardList,
   Cog,
   FileText,
-  Globe,
   Home,
   Info,
   LayoutDashboard,
@@ -20,17 +19,13 @@ import {
   LogOut,
   Mail,
   Package,
-  Paintbrush,
-  Plug,
   ReceiptText,
   Settings,
   Shield,
   ShoppingCart,
   Star,
   Store,
-  Truck,
   UserCircle2,
-  Users
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { StoreOption } from "@/components/dashboard/store-switcher";
