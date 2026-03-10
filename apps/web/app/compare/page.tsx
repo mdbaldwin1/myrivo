@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { PageShell } from "@/components/layout/page-shell";
+import { MarketingSiteChrome } from "@/components/marketing/marketing-site-chrome";
 import { Button } from "@/components/ui/button";
-import { SectionCard } from "@/components/ui/section-card";
 
 const comparisonRows = [
   {
@@ -33,49 +32,56 @@ const comparisonRows = [
 
 export default function ComparePage() {
   return (
-    <PageShell maxWidthClassName="max-w-6xl">
-      <section className="space-y-4 rounded-xl border border-border bg-card p-8 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Comparison</p>
-        <h1 className="text-4xl font-semibold">Myrivo vs pieced-together commerce stacks</h1>
-        <p className="max-w-3xl text-sm text-muted-foreground">
+    <MarketingSiteChrome activePath="/compare">
+      <section className="marketing-rise rounded-3xl border border-border bg-card p-8 sm:p-10">
+        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Comparison</p>
+        <h1 className="mt-4 [font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-4xl leading-tight text-foreground sm:text-5xl">
+          Myrivo vs. stitched-together commerce stacks
+        </h1>
+        <p className="mt-4 max-w-3xl text-base leading-relaxed text-muted-foreground">
           Myrivo is designed for teams that want one operating system for storefront, fulfillment, growth, and governance instead of a fragile chain of tools.
         </p>
       </section>
 
-      <section className="mt-4 grid gap-3">
+      <section className="marketing-rise marketing-delay-1 mt-6 grid gap-4">
         {comparisonRows.map((row) => (
-          <SectionCard key={row.area} title={row.area}>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="rounded-md border border-emerald-200 bg-emerald-50/70 p-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-800">Myrivo</p>
-                <p className="mt-1 text-sm text-emerald-900">{row.myrivo}</p>
+          <article key={row.area} className="rounded-2xl border border-border bg-white p-5">
+            <h2 className="[font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-2xl text-foreground">{row.area}</h2>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="rounded-xl border border-accent/30 bg-[hsl(var(--muted))] p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent-foreground">Myrivo</p>
+                <p className="mt-1 text-sm text-foreground">{row.myrivo}</p>
               </div>
-              <div className="rounded-md border border-border/70 bg-muted/20 p-3">
+              <div className="rounded-xl border border-border bg-background p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Typical alternatives</p>
                 <p className="mt-1 text-sm text-muted-foreground">{row.alternatives}</p>
               </div>
             </div>
-          </SectionCard>
+          </article>
         ))}
       </section>
 
-      <section className="mt-4 rounded-xl border border-border bg-card p-6">
-        <h2 className="text-lg font-semibold">Next step</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
+      <section className="marketing-rise marketing-delay-2 mt-6 rounded-3xl border border-border bg-primary p-8 text-primary-foreground">
+        <h2 className="[font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-3xl">Next step</h2>
+        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[hsl(var(--primary-foreground))]">
           If you are evaluating platform fit for your team, start with a free account and then map operational requirements in the docs.
         </p>
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-5 flex flex-wrap gap-3">
           <Link href="/signup">
-            <Button>Create account</Button>
+            <Button className="h-10 rounded-full bg-background px-5 text-[hsl(var(--primary))] hover:bg-[hsl(var(--muted))]">Create account</Button>
           </Link>
           <Link href="/features">
-            <Button variant="outline">Explore features</Button>
+            <Button variant="outline" className="h-10 rounded-full border-[hsl(var(--primary-foreground))]/50 bg-transparent px-5 text-primary-foreground hover:bg-white/10">
+              Explore features
+            </Button>
           </Link>
           <Link href="/docs">
-            <Button variant="outline">Open docs</Button>
+            <Button variant="outline" className="h-10 rounded-full border-[hsl(var(--primary-foreground))]/50 bg-transparent px-5 text-primary-foreground hover:bg-white/10">
+              Open docs
+            </Button>
           </Link>
         </div>
       </section>
-    </PageShell>
+    </MarketingSiteChrome>
   );
 }

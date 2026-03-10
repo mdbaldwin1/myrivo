@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { PageShell } from "@/components/layout/page-shell";
-import { SectionCard } from "@/components/ui/section-card";
+import { MarketingSiteChrome } from "@/components/marketing/marketing-site-chrome";
 import { Button } from "@/components/ui/button";
 
 const solutions = [
@@ -23,27 +22,32 @@ const solutions = [
 
 export default function SolutionsIndexPage() {
   return (
-    <PageShell maxWidthClassName="max-w-6xl">
-      <section className="space-y-4 rounded-xl border border-border bg-card p-8 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Solutions</p>
-        <h1 className="text-4xl font-semibold">Myrivo solution pages for specific commerce needs</h1>
-        <p className="max-w-3xl text-sm text-muted-foreground">
+    <MarketingSiteChrome activePath="/for">
+      <section className="marketing-rise rounded-3xl border border-border bg-card p-8 sm:p-10">
+        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Solutions</p>
+        <h1 className="mt-4 [font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-4xl leading-tight text-foreground sm:text-5xl">
+          Choose the operating model that matches your commerce business.
+        </h1>
+        <p className="mt-4 max-w-3xl text-base leading-relaxed text-muted-foreground">
           Choose the path that matches your business model and review how Myrivo supports storefront launch, fulfillment reliability, and growth workflows.
         </p>
       </section>
 
-      <section className="mt-4 grid gap-4 md:grid-cols-3">
+      <section className="marketing-rise marketing-delay-1 mt-6 grid gap-4 md:grid-cols-3">
         {solutions.map((solution) => (
-          <SectionCard key={solution.href} title={solution.title}>
-            <p className="text-sm text-muted-foreground">{solution.description}</p>
-            <div className="mt-3">
+          <article key={solution.href} className="rounded-2xl border border-border bg-white p-6">
+            <h2 className="[font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-2xl text-foreground">{solution.title}</h2>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{solution.description}</p>
+            <div className="mt-4">
               <Link href={solution.href}>
-                <Button variant="outline" size="sm">Open page</Button>
+                <Button variant="outline" size="sm" className="rounded-full border-[hsl(var(--primary))]/35 bg-card text-[hsl(var(--primary))] hover:bg-primary/10">
+                  Open solution
+                </Button>
               </Link>
             </div>
-          </SectionCard>
+          </article>
         ))}
       </section>
-    </PageShell>
+    </MarketingSiteChrome>
   );
 }
