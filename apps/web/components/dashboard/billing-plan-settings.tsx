@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashboardFormActionBar } from "@/components/dashboard/dashboard-form-action-bar";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
@@ -45,11 +45,11 @@ export function BillingPlanSettings({ title = "Billing Plan", editable = false }
     ? `${(selectedPlan.transaction_fee_bps / 100).toFixed(2)}% + $${(selectedPlan.transaction_fee_fixed_cents / 100).toFixed(2)} per successful order`
     : "";
 
-  async function fetchConfig() {
+  const fetchConfig = useCallback(async () => {
     const response = await fetch(buildStoreScopedApiPath("/api/stores/platform-config", storeSlug), { cache: "no-store" });
     const payload = (await response.json()) as BillingPlanConfigResponse;
     return { ok: response.ok, payload };
-  }
+  }, [storeSlug]);
 
   function normalizeBillingPlan(
     raw: BillingPlanConfigResponse["billing"] extends { billing_plans?: infer T } ? T : unknown
@@ -111,7 +111,7 @@ export function BillingPlanSettings({ title = "Billing Plan", editable = false }
     return () => {
       cancelled = true;
     };
-  }, [storeSlug]);
+  }, [fetchConfig]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

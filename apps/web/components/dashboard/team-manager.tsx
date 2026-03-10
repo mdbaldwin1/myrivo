@@ -2,7 +2,7 @@
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -89,11 +89,11 @@ export function TeamManager() {
   const [invites, setInvites] = useState<InviteRecord[]>([]);
   const [lastInviteLink, setLastInviteLink] = useState<string | null>(null);
 
-  async function fetchMembers() {
+  const fetchMembers = useCallback(async () => {
     const response = await fetch(buildStoreScopedApiPath("/api/stores/members", storeSlug), { cache: "no-store" });
     const payload = (await response.json()) as MembersResponse;
     return { ok: response.ok, payload };
-  }
+  }, [storeSlug]);
 
   useEffect(() => {
     let cancelled = false;
@@ -114,7 +114,7 @@ export function TeamManager() {
     return () => {
       cancelled = true;
     };
-  }, [storeSlug]);
+  }, [fetchMembers]);
 
   const rows = useMemo<TeamRow[]>(() => {
     const memberRows: TeamRow[] = members.map((member) => ({

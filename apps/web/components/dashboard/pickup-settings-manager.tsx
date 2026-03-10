@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashboardFormActionBar } from "@/components/dashboard/dashboard-form-action-bar";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -127,7 +127,7 @@ export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
         JSON.stringify(checkoutSettings) !== JSON.stringify(savedCheckoutSettings))
   );
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -209,7 +209,7 @@ export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
     );
 
     setLoading(false);
-  }
+  }, [storeSlug]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -217,7 +217,7 @@ export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
     }, 0);
 
     return () => clearTimeout(timeout);
-  }, [storeSlug]);
+  }, [loadData]);
 
   function resetCoreChanges() {
     if (!savedPickupSettings || !savedCheckoutSettings) {

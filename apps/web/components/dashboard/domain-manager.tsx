@@ -4,7 +4,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { ChevronDown, ChevronUp, Copy } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -357,7 +357,7 @@ export function DomainManager() {
     }));
   }
 
-  async function refreshVerifiedDomainDnsRecords(records: DomainRecord[]) {
+  const refreshVerifiedDomainDnsRecords = useCallback(async (records: DomainRecord[]) => {
     const verifiedDomains = records.filter((record) => record.verification_status === "verified");
     if (verifiedDomains.length === 0) {
       return;
@@ -381,9 +381,9 @@ export function DomainManager() {
 
     const updatesById = new Map(updates.map((record) => [record.id, record]));
     setDomains((current) => current.map((record) => updatesById.get(record.id) ?? record));
-  }
+  }, [activeStoreSlug]);
 
-  async function fetchDomains() {
+  const fetchDomains = useCallback(async () => {
     const [domainsResponse, whiteLabelResponse] = await Promise.all([
       fetch(buildStoreScopedApiPath("/api/stores/domains", activeStoreSlug), { cache: "no-store" }),
       fetch(buildStoreScopedApiPath("/api/stores/white-label", activeStoreSlug), { cache: "no-store" })
@@ -391,7 +391,7 @@ export function DomainManager() {
     const domainsPayload = (await domainsResponse.json()) as { domains?: DomainRecord[]; error?: string };
     const whiteLabelPayload = (await whiteLabelResponse.json()) as { enabled?: boolean; error?: string };
     return { domainsResponse, whiteLabelResponse, domainsPayload, whiteLabelPayload };
-  }
+  }, [activeStoreSlug]);
 
   async function reloadDomains() {
     setError(null);
@@ -440,7 +440,7 @@ export function DomainManager() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [fetchDomains, refreshVerifiedDomainDnsRecords]);
 
   async function addDomain() {
     const validationError = validateDomain(newDomain);

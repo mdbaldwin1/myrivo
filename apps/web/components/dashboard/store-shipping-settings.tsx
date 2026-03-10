@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { Flyout } from "@/components/ui/flyout";
@@ -73,7 +73,7 @@ export function StoreShippingSettings() {
     setFlyoutError(null);
   }
 
-  async function loadSettings() {
+  const loadSettings = useCallback(async () => {
     setLoading(true);
     setPageError(null);
 
@@ -93,7 +93,7 @@ export function StoreShippingSettings() {
     setHasWebhookSecret(payload.hasWebhookSecret);
     setSource(payload.source ?? null);
     setLoading(false);
-  }
+  }, [storeSlug]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -101,7 +101,7 @@ export function StoreShippingSettings() {
     }, 0);
 
     return () => clearTimeout(timeout);
-  }, [storeSlug]);
+  }, [loadSettings]);
 
   async function saveSettings(regenerateWebhookSecret = false) {
     setSaving(true);
