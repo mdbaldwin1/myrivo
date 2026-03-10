@@ -76,7 +76,7 @@ const storeSettingsLinksBase = [
 ] as const;
 
 const contentWorkspaceLinks = [
-  { href: "/content-workspace", label: "Overview", icon: Settings },
+  { href: "/content-workspace", label: "Studio", icon: Settings },
   { href: "/content-workspace/home", label: "Home Page", icon: Home },
   { href: "/content-workspace/products", label: "Products Page", icon: Package },
   { href: "/content-workspace/about", label: "About Page", icon: Info },
