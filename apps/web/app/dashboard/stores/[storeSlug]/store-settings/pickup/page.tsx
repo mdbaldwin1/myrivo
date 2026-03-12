@@ -26,7 +26,13 @@ export default async function StoreWorkspacePickupSettingsPage({ params }: PageP
   return (
     <section className="flex min-h-0 flex-1 flex-col">
       <PickupSettingsManager
-        header={<DashboardPageHeader title="Pickup" description="Local pickup availability, location management, schedules, and blackout windows." />}
+        hideBuilderOfferSettings
+        header={
+          <DashboardPageHeader
+            title="Pickup"
+            description="Operational pickup availability, locations, schedules, and blackout windows."
+          />
+        }
       />
     </section>
   );

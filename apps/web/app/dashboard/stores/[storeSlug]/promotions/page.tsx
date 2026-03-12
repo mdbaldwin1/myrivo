@@ -34,7 +34,7 @@ export default async function StoreWorkspacePromotionsPage({ params }: PageProps
   }
 
   return (
-    <section className="space-y-4 p-4 lg:p-4">
+    <section className="space-y-3 p-3">
       <DashboardPageHeader title="Promotions" description="Create and manage discount offers." />
       <PromotionsManager initialPromotions={promotions ?? []} />
     </section>

@@ -4,19 +4,32 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
+import { useOptionalStorefrontStudioDocument } from "@/components/dashboard/storefront-studio-document-provider";
+import { StorefrontStudioEditableButtonLabel } from "@/components/storefront/storefront-studio-editable-button-label";
+import { StorefrontStudioEditableLink } from "@/components/storefront/storefront-studio-editable-link";
+import { StorefrontStudioEditableTemplateText } from "@/components/storefront/storefront-studio-editable-template-text";
+import { StorefrontStudioEditableText } from "@/components/storefront/storefront-studio-editable-text";
 import { buildStorefrontThemeStyle, resolveStorefrontThemeConfig } from "@/lib/theme/storefront-theme";
 import { sanitizeRichTextHtml } from "@/lib/rich-text";
 import { formatVariantLabel } from "@/lib/products/variants";
-import { readStorefrontCart, writeStorefrontCart } from "@/lib/storefront/cart";
+import { setEditorValueAtPath } from "@/lib/store-editor/object-path";
+import { readStorefrontCart, syncStorefrontCart, writeStorefrontCart } from "@/lib/storefront/cart";
 import { cn } from "@/lib/utils";
 import { StorefrontHeader } from "@/components/storefront/storefront-header";
 import { StorefrontImageCarousel } from "@/components/storefront/storefront-image-carousel";
 import { StorefrontCartButton } from "@/components/storefront/storefront-cart-button";
 import { StorefrontFooter } from "@/components/storefront/storefront-footer";
 import { StorefrontReviewsSection } from "@/components/storefront/storefront-reviews-section";
+import { useOptionalStorefrontRuntime } from "@/components/storefront/storefront-runtime-provider";
+import { useOptionalStorefrontAnalytics } from "@/components/storefront/storefront-analytics-provider";
+import { useStorefrontPageView, useStorefrontProductView } from "@/components/storefront/use-storefront-analytics-events";
+import { buildStorefrontAddToCartValue } from "@/lib/analytics/storefront-instrumentation";
 import { formatCopyTemplate, resolveStorefrontCopy } from "@/lib/storefront/copy";
+import { getStorefrontButtonRadiusClass, getStorefrontCardStyleClass, getStorefrontRadiusClass } from "@/lib/storefront/appearance";
+import { getStorefrontPageWidthClass } from "@/lib/storefront/layout";
 import { STOREFRONT_TEXT_LINK_EFFECT_CLASS } from "@/lib/storefront/link-effects";
 import { resolveFooterNavLinks, resolveHeaderNavLinks } from "@/lib/storefront/navigation";
+import { resolveStorefrontPresentation } from "@/lib/storefront/presentation";
 
 type StorefrontVariant = {
   id: string;
@@ -89,25 +102,6 @@ type Props = {
   product: StorefrontProduct;
   reviewsEnabled?: boolean;
 };
-
-const pageWidthClasses = {
-  narrow: "max-w-5xl",
-  standard: "max-w-6xl",
-  wide: "max-w-7xl"
-} as const;
-
-const buttonRadiusClasses = {
-  soft: "!rounded-2xl",
-  rounded: "!rounded-xl",
-  sharp: "!rounded-none"
-} as const;
-
-const cardStyleClasses = {
-  solid: "border border-border bg-[color:var(--storefront-surface)] shadow-sm",
-  outline: "border-2 border-border bg-transparent",
-  elevated: "border border-border bg-[color:var(--storefront-surface)] shadow-[0_10px_28px_rgba(var(--storefront-primary-rgb),0.18)]",
-  integrated: "border-0 bg-transparent shadow-none"
-} as const;
 
 function getSortedActiveVariants(product: StorefrontProduct) {
   return [...(product.product_variants ?? [])]
@@ -254,42 +248,115 @@ function getAvailabilityLabel(
   return `${variant.inventory_qty} ${copy.availability.inStockSuffix}`;
 }
 
+function getAvailabilityCopyField(variant: StorefrontVariant | null) {
+  if (!variant) {
+    return "unavailable" as const;
+  }
+
+  if (variant.is_made_to_order && variant.inventory_qty < 1) {
+    return "madeToOrderWithFulfillmentTemplate" as const;
+  }
+
+  if (variant.inventory_qty <= 0) {
+    return "outOfStock" as const;
+  }
+
+  return "inStockSuffix" as const;
+}
+
 export function StorefrontProductDetailPage({ store, viewer, branding, settings, product, reviewsEnabled = true }: Props) {
-  const themeConfig = resolveStorefrontThemeConfig(branding?.theme_json ?? {});
-  const copy = resolveStorefrontCopy(settings?.storefront_copy_json ?? {});
-  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, store.slug);
-  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, store.slug);
-  const buttonRadiusClass = buttonRadiusClasses[themeConfig.radiusScale];
-  const cardClass = cardStyleClasses[themeConfig.cardStyle];
+  const runtime = useOptionalStorefrontRuntime();
+  const studioDocument = useOptionalStorefrontStudioDocument();
+  const analytics = useOptionalStorefrontAnalytics();
+  const resolvedStore = runtime?.store ?? store;
+  const resolvedViewer = runtime?.viewer ?? viewer;
+  const resolvedBranding = runtime?.branding ?? branding;
+  const resolvedPresentation = runtime ? resolveStorefrontPresentation(runtime) : null;
+  const resolvedSettings = resolvedPresentation?.settings ?? settings;
+  const resolvedProduct =
+    runtime?.products.find((entry) => entry.id === product.id || entry.slug === product.slug || entry.slug === product.id) ?? product;
+  const themeConfig = resolvedPresentation?.themeConfig ?? resolveStorefrontThemeConfig(resolvedBranding?.theme_json ?? {});
+  const copy = resolvedPresentation?.copy ?? resolveStorefrontCopy(resolvedSettings?.storefront_copy_json ?? {});
+  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, resolvedStore.slug);
+  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, resolvedStore.slug);
+  const radiusClass = getStorefrontRadiusClass(themeConfig.radiusScale);
+  const buttonRadiusClass = getStorefrontButtonRadiusClass(themeConfig.radiusScale);
+  const cardClass = getStorefrontCardStyleClass(themeConfig.cardStyle);
+  const isIntegrated = themeConfig.cardStyle === "integrated";
+  const studioEnabled = runtime?.mode === "studio";
   const storefrontThemeStyle = buildStorefrontThemeStyle({
-    primaryColor: branding?.primary_color,
-    accentColor: branding?.accent_color,
+    primaryColor: resolvedBranding?.primary_color,
+    accentColor: resolvedBranding?.accent_color,
     themeConfig
   });
 
-  const variants = useMemo(() => getSortedActiveVariants(product), [product]);
-  const defaultVariant = useMemo(() => getDefaultVariant(product), [product]);
-  const optionNames = useMemo(() => getVariantOptionNames(product, variants), [product, variants]);
+  const variants = useMemo(() => getSortedActiveVariants(resolvedProduct), [resolvedProduct]);
+  const defaultVariant = useMemo(() => getDefaultVariant(resolvedProduct), [resolvedProduct]);
+  const optionNames = useMemo(() => getVariantOptionNames(resolvedProduct, variants), [resolvedProduct, variants]);
   const [selectedVariantId, setSelectedVariantId] = useState(defaultVariant?.id ?? "");
+  const [quantity, setQuantity] = useState(1);
 
   const selectedVariant = variants.find((variant) => variant.id === selectedVariantId) ?? defaultVariant;
   const selectedOptionValues = selectedVariant?.option_values ?? {};
-  const images = getVariantImages(selectedVariant, product);
+  const images = getVariantImages(selectedVariant, resolvedProduct);
   const canPurchaseSelectedVariant = Boolean(selectedVariant && (selectedVariant.is_made_to_order || selectedVariant.inventory_qty > 0));
+  const studioEnabledWithDocument = studioEnabled && Boolean(studioDocument);
+  const availabilityField = getAvailabilityCopyField(selectedVariant ?? null);
+  const availabilityLabel = getAvailabilityLabel(selectedVariant ?? null, resolvedSettings?.fulfillment_message ?? null, copy);
+  const addToCartLabel = !selectedVariant
+    ? copy.productDetail.outOfStockButton
+    : selectedVariant.is_made_to_order && selectedVariant.inventory_qty < 1
+      ? copy.productDetail.addToCartMadeToOrder
+      : selectedVariant.inventory_qty <= 0
+        ? copy.productDetail.outOfStockButton
+        : copy.productDetail.addToCart;
+
+  useStorefrontPageView("product_detail", {
+    productId: resolvedProduct.id,
+    productSlug: resolvedProduct.slug || resolvedProduct.id
+  });
+  useStorefrontProductView(resolvedProduct.id, {
+    productSlug: resolvedProduct.slug || resolvedProduct.id
+  });
+
+  function updateProductsField(path: string, value: string) {
+    studioDocument?.setSectionDraft("productsPage", (current) => setEditorValueAtPath(current, path, value));
+  }
+
+  const reviewsStudio = studioEnabledWithDocument
+    ? {
+        onSectionTitleChange: (value: string) => updateProductsField("copy.reviews.sectionTitle", value),
+        onSummaryTemplateChange: (value: string) => updateProductsField("copy.reviews.summaryTemplate", value),
+        onEmptyStateChange: (value: string) => updateProductsField("copy.reviews.emptyState", value),
+        onLoadMoreChange: (value: string) => updateProductsField("copy.reviews.loadMore", value),
+        onFormTitleChange: (value: string) => updateProductsField("copy.reviews.formTitle", value)
+      }
+    : undefined;
 
   function addToCart() {
     if (!selectedVariant) {
       return;
     }
     const current = readStorefrontCart();
-    const key = `${product.id}:${selectedVariant.id}`;
+    const key = `${resolvedProduct.id}:${selectedVariant.id}`;
     const existing = current.find((item) => `${item.productId}:${item.variantId}` === key);
     const next = existing
       ? current.map((item) =>
-          `${item.productId}:${item.variantId}` === key ? { ...item, quantity: Math.min(item.quantity + 1, 99) } : item
+          `${item.productId}:${item.variantId}` === key ? { ...item, quantity: Math.min(item.quantity + quantity, 99) } : item
         )
-      : [...current, { productId: product.id, variantId: selectedVariant.id, quantity: 1 }];
+      : [...current, { productId: resolvedProduct.id, variantId: selectedVariant.id, quantity }];
+    analytics?.track({
+      eventType: "add_to_cart",
+      productId: resolvedProduct.id,
+      value: buildStorefrontAddToCartValue({
+        variantId: selectedVariant.id,
+        quantity,
+        unitPriceCents: selectedVariant.price_cents,
+        source: "product_detail"
+      })
+    });
     writeStorefrontCart(next);
+    void syncStorefrontCart(next, resolvedStore.slug);
   }
 
   return (
@@ -297,47 +364,81 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
       style={{ ...storefrontThemeStyle, backgroundImage: "none", backgroundAttachment: "fixed" }}
       className="min-h-screen w-full bg-[color:var(--storefront-bg)] text-[color:var(--storefront-text)] [font-family:var(--storefront-font-body)]"
     >
-      {themeConfig.showPolicyStrip && settings?.announcement ? (
-        <section className="fixed inset-x-0 top-0 z-[70] w-full bg-[var(--storefront-accent)] px-4 py-2 text-center text-xs font-medium text-[color:var(--storefront-accent-foreground)] sm:px-6">
-          {settings.announcement}
+      {themeConfig.showPolicyStrip && resolvedSettings?.announcement ? (
+        <section
+          className={
+            studioEnabled
+              ? "sticky top-0 z-50 w-full bg-[var(--storefront-accent)] px-4 py-2 text-center text-xs font-medium text-[color:var(--storefront-accent-foreground)] sm:px-6"
+              : "fixed inset-x-0 top-0 z-[70] w-full bg-[var(--storefront-accent)] px-4 py-2 text-center text-xs font-medium text-[color:var(--storefront-accent-foreground)] sm:px-6"
+          }
+        >
+          {resolvedSettings.announcement}
         </section>
       ) : null}
 
       <StorefrontHeader
-        storeName={store.name}
-        logoPath={branding?.logo_path}
-        showTitle={themeConfig.heroBrandDisplay !== "logo" || !branding?.logo_path}
-        containerClassName={pageWidthClasses[themeConfig.pageWidth]}
+        storeName={resolvedStore.name}
+        logoPath={resolvedBranding?.logo_path}
+        showLogo={themeConfig.headerShowLogo}
+        showTitle={themeConfig.headerShowTitle}
+        containerClassName={getStorefrontPageWidthClass(themeConfig.pageWidth)}
         navItems={headerNavLinks}
         buttonRadiusClass={buttonRadiusClass}
-        topOffsetPx={themeConfig.showPolicyStrip && settings?.announcement ? 32 : 0}
-        rightContent={<StorefrontCartButton storeSlug={store.slug} ariaLabel={copy.nav.openCartAria} buttonRadiusClass={buttonRadiusClass} />}
+        topOffsetPx={themeConfig.showPolicyStrip && resolvedSettings?.announcement ? 32 : 0}
+        rightContent={<StorefrontCartButton storeSlug={resolvedStore.slug} ariaLabel={copy.nav.openCartAria} buttonRadiusClass={buttonRadiusClass} />}
       />
 
-      <main className={cn("mx-auto grid w-full gap-8 px-6 py-10 lg:grid-cols-[minmax(0,1fr)_420px]", pageWidthClasses[themeConfig.pageWidth])}>
-        <div className="space-y-4">
-          <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">
-            <Link href={`/products?store=${encodeURIComponent(store.slug)}`} className={STOREFRONT_TEXT_LINK_EFFECT_CLASS}>
-              {copy.productDetail.breadcrumbProducts}
-            </Link>
+      <main
+        className={cn(
+          "mx-auto grid w-full gap-8 px-4 py-7 sm:gap-10 sm:px-6 sm:py-9 lg:py-10 xl:grid-cols-[minmax(0,1.08fr)_minmax(20rem,0.92fr)] xl:items-start",
+          getStorefrontPageWidthClass(themeConfig.pageWidth)
+        )}
+      >
+        <div className="space-y-3 sm:space-y-4">
+          <div className="flex flex-wrap items-center gap-y-1 text-[11px] uppercase tracking-[0.14em] text-muted-foreground sm:text-xs">
+            {studioEnabledWithDocument ? (
+              <StorefrontStudioEditableLink
+                label={copy.productDetail.breadcrumbProducts}
+                url={`/products?store=${encodeURIComponent(resolvedStore.slug)}`}
+                hideUrlField
+                allowNavigation
+                labelPlaceholder="Products"
+                urlPlaceholder=""
+                emptyLabel="Products"
+                wrapperClassName="align-middle"
+                displayClassName={STOREFRONT_TEXT_LINK_EFFECT_CLASS}
+                onChange={(next) => updateProductsField("copy.productDetail.breadcrumbProducts", next.label)}
+              />
+            ) : (
+              <Link href={`/products?store=${encodeURIComponent(resolvedStore.slug)}`} className={STOREFRONT_TEXT_LINK_EFFECT_CLASS}>
+                {copy.productDetail.breadcrumbProducts}
+              </Link>
+            )}
             <span className="px-2">/</span>
-            <span>{product.title}</span>
+            <span>{resolvedProduct.title}</span>
           </div>
           {images.length > 0 ? (
             <StorefrontImageCarousel
               images={images}
-              alt={product.image_alt_text || `${product.title} image`}
-              imageClassName={`aspect-square w-full ${buttonRadiusClass}`}
+              alt={resolvedProduct.image_alt_text || `${resolvedProduct.title} image`}
+              imageClassName={cn("aspect-[4/4.4] w-full sm:aspect-square xl:aspect-[1/1.05]", buttonRadiusClass)}
             />
           ) : null}
         </div>
 
-        <section className="space-y-5">
-          <h1 className="text-4xl font-semibold leading-tight [font-family:var(--storefront-font-heading)]">{product.title}</h1>
-          <div className="text-sm text-muted-foreground" dangerouslySetInnerHTML={{ __html: sanitizeRichTextHtml(product.description) }} />
+        <section className="space-y-5 sm:space-y-6 xl:pl-2">
+          <div className="space-y-3">
+            <h1 className="text-3xl font-semibold leading-tight sm:text-4xl lg:text-[2.75rem] [font-family:var(--storefront-font-heading)]">
+              {resolvedProduct.title}
+            </h1>
+            <div
+              className="text-sm leading-6 text-muted-foreground sm:text-[15px]"
+              dangerouslySetInnerHTML={{ __html: sanitizeRichTextHtml(resolvedProduct.description) }}
+            />
+          </div>
 
           {optionNames.length > 0 ? (
-            <div className="space-y-4 border-t border-border/60 pt-4">
+            <div className={cn("space-y-4 p-4 sm:p-5", radiusClass, cardClass, isIntegrated ? "border border-border/60 bg-[color:var(--storefront-surface)]/70 shadow-sm" : "")}>
               {optionNames.map((optionName) => {
                 const values = resolveAvailableValuesForOption(variants, optionNames, selectedOptionValues, optionName);
                 const selectedValue = selectedOptionValues[optionName] ?? values[0] ?? "";
@@ -350,7 +451,7 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
                           key={`${optionName}-${value}`}
                           type="button"
                           className={cn(
-                            "rounded-full border border-border px-3.5 py-1.5 text-sm transition-colors",
+                            "rounded-full border border-border px-3.5 py-2 text-sm transition-colors",
                             buttonRadiusClass,
                             selectedValue === value
                               ? "bg-[var(--storefront-primary)] text-[color:var(--storefront-primary-foreground)]"
@@ -372,8 +473,7 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
               })}
             </div>
           ) : variants.length > 1 ? (
-            <label className="grid gap-1 border-t border-border/60 pt-4">
-              <span className="text-xs font-medium text-muted-foreground">{copy.productDetail.optionsLabel}</span>
+            <label className={cn("grid gap-1 p-4 sm:p-5", radiusClass, cardClass, isIntegrated ? "border border-border/60 bg-[color:var(--storefront-surface)]/70 shadow-sm" : "")}>
               <Select value={selectedVariant?.id ?? ""} onChange={(event) => setSelectedVariantId(event.target.value)}>
                 {variants.map((variant) => (
                   <option key={variant.id} value={variant.id}>
@@ -384,49 +484,174 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
             </label>
           ) : null}
 
-          <div className="space-y-2 border-t border-border/60 pt-4">
-            <p className="text-2xl font-semibold">${((selectedVariant?.price_cents ?? 0) / 100).toFixed(2)}</p>
-            <p className="text-sm text-muted-foreground">{getAvailabilityLabel(selectedVariant ?? null, settings?.fulfillment_message ?? null, copy)}</p>
+          <div className={cn("space-y-4 p-4 sm:p-5", radiusClass, cardClass, isIntegrated ? "border border-border/60 bg-[color:var(--storefront-surface)] shadow-sm" : "")}>
+            <div className="space-y-2">
+              <p className="text-2xl font-semibold sm:text-[1.8rem]">${((selectedVariant?.price_cents ?? 0) / 100).toFixed(2)}</p>
+              {studioEnabledWithDocument ? (
+                availabilityField === "madeToOrderWithFulfillmentTemplate" ? (
+                  <StorefrontStudioEditableTemplateText
+                    renderedValue={availabilityLabel}
+                    templateValue={copy.availability.madeToOrderWithFulfillmentTemplate}
+                    placeholder="Made to order • {message}"
+                    fieldLabel="Availability template"
+                    helperTokens={["{message}"]}
+                    helperExample="Example: Made to order • {message}"
+                    displayClassName="text-sm text-muted-foreground"
+                    onChange={(value) => updateProductsField("copy.availability.madeToOrderWithFulfillmentTemplate", value)}
+                  />
+                ) : availabilityField === "inStockSuffix" ? (
+                  <StorefrontStudioEditableText
+                    as="p"
+                    value={copy.availability.inStockSuffix}
+                    placeholder="in stock"
+                    displayClassName="text-sm text-muted-foreground"
+                    editorClassName="h-10 min-h-0 border-slate-300 bg-white/95 text-sm text-slate-900"
+                    onChange={(value) => updateProductsField("copy.availability.inStockSuffix", value)}
+                  />
+                ) : (
+                  <StorefrontStudioEditableText
+                    as="p"
+                    value={availabilityField === "unavailable" ? copy.availability.unavailable : copy.availability.outOfStock}
+                    placeholder="Availability message"
+                    displayClassName="text-sm text-muted-foreground"
+                    editorClassName="h-10 min-h-0 border-slate-300 bg-white/95 text-sm text-slate-900"
+                    onChange={(value) =>
+                      updateProductsField(
+                        availabilityField === "unavailable" ? "copy.availability.unavailable" : "copy.availability.outOfStock",
+                        value
+                      )
+                    }
+                  />
+                )
+              ) : (
+                <p className="text-sm text-muted-foreground">{availabilityLabel}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Quantity</p>
+              <div className={cn("inline-flex w-fit items-center overflow-hidden border border-border/60 bg-[color:var(--storefront-surface)]", buttonRadiusClass)}>
+                <button
+                  type="button"
+                  aria-label="Decrease quantity"
+                  className="inline-flex h-10 w-10 items-center justify-center text-lg text-muted-foreground transition hover:bg-muted/30 hover:text-[color:var(--storefront-text)] disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={() => setQuantity((current) => Math.max(1, current - 1))}
+                  disabled={quantity <= 1}
+                >
+                  -
+                </button>
+                <input
+                  type="number"
+                  min={1}
+                  max={99}
+                  inputMode="numeric"
+                  value={quantity}
+                  onChange={(event) => {
+                    const next = Number(event.target.value);
+                    if (!Number.isFinite(next)) {
+                      setQuantity(1);
+                      return;
+                    }
+                    setQuantity(Math.max(1, Math.min(99, Math.trunc(next))));
+                  }}
+                  className="h-10 w-14 border-x border-border/60 bg-transparent text-center text-sm font-medium outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                />
+                <button
+                  type="button"
+                  aria-label="Increase quantity"
+                  className="inline-flex h-10 w-10 items-center justify-center text-lg text-muted-foreground transition hover:bg-muted/30 hover:text-[color:var(--storefront-text)] disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={() => setQuantity((current) => Math.min(99, current + 1))}
+                  disabled={quantity >= 99}
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            <div className="relative">
+              <Button
+                type="button"
+                onClick={addToCart}
+                disabled={!canPurchaseSelectedVariant}
+                className={cn(
+                  "h-11 w-full bg-[var(--storefront-primary)] text-[color:var(--storefront-primary-foreground)] hover:opacity-90",
+                  buttonRadiusClass
+                )}
+              >
+                {addToCartLabel}
+              </Button>
+              {studioEnabledWithDocument ? (
+                <StorefrontStudioEditableButtonLabel
+                  label={addToCartLabel}
+                  placeholder="Button label"
+                  allowPointerThrough
+                  wrapperClassName="absolute inset-0 flex items-center justify-center"
+                  labelClassName="inline-flex items-center justify-center text-sm font-medium text-[color:var(--storefront-primary-foreground)]"
+                  panelClassName="left-1/2 top-[calc(100%+0.5rem)] -translate-x-1/2"
+                  onChange={(value) => {
+                    if (!selectedVariant) {
+                      updateProductsField("copy.productDetail.outOfStockButton", value);
+                      return;
+                    }
+
+                    if (selectedVariant.is_made_to_order && selectedVariant.inventory_qty < 1) {
+                      updateProductsField("copy.productDetail.addToCartMadeToOrder", value);
+                      return;
+                    }
+
+                    if (selectedVariant.inventory_qty <= 0) {
+                      updateProductsField("copy.productDetail.outOfStockButton", value);
+                      return;
+                    }
+
+                    updateProductsField("copy.productDetail.addToCart", value);
+                  }}
+                />
+              ) : null}
+            </div>
+
+            {studioEnabledWithDocument ? (
+              <StorefrontStudioEditableLink
+                label={copy.productDetail.backToAllProducts}
+                url={`/products?store=${encodeURIComponent(resolvedStore.slug)}`}
+                hideUrlField
+                allowNavigation
+                labelPlaceholder="Back to all products"
+                urlPlaceholder=""
+                emptyLabel="Back to all products"
+                wrapperClassName="align-middle"
+                displayClassName={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "text-sm font-medium")}
+                onChange={(next) => updateProductsField("copy.productDetail.backToAllProducts", next.label)}
+              />
+            ) : (
+              <Link href={`/products?store=${encodeURIComponent(resolvedStore.slug)}`} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "text-sm font-medium")}>
+                {copy.productDetail.backToAllProducts}
+              </Link>
+            )}
           </div>
-
-          <Button
-            type="button"
-            onClick={addToCart}
-            disabled={!canPurchaseSelectedVariant}
-            className={cn("h-11 w-full bg-[var(--storefront-primary)] text-[color:var(--storefront-primary-foreground)] hover:opacity-90", buttonRadiusClass)}
-          >
-            {!selectedVariant
-              ? copy.productDetail.outOfStockButton
-              : selectedVariant.is_made_to_order && selectedVariant.inventory_qty < 1
-                ? copy.productDetail.addToCartMadeToOrder
-                : selectedVariant.inventory_qty <= 0
-                  ? copy.productDetail.outOfStockButton
-                  : copy.productDetail.addToCart}
-          </Button>
-
-          <Link href={`/products?store=${encodeURIComponent(store.slug)}`} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "text-sm font-medium")}>
-            {copy.productDetail.backToAllProducts}
-          </Link>
         </section>
 
-        <div className="space-y-8 lg:col-span-2">
+        <div className="space-y-8 xl:col-span-2">
           {themeConfig.reviewsShowOnProductDetail && reviewsEnabled ? (
             <StorefrontReviewsSection
-              storeSlug={store.slug}
-              productId={product.id}
+              storeSlug={resolvedStore.slug}
+              productId={resolvedProduct.id}
               buttonRadiusClass={buttonRadiusClass}
               reviewCardClassName={cardClass}
               reviewsTheme={themeConfig}
               reviewsCopy={copy.reviews}
+              studio={reviewsStudio}
             />
           ) : null}
           <StorefrontFooter
-            storeName={store.name}
-            storeSlug={store.slug}
-            viewer={viewer}
-            settings={settings}
+            storeName={resolvedStore.name}
+            storeSlug={resolvedStore.slug}
+            viewer={resolvedViewer}
+            settings={resolvedSettings}
             copy={copy}
             buttonRadiusClass={buttonRadiusClass}
+            surfaceRadiusClassName={radiusClass}
+            surfaceCardClassName={cardClass}
             navLinks={footerNavLinks}
             showBackToTop={themeConfig.showFooterBackToTop}
             showOwnerLogin={themeConfig.showFooterOwnerLogin}

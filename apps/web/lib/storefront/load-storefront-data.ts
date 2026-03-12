@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isMissingColumnInSchemaCache, isMissingRelationInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { mapStoreExperienceContentRow } from "@/lib/store-experience/content";
 import { isRecord, mergeStorefrontCopy } from "@/lib/store-experience/merge";
+import type { StorefrontData } from "@/lib/storefront/runtime";
 import { resolveStoreSlugForServerRender } from "@/lib/stores/active-store";
 import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
 
@@ -32,7 +33,7 @@ export function getNumber(record: Record<string, unknown>, key: string, fallback
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-export async function loadStorefrontData(explicitStoreSlug?: string | null) {
+export async function loadStorefrontData(explicitStoreSlug?: string | null): Promise<StorefrontData | null> {
   const supabase = await createSupabaseServerClient();
   const admin = createSupabaseAdminClient();
   const requestHeaders = await headers();
@@ -93,7 +94,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null) {
   ] = await Promise.all([
     admin
       .from("store_branding")
-      .select("logo_path,primary_color,accent_color,theme_json")
+      .select("logo_path,favicon_path,apple_touch_icon_path,og_image_path,twitter_image_path,primary_color,accent_color,theme_json")
       .eq("store_id", store.id)
       .maybeSingle(),
     admin
@@ -235,6 +236,18 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null) {
     heroBadgeTwo: getString(homeHero, "badgeTwo", getString(homeHero, "heroBadgeTwo", "")) ?? "",
     heroBadgeThree: getString(homeHero, "badgeThree", getString(homeHero, "heroBadgeThree", "")) ?? "",
     heroBrandDisplay: getString(homeHero, "brandDisplay", getString(homeHero, "heroBrandDisplay", "title")) ?? "title",
+    heroShowLogo: getBoolean(
+      homeHero,
+      "showLogo",
+      getString(homeHero, "brandDisplay", getString(homeHero, "heroBrandDisplay", "title")) === "logo" ||
+        getString(homeHero, "brandDisplay", getString(homeHero, "heroBrandDisplay", "title")) === "logo_and_title"
+    ),
+    heroShowTitle: getBoolean(
+      homeHero,
+      "showTitle",
+      getString(homeHero, "brandDisplay", getString(homeHero, "heroBrandDisplay", "title")) === "title" ||
+        getString(homeHero, "brandDisplay", getString(homeHero, "heroBrandDisplay", "title")) === "logo_and_title"
+    ),
     showPolicyStrip: getBoolean(homeVisibility, "showPolicyStrip", getBoolean(brandingThemeJson, "showPolicyStrip", true)),
     showContentBlocks: resolvedHomeShowContentBlocks,
     homeShowHero: getBoolean(homeVisibility, "showHero", getBoolean(brandingThemeJson, "homeShowHero", true)),
@@ -442,6 +455,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null) {
       isAuthenticated,
       canManageStore
     },
+    experienceContent: sectionedContent,
     branding: branding
       ? {
           ...branding,

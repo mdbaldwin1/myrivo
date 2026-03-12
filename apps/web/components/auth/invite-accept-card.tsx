@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ export function InviteAcceptCard({ inviteToken, isAuthenticated, userEmail }: In
   const [accepting, setAccepting] = useState(false);
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const autoAcceptTriggeredRef = useRef(false);
   const returnTo = useMemo(() => `/invite/${inviteToken}`, [inviteToken]);
 
   const acceptInvite = useCallback(async () => {
@@ -49,6 +50,19 @@ export function InviteAcceptCard({ inviteToken, isAuthenticated, userEmail }: In
     router.replace(target);
     router.refresh();
   }, [inviteToken, router]);
+
+  useEffect(() => {
+    if (!isAuthenticated || accepting || accepted || error || autoAcceptTriggeredRef.current) {
+      return;
+    }
+
+    autoAcceptTriggeredRef.current = true;
+    const timeoutId = window.setTimeout(() => {
+      void acceptInvite();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [acceptInvite, accepted, accepting, error, isAuthenticated]);
 
   if (!isAuthenticated) {
     return (
@@ -90,7 +104,7 @@ export function InviteAcceptCard({ inviteToken, isAuthenticated, userEmail }: In
           </p>
         ) : null}
         {accepted ? <p className="text-sm text-muted-foreground">Invite accepted. Redirecting to store workspace...</p> : null}
-        {!accepted && !accepting && !error ? <p className="text-sm text-muted-foreground">Continue below to join the store.</p> : null}
+        {!accepted && !accepting && !error ? <p className="text-sm text-muted-foreground">Joining the store workspace...</p> : null}
       </CardContent>
       <CardFooter className="flex flex-wrap gap-2">
         <Button type="button" onClick={() => void acceptInvite()} disabled={accepting}>

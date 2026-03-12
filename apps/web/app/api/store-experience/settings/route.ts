@@ -57,6 +57,14 @@ const settingsUpdateSchema = z.object({
         })
         .optional()
     })
+    .optional(),
+  newsletterCapture: z
+    .object({
+      enabled: z.boolean().optional(),
+      heading: z.string().max(200).nullable().optional(),
+      description: z.string().max(500).nullable().optional(),
+      successMessage: z.string().max(240).nullable().optional()
+    })
     .optional()
 });
 
@@ -220,6 +228,28 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
     updatedAreas.push("seo");
+  }
+
+  if (payload.data.newsletterCapture) {
+    const current = bundle.settings;
+    const next = payload.data.newsletterCapture;
+    const { error } = await supabase
+      .from("store_settings")
+      .upsert(
+        {
+          store_id: bundle.store.id,
+          email_capture_enabled: next.enabled ?? current?.email_capture_enabled ?? false,
+          email_capture_heading: next.heading ?? current?.email_capture_heading ?? null,
+          email_capture_description: next.description ?? current?.email_capture_description ?? null,
+          email_capture_success_message: next.successMessage ?? current?.email_capture_success_message ?? null
+        },
+        { onConflict: "store_id" }
+      );
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    updatedAreas.push("newsletterCapture");
   }
 
   return NextResponse.json({ ok: true, updatedAreas });

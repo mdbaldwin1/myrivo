@@ -67,6 +67,15 @@ export type DashboardHomePlatformPulse = {
   pendingApprovalCount: number;
 };
 
+export type DashboardHomePendingInvite = {
+  id: string;
+  storeId: string;
+  storeName: string;
+  storeSlug: string;
+  role: "admin" | "staff";
+  expiresAt: string;
+};
+
 export type DashboardHomeData = {
   role: GlobalUserRole;
   summary: {
@@ -87,6 +96,7 @@ export type DashboardHomeData = {
     unreadCount: number;
     recent: DashboardHomeNotificationPreview[];
   };
+  pendingInvites: DashboardHomePendingInvite[];
   workspacePulse: DashboardHomeWorkspacePulse | null;
   platformPulse: DashboardHomePlatformPulse | null;
 };

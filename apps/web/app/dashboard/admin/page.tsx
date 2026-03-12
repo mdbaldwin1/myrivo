@@ -33,7 +33,7 @@ export default async function DashboardAdminPage() {
     <DashboardPageScaffold
       title="Admin Dashboard"
       description="Platform-wide governance, operations, and role controls."
-      className="p-4 lg:p-4"
+      className="p-3"
       action={<ContextHelpLink href="/docs/admin-dashboard-and-operations#operations-checklist" context="admin_dashboard" label="Admin Docs" />}
     >
       <PlatformConsole currentGlobalRole={globalRole} />

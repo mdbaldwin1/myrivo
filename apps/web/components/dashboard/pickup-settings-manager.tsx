@@ -81,11 +81,43 @@ function createDefaultScheduleWindow(): PickupScheduleDraft {
   return { dayOfWeek: 1, opensAt: "09:00", closesAt: "17:00" };
 }
 
+function arePickupSettingsEqual(left: PickupSettings | null, right: PickupSettings | null) {
+  if (!left || !right) {
+    return left === right;
+  }
+
+  return (
+    left.pickup_enabled === right.pickup_enabled &&
+    left.selection_mode === right.selection_mode &&
+    left.geolocation_fallback_mode === right.geolocation_fallback_mode &&
+    left.out_of_radius_behavior === right.out_of_radius_behavior &&
+    left.eligibility_radius_miles === right.eligibility_radius_miles &&
+    left.lead_time_hours === right.lead_time_hours &&
+    left.slot_interval_minutes === right.slot_interval_minutes &&
+    left.show_pickup_times === right.show_pickup_times &&
+    left.timezone === right.timezone &&
+    (left.instructions ?? "") === (right.instructions ?? "")
+  );
+}
+
+function areCheckoutPickupSettingsEqual(left: CheckoutPickupSettings | null, right: CheckoutPickupSettings | null) {
+  if (!left || !right) {
+    return left === right;
+  }
+
+  return (
+    left.checkout_enable_local_pickup === right.checkout_enable_local_pickup &&
+    (left.checkout_local_pickup_label ?? "") === (right.checkout_local_pickup_label ?? "") &&
+    left.checkout_local_pickup_fee_cents === right.checkout_local_pickup_fee_cents
+  );
+}
+
 type PickupSettingsManagerProps = {
   header?: ReactNode;
+  hideBuilderOfferSettings?: boolean;
 };
 
-export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
+export function PickupSettingsManager({ header, hideBuilderOfferSettings = false }: PickupSettingsManagerProps) {
   const formId = "pickup-config-form";
   const pathname = usePathname();
   const storeSlug = getStoreSlugFromDashboardPathname(pathname);
@@ -121,10 +153,8 @@ export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
   const isDirty = Boolean(
     pickupSettings &&
       savedPickupSettings &&
-      checkoutSettings &&
-      savedCheckoutSettings &&
-      (JSON.stringify(pickupSettings) !== JSON.stringify(savedPickupSettings) ||
-        JSON.stringify(checkoutSettings) !== JSON.stringify(savedCheckoutSettings))
+      (!arePickupSettingsEqual(pickupSettings, savedPickupSettings) ||
+        (!hideBuilderOfferSettings && !areCheckoutPickupSettingsEqual(checkoutSettings, savedCheckoutSettings)))
   );
 
   const loadData = useCallback(async () => {
@@ -132,7 +162,9 @@ export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
     setError(null);
 
     const [settingsResponse, pickupResponse, locationsResponse, hoursResponse, blackoutsResponse] = await Promise.all([
-      fetch(buildStoreScopedApiPath("/api/stores/settings", storeSlug), { cache: "no-store" }),
+      hideBuilderOfferSettings
+        ? Promise.resolve(new Response(JSON.stringify({ settings: null }), { status: 200, headers: { "Content-Type": "application/json" } }))
+        : fetch(buildStoreScopedApiPath("/api/stores/settings", storeSlug), { cache: "no-store" }),
       fetch(buildStoreScopedApiPath("/api/stores/pickup/settings", storeSlug), { cache: "no-store" }),
       fetch(buildStoreScopedApiPath("/api/stores/pickup/locations", storeSlug), { cache: "no-store" }),
       fetch(buildStoreScopedApiPath("/api/stores/pickup/hours", storeSlug), { cache: "no-store" }),
@@ -178,14 +210,19 @@ export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
       return;
     }
 
-    const resolvedCheckout: CheckoutPickupSettings = {
-      checkout_enable_local_pickup: settingsPayload.settings?.checkout_enable_local_pickup ?? false,
-      checkout_local_pickup_label: settingsPayload.settings?.checkout_local_pickup_label ?? "Local pickup",
-      checkout_local_pickup_fee_cents: settingsPayload.settings?.checkout_local_pickup_fee_cents ?? 0
-    };
+    if (!hideBuilderOfferSettings) {
+      const resolvedCheckout: CheckoutPickupSettings = {
+        checkout_enable_local_pickup: settingsPayload.settings?.checkout_enable_local_pickup ?? false,
+        checkout_local_pickup_label: settingsPayload.settings?.checkout_local_pickup_label ?? "Local pickup",
+        checkout_local_pickup_fee_cents: settingsPayload.settings?.checkout_local_pickup_fee_cents ?? 0
+      };
 
-    setCheckoutSettings(resolvedCheckout);
-    setSavedCheckoutSettings(resolvedCheckout);
+      setCheckoutSettings(resolvedCheckout);
+      setSavedCheckoutSettings(resolvedCheckout);
+    } else {
+      setCheckoutSettings(null);
+      setSavedCheckoutSettings(null);
+    }
 
     setPickupSettings(pickupPayload.settings ?? null);
     setSavedPickupSettings(pickupPayload.settings ?? null);
@@ -209,7 +246,7 @@ export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
     );
 
     setLoading(false);
-  }, [storeSlug]);
+  }, [hideBuilderOfferSettings, storeSlug]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -230,31 +267,58 @@ export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
   }
 
   async function saveCoreConfig() {
-    if (!pickupSettings || !checkoutSettings) {
-      return;
-    }
-
-    const localPickupFeeCents = Number.parseInt(String(checkoutSettings.checkout_local_pickup_fee_cents ?? 0), 10);
-
-    if (!Number.isInteger(localPickupFeeCents) || localPickupFeeCents < 0) {
-      setError("Pickup fee must be a non-negative integer amount in cents.");
+    if (!pickupSettings || (!hideBuilderOfferSettings && !checkoutSettings)) {
       return;
     }
 
     setSaving(true);
     setError(null);
 
-    const [settingsResponse, pickupResponse] = await Promise.all([
-      fetch(buildStoreScopedApiPath("/api/stores/settings", storeSlug), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          checkoutEnableLocalPickup: checkoutSettings.checkout_enable_local_pickup,
-          checkoutLocalPickupLabel: checkoutSettings.checkout_local_pickup_label?.trim() || null,
-          checkoutLocalPickupFeeCents: localPickupFeeCents
-        })
-      }),
-      fetch(buildStoreScopedApiPath("/api/stores/pickup/settings", storeSlug), {
+    try {
+      let nextCheckout: CheckoutPickupSettings | null = null;
+
+      if (!hideBuilderOfferSettings && checkoutSettings) {
+        const localPickupFeeCents = Number.parseInt(String(checkoutSettings.checkout_local_pickup_fee_cents ?? 0), 10);
+
+        if (!Number.isInteger(localPickupFeeCents) || localPickupFeeCents < 0) {
+          setError("Pickup fee must be a non-negative integer amount in cents.");
+          setSaving(false);
+          return;
+        }
+
+        const settingsResponse = await fetch(buildStoreScopedApiPath("/api/stores/settings", storeSlug), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            checkoutEnableLocalPickup: checkoutSettings.checkout_enable_local_pickup,
+            checkoutLocalPickupLabel: checkoutSettings.checkout_local_pickup_label?.trim() || null,
+            checkoutLocalPickupFeeCents: localPickupFeeCents
+          })
+        });
+
+        const settingsPayload = (await settingsResponse.json()) as {
+          settings?: {
+            checkout_enable_local_pickup?: boolean;
+            checkout_local_pickup_label?: string | null;
+            checkout_local_pickup_fee_cents?: number;
+          };
+          error?: string;
+        };
+
+        if (!settingsResponse.ok) {
+          setError(settingsPayload.error ?? "Unable to save pickup checkout settings.");
+          setSaving(false);
+          return;
+        }
+
+        nextCheckout = {
+          checkout_enable_local_pickup: settingsPayload.settings?.checkout_enable_local_pickup ?? checkoutSettings.checkout_enable_local_pickup,
+          checkout_local_pickup_label: settingsPayload.settings?.checkout_local_pickup_label ?? checkoutSettings.checkout_local_pickup_label,
+          checkout_local_pickup_fee_cents: settingsPayload.settings?.checkout_local_pickup_fee_cents ?? checkoutSettings.checkout_local_pickup_fee_cents
+        };
+      }
+
+      const pickupResponse = await fetch(buildStoreScopedApiPath("/api/stores/pickup/settings", storeSlug), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -269,45 +333,28 @@ export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
           timezone: pickupSettings.timezone.trim(),
           instructions: pickupSettings.instructions?.trim() || null
         })
-      })
-    ]);
+      });
+      const pickupPayload = (await pickupResponse.json()) as { settings?: PickupSettings; error?: string };
 
-    const settingsPayload = (await settingsResponse.json()) as {
-      settings?: {
-        checkout_enable_local_pickup?: boolean;
-        checkout_local_pickup_label?: string | null;
-        checkout_local_pickup_fee_cents?: number;
-      };
-      error?: string;
-    };
-    const pickupPayload = (await pickupResponse.json()) as { settings?: PickupSettings; error?: string };
+      if (!pickupResponse.ok) {
+        setError(pickupPayload.error ?? "Unable to save pickup settings.");
+        setSaving(false);
+        return;
+      }
 
-    if (!settingsResponse.ok) {
-      setError(settingsPayload.error ?? "Unable to save pickup checkout settings.");
+      const nextPickup = pickupPayload.settings ?? pickupSettings;
+
+      if (nextCheckout) {
+        setCheckoutSettings(nextCheckout);
+        setSavedCheckoutSettings(nextCheckout);
+      }
+
+      setPickupSettings(nextPickup);
+      setSavedPickupSettings(nextPickup);
+      notify.success("Pickup settings saved.");
+    } finally {
       setSaving(false);
-      return;
     }
-
-    if (!pickupResponse.ok) {
-      setError(pickupPayload.error ?? "Unable to save pickup settings.");
-      setSaving(false);
-      return;
-    }
-
-    const nextCheckout: CheckoutPickupSettings = {
-      checkout_enable_local_pickup: settingsPayload.settings?.checkout_enable_local_pickup ?? checkoutSettings.checkout_enable_local_pickup,
-      checkout_local_pickup_label: settingsPayload.settings?.checkout_local_pickup_label ?? checkoutSettings.checkout_local_pickup_label,
-      checkout_local_pickup_fee_cents: settingsPayload.settings?.checkout_local_pickup_fee_cents ?? checkoutSettings.checkout_local_pickup_fee_cents
-    };
-
-    const nextPickup = pickupPayload.settings ?? pickupSettings;
-
-    setCheckoutSettings(nextCheckout);
-    setSavedCheckoutSettings(nextCheckout);
-    setPickupSettings(nextPickup);
-    setSavedPickupSettings(nextPickup);
-    setSaving(false);
-    notify.success("Pickup settings saved.");
   }
 
   async function handleCoreConfigSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -486,76 +533,89 @@ export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
     () => hours.filter((entry) => entry.pickup_location_id === selectedHoursLocationId),
     [hours, selectedHoursLocationId]
   );
+  const showStorefrontPickupSettings = !hideBuilderOfferSettings && checkoutSettings;
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 lg:p-4">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {header}
         {loading ? <p className="text-sm text-muted-foreground">Loading pickup settings...</p> : null}
 
-        {!loading && pickupSettings && checkoutSettings ? (
+        {!loading && pickupSettings && (hideBuilderOfferSettings || checkoutSettings) ? (
           <form id={formId} className="space-y-4" onSubmit={handleCoreConfigSubmit}>
             <SectionCard
-              title="Local Pickup"
-              description="Configure pickup availability, buyer rules, locations, schedule, and blackout windows."
+              title={hideBuilderOfferSettings ? "Pickup operations" : "Local Pickup"}
+              description={
+                hideBuilderOfferSettings
+                  ? "Configure availability rules, locations, schedules, blackout windows, and buyer-eligibility logic."
+                  : "Configure pickup availability, buyer rules, locations, schedule, and blackout windows."
+              }
             >
               <div className="grid gap-3 sm:grid-cols-2">
+                {showStorefrontPickupSettings ? (
+                  <>
+                    <label className="sm:col-span-2 flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={showStorefrontPickupSettings.checkout_enable_local_pickup}
+                        onChange={(event) =>
+                          setCheckoutSettings((current) =>
+                            current ? { ...current, checkout_enable_local_pickup: event.target.checked } : current
+                          )
+                        }
+                      />
+                      Enable local pickup option
+                    </label>
+
+                    {showStorefrontPickupSettings.checkout_enable_local_pickup ? (
+                      <>
+                        <FormField label="Pickup Label">
+                          <Input
+                            value={showStorefrontPickupSettings.checkout_local_pickup_label ?? ""}
+                            onChange={(event) =>
+                              setCheckoutSettings((current) =>
+                                current ? { ...current, checkout_local_pickup_label: event.target.value } : current
+                              )
+                            }
+                            placeholder="Local pickup"
+                          />
+                        </FormField>
+
+                        <FormField label="Pickup Fee (cents)">
+                          <Input
+                            type="number"
+                            min={0}
+                            value={showStorefrontPickupSettings.checkout_local_pickup_fee_cents}
+                            onChange={(event) =>
+                              setCheckoutSettings((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      checkout_local_pickup_fee_cents: Number.parseInt(event.target.value || "0", 10)
+                                    }
+                                  : current
+                              )
+                            }
+                          />
+                        </FormField>
+                      </>
+                    ) : null}
+                  </>
+                ) : null}
+
                 <label className="sm:col-span-2 flex items-center gap-2 text-sm">
                   <Checkbox
-                    checked={checkoutSettings.checkout_enable_local_pickup}
+                    checked={pickupSettings.pickup_enabled}
                     onChange={(event) =>
-                      setCheckoutSettings((current) =>
-                        current ? { ...current, checkout_enable_local_pickup: event.target.checked } : current
+                      setPickupSettings((current) =>
+                        current ? { ...current, pickup_enabled: event.target.checked } : current
                       )
                     }
                   />
-                  Enable local pickup option
+                  Enable pickup availability rules
                 </label>
 
-                {checkoutSettings.checkout_enable_local_pickup ? (
+                {pickupSettings.pickup_enabled ? (
                   <>
-                    <FormField label="Pickup Label">
-                      <Input
-                        value={checkoutSettings.checkout_local_pickup_label ?? ""}
-                        onChange={(event) =>
-                          setCheckoutSettings((current) =>
-                            current ? { ...current, checkout_local_pickup_label: event.target.value } : current
-                          )
-                        }
-                        placeholder="Local pickup"
-                      />
-                    </FormField>
-
-                    <FormField label="Pickup Fee (cents)">
-                      <Input
-                        type="number"
-                        min={0}
-                        value={checkoutSettings.checkout_local_pickup_fee_cents}
-                        onChange={(event) =>
-                          setCheckoutSettings((current) =>
-                            current
-                              ? {
-                                  ...current,
-                                  checkout_local_pickup_fee_cents: Number.parseInt(event.target.value || "0", 10)
-                                }
-                              : current
-                          )
-                        }
-                      />
-                    </FormField>
-
-                    <label className="sm:col-span-2 flex items-center gap-2 text-sm">
-                      <Checkbox
-                        checked={pickupSettings.pickup_enabled}
-                        onChange={(event) =>
-                          setPickupSettings((current) =>
-                            current ? { ...current, pickup_enabled: event.target.checked } : current
-                          )
-                        }
-                      />
-                      Enable pickup availability rules
-                    </label>
-
                     <FormField label="Selection Mode">
                       <Select
                         value={pickupSettings.selection_mode}
@@ -692,8 +752,14 @@ export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
                         placeholder="Bring order confirmation and photo ID to pickup."
                       />
                     </FormField>
+                  </>
+                ) : (
+                  <div className="sm:col-span-2 rounded-md border border-border/60 bg-muted/15 px-3 py-2 text-sm text-muted-foreground">
+                    Pickup rules are currently off. You can still prepare locations, hours, and blackout windows below before enabling buyer pickup.
+                  </div>
+                )}
 
-                    <div className="sm:col-span-2 mt-2 space-y-3 border-t border-border/60 pt-3">
+                <div className="sm:col-span-2 mt-2 space-y-3 border-t border-border/60 pt-3">
                       <p className="text-sm font-medium">Pickup Locations</p>
                       <div className="grid gap-2 sm:grid-cols-2">
                         <Input value={newLocationName} onChange={(event) => setNewLocationName(event.target.value)} placeholder="Location name" />
@@ -849,8 +915,6 @@ export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
                         ))}
                       </ul>
                     </div>
-                  </>
-                ) : null}
               </div>
             </SectionCard>
           </form>
@@ -858,7 +922,7 @@ export function PickupSettingsManager({ header }: PickupSettingsManagerProps) {
 
       </div>
 
-      {!loading && pickupSettings && checkoutSettings ? (
+      {!loading && pickupSettings && (hideBuilderOfferSettings || checkoutSettings) ? (
         <DashboardFormActionBar
           formId={formId}
           saveLabel="Save pickup settings"

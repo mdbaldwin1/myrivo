@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Rebuilt storefront editing around Storefront Studio, moved builder-owned content/settings into the Studio canvas, and retired duplicate legacy builder routes into redirects or Studio handoff pages while leaving operational settings outside the builder.
+- Added Email Studio as the canonical transactional-template workspace, with legacy email editing routes redirected into it and sample-data preview support for lifecycle email composition.
 - Initial Myrivo platform foundation with monorepo tooling, web app scaffold, Supabase schema, and Stripe integration skeleton.
 - Added Tailwind-based UI foundation with componentized page sections and theme token variables.
 - Added configurable pricing module for fee/tier behavior and wired Stripe handlers to plan config.

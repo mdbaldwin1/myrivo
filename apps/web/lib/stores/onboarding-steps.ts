@@ -27,7 +27,7 @@ export function getOnboardingNextStep(store: StoreOnboardingProgress): Onboardin
     return { id: "profile", label: "Finish general settings", href: `/dashboard/stores/${store.slug}/store-settings/general` };
   }
   if (!store.steps.branding) {
-    return { id: "branding", label: "Set branding", href: `/dashboard/stores/${store.slug}/store-settings/branding` };
+    return { id: "branding", label: "Set branding", href: `/dashboard/stores/${store.slug}/storefront-studio?editor=brand` };
   }
   if (!store.steps.firstProduct) {
     return { id: "firstProduct", label: "Add first product", href: `/dashboard/stores/${store.slug}/catalog` };
@@ -36,7 +36,11 @@ export function getOnboardingNextStep(store: StoreOnboardingProgress): Onboardin
     return { id: "payments", label: "Connect payments", href: `/dashboard/stores/${store.slug}/store-settings/integrations` };
   }
   if (!store.steps.launch && store.canLaunch) {
-    return { id: "launch", label: "Launch store", href: "/onboarding" };
+    if (store.status === "pending_review") {
+      return null;
+    }
+
+    return { id: "launch", label: "Submit for review", href: `/dashboard/stores/${store.slug}/store-settings/general` };
   }
   return null;
 }

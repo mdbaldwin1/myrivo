@@ -62,7 +62,7 @@ export function ContentWorkspaceHomeForm({ header }: ContentWorkspaceHomeFormPro
         void save();
       }}
     >
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 lg:p-4">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {header}
 
         <SectionCard title="Top-Level Messaging" description="Announcement and fulfillment messaging shown across storefront views.">

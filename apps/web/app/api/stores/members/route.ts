@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStorePermission } from "@/lib/auth/authorization";
 import { logAuditEvent } from "@/lib/audit/log";
+import { sendStoreMembershipInviteEmail } from "@/lib/notifications/team-invites";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createInviteToken, hashInviteToken, normalizeInviteEmail, resolveInviteExpiry } from "@/lib/stores/membership-invites";
@@ -9,7 +10,7 @@ import type { StoreMemberRole } from "@/types/database";
 
 const inviteSchema = z.object({
   email: z.string().email().max(320),
-  role: z.enum(["admin", "staff", "customer"]),
+  role: z.enum(["admin", "staff"]),
   expiresInDays: z.number().int().min(1).max(30).optional()
 });
 
@@ -25,7 +26,7 @@ type MemberRow = {
 type InviteRow = {
   id: string;
   email: string;
-  role: "admin" | "staff" | "customer";
+  role: "admin" | "staff";
   status: "pending" | "accepted" | "revoked" | "expired";
   expires_at: string;
   invited_by_user_id: string;
@@ -110,13 +111,21 @@ export async function POST(request: NextRequest) {
 
   const admin = createSupabaseAdminClient();
   const normalizedEmail = normalizeInviteEmail(payload.data.email);
-  const [{ data: existingProfile }, { data: store, error: storeError }] = await Promise.all([
+  const [{ data: existingProfile }, { data: store, error: storeError }, { data: inviterProfile, error: inviterProfileError }] = await Promise.all([
     admin.from("user_profiles").select("id,email").eq("email", normalizedEmail).maybeSingle<{ id: string; email: string | null }>(),
-    admin.from("stores").select("id,name,owner_user_id").eq("id", auth.context.storeId).single<{ id: string; name: string; owner_user_id: string }>()
+    admin.from("stores").select("id,name,owner_user_id").eq("id", auth.context.storeId).single<{ id: string; name: string; owner_user_id: string }>(),
+    admin
+      .from("user_profiles")
+      .select("display_name,email")
+      .eq("id", auth.context.userId)
+      .maybeSingle<{ display_name: string | null; email: string | null }>()
   ]);
 
   if (storeError || !store) {
     return NextResponse.json({ error: storeError?.message ?? "Store not found." }, { status: 500 });
+  }
+  if (inviterProfileError) {
+    return NextResponse.json({ error: inviterProfileError.message }, { status: 500 });
   }
 
   if (existingProfile?.id === store.owner_user_id) {
@@ -186,10 +195,21 @@ export async function POST(request: NextRequest) {
     }
   });
 
+  const emailResult = await sendStoreMembershipInviteEmail({
+    recipientEmail: invite.email,
+    storeName: store.name,
+    inviterName: inviterProfile?.display_name ?? inviterProfile?.email ?? null,
+    role: invite.role,
+    inviteToken: token,
+    expiresAt
+  });
+
   return NextResponse.json(
     {
       invite,
-      inviteToken: token
+      inviteToken: token,
+      emailSent: emailResult.ok,
+      emailError: emailResult.ok ? null : emailResult.error
     },
     { status: 201 }
   );

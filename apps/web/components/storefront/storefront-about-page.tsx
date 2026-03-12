@@ -3,34 +3,27 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Facebook, Instagram, Mail, Music2, Truck } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { useOptionalStorefrontStudioDocument } from "@/components/dashboard/storefront-studio-document-provider";
+import { StorefrontStudioAboutSectionActions } from "@/components/storefront/storefront-studio-about-section-actions";
+import { StorefrontStudioEditableRichText } from "@/components/storefront/storefront-studio-editable-rich-text";
+import { StorefrontStudioEditableText } from "@/components/storefront/storefront-studio-editable-text";
+import { StorefrontStudioInlineAddTile } from "@/components/storefront/storefront-studio-inline-add-tile";
+import { StorefrontStudioSelectableRegion } from "@/components/storefront/storefront-studio-selectable-region";
+import { useOptionalStorefrontRuntime } from "@/components/storefront/storefront-runtime-provider";
+import { useStorefrontPageView } from "@/components/storefront/use-storefront-analytics-events";
 import { sanitizeRichTextHtml } from "@/lib/rich-text";
+import { getStorefrontButtonRadiusClass, getStorefrontCardStyleClass, getStorefrontRadiusClass } from "@/lib/storefront/appearance";
+import { addAboutSection } from "@/lib/storefront/studio-structure";
 import { buildStorefrontThemeStyle, resolveStorefrontThemeConfig } from "@/lib/theme/storefront-theme";
 import { resolveStorefrontCopy } from "@/lib/storefront/copy";
 import { STOREFRONT_TEXT_LINK_EFFECT_CLASS } from "@/lib/storefront/link-effects";
 import { resolveFooterNavLinks, resolveHeaderNavLinks } from "@/lib/storefront/navigation";
+import { getStorefrontPageShellClass, getStorefrontPageWidthClass } from "@/lib/storefront/layout";
+import { resolveStorefrontPresentation } from "@/lib/storefront/presentation";
 import { cn } from "@/lib/utils";
 import { StorefrontHeader } from "@/components/storefront/storefront-header";
 import { StorefrontCartButton } from "@/components/storefront/storefront-cart-button";
 import { StorefrontFooter } from "@/components/storefront/storefront-footer";
-
-const spacingClasses = {
-  compact: "space-y-5 px-4 py-8 sm:px-6",
-  comfortable: "space-y-8 px-6 py-10",
-  airy: "space-y-10 px-6 py-12"
-} as const;
-
-const buttonRadiusClasses = {
-  soft: "!rounded-2xl",
-  rounded: "!rounded-xl",
-  sharp: "!rounded-none"
-} as const;
-
-const pageWidthClasses = {
-  narrow: "max-w-5xl",
-  standard: "max-w-6xl",
-  wide: "max-w-7xl"
-} as const;
 
 type AboutSection = {
   id: string;
@@ -40,7 +33,7 @@ type AboutSection = {
   layout: "image_left" | "image_right" | "full";
 };
 
-function normalizeAboutSections(input: unknown): AboutSection[] {
+function normalizeAboutSections(input: unknown, options?: { includeEmptyDrafts?: boolean }): AboutSection[] {
   if (!Array.isArray(input)) {
     return [];
   }
@@ -56,7 +49,10 @@ function normalizeAboutSections(input: unknown): AboutSection[] {
       const body = typeof record.body === "string" ? record.body : "";
       const imageUrl = typeof record.imageUrl === "string" && record.imageUrl.trim().length > 0 ? record.imageUrl : null;
       const layout = record.layout === "image_left" || record.layout === "image_right" || record.layout === "full" ? record.layout : "image_right";
-      if (!id.trim() || !title.trim() || !body.trim()) {
+      if (!id.trim()) {
+        return null;
+      }
+      if (!options?.includeEmptyDrafts && (!title.trim() || !body.trim())) {
         return null;
       }
       return { id, title, body, imageUrl, layout };
@@ -115,30 +111,46 @@ type StorefrontAboutPageProps = {
   }>;
   studio?: {
     enabled: boolean;
-    inlineValues?: Partial<Record<"ourStoryHeading" | "questionsHeading", string>>;
-    onInlineChange?: (field: "ourStoryHeading" | "questionsHeading", value: string) => void;
+    inlineValues?: Partial<Record<"ourStoryHeading" | "questionsHeading" | "whatShapesOurWorkHeading" | "needDetailsHeading" | "needDetailsBody" | "questionsBody", string>>;
+    onInlineChange?: (
+      field: "ourStoryHeading" | "questionsHeading" | "whatShapesOurWorkHeading" | "needDetailsHeading" | "needDetailsBody" | "questionsBody",
+      value: string
+    ) => void;
+    onAnnouncementChange?: (value: string) => void;
+    onFulfillmentMessageChange?: (value: string) => void;
+    onSupportEmailChange?: (value: string) => void;
+    onSectionChange?: (sectionId: string, field: "title" | "body", value: string) => void;
+    onArticleChange?: (value: string) => void;
   };
 };
 
 export function StorefrontAboutPage({ store, viewer, branding, settings, contentBlocks, studio }: StorefrontAboutPageProps) {
-  const themeConfig = resolveStorefrontThemeConfig(branding?.theme_json ?? {});
-  const copy = resolveStorefrontCopy(settings?.storefront_copy_json ?? {});
-  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, store.slug);
-  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, store.slug);
+  const runtime = useOptionalStorefrontRuntime();
+  const studioDocument = useOptionalStorefrontStudioDocument();
+  const resolvedStore = runtime?.store ?? store;
+  const resolvedViewer = runtime?.viewer ?? viewer;
+  const resolvedBranding = runtime?.branding ?? branding;
+  const resolvedPresentation = runtime ? resolveStorefrontPresentation(runtime) : null;
+  const resolvedSettings = resolvedPresentation?.settings ?? settings;
+  const resolvedContentBlocks = resolvedPresentation?.contentBlocks ?? contentBlocks;
+  const themeConfig = resolvedPresentation?.themeConfig ?? resolveStorefrontThemeConfig(resolvedBranding?.theme_json ?? {});
+  const copy = resolvedPresentation?.copy ?? resolveStorefrontCopy(resolvedSettings?.storefront_copy_json ?? {});
+  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, resolvedStore.slug);
+  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, resolvedStore.slug);
   const storefrontThemeStyle = buildStorefrontThemeStyle({
-    primaryColor: branding?.primary_color,
-    accentColor: branding?.accent_color,
+    primaryColor: resolvedBranding?.primary_color,
+    accentColor: resolvedBranding?.accent_color,
     themeConfig
   });
-  const studioEnabled = Boolean(studio?.enabled);
+  const studioEnabled = runtime?.mode === "studio" || Boolean(studio?.enabled);
 
   const socials = [
-    { label: "Instagram", href: settings?.instagram_url ?? null },
-    { label: "Facebook", href: settings?.facebook_url ?? null },
-    { label: "TikTok", href: settings?.tiktok_url ?? null }
+    { label: "Instagram", href: resolvedSettings?.instagram_url ?? null },
+    { label: "Facebook", href: resolvedSettings?.facebook_url ?? null },
+    { label: "TikTok", href: resolvedSettings?.tiktok_url ?? null }
   ].filter((item): item is { label: string; href: string } => Boolean(item.href));
-  const aboutSections = normalizeAboutSections(settings?.about_sections);
-  const fallbackSections: AboutSection[] = contentBlocks
+  const aboutSections = normalizeAboutSections(resolvedSettings?.about_sections, { includeEmptyDrafts: studioEnabled });
+  const fallbackSections: AboutSection[] = resolvedContentBlocks
     .filter((block) => block.is_active)
     .sort((a, b) => a.sort_order - b.sort_order)
     .map((block) => ({
@@ -148,11 +160,16 @@ export function StorefrontAboutPage({ store, viewer, branding, settings, content
       imageUrl: null,
       layout: "full"
     }));
-  const renderedSections = aboutSections.length > 0 ? aboutSections : fallbackSections;
-  const aboutArticleHtml = sanitizeRichTextHtml(settings?.about_article_html ?? "");
-  const buttonRadiusClass = buttonRadiusClasses[themeConfig.radiusScale];
+  const hasStructuredContent = aboutSections.some((section) => section.title.trim().length > 0 || section.body.trim().length > 0 || Boolean(section.imageUrl));
+  const renderedSections = hasStructuredContent ? aboutSections : [...fallbackSections, ...aboutSections];
+  const aboutArticleHtml = sanitizeRichTextHtml(resolvedSettings?.about_article_html ?? "");
+  const radiusClass = getStorefrontRadiusClass(themeConfig.radiusScale);
+  const buttonRadiusClass = getStorefrontButtonRadiusClass(themeConfig.radiusScale);
+  const cardClass = getStorefrontCardStyleClass(themeConfig.cardStyle);
   const ourStoryHeading = studio?.inlineValues?.ourStoryHeading ?? copy.about.ourStoryHeading;
   const questionsHeading = studio?.inlineValues?.questionsHeading ?? copy.about.questionsHeading;
+
+  useStorefrontPageView("about");
 
   return (
     <div
@@ -163,7 +180,7 @@ export function StorefrontAboutPage({ store, viewer, branding, settings, content
       }}
       className="min-h-screen w-full bg-[color:var(--storefront-bg)] text-[color:var(--storefront-text)] [font-family:var(--storefront-font-body)]"
     >
-      {themeConfig.showPolicyStrip && settings?.announcement ? (
+      {themeConfig.showPolicyStrip && resolvedSettings?.announcement ? (
         <section
           className={
             studioEnabled
@@ -171,46 +188,59 @@ export function StorefrontAboutPage({ store, viewer, branding, settings, content
               : "fixed inset-x-0 top-0 z-[70] w-full bg-[var(--storefront-accent)] px-4 py-2 text-center text-xs font-medium text-[color:var(--storefront-accent-foreground)] sm:px-6"
           }
         >
-          {settings.announcement}
+          {studioEnabled && studio?.onAnnouncementChange ? (
+            <StorefrontStudioEditableText
+              value={resolvedSettings.announcement ?? ""}
+              placeholder="Add announcement text"
+              wrapperClassName="mx-auto max-w-3xl"
+              displayClassName="text-center text-xs font-medium text-[color:var(--storefront-accent-foreground)]"
+              editorClassName="border-white/60 bg-white/95 text-center text-xs font-medium text-slate-900"
+              buttonClassName="border-white/40 bg-[color:var(--storefront-accent-foreground)]/12 text-[color:var(--storefront-accent-foreground)]"
+              onChange={studio.onAnnouncementChange}
+            />
+          ) : (
+            resolvedSettings.announcement
+          )}
         </section>
       ) : null}
 
       <StorefrontHeader
-        storeName={store.name}
-        logoPath={branding?.logo_path}
-        showTitle={themeConfig.heroBrandDisplay !== "logo" || !branding?.logo_path}
-        containerClassName={pageWidthClasses[themeConfig.pageWidth]}
+        storeName={resolvedStore.name}
+        logoPath={resolvedBranding?.logo_path}
+        showLogo={themeConfig.headerShowLogo}
+        showTitle={themeConfig.headerShowTitle}
+        containerClassName={getStorefrontPageWidthClass(themeConfig.pageWidth)}
         navItems={headerNavLinks}
         buttonRadiusClass={buttonRadiusClass}
-        topOffsetPx={themeConfig.showPolicyStrip && settings?.announcement ? 32 : 0}
-        rightContent={<StorefrontCartButton storeSlug={store.slug} buttonRadiusClass={buttonRadiusClass} ariaLabel={copy.nav.openCartAria} />}
+        topOffsetPx={themeConfig.showPolicyStrip && resolvedSettings?.announcement ? 32 : 0}
+        rightContent={<StorefrontCartButton storeSlug={resolvedStore.slug} buttonRadiusClass={buttonRadiusClass} ariaLabel={copy.nav.openCartAria} />}
       />
-      <main className={cn("mx-auto w-full", pageWidthClasses[themeConfig.pageWidth], spacingClasses[themeConfig.spacingScale])}>
-        <section className="space-y-8 border-b border-border/40 pb-10 pt-2">
-          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-end">
+      <main className={cn(getStorefrontPageShellClass(themeConfig.pageWidth, themeConfig.spacingScale))}>
+        <section className="space-y-6 border-b border-border/40 pb-8 pt-1 sm:space-y-8 sm:pb-10 sm:pt-2">
+          <div className="grid gap-6 sm:gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(14rem,18rem)] xl:items-end">
             <div className="max-w-4xl space-y-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{copy.about.aboutPrefix} {store.name}</p>
-              <h1 className="text-4xl font-semibold leading-[1.05] sm:text-6xl [font-family:var(--storefront-font-heading)]">
-                {themeConfig.heroHeadline.trim().toLowerCase() === store.name.trim().toLowerCase()
-                  ? `The Story Behind ${store.name}`
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{copy.about.aboutPrefix} {resolvedStore.name}</p>
+              <h1 className="text-3xl font-semibold leading-[1.05] sm:text-5xl lg:text-6xl [font-family:var(--storefront-font-heading)]">
+                {themeConfig.heroHeadline.trim().toLowerCase() === resolvedStore.name.trim().toLowerCase()
+                  ? `The Story Behind ${resolvedStore.name}`
                   : themeConfig.heroHeadline}
               </h1>
               <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">{themeConfig.heroSubcopy}</p>
-              <div className="flex flex-wrap items-center gap-2 pt-1">
+              <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:flex-wrap sm:items-center">
                 <Link
-                  href={`/products?store=${encodeURIComponent(store.slug)}`}
+                  href={`/products?store=${encodeURIComponent(resolvedStore.slug)}`}
                   className={cn(
-                    "inline-flex h-10 items-center justify-center border border-border px-4 text-sm font-medium hover:bg-[color:var(--storefront-text)] hover:text-[color:var(--storefront-bg)]",
+                    "inline-flex h-10 w-full items-center justify-center border border-border px-4 text-sm font-medium hover:bg-[color:var(--storefront-text)] hover:text-[color:var(--storefront-bg)] sm:w-auto",
                     buttonRadiusClass
                   )}
                 >
                   {copy.about.shopProductsCta}
                 </Link>
                 <Link
-                  href={`/policies?store=${encodeURIComponent(store.slug)}`}
+                  href={`/policies?store=${encodeURIComponent(resolvedStore.slug)}`}
                   className={cn(
                     STOREFRONT_TEXT_LINK_EFFECT_CLASS,
-                    "h-10 px-3 text-sm text-muted-foreground hover:text-[color:var(--storefront-text)]",
+                    "h-10 justify-center px-3 text-sm text-muted-foreground hover:text-[color:var(--storefront-text)] sm:justify-start",
                     buttonRadiusClass
                   )}
                 >
@@ -219,19 +249,44 @@ export function StorefrontAboutPage({ store, viewer, branding, settings, content
               </div>
             </div>
 
-            <aside className="space-y-3 border-l border-border/50 pl-4 text-sm">
+            <aside className={cn("space-y-3 p-4 text-sm xl:border-l xl:border-t-0 xl:bg-transparent xl:p-0 xl:pl-4", radiusClass, cardClass)}>
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{copy.about.atAGlanceLabel}</p>
-              {settings?.fulfillment_message ? (
+              {studioEnabled && studio?.onFulfillmentMessageChange ? (
                 <div className="flex items-start gap-2">
                   <Truck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                  <p>{settings.fulfillment_message}</p>
+                  <StorefrontStudioEditableText
+                    as="p"
+                    multiline
+                    value={resolvedSettings?.fulfillment_message ?? ""}
+                    placeholder="Add fulfillment message"
+                    displayClassName="text-sm"
+                    editorClassName="min-h-[7rem] border-slate-300 bg-white/95 text-sm text-slate-900"
+                    onChange={studio.onFulfillmentMessageChange}
+                  />
+                </div>
+              ) : resolvedSettings?.fulfillment_message ? (
+                <div className="flex items-start gap-2">
+                  <Truck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <p>{resolvedSettings.fulfillment_message}</p>
                 </div>
               ) : null}
-              {settings?.support_email ? (
+              {studioEnabled && studio?.onSupportEmailChange ? (
                 <div className="flex items-start gap-2">
                   <Mail className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                  <a href={`mailto:${settings.support_email}`} className={STOREFRONT_TEXT_LINK_EFFECT_CLASS}>
-                    {settings.support_email}
+                  <StorefrontStudioEditableText
+                    as="p"
+                    value={resolvedSettings?.support_email ?? ""}
+                    placeholder="Add support email"
+                    displayClassName="text-sm"
+                    editorClassName="h-10 min-h-0 border-slate-300 bg-white/95 text-sm text-slate-900"
+                    onChange={studio.onSupportEmailChange}
+                  />
+                </div>
+              ) : resolvedSettings?.support_email ? (
+                <div className="flex items-start gap-2">
+                  <Mail className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                  <a href={`mailto:${resolvedSettings.support_email}`} className={STOREFRONT_TEXT_LINK_EFFECT_CLASS}>
+                    {resolvedSettings.support_email}
                   </a>
                 </div>
               ) : null}
@@ -259,24 +314,38 @@ export function StorefrontAboutPage({ store, viewer, branding, settings, content
           </div>
         </section>
 
-        {aboutArticleHtml ? (
+        {aboutArticleHtml || (studioEnabled && studio?.onArticleChange) ? (
           <section className="space-y-4 border-b border-border/40 pb-8">
             <header className="space-y-2">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{copy.about.whoWeAreLabel}</p>
               {studioEnabled ? (
-                <Input
+                <StorefrontStudioEditableText
+                  as="h2"
                   value={ourStoryHeading}
-                  onChange={(event) => studio?.onInlineChange?.("ourStoryHeading", event.target.value)}
-                  className="h-10 max-w-xl border-dashed bg-white/80"
+                  placeholder="Add section heading"
+                  wrapperClassName="max-w-xl"
+                  displayClassName="text-2xl font-semibold sm:text-3xl [font-family:var(--storefront-font-heading)]"
+                  editorClassName="min-h-[3.25rem] border-slate-300 bg-white/95 text-2xl font-semibold sm:text-3xl [font-family:var(--storefront-font-heading)] text-slate-900"
+                  onChange={(value) => studio?.onInlineChange?.("ourStoryHeading", value)}
                 />
               ) : (
-                <h2 className="text-3xl font-semibold [font-family:var(--storefront-font-heading)]">{ourStoryHeading}</h2>
+                <h2 className="text-2xl font-semibold sm:text-3xl [font-family:var(--storefront-font-heading)]">{ourStoryHeading}</h2>
               )}
             </header>
-            <article
-              className="prose prose-sm max-w-none text-[color:var(--storefront-text)] prose-headings:[font-family:var(--storefront-font-heading)] prose-p:leading-relaxed prose-li:leading-relaxed"
-              dangerouslySetInnerHTML={{ __html: aboutArticleHtml }}
-            />
+            {studioEnabled && studio?.onArticleChange ? (
+              <StorefrontStudioEditableRichText
+                value={resolvedSettings?.about_article_html ?? ""}
+                placeholder="Tell your brand story..."
+                displayClassName="prose prose-sm max-w-none text-[color:var(--storefront-text)] prose-headings:[font-family:var(--storefront-font-heading)] prose-p:leading-relaxed prose-li:leading-relaxed"
+                editorClassName="bg-white"
+                onChange={studio.onArticleChange}
+              />
+            ) : (
+              <article
+                className="prose prose-sm max-w-none text-[color:var(--storefront-text)] prose-headings:[font-family:var(--storefront-font-heading)] prose-p:leading-relaxed prose-li:leading-relaxed"
+                dangerouslySetInnerHTML={{ __html: aboutArticleHtml }}
+              />
+            )}
           </section>
         ) : null}
 
@@ -284,31 +353,92 @@ export function StorefrontAboutPage({ store, viewer, branding, settings, content
           <section className="space-y-6 border-b border-border/40 pb-8">
             <header className="space-y-2">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{copy.about.ourPhilosophyLabel}</p>
-              <h2 className="text-3xl font-semibold [font-family:var(--storefront-font-heading)]">{copy.about.whatShapesOurWorkHeading}</h2>
+              {studioEnabled ? (
+                <StorefrontStudioEditableText
+                  as="h2"
+                  value={copy.about.whatShapesOurWorkHeading}
+                  placeholder="Add philosophy heading"
+                  displayClassName="text-2xl font-semibold sm:text-3xl [font-family:var(--storefront-font-heading)]"
+                  editorClassName="min-h-[3.25rem] border-slate-300 bg-white/95 text-2xl font-semibold sm:text-3xl [font-family:var(--storefront-font-heading)] text-slate-900"
+                  onChange={(value) => studio?.onInlineChange?.("whatShapesOurWorkHeading", value)}
+                />
+              ) : (
+                <h2 className="text-2xl font-semibold sm:text-3xl [font-family:var(--storefront-font-heading)]">{copy.about.whatShapesOurWorkHeading}</h2>
+              )}
             </header>
-            <div className="space-y-10">
-              {renderedSections.map((section) => (
-                <article key={section.id} className="space-y-4 border-t border-border/50 pt-4">
-                  <div
-                    className={cn(
-                      "grid gap-6",
-                      section.imageUrl && section.layout !== "full"
-                        ? "md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:items-start"
-                        : "grid-cols-1"
-                    )}
-                  >
-                    <div className={cn(section.layout === "image_left" ? "md:order-2" : "md:order-1")}>
-                      <h3 className="text-2xl leading-tight [font-family:var(--storefront-font-heading)]">{section.title}</h3>
-                      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{section.body}</p>
-                    </div>
-                    {section.imageUrl && section.layout !== "full" ? (
-                      <div className={cn("overflow-hidden border border-border/50", buttonRadiusClass, section.layout === "image_left" ? "md:order-1" : "md:order-2")}>
-                        <Image src={section.imageUrl} alt={section.title} width={900} height={700} unoptimized className="h-full w-full object-cover" />
+            <div className="space-y-8 sm:space-y-10">
+              {renderedSections.map((section, index) => (
+                <StorefrontStudioSelectableRegion
+                  key={section.id}
+                  selection={{ kind: "about-section", id: section.id }}
+                  label="About section"
+                  className="-mx-3 px-3"
+                  accessory={
+                    studioEnabled ? (
+                      <StorefrontStudioAboutSectionActions
+                        sectionId={section.id}
+                        layout={section.layout}
+                        imageUrl={section.imageUrl}
+                        canMoveUp={index > 0}
+                        canMoveDown={index < renderedSections.length - 1}
+                      />
+                    ) : null
+                  }
+                >
+                  <article className="space-y-4 border-t border-border/50 pt-4">
+                    <div
+                      className={cn(
+                        "grid gap-6",
+                        section.imageUrl && section.layout !== "full"
+                          ? "xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:items-start"
+                          : "grid-cols-1"
+                      )}
+                    >
+                      <div className={cn(section.layout === "image_left" ? "xl:order-2" : "xl:order-1")}>
+                        {studioEnabled && studio?.onSectionChange ? (
+                          <StorefrontStudioEditableText
+                            as="h3"
+                            value={section.title}
+                            placeholder="Add section title"
+                            displayClassName="text-2xl leading-tight [font-family:var(--storefront-font-heading)]"
+                            editorClassName="min-h-[3.25rem] border-slate-300 bg-white/95 text-2xl leading-tight [font-family:var(--storefront-font-heading)] text-slate-900"
+                            onChange={(value) => studio.onSectionChange?.(section.id, "title", value)}
+                          />
+                        ) : (
+                          <h3 className="text-2xl leading-tight [font-family:var(--storefront-font-heading)]">{section.title}</h3>
+                        )}
+                        {studioEnabled && studio?.onSectionChange ? (
+                          <StorefrontStudioEditableText
+                            as="p"
+                            multiline
+                            value={section.body}
+                            placeholder="Add section body"
+                            wrapperClassName="mt-2"
+                            displayClassName="text-sm leading-relaxed text-muted-foreground"
+                            editorClassName="mt-2 min-h-[8rem] border-slate-300 bg-white/95 text-sm leading-relaxed text-slate-900"
+                            onChange={(value) => studio.onSectionChange?.(section.id, "body", value)}
+                          />
+                        ) : (
+                          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{section.body}</p>
+                        )}
                       </div>
-                    ) : null}
-                  </div>
-                </article>
+                      {section.imageUrl && section.layout !== "full" ? (
+                        <div className={cn("overflow-hidden border border-border/50", buttonRadiusClass, section.layout === "image_left" ? "md:order-1" : "md:order-2")}>
+                          <Image src={section.imageUrl} alt={section.title} width={900} height={700} unoptimized className="h-full w-full object-cover" />
+                        </div>
+                      ) : null}
+                    </div>
+                  </article>
+                </StorefrontStudioSelectableRegion>
               ))}
+              {studioEnabled && studioDocument ? (
+                <StorefrontStudioInlineAddTile
+                  label="Add about section"
+                  onClick={() => {
+                    studioDocument.setSectionDraft("aboutPage", (current) => addAboutSection(current));
+                  }}
+                />
+              ) : null}
             </div>
           </section>
         ) : null}
@@ -316,27 +446,66 @@ export function StorefrontAboutPage({ store, viewer, branding, settings, content
         <section className="grid gap-6 border-b border-border/40 pb-8 md:grid-cols-2">
           <article className="space-y-3 border-t border-border/50 pt-3">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{copy.about.needDetailsLabel}</p>
-            <h3 className="text-2xl [font-family:var(--storefront-font-heading)]">{copy.about.needDetailsHeading}</h3>
-            <p className="text-sm leading-relaxed text-muted-foreground">{copy.about.needDetailsBody}</p>
-            <Link href={`/policies?store=${encodeURIComponent(store.slug)}`} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "text-sm font-medium")}>
+            {studioEnabled ? (
+              <StorefrontStudioEditableText
+                as="h3"
+                value={copy.about.needDetailsHeading}
+                placeholder="Add need-details heading"
+                displayClassName="text-2xl [font-family:var(--storefront-font-heading)]"
+                editorClassName="min-h-[3rem] border-slate-300 bg-white/95 text-2xl [font-family:var(--storefront-font-heading)] text-slate-900"
+                onChange={(value) => studio?.onInlineChange?.("needDetailsHeading", value)}
+              />
+            ) : (
+              <h3 className="text-2xl [font-family:var(--storefront-font-heading)]">{copy.about.needDetailsHeading}</h3>
+            )}
+            {studioEnabled ? (
+              <StorefrontStudioEditableText
+                as="p"
+                multiline
+                value={copy.about.needDetailsBody}
+                placeholder="Add need-details body"
+                displayClassName="text-sm leading-relaxed text-muted-foreground"
+                editorClassName="min-h-[7rem] border-slate-300 bg-white/95 text-sm leading-relaxed text-slate-900"
+                onChange={(value) => studio?.onInlineChange?.("needDetailsBody", value)}
+              />
+            ) : (
+              <p className="text-sm leading-relaxed text-muted-foreground">{copy.about.needDetailsBody}</p>
+            )}
+            <Link href={`/policies?store=${encodeURIComponent(resolvedStore.slug)}`} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "text-sm font-medium")}>
               {copy.about.readPoliciesLink}
             </Link>
           </article>
           <article className="space-y-3 border-t border-border/50 pt-3">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{copy.about.questionsLabel}</p>
             {studioEnabled ? (
-              <Input
+              <StorefrontStudioEditableText
+                as="h3"
                 value={questionsHeading}
-                onChange={(event) => studio?.onInlineChange?.("questionsHeading", event.target.value)}
-                className="h-10 max-w-xl border-dashed bg-white/80"
+                placeholder="Add questions heading"
+                wrapperClassName="max-w-xl"
+                displayClassName="text-2xl [font-family:var(--storefront-font-heading)]"
+                editorClassName="min-h-[3rem] border-slate-300 bg-white/95 text-2xl [font-family:var(--storefront-font-heading)] text-slate-900"
+                onChange={(value) => studio?.onInlineChange?.("questionsHeading", value)}
               />
             ) : (
               <h3 className="text-2xl [font-family:var(--storefront-font-heading)]">{questionsHeading}</h3>
             )}
-            <p className="text-sm leading-relaxed text-muted-foreground">{copy.about.questionsBody}</p>
-            {settings?.support_email ? (
+            {studioEnabled ? (
+              <StorefrontStudioEditableText
+                as="p"
+                multiline
+                value={copy.about.questionsBody}
+                placeholder="Add questions body"
+                displayClassName="text-sm leading-relaxed text-muted-foreground"
+                editorClassName="min-h-[7rem] border-slate-300 bg-white/95 text-sm leading-relaxed text-slate-900"
+                onChange={(value) => studio?.onInlineChange?.("questionsBody", value)}
+              />
+            ) : (
+              <p className="text-sm leading-relaxed text-muted-foreground">{copy.about.questionsBody}</p>
+            )}
+            {resolvedSettings?.support_email ? (
               <a
-                href={`mailto:${settings.support_email}`}
+                href={`mailto:${resolvedSettings.support_email}`}
                 className={cn(
                   "inline-flex h-9 items-center justify-center border border-border px-3 text-sm font-medium hover:bg-muted/40",
                   buttonRadiusClass
@@ -351,11 +520,13 @@ export function StorefrontAboutPage({ store, viewer, branding, settings, content
         </section>
 
         <StorefrontFooter
-          storeName={store.name}
-          storeSlug={store.slug}
-          viewer={viewer}
-          settings={settings}
+          storeName={resolvedStore.name}
+          storeSlug={resolvedStore.slug}
+          viewer={resolvedViewer}
+          settings={resolvedSettings}
           buttonRadiusClass={buttonRadiusClass}
+          surfaceRadiusClassName={radiusClass}
+          surfaceCardClassName={cardClass}
           copy={copy}
           navLinks={footerNavLinks}
           showBackToTop={themeConfig.showFooterBackToTop}

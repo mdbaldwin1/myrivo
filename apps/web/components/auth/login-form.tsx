@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
+import { resolvePostAuthReturnTo } from "@/lib/auth/pending-store-invite";
 import { withReturnTo } from "@/lib/auth/return-to";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
@@ -28,7 +29,7 @@ export function LoginForm({ returnTo }: LoginFormProps) {
     setLoading(true);
 
     const supabase = createSupabaseBrowserClient();
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
 
     setLoading(false);
 
@@ -37,7 +38,8 @@ export function LoginForm({ returnTo }: LoginFormProps) {
       return;
     }
 
-    router.push(returnTo);
+    const nextTarget = resolvePostAuthReturnTo(returnTo, signInData.user?.user_metadata ?? signInData.session?.user.user_metadata);
+    router.push(nextTarget);
     router.refresh();
   }
 

@@ -9,6 +9,8 @@ import { StatusChip } from "@/components/ui/status-chip";
 type OrderDetailPanelProps = {
   orderId: string | null;
   onClose: () => void;
+  onReschedulePickup?: (orderId: string) => void;
+  refreshToken?: number;
 };
 
 type OrderDetailResponse = {
@@ -18,7 +20,14 @@ type OrderDetailResponse = {
     subtotal_cents: number;
     total_cents: number;
     status: string;
+    fulfillment_method: "pickup" | "shipping" | null;
+    fulfillment_label: string | null;
     fulfillment_status: string;
+    pickup_location_id: string | null;
+    pickup_location_snapshot_json: Record<string, unknown> | null;
+    pickup_window_start_at: string | null;
+    pickup_window_end_at: string | null;
+    pickup_timezone: string | null;
     fulfilled_at: string | null;
     shipped_at: string | null;
     delivered_at: string | null;
@@ -61,7 +70,22 @@ type OrderDetailResponse = {
   error?: string;
 };
 
-export function OrderDetailPanel({ orderId, onClose }: OrderDetailPanelProps) {
+function buildPickupAddress(snapshot: Record<string, unknown> | null): string | null {
+  if (!snapshot) {
+    return null;
+  }
+
+  const line1 = typeof snapshot.addressLine1 === "string" ? snapshot.addressLine1.trim() : "";
+  const line2 = typeof snapshot.addressLine2 === "string" ? snapshot.addressLine2.trim() : "";
+  const city = typeof snapshot.city === "string" ? snapshot.city.trim() : "";
+  const stateRegion = typeof snapshot.stateRegion === "string" ? snapshot.stateRegion.trim() : "";
+  const postalCode = typeof snapshot.postalCode === "string" ? snapshot.postalCode.trim() : "";
+  const countryCode = typeof snapshot.countryCode === "string" ? snapshot.countryCode.trim() : "";
+
+  return [line1, line2, [city, stateRegion, postalCode].filter(Boolean).join(", "), countryCode].filter(Boolean).join(" • ") || null;
+}
+
+export function OrderDetailPanel({ orderId, onClose, onReschedulePickup, refreshToken = 0 }: OrderDetailPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [payload, setPayload] = useState<OrderDetailResponse | null>(null);
@@ -99,7 +123,7 @@ export function OrderDetailPanel({ orderId, onClose }: OrderDetailPanelProps) {
     return () => {
       active = false;
     };
-  }, [orderId]);
+  }, [orderId, refreshToken]);
 
   if (!orderId) {
     return null;
@@ -126,6 +150,13 @@ export function OrderDetailPanel({ orderId, onClose }: OrderDetailPanelProps) {
         ? payload.order.order_fee_breakdowns[0]
         : payload.order.order_fee_breakdowns
       : null;
+  const pickupAddress = buildPickupAddress(payload?.order?.pickup_location_snapshot_json ?? null);
+  const pickupWindow =
+    payload?.order?.pickup_window_start_at && payload.order.pickup_window_end_at
+      ? `${new Date(payload.order.pickup_window_start_at).toLocaleString()} - ${new Date(payload.order.pickup_window_end_at).toLocaleString()}${
+          payload.order.pickup_timezone ? ` (${payload.order.pickup_timezone})` : ""
+        }`
+      : null;
 
   return (
     <Card className="bg-muted/30">
@@ -134,9 +165,16 @@ export function OrderDetailPanel({ orderId, onClose }: OrderDetailPanelProps) {
           <CardTitle className="text-lg">Order Detail</CardTitle>
           <CardDescription>Customer, payment, fulfillment, and line-item detail for this order.</CardDescription>
         </div>
-        <Button type="button" onClick={onClose} variant="outline" size="sm" className="h-7 text-xs">
-          Close
-        </Button>
+        <div className="flex items-center gap-2">
+          {payload?.order?.fulfillment_method === "pickup" && payload.order.fulfillment_status !== "delivered" && onReschedulePickup ? (
+            <Button type="button" onClick={() => onReschedulePickup(payload.order!.id)} variant="outline" size="sm" className="h-7 text-xs">
+              Reschedule pickup
+            </Button>
+          ) : null}
+          <Button type="button" onClick={onClose} variant="outline" size="sm" className="h-7 text-xs">
+            Close
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {loading ? <p className="text-sm text-muted-foreground">Loading order details...</p> : null}
@@ -160,6 +198,9 @@ export function OrderDetailPanel({ orderId, onClose }: OrderDetailPanelProps) {
               </p>
               <p>
                 <span className="font-medium">Created:</span> {new Date(payload.order.created_at).toLocaleString()}
+              </p>
+              <p>
+                <span className="font-medium">Fulfillment method:</span> {payload.order.fulfillment_label ?? payload.order.fulfillment_method ?? "-"}
               </p>
               <p>
                 <span className="font-medium">Subtotal:</span> ${(payload.order.subtotal_cents / 100).toFixed(2)}
@@ -195,6 +236,16 @@ export function OrderDetailPanel({ orderId, onClose }: OrderDetailPanelProps) {
               <p>
                 <span className="font-medium">Shipment status:</span> {payload.order.shipment_status ?? "-"}
               </p>
+              {payload.order.fulfillment_method === "pickup" ? (
+                <>
+                  <p>
+                    <span className="font-medium">Pickup location:</span> {pickupAddress ?? "-"}
+                  </p>
+                  <p>
+                    <span className="font-medium">Pickup window:</span> {pickupWindow ?? "-"}
+                  </p>
+                </>
+              ) : null}
               {payload.order.tracking_url ? (
                 <p>
                   <a href={payload.order.tracking_url} target="_blank" rel="noreferrer" className="text-primary hover:underline">

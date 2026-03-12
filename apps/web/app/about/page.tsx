@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { StorefrontAboutPage } from "@/components/storefront/storefront-about-page";
 import { loadStorefrontData } from "@/lib/storefront/load-storefront-data";
+import { createStorefrontRuntime } from "@/lib/storefront/runtime";
+import { StorefrontRuntimeProvider } from "@/components/storefront/storefront-runtime-provider";
 
 export const dynamic = "force-dynamic";
 
@@ -17,13 +19,21 @@ export default async function AboutPage({ searchParams }: AboutPageProps) {
     notFound();
   }
 
+  const runtime = createStorefrontRuntime({
+    ...data,
+    mode: "live",
+    surface: "about"
+  });
+
   return (
-    <StorefrontAboutPage
-      store={data.store}
-      viewer={data.viewer}
-      branding={data.branding}
-      settings={data.settings}
-      contentBlocks={data.contentBlocks}
-    />
+    <StorefrontRuntimeProvider runtime={runtime}>
+      <StorefrontAboutPage
+        store={data.store}
+        viewer={data.viewer}
+        branding={data.branding}
+        settings={data.settings}
+        contentBlocks={data.contentBlocks}
+      />
+    </StorefrontRuntimeProvider>
   );
 }

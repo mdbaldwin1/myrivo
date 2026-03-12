@@ -2,7 +2,8 @@
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { MoreHorizontal, Pencil, Plus, RotateCcw, Search, Star, X } from "lucide-react";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Badge } from "@/components/ui/badge";
@@ -507,6 +508,9 @@ function buildNestedVariantsFromParsed(
 }
 
 export function ProductManager({ initialProducts }: ProductManagerProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [products, setProducts] = useState(initialProducts);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | ProductRecord["status"]>("all");
@@ -539,6 +543,17 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   const [createVariantsSnapshotByMode, setCreateVariantsSnapshotByMode] = useState<VariantDraft[] | null>(null);
   const [createPending, setCreatePending] = useState(false);
   const [deletePendingProductId, setDeletePendingProductId] = useState<string | null>(null);
+
+  function updateProductUrl(productId: string | null) {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    if (productId) {
+      nextParams.set("productId", productId);
+    } else {
+      nextParams.delete("productId");
+    }
+    const nextQuery = nextParams.toString();
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+  }
 
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -578,7 +593,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   const [deleteConfirmDescription, setDeleteConfirmDescription] = useState("Are you sure you want to continue?");
   const [deleteConfirmLabel, setDeleteConfirmLabel] = useState("Delete");
   const [catalogError, setCatalogError] = useState<string | null>(null);
-  const [selectedProductId, setSelectedProductId] = useState<string | null>(initialProducts[0]?.id ?? null);
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(searchParams.get("productId") ?? initialProducts[0]?.id ?? null);
   const [catalogInspectorTab, setCatalogInspectorTab] = useState<"overview" | "variants" | "inventory" | "media">("overview");
   const [variantInspectorMode, setVariantInspectorMode] = useState<"flat" | "grouped">("flat");
   const [inventoryAdjustDraft, setInventoryAdjustDraft] = useState<{
@@ -747,6 +762,30 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       setSelectedProductId(visibleProducts[0]?.id ?? null);
     }
   }, [selectedProductId, visibleProducts]);
+
+  const openProductFromUrl = useEffectEvent((product: ProductListItem) => {
+    openEditFlyout(product);
+  });
+
+  useEffect(() => {
+    const productIdFromUrl = searchParams.get("productId");
+    if (!productIdFromUrl) {
+      return;
+    }
+
+    const product = products.find((entry) => entry.id === productIdFromUrl);
+    if (!product) {
+      return;
+    }
+
+    if (selectedProductId !== product.id) {
+      setSelectedProductId(product.id);
+    }
+
+    if (!isEditFlyoutOpen || editingProductId !== product.id) {
+      openProductFromUrl(product);
+    }
+  }, [editingProductId, isEditFlyoutOpen, products, searchParams, selectedProductId]);
 
   const flowStepOrder = { product: 0, variant: 1, option: 2 } as const;
 
@@ -1323,6 +1362,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   }
 
   function openEditFlyout(product: ProductListItem, focus?: { step: "product" | "variant" | "option"; variantId?: string }) {
+    setSelectedProductId(product.id);
+    updateProductUrl(product.id);
     setEditOrderedVariantIds(new Set());
     setEditingProductId(product.id);
     setEditTitle(product.title);
@@ -1821,6 +1862,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   function handleEditFlyoutOpenChange(open: boolean) {
     setIsEditFlyoutOpen(open);
     if (!open) {
+      updateProductUrl(null);
       resetEditComposer();
     }
   }

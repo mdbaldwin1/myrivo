@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CustomerAccountDashboardPanels } from "@/components/customer/customer-account-dashboard-panels";
 import { NotificationsFeed } from "@/components/dashboard/notifications-feed";
+import { PendingStoreInvitesCard } from "@/components/dashboard/pending-store-invites-card";
 import { DataStat } from "@/components/ui/data-stat";
 import { SectionCard } from "@/components/ui/section-card";
 import type { DashboardHomeData } from "@/lib/dashboard/home/dashboard-home-types";
@@ -78,6 +79,8 @@ export function DashboardHomeShell({ data, storefrontLinksBySlug, legacyPanelPro
           ))}
         </ul>
       </SectionCard>
+
+      {data.pendingInvites.length > 0 ? <PendingStoreInvitesCard invites={data.pendingInvites} /> : null}
 
       <div className="grid gap-4 lg:grid-cols-12">
         <div className="lg:col-span-8">

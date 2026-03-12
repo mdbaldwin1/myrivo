@@ -13,8 +13,15 @@ function appendStoreQuery(href: string, storeSlug?: string): string {
   return `${href}${href.includes("?") ? "&" : "?"}store=${encodeURIComponent(storeSlug)}`;
 }
 
-const HEADER_LINKS_BY_ID: Record<NavItemId, (copy: StorefrontCopyConfig) => NavLink> = {
-  home: (copy) => ({ label: copy.nav.home, href: "/" }),
+function resolveHomeHref(storeSlug?: string) {
+  if (!storeSlug) {
+    return "/";
+  }
+  return `/s/${encodeURIComponent(storeSlug)}`;
+}
+
+const HEADER_LINKS_BY_ID: Record<NavItemId, (copy: StorefrontCopyConfig, storeSlug?: string) => NavLink> = {
+  home: (copy, storeSlug) => ({ label: copy.nav.home, href: resolveHomeHref(storeSlug) }),
   products: (copy) => ({ label: copy.nav.products, href: "/products" }),
   about: (copy) => ({ label: copy.nav.about, href: "/about" }),
   policies: (copy) => ({ label: copy.nav.policies, href: "/policies" })
@@ -29,7 +36,7 @@ const FOOTER_LINKS_BY_ID: Record<FooterItemId, (copy: StorefrontCopyConfig) => N
 
 export function resolveHeaderNavLinks(themeConfig: StorefrontThemeConfig, copy: StorefrontCopyConfig, storeSlug?: string): NavLink[] {
   return themeConfig.headerNavItems.map((id) => {
-    const link = HEADER_LINKS_BY_ID[id](copy);
+    const link = HEADER_LINKS_BY_ID[id](copy, storeSlug);
     return { ...link, href: appendStoreQuery(link.href, storeSlug) };
   });
 }

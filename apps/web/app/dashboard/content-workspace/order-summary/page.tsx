@@ -3,5 +3,5 @@ import { redirectToActiveStoreWorkspace } from "@/app/dashboard/_lib/legacy-stor
 export const dynamic = "force-dynamic";
 
 export default async function DashboardContentWorkspaceOrderSummaryPage() {
-  await redirectToActiveStoreWorkspace("/content-workspace/order-summary");
+  await redirectToActiveStoreWorkspace("/storefront-studio?surface=orderSummary");
 }

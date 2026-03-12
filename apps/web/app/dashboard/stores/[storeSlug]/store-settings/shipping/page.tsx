@@ -26,7 +26,7 @@ export default async function StoreWorkspaceShippingSettingsPage({ params }: Pag
   return (
     <section className="flex min-h-0 flex-1 flex-col">
       <StoreShippingRulesForm
-        header={<DashboardPageHeader title="Shipping" description="Flat-rate shipping options and pricing used during checkout." />}
+        header={<DashboardPageHeader title="Shipping" description="Operational shipping offer controls belong in Store Settings." />}
       />
     </section>
   );

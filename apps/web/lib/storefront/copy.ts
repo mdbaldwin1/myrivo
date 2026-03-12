@@ -8,7 +8,9 @@ export type StorefrontCopyConfig = {
   };
   home: {
     shopProductsCta: string;
+    shopProductsUrl: string;
     aboutBrandCta: string;
+    aboutBrandUrl: string;
     storeNotesLabel: string;
     contentBlocksHeading: string;
     browseFilterTitle: string;
@@ -178,7 +180,9 @@ export const DEFAULT_STOREFRONT_COPY: StorefrontCopyConfig = {
   },
   home: {
     shopProductsCta: "Shop products",
+    shopProductsUrl: "",
     aboutBrandCta: "About the brand",
+    aboutBrandUrl: "",
     storeNotesLabel: "Store Notes",
     contentBlocksHeading: "Our Approach",
     browseFilterTitle: "Browse & Filter",

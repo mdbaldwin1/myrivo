@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { StorefrontPage } from "@/components/storefront/storefront-page";
+import { StorefrontRuntimeProvider } from "@/components/storefront/storefront-runtime-provider";
 import { isReviewsEnabledForStoreSlug } from "@/lib/reviews/feature-gating";
 import { loadStorefrontData } from "@/lib/storefront/load-storefront-data";
+import { createStorefrontRuntime } from "@/lib/storefront/runtime";
 import { buildStorefrontCanonicalUrl, resolveStorefrontCanonicalRedirect } from "@/lib/storefront/seo";
 
 export const dynamic = "force-dynamic";
@@ -45,16 +47,24 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
     notFound();
   }
 
+  const runtime = createStorefrontRuntime({
+    ...data,
+    mode: "live",
+    surface: "products"
+  });
+
   return (
-    <StorefrontPage
-      store={data.store}
-      viewer={data.viewer}
-      branding={data.branding}
-      settings={data.settings}
-      contentBlocks={data.contentBlocks}
-      products={data.products}
-      view="products"
-      reviewsEnabled={isReviewsEnabledForStoreSlug(data.store.slug)}
-    />
+    <StorefrontRuntimeProvider runtime={runtime}>
+      <StorefrontPage
+        store={data.store}
+        viewer={data.viewer}
+        branding={data.branding}
+        settings={data.settings}
+        contentBlocks={data.contentBlocks}
+        products={data.products}
+        view="products"
+        reviewsEnabled={isReviewsEnabledForStoreSlug(data.store.slug)}
+      />
+    </StorefrontRuntimeProvider>
   );
 }

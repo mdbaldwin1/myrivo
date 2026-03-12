@@ -11,6 +11,7 @@ import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { notify } from "@/lib/feedback/toast";
 import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
 import type { StoreBrandingRecord, StoreRecord } from "@/types/database";
@@ -19,6 +20,7 @@ type StoreSettingsFormProps = {
   initialStore: Pick<StoreRecord, "id" | "name" | "slug" | "status">;
   initialLogoPath: Pick<StoreBrandingRecord, "logo_path">["logo_path"] | null;
   header?: ReactNode;
+  supplementalContent?: ReactNode;
 };
 
 type StoreResponse = {
@@ -62,7 +64,7 @@ type StoreExperienceSettingsResponse = {
   error?: string;
 };
 
-export function StoreSettingsForm({ initialStore, initialLogoPath, header }: StoreSettingsFormProps) {
+export function StoreSettingsForm({ initialStore, initialLogoPath, header, supplementalContent }: StoreSettingsFormProps) {
   const formId = "store-profile-form";
   const pathname = usePathname();
   const storeSlug = getStoreSlugFromDashboardPathname(pathname);
@@ -297,7 +299,7 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header }: Sto
       }
     }
 
-      const seoResponse = await fetch(buildStoreScopedApiPath("/api/store-experience/settings", storeSlug), {
+    const seoResponse = await fetch(buildStoreScopedApiPath("/api/store-experience/settings", storeSlug), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -391,8 +393,9 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header }: Sto
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 lg:p-4">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {header}
+        {supplementalContent}
         <form id={formId} onSubmit={handleSubmit} className="space-y-4">
           <SectionCard title="Store Identity" description="Core storefront naming shown across your customer experience.">
             <FormField label="Store Name" description="This appears in your storefront header, email copy, and checkout.">
@@ -500,85 +503,95 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header }: Sto
           </SectionCard>
 
           <SectionCard title="SEO" description="Default storefront metadata used by search engines and social cards.">
-            <FormField label="SEO Title" description="Recommended max length: 60 characters.">
-              <Input maxLength={120} placeholder="At Home Apothecary | Small-batch wellness products" value={seoTitle} onChange={(event) => setSeoTitle(event.target.value)} />
-            </FormField>
-            <FormField label="SEO Description" description="Recommended max length: 155 characters.">
-              <Input
-                maxLength={320}
-                placeholder="Shop handcrafted products with local pickup and shipping."
-                value={seoDescription}
-                onChange={(event) => setSeoDescription(event.target.value)}
-              />
-            </FormField>
-            <div className="flex items-center justify-between gap-4 rounded-md border border-border/60 bg-muted/15 px-3 py-2">
-              <div>
-                <p className="text-sm font-medium">Hide Store From Search Engines</p>
-                <p className="text-xs text-muted-foreground">Enable noindex while your storefront is private or in draft mode.</p>
-              </div>
-              <Switch checked={seoNoindex} onChange={(event) => setSeoNoindex(event.target.checked)} disabled={saving} />
-            </div>
-            <div className="space-y-3 rounded-md border border-border/60 bg-muted/15 p-3">
-              <div>
-                <p className="text-sm font-medium">Local SEO Location (Optional)</p>
-                <p className="text-xs text-muted-foreground">
-                  Publish city/region/state for local discovery. Keep full address private unless you explicitly enable it.
-                </p>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <FormField label="City">
-                  <Input maxLength={120} placeholder="Albany" value={seoLocationCity} onChange={(event) => setSeoLocationCity(event.target.value)} />
-                </FormField>
-                <FormField label="Region">
+            <div className="space-y-5">
+              <div className="space-y-4">
+                <FormField label="SEO Title" description="Recommended max length: 60 characters.">
                   <Input
                     maxLength={120}
-                    placeholder="Capital District"
-                    value={seoLocationRegion}
-                    onChange={(event) => setSeoLocationRegion(event.target.value)}
+                    placeholder="At Home Apothecary | Small-batch wellness products"
+                    value={seoTitle}
+                    onChange={(event) => setSeoTitle(event.target.value)}
                   />
                 </FormField>
-                <FormField label="State / Province">
-                  <Input maxLength={120} placeholder="New York" value={seoLocationState} onChange={(event) => setSeoLocationState(event.target.value)} />
-                </FormField>
-                <FormField label="Country Code">
-                  <Input
-                    maxLength={2}
-                    placeholder="US"
-                    value={seoLocationCountryCode}
-                    onChange={(event) => setSeoLocationCountryCode(event.target.value.toUpperCase())}
+                <FormField label="SEO Description" description="Recommended max length: 155 characters.">
+                  <Textarea
+                    rows={3}
+                    maxLength={320}
+                    placeholder="Shop handcrafted products with local pickup and shipping."
+                    value={seoDescription}
+                    onChange={(event) => setSeoDescription(event.target.value)}
                   />
                 </FormField>
-                <FormField label="Postal Code (Optional)">
-                  <Input maxLength={32} placeholder="12203" value={seoLocationPostalCode} onChange={(event) => setSeoLocationPostalCode(event.target.value)} />
-                </FormField>
               </div>
-              <div className="flex items-center justify-between gap-4 rounded-md border border-border/60 bg-background px-3 py-2">
-                <div>
-                  <p className="text-sm font-medium">Show Full Address Publicly</p>
-                  <p className="text-xs text-muted-foreground">Leave off to keep exact pickup/location private on public pages and schema.</p>
+              <div className="flex items-center justify-between gap-4 rounded-md border border-border/60 bg-muted/15 px-3 py-3">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Hide Store From Search Engines</p>
+                  <p className="text-xs text-muted-foreground">Enable noindex while your storefront is private or in draft mode.</p>
                 </div>
-                <Switch checked={seoLocationShowFullAddress} onChange={(event) => setSeoLocationShowFullAddress(event.target.checked)} disabled={saving} />
+                <Switch checked={seoNoindex} onChange={(event) => setSeoNoindex(event.target.checked)} disabled={saving} />
               </div>
-              {seoLocationShowFullAddress ? (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <FormField label="Address Line 1">
+              <div className="space-y-4 rounded-md border border-border/60 bg-muted/15 p-4">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Local SEO Location</p>
+                  <p className="text-xs text-muted-foreground">
+                    Publish city and region for local discovery. Keep the exact address private unless you explicitly want it in public metadata.
+                  </p>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField label="City">
+                    <Input maxLength={120} placeholder="Albany" value={seoLocationCity} onChange={(event) => setSeoLocationCity(event.target.value)} />
+                  </FormField>
+                  <FormField label="Region">
                     <Input
-                      maxLength={200}
-                      placeholder="123 Main St"
-                      value={seoLocationAddressLine1}
-                      onChange={(event) => setSeoLocationAddressLine1(event.target.value)}
+                      maxLength={120}
+                      placeholder="Capital District"
+                      value={seoLocationRegion}
+                      onChange={(event) => setSeoLocationRegion(event.target.value)}
                     />
                   </FormField>
-                  <FormField label="Address Line 2 (Optional)">
+                  <FormField label="State / Province">
+                    <Input maxLength={120} placeholder="New York" value={seoLocationState} onChange={(event) => setSeoLocationState(event.target.value)} />
+                  </FormField>
+                  <FormField label="Country Code">
                     <Input
-                      maxLength={200}
-                      placeholder="Suite B"
-                      value={seoLocationAddressLine2}
-                      onChange={(event) => setSeoLocationAddressLine2(event.target.value)}
+                      maxLength={2}
+                      placeholder="US"
+                      value={seoLocationCountryCode}
+                      onChange={(event) => setSeoLocationCountryCode(event.target.value.toUpperCase())}
                     />
                   </FormField>
+                  <FormField label="Postal Code">
+                    <Input maxLength={32} placeholder="12203" value={seoLocationPostalCode} onChange={(event) => setSeoLocationPostalCode(event.target.value)} />
+                  </FormField>
                 </div>
-              ) : null}
+                <div className="flex items-center justify-between gap-4 rounded-md border border-border/60 bg-background px-3 py-3">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Show Full Address Publicly</p>
+                    <p className="text-xs text-muted-foreground">Leave this off unless you want the exact pickup or business address exposed publicly.</p>
+                  </div>
+                  <Switch checked={seoLocationShowFullAddress} onChange={(event) => setSeoLocationShowFullAddress(event.target.checked)} disabled={saving} />
+                </div>
+                {seoLocationShowFullAddress ? (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <FormField label="Address Line 1">
+                      <Input
+                        maxLength={200}
+                        placeholder="123 Main St"
+                        value={seoLocationAddressLine1}
+                        onChange={(event) => setSeoLocationAddressLine1(event.target.value)}
+                      />
+                    </FormField>
+                    <FormField label="Address Line 2">
+                      <Input
+                        maxLength={200}
+                        placeholder="Suite B"
+                        value={seoLocationAddressLine2}
+                        onChange={(event) => setSeoLocationAddressLine2(event.target.value)}
+                      />
+                    </FormField>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </SectionCard>
         </form>

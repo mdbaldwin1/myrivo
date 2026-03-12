@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
 import { AppAlert } from "@/components/ui/app-alert";
@@ -11,6 +12,7 @@ import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { notify } from "@/lib/feedback/toast";
 import { ContextHelpLink } from "@/components/dashboard/context-help-link";
+import { getReviewMedia, getReviewResponses, normalizeReviewCollection, normalizeReviewNestedArrays } from "@/lib/reviews/moderation";
 
 type ReviewStatus = "pending" | "published" | "rejected";
 type ModerationAction = "publish" | "reject" | "restore";
@@ -40,8 +42,8 @@ export type ReviewRow = {
   status: ReviewStatus;
   moderation_reason: string | null;
   created_at: string;
-  review_media: ReviewMedia[];
-  review_responses: ReviewResponse[];
+  review_media: ReviewMedia[] | null;
+  review_responses: ReviewResponse[] | null;
 };
 
 type ReviewsResponse = {
@@ -52,10 +54,17 @@ type ReviewsResponse = {
 type ReviewsModerationManagerProps = {
   storeSlug: string;
   initialItems: ReviewRow[];
+  initialReviewId?: string | null;
 };
 
-export function ReviewsModerationManager({ storeSlug, initialItems }: ReviewsModerationManagerProps) {
-  const [items, setItems] = useState(initialItems);
+export function ReviewsModerationManager({ storeSlug, initialItems, initialReviewId = null }: ReviewsModerationManagerProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const normalizedInitialItems = normalizeReviewCollection(initialItems);
+  const initialSelectedReview = initialReviewId ? normalizedInitialItems.find((item) => item.id === initialReviewId) ?? null : null;
+
+  const [items, setItems] = useState(() => normalizedInitialItems);
   const [statusTab, setStatusTab] = useState<"all" | ReviewStatus>("pending");
   const [ratingFilter, setRatingFilter] = useState<string>("all");
   const [verifiedFilter, setVerifiedFilter] = useState<"all" | "true" | "false">("all");
@@ -64,10 +73,28 @@ export function ReviewsModerationManager({ storeSlug, initialItems }: ReviewsMod
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedReviewIds, setSelectedReviewIds] = useState<string[]>([]);
-  const [selectedReview, setSelectedReview] = useState<ReviewRow | null>(null);
+  const [selectedReview, setSelectedReview] = useState<ReviewRow | null>(initialSelectedReview);
   const [rejectReason, setRejectReason] = useState("");
-  const [responseBody, setResponseBody] = useState("");
+  const [responseBody, setResponseBody] = useState(() => getReviewResponses(initialSelectedReview)[0]?.body ?? "");
   const [error, setError] = useState<string | null>(null);
+
+  function updateReviewUrl(reviewId: string | null) {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    if (reviewId) {
+      nextParams.set("reviewId", reviewId);
+    } else {
+      nextParams.delete("reviewId");
+    }
+    const nextQuery = nextParams.toString();
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+  }
+
+  function openReview(review: ReviewRow | null) {
+    const normalized = review ? normalizeReviewNestedArrays(review) : null;
+    setSelectedReview(normalized);
+    setResponseBody(getReviewResponses(normalized)[0]?.body ?? "");
+    updateReviewUrl(normalized?.id ?? null);
+  }
 
   const productOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -99,12 +126,12 @@ export function ReviewsModerationManager({ storeSlug, initialItems }: ReviewsMod
       return;
     }
 
-    setItems(payload.items ?? []);
+    const nextItems = normalizeReviewCollection(payload.items ?? []);
+    setItems(nextItems);
     setSelectedReviewIds([]);
     if (selectedReview) {
-      const refreshed = (payload.items ?? []).find((item) => item.id === selectedReview.id) ?? null;
-      setSelectedReview(refreshed);
-      setResponseBody(refreshed?.review_responses[0]?.body ?? "");
+      const refreshed = nextItems.find((item) => item.id === selectedReview.id) ?? null;
+      openReview(refreshed);
     }
     setLoading(false);
   }
@@ -115,7 +142,7 @@ export function ReviewsModerationManager({ storeSlug, initialItems }: ReviewsMod
         return null;
       }
       const refreshed = nextItems.find((item) => item.id === current.id) ?? null;
-      setResponseBody(refreshed?.review_responses[0]?.body ?? "");
+      setResponseBody(getReviewResponses(refreshed)[0]?.body ?? "");
       return refreshed;
     });
   }
@@ -196,7 +223,7 @@ export function ReviewsModerationManager({ storeSlug, initialItems }: ReviewsMod
       item.id === selectedReview.id
         ? {
             ...item,
-            review_media: item.review_media.map((media) => (media.id === mediaId ? { ...media, status: nextMediaStatus } : media))
+            review_media: getReviewMedia(item).map((media) => (media.id === mediaId ? { ...media, status: nextMediaStatus } : media))
           }
         : item
     );
@@ -256,7 +283,7 @@ export function ReviewsModerationManager({ storeSlug, initialItems }: ReviewsMod
   }
 
   async function deleteResponse() {
-    if (!selectedReview || selectedReview.review_responses.length === 0) {
+    if (!selectedReview || getReviewResponses(selectedReview).length === 0) {
       return;
     }
 
@@ -297,7 +324,7 @@ export function ReviewsModerationManager({ storeSlug, initialItems }: ReviewsMod
     <DashboardPageScaffold
       title="Reviews Moderation"
       description="Process review queue, moderate review media, and respond directly to customers."
-      className="p-4 lg:p-4"
+      className="p-3"
       action={
         <div className="flex flex-wrap gap-2">
           <Button type="button" size="sm" variant="outline" onClick={() => void loadQueue()} disabled={loading}>
@@ -436,17 +463,14 @@ export function ReviewsModerationManager({ storeSlug, initialItems }: ReviewsMod
                   <TableCell>{item.rating}</TableCell>
                   <TableCell>{item.status}</TableCell>
                   <TableCell>{item.verified_purchase ? "yes" : "no"}</TableCell>
-                  <TableCell>{item.review_media.filter((media) => media.status === "active").length}</TableCell>
+                  <TableCell>{getReviewMedia(item).filter((media) => media.status === "active").length}</TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-2">
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
-                        onClick={() => {
-                          setSelectedReview(item);
-                          setResponseBody(item.review_responses[0]?.body ?? "");
-                        }}
+                        onClick={() => openReview(item)}
                       >
                         Open
                       </Button>
@@ -475,8 +499,7 @@ export function ReviewsModerationManager({ storeSlug, initialItems }: ReviewsMod
         open={Boolean(selectedReview)}
         onOpenChange={(open) => {
           if (!open) {
-            setSelectedReview(null);
-            setResponseBody("");
+            openReview(null);
           }
         }}
         title="Review Detail"
@@ -494,9 +517,9 @@ export function ReviewsModerationManager({ storeSlug, initialItems }: ReviewsMod
 
             <div className="space-y-2">
               <p className="font-medium">Media Moderation</p>
-              {selectedReview.review_media.length === 0 ? <p className="text-xs text-muted-foreground">No review media attached.</p> : null}
+              {getReviewMedia(selectedReview).length === 0 ? <p className="text-xs text-muted-foreground">No review media attached.</p> : null}
               <div className="grid gap-3 sm:grid-cols-2">
-                {selectedReview.review_media.map((media) => (
+                {getReviewMedia(selectedReview).map((media) => (
                   <div key={media.id} className="rounded-md border border-border/70 p-2">
                     <div className="relative h-32 w-full overflow-hidden rounded">
                       <Image src={media.public_url} alt="Review media" fill sizes="(max-width: 640px) 100vw, 50vw" className="object-cover" unoptimized />
@@ -530,7 +553,13 @@ export function ReviewsModerationManager({ storeSlug, initialItems }: ReviewsMod
                 <Button type="button" size="sm" onClick={() => void saveResponse()} disabled={saving || selectedReview.status !== "published"}>
                   Save Response
                 </Button>
-                <Button type="button" size="sm" variant="outline" onClick={() => void deleteResponse()} disabled={saving || selectedReview.review_responses.length === 0}>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void deleteResponse()}
+                  disabled={saving || getReviewResponses(selectedReview).length === 0}
+                >
                   Remove Response
                 </Button>
               </div>

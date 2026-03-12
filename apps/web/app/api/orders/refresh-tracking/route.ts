@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
     .eq("id", order.id)
     .eq("store_id", bundle.store.id)
     .select(
-      "id,customer_email,subtotal_cents,total_cents,status,fulfillment_status,discount_cents,promo_code,carrier,tracking_number,tracking_url,shipment_status,created_at"
+      "id,customer_email,subtotal_cents,total_cents,status,fulfillment_method,fulfillment_label,fulfillment_status,pickup_location_id,pickup_window_start_at,pickup_window_end_at,pickup_timezone,discount_cents,promo_code,carrier,tracking_number,tracking_url,shipment_status,created_at"
     )
     .single();
 

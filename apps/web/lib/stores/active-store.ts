@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import type { NextRequest } from "next/server";
 import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
 import { ACTIVE_STORE_COOKIE, readSelectedStoreSlugFromCookies } from "@/lib/stores/tenant-context";
@@ -10,10 +11,54 @@ function normalizeSlug(value: string | null | undefined): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
+function extractStoreSlugFromDashboardPath(pathname: string | null | undefined): string | null {
+  const normalizedPath = pathname?.trim();
+  if (!normalizedPath) {
+    return null;
+  }
+
+  const match = normalizedPath.match(/^\/dashboard\/stores\/([^/?#]+)/i);
+  return normalizeSlug(match?.[1] ?? null);
+}
+
+export async function resolveStoreSlugFromCurrentDashboardRoute(): Promise<string | null> {
+  const requestHeaders = await headers();
+  const candidates = [
+    requestHeaders.get("next-url"),
+    requestHeaders.get("x-pathname"),
+    requestHeaders.get("x-invoke-path"),
+    requestHeaders.get("x-matched-path"),
+    requestHeaders.get("referer")
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+
+    try {
+      const pathname = candidate.startsWith("/") ? candidate : new URL(candidate, "http://localhost").pathname;
+      const routeSlug = extractStoreSlugFromDashboardPath(pathname);
+      if (routeSlug) {
+        return routeSlug;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
 export async function resolveStoreSlugForServerRender(explicitSlug?: string | null): Promise<string | null> {
   const explicit = normalizeSlug(explicitSlug);
   if (explicit) {
     return explicit;
+  }
+
+  const routeSlug = await resolveStoreSlugFromCurrentDashboardRoute();
+  if (routeSlug) {
+    return routeSlug;
   }
 
   const selected = await readSelectedStoreSlugFromCookies();

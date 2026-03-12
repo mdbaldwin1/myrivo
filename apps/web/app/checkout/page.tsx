@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { StorefrontCheckoutPage } from "@/components/storefront/storefront-checkout-page";
 import { loadStorefrontData } from "@/lib/storefront/load-storefront-data";
+import { createStorefrontRuntime } from "@/lib/storefront/runtime";
+import { StorefrontRuntimeProvider } from "@/components/storefront/storefront-runtime-provider";
 
 export const dynamic = "force-dynamic";
 
@@ -17,5 +19,15 @@ export default async function CheckoutPage({ searchParams }: CheckoutPageProps) 
     notFound();
   }
 
-  return <StorefrontCheckoutPage store={data.store} viewer={data.viewer} branding={data.branding} settings={data.settings} />;
+  const runtime = createStorefrontRuntime({
+    ...data,
+    mode: "live",
+    surface: "checkout"
+  });
+
+  return (
+    <StorefrontRuntimeProvider runtime={runtime}>
+      <StorefrontCheckoutPage store={data.store} viewer={data.viewer} branding={data.branding} settings={data.settings} />
+    </StorefrontRuntimeProvider>
+  );
 }

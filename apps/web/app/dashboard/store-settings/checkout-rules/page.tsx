@@ -3,5 +3,5 @@ import { redirectToActiveStoreWorkspace } from "@/app/dashboard/_lib/legacy-stor
 export const dynamic = "force-dynamic";
 
 export default async function DashboardStoreSettingsCheckoutRulesPage() {
-  await redirectToActiveStoreWorkspace("/store-settings/checkout-experience");
+  await redirectToActiveStoreWorkspace("/storefront-studio?surface=cart");
 }

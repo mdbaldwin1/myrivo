@@ -1,5 +1,5 @@
 import { hasStoreRole } from "@/lib/auth/roles";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export type OnboardingStoreRole = "owner" | "admin" | "staff" | "customer";
 
@@ -102,8 +102,8 @@ function buildProgress(
 }
 
 export async function getStoreOnboardingProgressForUser(userId: string): Promise<StoreOnboardingProgress[]> {
-  const supabase = await createSupabaseServerClient();
-  const { data: memberships } = await supabase
+  const admin = createSupabaseAdminClient();
+  const { data: memberships } = await admin
     .from("store_memberships")
     .select("role,store:stores!inner(id,name,slug,status,stripe_account_id)")
     .eq("user_id", userId)
@@ -125,14 +125,14 @@ export async function getStoreOnboardingProgressForUser(userId: string): Promise
   const storeIds = stores.map((store) => store.id);
 
   const [{ data: settingsRows }, { data: brandingRows }] = await Promise.all([
-    supabase.from("store_settings").select("store_id,support_email").in("store_id", storeIds).returns<SettingsRow[]>(),
-    supabase.from("store_branding").select("store_id,logo_path,primary_color,accent_color").in("store_id", storeIds).returns<BrandingRow[]>()
+    admin.from("store_settings").select("store_id,support_email").in("store_id", storeIds).returns<SettingsRow[]>(),
+    admin.from("store_branding").select("store_id,logo_path,primary_color,accent_color").in("store_id", storeIds).returns<BrandingRow[]>()
   ]);
 
   const hasProductByStoreId = new Map<string, boolean>();
   await Promise.all(
     storeIds.map(async (storeId) => {
-      const { data } = await supabase.from("products").select("id").eq("store_id", storeId).limit(1);
+      const { data } = await admin.from("products").select("id").eq("store_id", storeId).limit(1);
       hasProductByStoreId.set(storeId, Boolean((data ?? []).length));
     })
   );
@@ -151,8 +151,8 @@ export async function getStoreOnboardingProgressForStore(userId: string, storeSl
     return null;
   }
 
-  const supabase = await createSupabaseServerClient();
-  const { data: memberships } = await supabase
+  const admin = createSupabaseAdminClient();
+  const { data: memberships } = await admin
     .from("store_memberships")
     .select("role,store:stores!inner(id,name,slug,status,stripe_account_id)")
     .eq("user_id", userId)
@@ -169,9 +169,9 @@ export async function getStoreOnboardingProgressForStore(userId: string, storeSl
   }
 
   const [{ data: settings }, { data: branding }, { data: products }] = await Promise.all([
-    supabase.from("store_settings").select("store_id,support_email").eq("store_id", targetStore.id).maybeSingle<SettingsRow>(),
-    supabase.from("store_branding").select("store_id,logo_path,primary_color,accent_color").eq("store_id", targetStore.id).maybeSingle<BrandingRow>(),
-    supabase.from("products").select("id").eq("store_id", targetStore.id).limit(1)
+    admin.from("store_settings").select("store_id,support_email").eq("store_id", targetStore.id).maybeSingle<SettingsRow>(),
+    admin.from("store_branding").select("store_id,logo_path,primary_color,accent_color").eq("store_id", targetStore.id).maybeSingle<BrandingRow>(),
+    admin.from("products").select("id").eq("store_id", targetStore.id).limit(1)
   ]);
 
   return buildProgress(targetStore, settings ?? undefined, branding ?? undefined, Boolean((products ?? []).length));

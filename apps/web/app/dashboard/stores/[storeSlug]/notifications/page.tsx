@@ -12,7 +12,7 @@ export default async function StoreWorkspaceNotificationsPage({ params }: PagePr
   const { storeSlug } = await params;
 
   return (
-    <section className="space-y-4 p-4 lg:p-4">
+    <section className="space-y-3 p-3">
       <div className="w-full space-y-4">
         <DashboardPageHeader
           title="Notifications"

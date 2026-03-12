@@ -59,7 +59,7 @@ export default async function StoreWorkspaceReportsInsightsPage({ params }: Page
   }
 
   return (
-    <div className="space-y-4 p-4 lg:p-4">
+    <div className="space-y-3 p-3">
       <DashboardPageHeader title="Insights" description="Detailed trends and audit history beyond the Overview snapshot." />
       <InsightsPanel recentOrders={orders ?? []} products={products ?? []} />
       <AuditEventsPanel initialEvents={auditEvents ?? []} />

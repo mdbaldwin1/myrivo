@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
+import { extractPendingStoreInviteTokenFromReturnTo } from "@/lib/auth/pending-store-invite";
 import type { LegalRequirement } from "@/lib/legal/documents";
 import { withReturnTo } from "@/lib/auth/return-to";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -25,12 +26,14 @@ export function SignupForm({ returnTo, legalRequirements, legalUnavailable }: Si
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setSuccess(null);
     setLoading(true);
 
     if (legalUnavailable || !legalRequirements) {
@@ -46,45 +49,45 @@ export function SignupForm({ returnTo, legalRequirements, legalUnavailable }: Si
     }
 
     const supabase = createSupabaseBrowserClient();
+    const consentVersionIds = [legalRequirements.terms.versionId, legalRequirements.privacy.versionId];
+    const pendingStoreInviteToken = extractPendingStoreInviteTokenFromReturnTo(returnTo);
     const { data: signupData, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(returnTo)}`
+        emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(returnTo)}`,
+        data: {
+          signup_legal_version_ids: consentVersionIds,
+          pending_store_invite_token: pendingStoreInviteToken
+        }
       }
     });
 
-    setLoading(false);
-
     if (signUpError) {
+      setLoading(false);
       setError(signUpError.message);
       return;
     }
 
-    const userId = signupData.user?.id ?? signupData.session?.user?.id ?? null;
-    if (!userId) {
-      setError("Account created, but legal acceptance capture could not be completed. Please sign in and accept legal terms.");
+    if (!signupData.session) {
+      setLoading(false);
+      setSuccess("Account created. Check your email to confirm your address and finish signing in.");
       return;
     }
 
-    const acceptancePayload = [
-      {
-        legal_document_id: legalRequirements.terms.documentId,
-        legal_document_version_id: legalRequirements.terms.versionId,
-        user_id: userId,
-        acceptance_surface: "signup"
-      },
-      {
-        legal_document_id: legalRequirements.privacy.documentId,
-        legal_document_version_id: legalRequirements.privacy.versionId,
-        user_id: userId,
-        acceptance_surface: "signup"
-      }
-    ];
-
-    const { error: acceptanceError } = await supabase.from("legal_acceptances").insert(acceptancePayload);
-    if (acceptanceError) {
-      setError("Account created, but legal acceptance capture failed. Please contact support before continuing.");
+    const consentResponse = await fetch("/api/legal/consent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        versionIds: consentVersionIds,
+        acceptanceSurface: "signup",
+        returnTo
+      })
+    });
+    const consentPayload = (await consentResponse.json().catch(() => ({}))) as { error?: string };
+    setLoading(false);
+    if (!consentResponse.ok) {
+      setError(consentPayload.error ?? "Account created, but legal acceptance capture failed. Please contact support before continuing.");
       return;
     }
 
@@ -139,7 +142,8 @@ export function SignupForm({ returnTo, legalRequirements, legalUnavailable }: Si
             </label>
           </div>
           <FeedbackMessage type="error" message={error} />
-          <Button type="submit" disabled={loading || legalUnavailable} className="w-full">
+          <FeedbackMessage type="success" message={success} />
+          <Button type="submit" disabled={loading || legalUnavailable || !termsAccepted || !privacyAccepted} className="w-full">
             {loading ? "Creating account..." : "Create account"}
           </Button>
           <p className="text-center text-sm text-muted-foreground">

@@ -13,9 +13,11 @@ import { notify } from "@/lib/feedback/toast";
 import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
 import {
   resolveStorefrontThemeConfig,
+  STOREFRONT_FONT_OPTIONS,
   type CtaStyle,
   type FooterItemId,
-  type NavItemId
+  type NavItemId,
+  type StorefrontFontFamily
 } from "@/lib/theme/storefront-theme";
 import type { StoreBrandingRecord } from "@/types/database";
 
@@ -95,7 +97,7 @@ export function BrandingSettingsForm({ initialBranding, header }: BrandingSettin
   const [footerNavItems, setFooterNavItems] = useState<FooterItemId[]>(initialTheme.footerNavItems);
 
   const [pageWidth, setPageWidth] = useState(initialTheme.pageWidth);
-  const [fontPreset, setFontPreset] = useState(initialTheme.fontPreset);
+  const [fontFamily, setFontFamily] = useState<StorefrontFontFamily>(initialTheme.fontFamily);
   const [radiusScale, setRadiusScale] = useState(initialTheme.radiusScale);
 
   const [primaryCtaStyle, setPrimaryCtaStyle] = useState<CtaStyle>(initialTheme.primaryCtaStyle);
@@ -125,7 +127,7 @@ export function BrandingSettingsForm({ initialBranding, header }: BrandingSettin
         showFooterOwnerLogin,
         footerNavItems,
         pageWidth,
-        fontPreset,
+        fontFamily,
         radiusScale,
         primaryCtaStyle,
         faviconPath,
@@ -148,7 +150,7 @@ export function BrandingSettingsForm({ initialBranding, header }: BrandingSettin
       showFooterOwnerLogin,
       footerNavItems,
       pageWidth,
-      fontPreset,
+      fontFamily,
       radiusScale,
       primaryCtaStyle,
       faviconPath,
@@ -177,7 +179,7 @@ export function BrandingSettingsForm({ initialBranding, header }: BrandingSettin
       setShowFooterOwnerLogin(Boolean(parsed.showFooterOwnerLogin));
       setFooterNavItems((parsed.footerNavItems as FooterItemId[]) ?? footerNavItems);
       setPageWidth((parsed.pageWidth as typeof pageWidth) ?? pageWidth);
-      setFontPreset((parsed.fontPreset as typeof fontPreset) ?? fontPreset);
+      setFontFamily((parsed.fontFamily as StorefrontFontFamily) ?? fontFamily);
       setRadiusScale((parsed.radiusScale as typeof radiusScale) ?? radiusScale);
       setPrimaryCtaStyle((parsed.primaryCtaStyle as CtaStyle) ?? primaryCtaStyle);
       setFaviconPath(String(parsed.faviconPath ?? faviconPath));
@@ -275,7 +277,7 @@ export function BrandingSettingsForm({ initialBranding, header }: BrandingSettin
           ...(initialBranding?.theme_json ?? {}),
           pageWidth,
           radiusScale,
-          fontPreset,
+          fontFamily,
           primaryForegroundColor: parsedPrimaryForeground,
           accentForegroundColor: parsedAccentForeground,
           backgroundColor: parsedBackground,
@@ -461,7 +463,7 @@ export function BrandingSettingsForm({ initialBranding, header }: BrandingSettin
           </div>
         </SectionCard>
 
-        <SectionCard title="Global Layout" description="Control storefront width, typography preset, and overall corner style.">
+        <SectionCard title="Global Layout" description="Control storefront width, typeface, and overall corner style.">
           <div className="grid gap-3 sm:grid-cols-2">
             <FormField label="Page Width">
               <Select value={pageWidth} onChange={(event) => setPageWidth(event.target.value as typeof pageWidth)}>
@@ -470,11 +472,13 @@ export function BrandingSettingsForm({ initialBranding, header }: BrandingSettin
                 <option value="wide">Wide</option>
               </Select>
             </FormField>
-            <FormField label="Font Style">
-              <Select value={fontPreset} onChange={(event) => setFontPreset(event.target.value as typeof fontPreset)}>
-                <option value="classic">Classic</option>
-                <option value="modern">Modern</option>
-                <option value="clean">Clean</option>
+            <FormField label="Font Family">
+              <Select value={fontFamily} onChange={(event) => setFontFamily(event.target.value as StorefrontFontFamily)}>
+                {STOREFRONT_FONT_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
               </Select>
             </FormField>
             <FormField label="Corner Radius">

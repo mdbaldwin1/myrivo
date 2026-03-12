@@ -1,9 +1,12 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { StorefrontMobileNavSheet } from "@/components/storefront/storefront-mobile-nav-sheet";
+import { StorefrontStudioEditableLogo } from "@/components/storefront/storefront-studio-editable-logo";
+import { useOptionalStorefrontRuntime } from "@/components/storefront/storefront-runtime-provider";
+import { resolveStorefrontThemeConfig } from "@/lib/theme/storefront-theme";
 import { cn } from "@/lib/utils";
 import { STOREFRONT_TEXT_LINK_EFFECT_CLASS } from "@/lib/storefront/link-effects";
 
@@ -15,6 +18,7 @@ type StorefrontHeaderNavItem = {
 type StorefrontHeaderProps = {
   storeName: string;
   logoPath?: string | null;
+  showLogo?: boolean;
   showTitle?: boolean;
   containerClassName: string;
   navItems: StorefrontHeaderNavItem[];
@@ -27,6 +31,7 @@ export function StorefrontHeader(props: StorefrontHeaderProps) {
   const {
     storeName,
     logoPath,
+    showLogo = true,
     showTitle = true,
     containerClassName,
     navItems,
@@ -34,7 +39,13 @@ export function StorefrontHeader(props: StorefrontHeaderProps) {
     buttonRadiusClass = "rounded-md",
     topOffsetPx = 0
   } = props;
+  const runtime = useOptionalStorefrontRuntime();
+  const studioEnabled = runtime?.mode === "studio";
+  const themeConfig = resolveStorefrontThemeConfig(runtime?.branding?.theme_json ?? {});
   const [isCompact, setIsCompact] = useState(false);
+  const [headerHeight, setHeaderHeight] = useState(256);
+  const headerRef = useRef<HTMLElement | null>(null);
+  const runtimeStoreSlug = runtime?.store.slug?.trim() ?? "";
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const currentStoreParam = searchParams?.get("store")?.trim() ?? "";
@@ -42,16 +53,21 @@ export function StorefrontHeader(props: StorefrontHeaderProps) {
   const previewStoreSlug = previewPathMatch?.[1]?.trim() ?? "";
   const homeHref = previewStoreSlug
     ? `/s/${encodeURIComponent(previewStoreSlug)}`
+    : runtimeStoreSlug
+      ? `/s/${encodeURIComponent(runtimeStoreSlug)}`
     : currentStoreParam
       ? `/s/${encodeURIComponent(currentStoreParam)}`
       : "/";
 
   useEffect(() => {
-    const COMPACT_ENTER_Y = 96;
-    const COMPACT_EXIT_Y = 72;
+    const COMPACT_ENTER_Y = 72;
+    const COMPACT_EXIT_Y = 48;
+    const scrollRoot = studioEnabled
+      ? ((headerRef.current?.closest('[data-storefront-scroll-root="true"]') as HTMLElement | null) ?? null)
+      : null;
 
     function onScroll() {
-      const y = window.scrollY;
+      const y = scrollRoot ? scrollRoot.scrollTop : window.scrollY;
       if (y >= COMPACT_ENTER_Y) {
         setIsCompact(true);
         return;
@@ -63,59 +79,78 @@ export function StorefrontHeader(props: StorefrontHeaderProps) {
     }
 
     onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
+    const target: HTMLElement | Window = scrollRoot ?? window;
+    target.addEventListener("scroll", onScroll, { passive: true });
     return () => {
-      window.removeEventListener("scroll", onScroll);
+      target.removeEventListener("scroll", onScroll);
     };
-  }, []);
+  }, [studioEnabled]);
+
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) {
+      return;
+    }
+
+    function syncHeight() {
+      const nextHeader = headerRef.current;
+      if (!nextHeader) {
+        return;
+      }
+      setHeaderHeight(nextHeader.getBoundingClientRect().height);
+    }
+
+    syncHeight();
+
+    const observer = new ResizeObserver(() => {
+      syncHeight();
+    });
+    observer.observe(header);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [showLogo, showTitle, logoPath, storeName, containerClassName, isCompact, topOffsetPx]);
+
+  const effectiveIsCompact = isCompact;
+
+  const shouldRenderLogo = Boolean(showLogo && logoPath);
+  const shouldRenderTitle = showTitle || !shouldRenderLogo;
 
   return (
     <>
-      <div aria-hidden="true" className="h-[16rem] w-full" />
+      <div aria-hidden="true" style={{ height: `${headerHeight + topOffsetPx}px` }} className="w-full" />
       <header
+        ref={headerRef}
+        data-storefront-preview-section="header"
         style={{ top: `${topOffsetPx}px` }}
         className={cn(
-          "fixed left-0 right-0 z-50 border-b border-border/60 bg-[color:var(--storefront-header-bg)] text-[color:var(--storefront-header-fg)]",
+          studioEnabled ? "absolute inset-x-0 z-40" : "fixed left-0 right-0 z-50",
+          "border-b border-border/60 bg-[color:var(--storefront-header-bg)] text-[color:var(--storefront-header-fg)]",
           "transition-all duration-200"
         )}
       >
         <div
           className={cn(
-            "mx-auto flex w-full items-center justify-between gap-4 px-4 sm:px-6",
+            "mx-auto flex w-full items-center justify-between gap-3 px-4 sm:px-6",
             containerClassName,
-            isCompact ? "py-2.5" : "py-12"
+            effectiveIsCompact ? "py-2.5 sm:py-3" : "py-4 sm:py-6 lg:py-10"
           )}
         >
-          <Link href={homeHref} className="flex items-center gap-3">
-          {logoPath ? (
-            <Image
-              src={logoPath}
-              alt={`${storeName} logo`}
-              width={800}
-              height={320}
-              loading="eager"
-              unoptimized
-              className={cn(
-                "h-auto object-contain transition-all duration-200",
-                buttonRadiusClass,
-                isCompact ? "h-12 w-auto max-w-[40vw] sm:max-w-[260px]" : "h-40 w-auto max-w-[75vw] sm:max-w-[620px]"
-              )}
-            />
-          ) : (
-              <div
-                className={cn(
-                  "flex items-center justify-center bg-muted text-xs font-semibold transition-all duration-200",
-                  buttonRadiusClass,
-                  isCompact ? "h-9 w-9" : "h-28 w-28"
-                )}
-              >
-                {storeName.slice(0, 2).toUpperCase()}
-              </div>
-            )}
-            {showTitle ? <span className={cn("font-medium transition-all duration-200", isCompact ? "text-sm" : "text-2xl")}>{storeName}</span> : null}
-          </Link>
+          <StorefrontStudioEditableLogo
+            href={homeHref}
+            logoPath={logoPath}
+            storeName={storeName}
+            showLogo={showLogo}
+            showTitle={shouldRenderTitle}
+            logoSize={themeConfig.headerLogoSize}
+            titleSize={themeConfig.headerTitleSize}
+            buttonRadiusClass={buttonRadiusClass}
+            compact={effectiveIsCompact}
+          />
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2.5 sm:gap-4">
+            <StorefrontMobileNavSheet storeName={storeName} navItems={navItems} currentPath={pathname} />
             <nav className="hidden items-center gap-5 text-sm text-[color:var(--storefront-header-fg)]/75 md:flex">
               {navItems.map((item) => (
                 <Link

@@ -16,12 +16,23 @@ const CARD_STYLE_OPTIONS = ["solid", "outline", "elevated", "integrated"] as con
 const BUTTON_STYLE_OPTIONS = ["rounded", "pill", "square"] as const;
 const SPACING_OPTIONS = ["compact", "comfortable", "airy"] as const;
 const FONT_PRESET_OPTIONS = ["classic", "modern", "clean"] as const;
+const STOREFRONT_FONT_FAMILY_OPTIONS = [
+  "fraunces-manrope",
+  "avenir-next",
+  "georgia",
+  "palatino",
+  "helvetica-neue",
+  "trebuchet"
+] as const;
 const NAV_ITEM_IDS = ["home", "products", "about", "policies"] as const;
 const FOOTER_ITEM_IDS = ["products", "cart", "about", "policies"] as const;
 const FILTER_LAYOUT_OPTIONS = ["sidebar", "topbar"] as const;
 const CTA_STYLE_OPTIONS = ["primary", "accent", "outline"] as const;
 const IMAGE_FIT_OPTIONS = ["cover", "contain"] as const;
 const REVIEW_SORT_OPTIONS = ["newest", "highest", "lowest"] as const;
+const HEADER_LOGO_SIZE_OPTIONS = ["small", "medium", "large"] as const;
+const HEADER_TITLE_SIZE_OPTIONS = ["small", "medium", "large"] as const;
+const HERO_IMAGE_SIZE_OPTIONS = ["small", "medium", "large"] as const;
 
 export type PageWidth = (typeof PAGE_WIDTH_OPTIONS)[number];
 export type HeroLayout = (typeof HERO_LAYOUT_OPTIONS)[number];
@@ -32,23 +43,31 @@ export type CardStyle = (typeof CARD_STYLE_OPTIONS)[number];
 export type ButtonStyle = (typeof BUTTON_STYLE_OPTIONS)[number];
 export type SpacingScale = (typeof SPACING_OPTIONS)[number];
 export type FontPreset = (typeof FONT_PRESET_OPTIONS)[number];
+export type StorefrontFontFamily = (typeof STOREFRONT_FONT_FAMILY_OPTIONS)[number];
 export type NavItemId = (typeof NAV_ITEM_IDS)[number];
 export type FooterItemId = (typeof FOOTER_ITEM_IDS)[number];
 export type FilterLayout = (typeof FILTER_LAYOUT_OPTIONS)[number];
 export type CtaStyle = (typeof CTA_STYLE_OPTIONS)[number];
 export type ImageFit = (typeof IMAGE_FIT_OPTIONS)[number];
 export type ReviewSort = (typeof REVIEW_SORT_OPTIONS)[number];
+export type HeaderLogoSize = (typeof HEADER_LOGO_SIZE_OPTIONS)[number];
+export type HeaderTitleSize = (typeof HEADER_TITLE_SIZE_OPTIONS)[number];
+export type HeroImageSize = (typeof HERO_IMAGE_SIZE_OPTIONS)[number];
 
 export type StorefrontThemeConfig = {
   pageWidth: PageWidth;
   heroLayout: HeroLayout;
   heroBrandDisplay: HeroBrandDisplay;
+  heroShowLogo: boolean;
+  heroShowTitle: boolean;
+  heroImageSize: HeroImageSize;
   productGridColumns: ProductGridColumns;
   radiusScale: RadiusScale;
   cardStyle: CardStyle;
   buttonStyle: ButtonStyle;
   spacingScale: SpacingScale;
   fontPreset: FontPreset;
+  fontFamily: StorefrontFontFamily;
   showContentBlocks: boolean;
   showPolicyStrip: boolean;
   heroEyebrow: string;
@@ -62,6 +81,10 @@ export type StorefrontThemeConfig = {
   textColor: string;
   headerBackgroundColor: string;
   headerForegroundColor: string;
+  headerShowLogo: boolean;
+  headerShowTitle: boolean;
+  headerLogoSize: HeaderLogoSize;
+  headerTitleSize: HeaderTitleSize;
   primaryForegroundColor: string | null;
   accentForegroundColor: string | null;
   headerNavItems: NavItemId[];
@@ -105,16 +128,71 @@ export type StorefrontThemeInput = {
   themeConfig?: unknown;
 };
 
+export const STOREFRONT_FONT_OPTIONS: Array<{
+  id: StorefrontFontFamily;
+  label: string;
+  previewClassName: string;
+  headingStack: string;
+  bodyStack: string;
+}> = [
+  {
+    id: "fraunces-manrope",
+    label: "Fraunces",
+    previewClassName: "[font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif]",
+    headingStack: "\"Fraunces\", \"Iowan Old Style\", \"Palatino Linotype\", serif",
+    bodyStack: "\"Manrope\", \"Avenir Next\", \"Segoe UI\", sans-serif"
+  },
+  {
+    id: "avenir-next",
+    label: "Avenir Next",
+    previewClassName: "[font-family:'Avenir Next','Segoe UI',sans-serif]",
+    headingStack: "\"Avenir Next\", \"Segoe UI\", sans-serif",
+    bodyStack: "\"Avenir Next\", \"Segoe UI\", sans-serif"
+  },
+  {
+    id: "georgia",
+    label: "Georgia",
+    previewClassName: "[font-family:'Georgia','Times New Roman',serif]",
+    headingStack: "\"Georgia\", \"Times New Roman\", serif",
+    bodyStack: "\"Georgia\", \"Times New Roman\", serif"
+  },
+  {
+    id: "palatino",
+    label: "Palatino",
+    previewClassName: "[font-family:'Palatino Linotype','Book Antiqua',Palatino,serif]",
+    headingStack: "\"Palatino Linotype\", \"Book Antiqua\", Palatino, serif",
+    bodyStack: "\"Palatino Linotype\", \"Book Antiqua\", Palatino, serif"
+  },
+  {
+    id: "helvetica-neue",
+    label: "Helvetica Neue",
+    previewClassName: "[font-family:'Helvetica Neue',Helvetica,Arial,sans-serif]",
+    headingStack: "\"Helvetica Neue\", Helvetica, Arial, sans-serif",
+    bodyStack: "\"Helvetica Neue\", Helvetica, Arial, sans-serif"
+  },
+  {
+    id: "trebuchet",
+    label: "Trebuchet MS",
+    previewClassName: "[font-family:'Trebuchet MS','Avenir Next','Segoe UI',sans-serif]",
+    headingStack: "\"Trebuchet MS\", \"Avenir Next\", \"Segoe UI\", sans-serif",
+    bodyStack: "\"Trebuchet MS\", \"Avenir Next\", \"Segoe UI\", sans-serif"
+  }
+];
+
 export const DEFAULT_STOREFRONT_THEME_CONFIG: StorefrontThemeConfig = {
   pageWidth: "standard",
   heroLayout: "split",
   heroBrandDisplay: "title",
+  heroShowLogo: false,
+  heroShowTitle: true,
+  heroImageSize: "medium",
   productGridColumns: 2,
   radiusScale: "sharp",
   cardStyle: "integrated",
   buttonStyle: "rounded",
   spacingScale: "comfortable",
   fontPreset: "classic",
+  fontFamily: "fraunces-manrope",
   showContentBlocks: true,
   showPolicyStrip: true,
   heroEyebrow: "",
@@ -128,6 +206,10 @@ export const DEFAULT_STOREFRONT_THEME_CONFIG: StorefrontThemeConfig = {
   textColor: DEFAULT_TEXT,
   headerBackgroundColor: DEFAULT_SURFACE,
   headerForegroundColor: DEFAULT_TEXT,
+  headerShowLogo: true,
+  headerShowTitle: true,
+  headerLogoSize: "medium",
+  headerTitleSize: "medium",
   primaryForegroundColor: null,
   accentForegroundColor: null,
   headerNavItems: ["home", "products", "about", "policies"],
@@ -310,15 +392,28 @@ function pickString(value: unknown, fallback: string, maxLength: number): string
 
 export function resolveStorefrontThemeConfig(raw: unknown): StorefrontThemeConfig {
   const candidate = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const resolvedHeroBrandDisplay = pickStringOption(
+    candidate.heroBrandDisplay,
+    HERO_BRAND_DISPLAY_OPTIONS,
+    DEFAULT_STOREFRONT_THEME_CONFIG.heroBrandDisplay
+  );
+  const fallbackHeroShowLogo = resolvedHeroBrandDisplay === "logo" || resolvedHeroBrandDisplay === "logo_and_title";
+  const fallbackHeroShowTitle = resolvedHeroBrandDisplay === "title" || resolvedHeroBrandDisplay === "logo_and_title";
+
+  const fallbackFontFamily =
+    candidate.fontPreset === "modern"
+      ? "trebuchet"
+      : candidate.fontPreset === "clean"
+        ? "helvetica-neue"
+        : DEFAULT_STOREFRONT_THEME_CONFIG.fontFamily;
 
   return {
     pageWidth: pickStringOption(candidate.pageWidth, PAGE_WIDTH_OPTIONS, DEFAULT_STOREFRONT_THEME_CONFIG.pageWidth),
     heroLayout: pickStringOption(candidate.heroLayout, HERO_LAYOUT_OPTIONS, DEFAULT_STOREFRONT_THEME_CONFIG.heroLayout),
-    heroBrandDisplay: pickStringOption(
-      candidate.heroBrandDisplay,
-      HERO_BRAND_DISPLAY_OPTIONS,
-      DEFAULT_STOREFRONT_THEME_CONFIG.heroBrandDisplay
-    ),
+    heroBrandDisplay: resolvedHeroBrandDisplay,
+    heroShowLogo: pickBoolean(candidate.heroShowLogo, fallbackHeroShowLogo),
+    heroShowTitle: pickBoolean(candidate.heroShowTitle, fallbackHeroShowTitle),
+    heroImageSize: pickStringOption(candidate.heroImageSize, HERO_IMAGE_SIZE_OPTIONS, DEFAULT_STOREFRONT_THEME_CONFIG.heroImageSize),
     productGridColumns: pickNumberOption(
       candidate.productGridColumns,
       PRODUCT_GRID_OPTIONS,
@@ -329,6 +424,7 @@ export function resolveStorefrontThemeConfig(raw: unknown): StorefrontThemeConfi
     buttonStyle: pickStringOption(candidate.buttonStyle, BUTTON_STYLE_OPTIONS, DEFAULT_STOREFRONT_THEME_CONFIG.buttonStyle),
     spacingScale: pickStringOption(candidate.spacingScale, SPACING_OPTIONS, DEFAULT_STOREFRONT_THEME_CONFIG.spacingScale),
     fontPreset: pickStringOption(candidate.fontPreset, FONT_PRESET_OPTIONS, DEFAULT_STOREFRONT_THEME_CONFIG.fontPreset),
+    fontFamily: pickStringOption(candidate.fontFamily, STOREFRONT_FONT_FAMILY_OPTIONS, fallbackFontFamily),
     showContentBlocks: pickBoolean(candidate.showContentBlocks, DEFAULT_STOREFRONT_THEME_CONFIG.showContentBlocks),
     showPolicyStrip: pickBoolean(candidate.showPolicyStrip, DEFAULT_STOREFRONT_THEME_CONFIG.showPolicyStrip),
     heroEyebrow: pickString(candidate.heroEyebrow, DEFAULT_STOREFRONT_THEME_CONFIG.heroEyebrow, 80),
@@ -351,6 +447,10 @@ export function resolveStorefrontThemeConfig(raw: unknown): StorefrontThemeConfi
           normalizeHex(typeof candidate.surfaceColor === "string" ? candidate.surfaceColor : null) ??
           DEFAULT_SURFACE
       ),
+    headerShowLogo: pickBoolean(candidate.headerShowLogo, DEFAULT_STOREFRONT_THEME_CONFIG.headerShowLogo),
+    headerShowTitle: pickBoolean(candidate.headerShowTitle, DEFAULT_STOREFRONT_THEME_CONFIG.headerShowTitle),
+    headerLogoSize: pickStringOption(candidate.headerLogoSize, HEADER_LOGO_SIZE_OPTIONS, DEFAULT_STOREFRONT_THEME_CONFIG.headerLogoSize),
+    headerTitleSize: pickStringOption(candidate.headerTitleSize, HEADER_TITLE_SIZE_OPTIONS, DEFAULT_STOREFRONT_THEME_CONFIG.headerTitleSize),
     primaryForegroundColor:
       normalizeHex(typeof candidate.primaryForegroundColor === "string" ? candidate.primaryForegroundColor : null) ?? null,
     accentForegroundColor:
@@ -478,6 +578,10 @@ export function buildStorefrontThemeStyle(input: StorefrontThemeInput): CSSPrope
   const border = mixHex(config.textColor, config.surfaceColor, 0.2);
   const muted = mixHex(primary, config.surfaceColor, 0.12);
   const mutedForeground = mixHex(config.textColor, config.surfaceColor, 0.62);
+  const resolvedFontOption =
+    STOREFRONT_FONT_OPTIONS.find((option) => option.id === config.fontFamily) ??
+    STOREFRONT_FONT_OPTIONS.find((option) => option.id === DEFAULT_STOREFRONT_THEME_CONFIG.fontFamily) ??
+    STOREFRONT_FONT_OPTIONS[0]!;
 
   return {
     ["--storefront-primary" as string]: primary,
@@ -491,18 +595,8 @@ export function buildStorefrontThemeStyle(input: StorefrontThemeInput): CSSPrope
     ["--storefront-text" as string]: config.textColor,
     ["--storefront-header-bg" as string]: config.headerBackgroundColor,
     ["--storefront-header-fg" as string]: headerForeground,
-    ["--storefront-font-heading" as string]:
-      config.fontPreset === "modern"
-        ? "\"Trebuchet MS\", \"Avenir Next\", \"Segoe UI\", sans-serif"
-        : config.fontPreset === "clean"
-          ? "\"Helvetica Neue\", Helvetica, Arial, sans-serif"
-          : "\"Garamond\", \"Times New Roman\", serif",
-    ["--storefront-font-body" as string]:
-      config.fontPreset === "modern"
-        ? "\"Avenir Next\", \"Segoe UI\", sans-serif"
-        : config.fontPreset === "clean"
-          ? "\"Helvetica Neue\", Helvetica, Arial, sans-serif"
-          : "\"Georgia\", \"Times New Roman\", serif",
+    ["--storefront-font-heading" as string]: resolvedFontOption.headingStack,
+    ["--storefront-font-body" as string]: resolvedFontOption.bodyStack,
     ["--background" as string]: hexToHslChannels(config.backgroundColor),
     ["--foreground" as string]: hexToHslChannels(config.textColor),
     ["--card" as string]: hexToHslChannels(config.surfaceColor),
