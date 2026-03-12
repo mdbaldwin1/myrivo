@@ -41,10 +41,12 @@ export async function GET(request: NextRequest) {
 
   const { data: cart, error: cartError } = await supabase
     .from("customer_carts")
-    .select("id")
+    .select("id,created_at")
     .eq("user_id", auth.user.id)
     .eq("store_id", storeLookup.store.id)
     .eq("status", "active")
+    .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle<{ id: string }>();
 
   if (cartError) {
@@ -104,10 +106,12 @@ export async function PUT(request: NextRequest) {
 
   const { data: existingCart, error: existingCartError } = await supabase
     .from("customer_carts")
-    .select("id")
+    .select("id,created_at")
     .eq("user_id", auth.user.id)
     .eq("store_id", storeLookup.store.id)
     .eq("status", "active")
+    .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle<{ id: string }>();
 
   if (existingCartError) {
@@ -133,6 +137,10 @@ export async function PUT(request: NextRequest) {
     }
 
     cart = createdCart;
+  }
+
+  if (!cart) {
+    return NextResponse.json({ error: "Unable to resolve an active cart." }, { status: 500 });
   }
 
   const normalizedSelections = [];

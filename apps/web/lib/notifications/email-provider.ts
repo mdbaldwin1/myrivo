@@ -5,6 +5,7 @@ export type SendTransactionalEmailInput = {
   to: string[];
   subject: string;
   text: string;
+  html?: string | null;
   replyTo?: string | null;
 };
 
@@ -27,6 +28,9 @@ async function sendWithResend(input: SendTransactionalEmailInput): Promise<SendT
     subject: input.subject,
     text: input.text
   };
+  if (input.html?.trim()) {
+    payload.html = input.html.trim();
+  }
   if (input.replyTo?.trim()) {
     payload.reply_to = input.replyTo.trim();
   }

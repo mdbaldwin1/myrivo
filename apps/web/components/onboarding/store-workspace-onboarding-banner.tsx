@@ -62,7 +62,7 @@ export function StoreWorkspaceOnboardingBanner({ progress }: StoreWorkspaceOnboa
   }
 
   return (
-    <section className="rounded-lg border border-amber-200 bg-amber-50/70 px-4 py-3">
+    <section className="mx-3 mb-3 mt-1.5 rounded-lg border border-amber-200 bg-amber-50/70 px-4 py-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-amber-900">Onboarding in progress</p>

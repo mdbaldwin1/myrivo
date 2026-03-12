@@ -66,7 +66,7 @@ export default async function StoreWorkspacePage({ params, searchParams }: Store
 
   if (loadError || !data) {
     return (
-      <DashboardPageScaffold title={`${activeStore.name} Control Tower`} description="Dashboard data is temporarily unavailable." className="p-4 lg:p-4">
+      <DashboardPageScaffold title={`${activeStore.name} Control Tower`} description="Dashboard data is temporarily unavailable." className="p-3">
         <AppAlert
           variant="error"
           message={loadError ?? "Unable to load dashboard data."}

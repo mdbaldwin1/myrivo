@@ -30,7 +30,7 @@ export function StoreDashboardShell({ data }: StoreDashboardShellProps) {
     <DashboardPageScaffold
       title={`${data.store.name} Control Tower`}
       description="Operational command center for urgent tasks, readiness, and performance."
-      className="p-4 lg:p-4"
+      className="p-3"
     >
       <StoreDashboardCommandBar storeSlug={data.store.slug} filters={data.filters} />
 

@@ -33,7 +33,7 @@ export default async function DashboardAdminModerationPage() {
     <DashboardPageScaffold
       title="Moderation"
       description="Review pending customer content and moderate at the platform level."
-      className="p-4 lg:p-4"
+      className="p-3"
       action={
         <ContextHelpLink
           href="/docs/moderation-workflows-and-escalation#moderation-sla-and-escalation"

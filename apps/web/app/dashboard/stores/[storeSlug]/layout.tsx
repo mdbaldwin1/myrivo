@@ -34,11 +34,7 @@ export default async function StoreWorkspaceLayout({ children, params }: StoreWo
 
   return (
     <>
-      {onboardingProgress ? (
-        <div className="px-4 pt-4 lg:px-6 lg:pt-5">
-          <StoreWorkspaceOnboardingBanner progress={onboardingProgress} />
-        </div>
-      ) : null}
+      {onboardingProgress ? <StoreWorkspaceOnboardingBanner progress={onboardingProgress} /> : null}
       {children}
     </>
   );

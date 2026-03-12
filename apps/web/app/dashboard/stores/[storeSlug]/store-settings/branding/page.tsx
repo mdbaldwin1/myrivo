@@ -1,5 +1,5 @@
-import { BrandingSettingsForm } from "@/components/dashboard/branding-settings-form";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
+import { StorefrontStudioHandoffPanel } from "@/components/dashboard/storefront-studio-handoff-panel";
 import { getOwnedStoreBundleForSlug } from "@/lib/stores/owner-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -25,10 +25,16 @@ export default async function StoreWorkspaceBrandingSettingsPage({ params }: Pag
 
   return (
     <section className="flex min-h-0 flex-1 flex-col">
-      <BrandingSettingsForm
-        initialBranding={bundle.branding}
-        header={<DashboardPageHeader title="Branding" description="Global design tokens and storefront structural styling." />}
-      />
+      <div className="space-y-3 p-3">
+        <DashboardPageHeader title="Branding" description="Theme tokens and storefront presentation now belong in Storefront Studio." />
+        <StorefrontStudioHandoffPanel
+          title="Branding has moved"
+          description="Colors, typography, layout, navigation, and browser/social assets now live in Storefront Studio so you can judge them against the real storefront canvas."
+          href={`/dashboard/stores/${storeSlug}/storefront-studio`}
+          ctaLabel="Open branding in Studio"
+          note="This route is being retired as part of the unified storefront-builder migration."
+        />
+      </div>
     </section>
   );
 }

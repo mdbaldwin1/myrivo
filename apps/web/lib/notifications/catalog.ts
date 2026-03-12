@@ -22,6 +22,18 @@ const CATALOG: Record<string, NotificationCatalogEntry> = {
     defaultSeverity: "info",
     defaultTargets: ["in_app"]
   },
+  "order.failed.customer": {
+    eventType: "order.failed.customer",
+    category: "order",
+    defaultSeverity: "warning",
+    defaultTargets: ["in_app"]
+  },
+  "order.cancelled.customer": {
+    eventType: "order.cancelled.customer",
+    category: "order",
+    defaultSeverity: "warning",
+    defaultTargets: ["in_app"]
+  },
   "order.fulfillment.shipped": {
     eventType: "order.fulfillment.shipped",
     category: "order",

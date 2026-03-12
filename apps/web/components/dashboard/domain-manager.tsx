@@ -848,14 +848,14 @@ export function DomainManager() {
                                       <span className="font-mono">{instruction.type}</span>
                                     </div>
                                   </td>
-                                  <td className="py-1 pr-3 align-middle">
+                                  <td className="group py-1 pr-3 align-middle">
                                     <div className="flex items-center gap-2">
                                       <span className="font-mono">{instruction.host}</span>
                                       <Button
                                         type="button"
                                         variant="ghost"
                                         size="icon"
-                                        className="h-7 w-7"
+                                        className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
                                         aria-label="Copy host"
                                         title="Copy host"
                                         onClick={() => void copyTextToClipboard(instruction.host, "Host")}
@@ -865,14 +865,14 @@ export function DomainManager() {
                                       </Button>
                                     </div>
                                   </td>
-                                  <td className="py-1 pr-3 align-middle">
+                                  <td className="group py-1 pr-3 align-middle">
                                     <div className="flex items-center gap-2">
                                       <span className="font-mono break-all">{instruction.value}</span>
                                       <Button
                                         type="button"
                                         variant="ghost"
                                         size="icon"
-                                        className="h-7 w-7"
+                                        className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
                                         aria-label="Copy value"
                                         title="Copy value"
                                         onClick={() => void copyTextToClipboard(instruction.value, "Value")}

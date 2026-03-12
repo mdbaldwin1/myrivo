@@ -1,6 +1,7 @@
 import { calculatePlatformFeeCents, resolveStoreFeeProfile, writeOrderFeeBreakdown } from "@/lib/billing/fees";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { sendOrderCreatedNotifications } from "@/lib/notifications/order-emails";
+import { buildStubCheckoutRpcPayload } from "@/lib/storefront/stub-checkout";
 
 type StorefrontCheckoutRecord = {
   id: string;
@@ -143,13 +144,17 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
     }
   }
 
-  const { data: rpcResult, error: rpcError } = await supabase.rpc("stub_checkout_create_paid_order", {
-    p_store_slug: checkout.store_slug,
-    p_customer_email: checkout.customer_email,
-    p_items: checkout.items,
-    p_stub_payment_ref: paymentIntentId,
-    p_promo_code: checkout.promo_code
-  });
+  const { data: rpcResult, error: rpcError } = await supabase.rpc(
+    "stub_checkout_create_paid_order",
+    buildStubCheckoutRpcPayload({
+      storeSlug: checkout.store_slug,
+      customerEmail: checkout.customer_email,
+      items: checkout.items,
+      stubPaymentRef: paymentIntentId,
+      discountCents: 0,
+      promoCode: checkout.promo_code
+    })
+  );
 
   if (rpcError) {
     const { error: markFailedError } = await supabase

@@ -200,7 +200,7 @@ export function ContentWorkspaceAboutForm({ header }: ContentWorkspaceAboutFormP
         void save();
       }}
     >
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 lg:p-4">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {header}
         {loading ? <p className="text-sm text-muted-foreground">Loading section...</p> : null}
 

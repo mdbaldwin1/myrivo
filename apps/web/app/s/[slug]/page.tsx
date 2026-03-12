@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { StorefrontPage } from "@/components/storefront/storefront-page";
+import { StorefrontRuntimeProvider } from "@/components/storefront/storefront-runtime-provider";
 import { isReviewsEnabledForStoreSlug } from "@/lib/reviews/feature-gating";
 import { buildReviewSummary, listPublishedReviews } from "@/lib/reviews/read";
 import { loadStorefrontData } from "@/lib/storefront/load-storefront-data";
+import { createStorefrontRuntime } from "@/lib/storefront/runtime";
 import { buildAggregateRatingSchema, buildReviewSchemaList, resolveStorefrontReviewSeoConfig } from "@/lib/storefront/reviews-seo";
 import { buildStorefrontCanonicalUrl, resolveStorefrontCanonicalRedirect } from "@/lib/storefront/seo";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -142,8 +144,14 @@ export default async function StorefrontSlugPage({ params }: StorefrontRoutePara
     };
   }
 
+  const runtime = createStorefrontRuntime({
+    ...data,
+    mode: "live",
+    surface: "home"
+  });
+
   return (
-    <>
+    <StorefrontRuntimeProvider runtime={runtime}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteSchema) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessSchema) }} />
@@ -157,6 +165,6 @@ export default async function StorefrontSlugPage({ params }: StorefrontRoutePara
         view="home"
         reviewsEnabled={reviewsEnabled}
       />
-    </>
+    </StorefrontRuntimeProvider>
   );
 }

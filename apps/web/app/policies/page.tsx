@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { StorefrontPoliciesPage } from "@/components/storefront/storefront-policies-page";
 import { loadStorefrontData } from "@/lib/storefront/load-storefront-data";
+import { createStorefrontRuntime } from "@/lib/storefront/runtime";
+import { StorefrontRuntimeProvider } from "@/components/storefront/storefront-runtime-provider";
 
 export const dynamic = "force-dynamic";
 
@@ -16,12 +18,20 @@ export default async function PoliciesPage({ searchParams }: PoliciesPageProps) 
     notFound();
   }
 
+  const runtime = createStorefrontRuntime({
+    ...data,
+    mode: "live",
+    surface: "policies"
+  });
+
   return (
-    <StorefrontPoliciesPage
-      store={data.store}
-      viewer={data.viewer}
-      branding={data.branding}
-      settings={data.settings}
-    />
+    <StorefrontRuntimeProvider runtime={runtime}>
+      <StorefrontPoliciesPage
+        store={data.store}
+        viewer={data.viewer}
+        branding={data.branding}
+        settings={data.settings}
+      />
+    </StorefrontRuntimeProvider>
   );
 }

@@ -222,13 +222,21 @@ export function parseShippingWebhook(requestBody: unknown): ShippingTrackingUpda
   return normalized;
 }
 
-export function mapShipmentStatusToFulfillmentStatus(status: string): "shipped" | "delivered" {
+export function mapShipmentStatusToFulfillmentStatus(status: string): "shipped" | "delivered" | null {
   const normalized = status.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
   if (normalized === "delivered") {
     return "delivered";
   }
 
-  return "shipped";
+  if (["in_transit", "out_for_delivery", "available_for_pickup", "return_to_sender", "failure"].includes(normalized)) {
+    return "shipped";
+  }
+
+  return null;
 }
 
 const fulfillmentStatusRank: Record<FulfillmentStatus, number> = {
@@ -238,7 +246,10 @@ const fulfillmentStatusRank: Record<FulfillmentStatus, number> = {
   delivered: 3
 };
 
-export function resolveMonotonicFulfillmentStatus(current: FulfillmentStatus, candidate: "shipped" | "delivered"): FulfillmentStatus {
+export function resolveMonotonicFulfillmentStatus(current: FulfillmentStatus, candidate: "shipped" | "delivered" | null): FulfillmentStatus {
+  if (!candidate) {
+    return current;
+  }
   return fulfillmentStatusRank[candidate] >= fulfillmentStatusRank[current] ? candidate : current;
 }
 

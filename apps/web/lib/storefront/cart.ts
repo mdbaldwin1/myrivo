@@ -44,3 +44,24 @@ export function writeStorefrontCart(entries: StorefrontCartEntry[]) {
   window.localStorage.setItem(STOREFRONT_CART_STORAGE_KEY, JSON.stringify(entries));
 }
 
+export async function syncStorefrontCart(entries: StorefrontCartEntry[], storeSlug: string) {
+  if (typeof window === "undefined" || !storeSlug.trim()) {
+    return;
+  }
+
+  try {
+    await fetch(`/api/customer/cart?store=${encodeURIComponent(storeSlug)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items: entries.map((entry) => ({
+          productId: entry.productId,
+          variantId: entry.variantId,
+          quantity: entry.quantity
+        }))
+      })
+    });
+  } catch {
+    // Ignore sync failures here and let the local cart remain the immediate source of truth.
+  }
+}

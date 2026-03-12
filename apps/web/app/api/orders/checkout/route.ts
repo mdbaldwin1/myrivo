@@ -11,6 +11,7 @@ import { calculateDiscountCents } from "@/lib/promotions/calculate-discount";
 import { checkRateLimit } from "@/lib/security/rate-limit";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
+import { buildStubCheckoutRpcPayload } from "@/lib/storefront/stub-checkout";
 import { getStripeClient } from "@/lib/stripe/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -590,13 +591,17 @@ export async function POST(request: NextRequest) {
   const shouldUseStubMode = isStripeStubMode() || Boolean(billingProfile?.test_mode_enabled);
 
   if (shouldUseStubMode) {
-    const { data, error } = await supabase.rpc("stub_checkout_create_paid_order", {
-      p_store_slug: storeSlug,
-      p_customer_email: email,
-      p_items: rpcItems,
-      p_stub_payment_ref: `stub_pi_${Date.now()}`,
-      p_promo_code: promoCode ? promoCode.toUpperCase() : null
-    });
+    const { data, error } = await supabase.rpc(
+      "stub_checkout_create_paid_order",
+      buildStubCheckoutRpcPayload({
+        storeSlug,
+        customerEmail: email,
+        items: rpcItems,
+        stubPaymentRef: `stub_pi_${Date.now()}`,
+        discountCents,
+        promoCode: promoCode ? promoCode.toUpperCase() : null
+      })
+    );
 
     if (error) {
       const message = error.message || "Unable to complete checkout.";

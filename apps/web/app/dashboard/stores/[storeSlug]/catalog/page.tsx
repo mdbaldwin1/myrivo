@@ -82,7 +82,7 @@ export default async function StoreWorkspaceCatalogPage({ params }: PageProps) {
   }
 
   return (
-    <DashboardPageScaffold title="Catalog" description="Manage products, stock, and publishing status." className="p-4 lg:p-4">
+    <DashboardPageScaffold title="Catalog" description="Manage products, stock, and publishing status." className="p-3">
       <ProductManager initialProducts={normalizeProducts(products)} />
     </DashboardPageScaffold>
   );

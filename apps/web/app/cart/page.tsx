@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { StorefrontCartPage } from "@/components/storefront/storefront-cart-page";
 import { loadStorefrontData } from "@/lib/storefront/load-storefront-data";
+import { createStorefrontRuntime } from "@/lib/storefront/runtime";
+import { StorefrontRuntimeProvider } from "@/components/storefront/storefront-runtime-provider";
 
 export const dynamic = "force-dynamic";
 
@@ -16,5 +18,15 @@ export default async function CartPage({ searchParams }: CartPageProps) {
     notFound();
   }
 
-  return <StorefrontCartPage store={data.store} viewer={data.viewer} branding={data.branding} settings={data.settings} products={data.products} />;
+  const runtime = createStorefrontRuntime({
+    ...data,
+    mode: "live",
+    surface: "cart"
+  });
+
+  return (
+    <StorefrontRuntimeProvider runtime={runtime}>
+      <StorefrontCartPage store={data.store} viewer={data.viewer} branding={data.branding} settings={data.settings} products={data.products} />
+    </StorefrontRuntimeProvider>
+  );
 }

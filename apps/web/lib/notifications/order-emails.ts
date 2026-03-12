@@ -1,4 +1,6 @@
 import { getAppUrl, getServerEnv } from "@/lib/env";
+import { createEmailStudioDocumentFromSection, type EmailStudioDocument, type EmailStudioTemplateId } from "@/lib/email-studio/model";
+import { renderEmailStudioTemplate } from "@/lib/email-studio/render";
 import { dispatchNotification } from "@/lib/notifications/dispatcher";
 import { sendTransactionalEmail } from "@/lib/notifications/email-provider";
 import { notifyOwnersOrderCreated, notifyOwnersOrderFulfillmentStatus } from "@/lib/notifications/owner-notifications";
@@ -39,18 +41,7 @@ type OrderEmailContext = {
   pickupWindowEndAt: string | null;
   pickupTimezone: string | null;
   items: OrderEmailItem[];
-  emailTemplates: {
-    senderName: string | null;
-    replyToEmail: string | null;
-    customerConfirmationSubjectTemplate: string | null;
-    customerConfirmationBodyTemplate: string | null;
-    ownerNewOrderSubjectTemplate: string | null;
-    ownerNewOrderBodyTemplate: string | null;
-    shippedSubjectTemplate: string | null;
-    shippedBodyTemplate: string | null;
-    deliveredSubjectTemplate: string | null;
-    deliveredBodyTemplate: string | null;
-  };
+  emailDocument: EmailStudioDocument;
 };
 
 type PickupSummaryInput = Pick<
@@ -59,6 +50,9 @@ type PickupSummaryInput = Pick<
 >;
 
 const CUSTOMER_CONFIRMATION_ACTION = "email_order_confirmation_sent";
+const CUSTOMER_ORDER_FAILED_ACTION = "email_order_failed_sent";
+const CUSTOMER_ORDER_CANCELLED_ACTION = "email_order_cancelled_sent";
+const CUSTOMER_PICKUP_UPDATED_ACTION = "email_order_pickup_updated_sent";
 const OWNER_NEW_ORDER_ACTION = "email_owner_new_order_sent";
 const ORDER_SHIPPED_ACTION = "email_order_shipped_sent";
 const ORDER_SHIPPED_WITH_TRACKING_ACTION = "email_order_shipped_with_tracking_sent";
@@ -142,14 +136,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function getTemplateString(record: Record<string, unknown> | null | undefined, key: string) {
-  if (!record) {
-    return null;
-  }
-  const value = record[key];
-  return typeof value === "string" && value.trim().length > 0 ? value : null;
-}
-
 function getSnapshotString(snapshot: Record<string, unknown> | null, keys: string[]) {
   if (!snapshot) {
     return "";
@@ -163,10 +149,6 @@ function getSnapshotString(snapshot: Record<string, unknown> | null, keys: strin
   }
 
   return "";
-}
-
-function applyTemplate(template: string, values: Record<string, string>) {
-  return Object.entries(values).reduce((resolved, [key, value]) => resolved.replaceAll(`{${key}}`, value), template);
 }
 
 function formatMoney(cents: number, currency: string) {
@@ -276,7 +258,7 @@ function buildTemplateValues(context: OrderEmailContext, values: Record<string, 
   const customerLastName = context.customerLastName?.trim() ?? "";
   const pickup = resolvePickupTemplateFields(context);
   const resolvedReplyTo = resolveEffectiveReplyTo(
-    context.emailTemplates.replyToEmail,
+    context.emailDocument.replyToEmail,
     context.supportEmail,
     getServerEnv().MYRIVO_EMAIL_REPLY_TO
   );
@@ -318,6 +300,10 @@ export function buildPickupSummaryText(input: PickupSummaryInput) {
   return resolvePickupTemplateFields(input).details;
 }
 
+function renderOrderEmailTemplate(context: OrderEmailContext, templateId: EmailStudioTemplateId, values: Record<string, string>) {
+  return renderEmailStudioTemplate(context.emailDocument.templates[templateId], values, context.emailDocument.theme, context.storeName);
+}
+
 function isStoreEligibleForBrandedSender(storeId: string) {
   const env = getServerEnv();
   const policy = env.MYRIVO_BRANDED_EMAIL_POLICY ?? "disabled";
@@ -341,8 +327,8 @@ function resolveSenderConfig(context: OrderEmailContext): ResolvedSenderConfig {
   const platformFrom = env.MYRIVO_EMAIL_PLATFORM_FROM?.trim() || env.MYRIVO_EMAIL_FROM?.trim() || null;
   const defaultReplyTo = normalizeEmailOrNull(env.MYRIVO_EMAIL_REPLY_TO);
   const brandedLocalPart = env.MYRIVO_EMAIL_BRANDED_LOCAL_PART?.trim() || "orders";
-  const senderName = context.emailTemplates.senderName?.trim() || context.storeName;
-  const replyTo = resolveEffectiveReplyTo(context.emailTemplates.replyToEmail, context.supportEmail, defaultReplyTo);
+  const senderName = context.emailDocument.senderName?.trim() || context.storeName;
+  const replyTo = resolveEffectiveReplyTo(context.emailDocument.replyToEmail, context.supportEmail, defaultReplyTo);
 
   const canUseBrandedSender =
     Boolean(context.primaryDomain) &&
@@ -371,7 +357,7 @@ function resolveSenderConfig(context: OrderEmailContext): ResolvedSenderConfig {
   };
 }
 
-async function sendEmail(context: OrderEmailContext, to: string[], subject: string, text: string) {
+async function sendEmail(context: OrderEmailContext, to: string[], subject: string, text: string, html?: string | null) {
   const sender = resolveSenderConfig(context);
   if (!sender.from || to.length === 0) {
     return { sent: false, sender };
@@ -382,6 +368,7 @@ async function sendEmail(context: OrderEmailContext, to: string[], subject: stri
     to,
     subject,
     text,
+    html,
     replyTo: sender.replyTo
   });
   if (!result.ok) {
@@ -457,7 +444,6 @@ async function loadOrderEmailContext(orderId: string): Promise<OrderEmailContext
 
   const policiesPage = isRecord(experienceContent?.policies_page_json) ? experienceContent?.policies_page_json : {};
   const emailsSection = isRecord(experienceContent?.emails_json) ? experienceContent?.emails_json : {};
-  const transactional = isRecord(emailsSection.transactional) ? emailsSection.transactional : {};
   const sectionSupportEmail = typeof policiesPage.supportEmail === "string" ? policiesPage.supportEmail : null;
 
   const env = getServerEnv();
@@ -503,18 +489,7 @@ async function loadOrderEmailContext(orderId: string): Promise<OrderEmailContext
         unitPriceCents: item.unit_price_cents
       };
     }),
-    emailTemplates: {
-      senderName: getTemplateString(transactional, "senderName"),
-      replyToEmail: getTemplateString(transactional, "replyToEmail"),
-      customerConfirmationSubjectTemplate: getTemplateString(transactional, "customerConfirmationSubjectTemplate"),
-      customerConfirmationBodyTemplate: getTemplateString(transactional, "customerConfirmationBodyTemplate"),
-      ownerNewOrderSubjectTemplate: getTemplateString(transactional, "ownerNewOrderSubjectTemplate"),
-      ownerNewOrderBodyTemplate: getTemplateString(transactional, "ownerNewOrderBodyTemplate"),
-      shippedSubjectTemplate: getTemplateString(transactional, "shippedSubjectTemplate"),
-      shippedBodyTemplate: getTemplateString(transactional, "shippedBodyTemplate"),
-      deliveredSubjectTemplate: getTemplateString(transactional, "deliveredSubjectTemplate"),
-      deliveredBodyTemplate: getTemplateString(transactional, "deliveredBodyTemplate")
-    }
+    emailDocument: createEmailStudioDocumentFromSection(emailsSection, store?.name ?? "Your store")
   };
 }
 
@@ -589,7 +564,13 @@ async function resolveCustomerRecipientUserId(customerEmail: string) {
 
 async function notifyCustomerOrderLifecycle(
   context: OrderEmailContext,
-  eventType: "order.created.customer" | "order.pickup.updated.customer" | "order.fulfillment.shipped.customer" | "order.fulfillment.delivered.customer",
+  eventType:
+    | "order.created.customer"
+    | "order.pickup.updated.customer"
+    | "order.fulfillment.shipped.customer"
+    | "order.fulfillment.delivered.customer"
+    | "order.failed.customer"
+    | "order.cancelled.customer",
   title: string,
   body: string
 ) {
@@ -612,6 +593,154 @@ async function notifyCustomerOrderLifecycle(
       storeName: context.storeName
     }
   });
+}
+
+function buildCustomerOrderStatusEmail(status: "failed" | "cancelled", context: OrderEmailContext) {
+  const templateValues = buildTemplateValues(context, { status });
+  return renderOrderEmailTemplate(context, status === "failed" ? "failed" : "cancelled", templateValues);
+}
+
+export async function sendOrderStatusNotification(orderId: string, status: "failed" | "cancelled" | "paid") {
+  if (status === "paid") {
+    await sendOrderCreatedNotifications(orderId);
+    return;
+  }
+
+  try {
+    const context = await loadOrderEmailContext(orderId);
+    if (!context) {
+      return;
+    }
+
+    const auditAction = status === "failed" ? CUSTOMER_ORDER_FAILED_ACTION : CUSTOMER_ORDER_CANCELLED_ACTION;
+    const alreadySent = await hasNotificationAudit(orderId, auditAction);
+    if (alreadySent) {
+      return;
+    }
+
+    const rendered = buildCustomerOrderStatusEmail(status, context);
+    const sendResult = await sendEmail(context, [context.customerEmail], rendered.subject, rendered.text, rendered.html);
+    if (sendResult.sent) {
+      await writeNotificationAudit(context, auditAction, {
+        status,
+        recipient: context.customerEmail,
+        senderMode: sendResult.sender.mode,
+        senderReason: sendResult.sender.reason,
+        from: sendResult.sender.from
+      });
+    }
+
+    await notifyCustomerOrderLifecycle(
+      context,
+      status === "failed" ? "order.failed.customer" : "order.cancelled.customer",
+      status === "failed" ? "Order update required" : "Order cancelled",
+      status === "failed"
+        ? `There was a problem finalizing order ${context.orderId.slice(0, 8)}.`
+        : `Order ${context.orderId.slice(0, 8)} was cancelled.`
+    );
+  } catch (error) {
+    console.error("sendOrderStatusNotification failed", error);
+  }
+}
+
+type PickupChangeSnapshot = {
+  locationName: string;
+  address: string;
+  window: string;
+};
+
+function buildPickupChangeDetails(snapshot: PickupChangeSnapshot | null) {
+  if (!snapshot) {
+    return "";
+  }
+
+  return [
+    "Fulfillment: Pickup",
+    `Pickup Location: ${snapshot.locationName}`,
+    snapshot.address ? `Address: ${snapshot.address}` : "",
+    `Pickup Window: ${snapshot.window}`
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function resolvePickupChangeSnapshot(input: PickupSummaryInput): PickupChangeSnapshot {
+  const pickup = resolvePickupTemplateFields(input);
+  return {
+    locationName: pickup.locationName,
+    address: pickup.address,
+    window: pickup.window
+  };
+}
+
+export async function sendOrderPickupUpdatedNotification(
+  orderId: string,
+  options?: {
+    reason?: string | null;
+    previousPickup?: PickupSummaryInput;
+  }
+) {
+  try {
+    const context = await loadOrderEmailContext(orderId);
+    if (!context || context.fulfillmentMethod !== "pickup") {
+      return;
+    }
+
+    const pickupSummary = buildPickupSummaryText(context);
+    const previousPickup = options?.previousPickup ? resolvePickupChangeSnapshot(options.previousPickup) : null;
+    const nextPickup = resolvePickupChangeSnapshot(context);
+    const templateValues = buildTemplateValues(context, {
+      previousPickupDetails: buildPickupChangeDetails(previousPickup),
+      pickupUpdateReason: options?.reason?.trim() || ""
+    });
+    const defaultText = [
+      `The store updated the pickup details for your order with ${context.storeName}.`,
+      "",
+      `Order: ${context.orderId}`,
+      previousPickup ? `Previous pickup: ${previousPickup.locationName}${previousPickup.address ? `, ${previousPickup.address}` : ""} · ${previousPickup.window}` : "",
+      `New pickup: ${nextPickup.locationName}${nextPickup.address ? `, ${nextPickup.address}` : ""} · ${nextPickup.window}`,
+      options?.reason?.trim() ? `Reason: ${options.reason.trim()}` : "",
+      "",
+      pickupSummary,
+      "",
+      `View order: ${templateValues.orderUrl}`,
+      `Back to store: ${templateValues.storeUrl}`,
+      "",
+      context.supportEmail ? `Questions? Contact ${context.supportEmail}.` : "Questions? Reply to this email."
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const rendered = renderOrderEmailTemplate(context, "pickupUpdated", {
+      ...templateValues,
+      pickupDetails: pickupSummary
+    });
+    const text = rendered.text || defaultText;
+
+    const sendResult = await sendEmail(context, [context.customerEmail], rendered.subject, text, rendered.html);
+    if (sendResult.sent) {
+      await writeNotificationAudit(context, CUSTOMER_PICKUP_UPDATED_ACTION, {
+        orderId: context.orderId,
+        pickupWindowStartAt: context.pickupWindowStartAt,
+        pickupWindowEndAt: context.pickupWindowEndAt,
+        previousPickup: previousPickup ?? null,
+        nextPickup,
+        reason: options?.reason?.trim() || null,
+        recipient: context.customerEmail,
+        senderMode: sendResult.sender.mode,
+        senderReason: sendResult.sender.reason,
+        from: sendResult.sender.from
+      });
+    }
+
+    await notifyCustomerOrderLifecycle(
+      context,
+      "order.pickup.updated.customer",
+      "Pickup details updated",
+      `The store updated pickup details for order ${context.orderId.slice(0, 8)}.`
+    );
+  } catch (error) {
+    console.error("sendOrderPickupUpdatedNotification failed", error);
+  }
 }
 
 export async function sendOrderCreatedNotifications(orderId: string) {
@@ -640,44 +769,17 @@ export async function sendOrderCreatedNotifications(orderId: string) {
     });
 
     if (!customerAlreadySent) {
-      const customerSubject =
-        context.emailTemplates.customerConfirmationSubjectTemplate
-          ? applyTemplate(context.emailTemplates.customerConfirmationSubjectTemplate, customerTemplateValues)
-          : `Order confirmation #${context.orderId.slice(0, 8)} - ${context.storeName}`;
-      const customerText = [
-        `Thanks for your order from ${context.storeName}.`,
-        "",
-        `Order: ${context.orderId}`,
-        `Placed: ${new Date(context.createdAt).toLocaleString()}`,
-        pickupSummary,
-        "",
-        "Items:",
-        orderSummary,
-        "",
-        `Subtotal: ${formatMoney(context.subtotalCents, context.currency)}`,
-        `Discount: ${formatMoney(context.discountCents, context.currency)}`,
-        `Total: ${formatMoney(context.totalCents, context.currency)}`,
-        context.promoCode ? `Promo: ${context.promoCode}` : "",
-        "",
-        `View order: ${customerTemplateValues.orderUrl}`,
-        `Back to store: ${customerTemplateValues.storeUrl}`,
-        "",
-        context.supportEmail ? `Need help? Reply to ${context.supportEmail}.` : "Need help? Reply to this email."
-      ]
-        .filter(Boolean)
-        .join("\n");
-      const resolvedCustomerText =
-        context.emailTemplates.customerConfirmationBodyTemplate
-          ? applyTemplate(
-              context.emailTemplates.customerConfirmationBodyTemplate,
-              {
-                ...customerTemplateValues,
-                pickupDetails: pickupSummary
-              }
-            )
-          : customerText;
-
-      const customerSendResult = await sendEmail(context, [context.customerEmail], customerSubject, resolvedCustomerText);
+      const renderedCustomer = renderOrderEmailTemplate(context, "customerConfirmation", {
+        ...customerTemplateValues,
+        pickupDetails: pickupSummary
+      });
+      const customerSendResult = await sendEmail(
+        context,
+        [context.customerEmail],
+        renderedCustomer.subject,
+        renderedCustomer.text,
+        renderedCustomer.html
+      );
       if (customerSendResult.sent) {
         await writeNotificationAudit(context, CUSTOMER_CONFIRMATION_ACTION, {
           recipient: context.customerEmail,
@@ -689,37 +791,17 @@ export async function sendOrderCreatedNotifications(orderId: string) {
     }
 
     if (!ownerAlreadySent && context.ownerEmails.length > 0) {
-      const ownerSubject =
-        context.emailTemplates.ownerNewOrderSubjectTemplate
-          ? applyTemplate(context.emailTemplates.ownerNewOrderSubjectTemplate, ownerTemplateValues)
-          : `New order ${context.orderId.slice(0, 8)} - ${context.storeName}`;
-      const ownerText = [
-        "A new order was placed.",
-        "",
-        `Order: ${context.orderId}`,
-        `Customer: ${context.customerEmail}`,
-        `Placed: ${new Date(context.createdAt).toLocaleString()}`,
-        pickupSummary,
-        "",
-        "Items:",
-        orderSummary,
-        "",
-        `Total: ${formatMoney(context.totalCents, context.currency)}`,
-        "",
-        `Open dashboard: ${ownerDashboardLink}`
-      ].join("\n");
-      const resolvedOwnerText =
-        context.emailTemplates.ownerNewOrderBodyTemplate
-          ? applyTemplate(
-              context.emailTemplates.ownerNewOrderBodyTemplate,
-              {
-                ...ownerTemplateValues,
-                pickupDetails: pickupSummary
-              }
-            )
-          : ownerText;
-
-      const ownerSendResult = await sendEmail(context, context.ownerEmails, ownerSubject, resolvedOwnerText);
+      const renderedOwner = renderOrderEmailTemplate(context, "ownerNewOrder", {
+        ...ownerTemplateValues,
+        pickupDetails: pickupSummary
+      });
+      const ownerSendResult = await sendEmail(
+        context,
+        context.ownerEmails,
+        renderedOwner.subject,
+        renderedOwner.text,
+        renderedOwner.html
+      );
       if (ownerSendResult.sent) {
         await writeNotificationAudit(context, OWNER_NEW_ORDER_ACTION, {
           recipients: context.ownerEmails,
@@ -773,72 +855,14 @@ export async function sendOrderShippingNotification(orderId: string, status: "sh
       return;
     }
 
-    const subject =
-      status === "shipped"
-        ? context.emailTemplates.shippedSubjectTemplate
-          ? applyTemplate(
-              context.emailTemplates.shippedSubjectTemplate,
-              buildTemplateValues(context, {
-                status,
-                trackingUrl: context.trackingUrl ?? "",
-                trackingNumber: context.trackingNumber ?? "",
-                carrier: context.carrier ?? ""
-              })
-            )
-          : `Your order ${context.orderId.slice(0, 8)} has shipped`
-        : context.emailTemplates.deliveredSubjectTemplate
-          ? applyTemplate(
-              context.emailTemplates.deliveredSubjectTemplate,
-              buildTemplateValues(context, {
-                status,
-                trackingUrl: context.trackingUrl ?? "",
-                trackingNumber: context.trackingNumber ?? "",
-                carrier: context.carrier ?? ""
-              })
-            )
-          : `Your order ${context.orderId.slice(0, 8)} was delivered`;
-    const trackingLine =
-      context.trackingUrl || context.trackingNumber
-        ? `Tracking: ${context.trackingUrl ?? context.trackingNumber}`
-        : "Tracking details are not yet available.";
     const templateValues = buildTemplateValues(context, {
       status,
       trackingUrl: context.trackingUrl ?? "",
       trackingNumber: context.trackingNumber ?? "",
       carrier: context.carrier ?? ""
     });
-
-    const text = [
-      `Update from ${context.storeName}: your order is ${status}.`,
-      "",
-      `Order: ${context.orderId}`,
-      `Status: ${status}`,
-      trackingLine,
-      context.carrier ? `Carrier: ${context.carrier}` : "",
-      `View order: ${templateValues.orderUrl}`,
-      `Track order: ${templateValues.trackingUrl}`,
-      `Back to store: ${templateValues.storeUrl}`,
-      "",
-      context.supportEmail ? `Questions? Contact ${context.supportEmail}.` : "Questions? Reply to this email."
-    ]
-      .filter(Boolean)
-      .join("\n");
-    const resolvedText =
-      status === "shipped"
-        ? context.emailTemplates.shippedBodyTemplate
-          ? applyTemplate(
-              context.emailTemplates.shippedBodyTemplate,
-              templateValues
-            )
-          : text
-        : context.emailTemplates.deliveredBodyTemplate
-          ? applyTemplate(
-              context.emailTemplates.deliveredBodyTemplate,
-              templateValues
-            )
-          : text;
-
-    const sendResult = await sendEmail(context, [context.customerEmail], subject, resolvedText);
+    const rendered = renderOrderEmailTemplate(context, status === "shipped" ? "shipped" : "delivered", templateValues);
+    const sendResult = await sendEmail(context, [context.customerEmail], rendered.subject, rendered.text, rendered.html);
     if (sendResult.sent) {
       await writeNotificationAudit(context, action, {
         status,

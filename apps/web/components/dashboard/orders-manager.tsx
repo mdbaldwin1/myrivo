@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
 import { ContextHelpLink } from "@/components/dashboard/context-help-link";
 import { Flyout } from "@/components/ui/flyout";
 import { OrderDetailPanel } from "@/components/dashboard/order-detail-panel";
+import { OrderPickupOverridePanel } from "@/components/dashboard/order-pickup-override-panel";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,7 +40,13 @@ type OrderRow = Pick<
   | "subtotal_cents"
   | "total_cents"
   | "status"
+  | "fulfillment_method"
+  | "fulfillment_label"
   | "fulfillment_status"
+  | "pickup_location_id"
+  | "pickup_window_start_at"
+  | "pickup_window_end_at"
+  | "pickup_timezone"
   | "discount_cents"
   | "promo_code"
   | "carrier"
@@ -89,22 +96,29 @@ function getFeeBreakdown(order: OrderRow): OrderFeeBreakdown | null {
 }
 
 export function OrdersManager({ initialOrders }: OrdersManagerProps) {
+  const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const activeStoreSlug = getStoreSlugFromDashboardPathname(pathname);
   const pickListHref = buildStoreWorkspacePath(activeStoreSlug, "/orders/pick-list", "/dashboard/stores");
   const [orders, setOrders] = useState(initialOrders);
-  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [shippingOrderId, setShippingOrderId] = useState<string | null>(null);
   const [shippingCarrier, setShippingCarrier] = useState("usps");
   const [trackingNumber, setTrackingNumber] = useState("");
   const [shippingInitialCarrier, setShippingInitialCarrier] = useState("usps");
   const [shippingInitialTrackingNumber, setShippingInitialTrackingNumber] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | OrderStatus>("all");
+  const [pickupOverrideOrderId, setPickupOverrideOrderId] = useState<string | null>(null);
+  const [pickupOverrideDirty, setPickupOverrideDirty] = useState(false);
+  const [pickupOverrideSaving, setPickupOverrideSaving] = useState(false);
+  const [pickupOverrideError, setPickupOverrideError] = useState<string | null>(null);
+  const [orderDetailRefreshToken, setOrderDetailRefreshToken] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [savingShipment, setSavingShipment] = useState(false);
   const [syncingOrderId, setSyncingOrderId] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [shippingError, setShippingError] = useState<string | null>(null);
+  const selectedOrderId = searchParams.get("orderId");
 
   const visibleOrders = useMemo(
     () => (statusFilter === "all" ? orders : orders.filter((order) => order.status === statusFilter)),
@@ -114,11 +128,37 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
     Boolean(shippingOrderId) &&
     (shippingCarrier !== shippingInitialCarrier || trackingNumber.trim() !== shippingInitialTrackingNumber.trim());
 
+  function updateOrderDetailUrl(orderId: string | null) {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    if (orderId) {
+      nextParams.set("orderId", orderId);
+    } else {
+      nextParams.delete("orderId");
+    }
+    const nextQuery = nextParams.toString();
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+  }
+
+  function openOrderDetail(orderId: string) {
+    updateOrderDetailUrl(orderId);
+  }
+
+  function closeOrderDetail() {
+    updateOrderDetailUrl(null);
+  }
+
   function closeShippingFlyout() {
     setShippingOrderId(null);
     setTrackingNumber("");
     setShippingCarrier("usps");
     setShippingError(null);
+  }
+
+  function closePickupOverrideFlyout() {
+    setPickupOverrideOrderId(null);
+    setPickupOverrideDirty(false);
+    setPickupOverrideSaving(false);
+    setPickupOverrideError(null);
   }
 
   async function updateStatus(orderId: string, status: OrderStatus) {
@@ -252,7 +292,7 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
     <DashboardPageScaffold
       title="Orders"
       description="Track order status, ship orders, and keep delivery status synced."
-      className="p-4 lg:p-4"
+      className="p-3"
       action={
         <RowActions align="start">
           <Button type="button" variant="outline" size="sm" asChild>
@@ -369,9 +409,14 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
                       </TableCell>
                       <TableCell>
                         <RowActions align="start">
-                          <RowActionButton type="button" onClick={() => setSelectedOrderId(order.id)}>
+                          <RowActionButton type="button" onClick={() => openOrderDetail(order.id)}>
                             View
                           </RowActionButton>
+                          {order.fulfillment_method === "pickup" && order.fulfillment_status !== "delivered" ? (
+                            <RowActionButton type="button" onClick={() => setPickupOverrideOrderId(order.id)}>
+                              Reschedule pickup
+                            </RowActionButton>
+                          ) : null}
                           <RowActionButton
                             type="button"
                             onClick={() => {
@@ -412,9 +457,66 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
               </TableBody>
             </Table>
           </div>
-          <OrderDetailPanel orderId={selectedOrderId} onClose={() => setSelectedOrderId(null)} />
         </CardContent>
       </Card>
+
+      <Flyout
+        open={Boolean(selectedOrderId)}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeOrderDetail();
+          }
+        }}
+        title="Order Detail"
+        description="Customer, payment, fulfillment, and line-item detail for this order."
+      >
+        <OrderDetailPanel
+          orderId={selectedOrderId}
+          onClose={closeOrderDetail}
+          onReschedulePickup={(orderId) => setPickupOverrideOrderId(orderId)}
+          refreshToken={orderDetailRefreshToken}
+        />
+      </Flyout>
+
+      <Flyout
+        open={Boolean(pickupOverrideOrderId)}
+        onOpenChange={(open) => {
+          if (!open) {
+            closePickupOverrideFlyout();
+          }
+        }}
+        confirmDiscardOnClose
+        isDirty={pickupOverrideDirty}
+        onDiscardConfirm={closePickupOverrideFlyout}
+        title="Reschedule pickup"
+        description="Override a customer-selected pickup slot only when necessary. Saving sends the customer an immediate update."
+        footer={({ requestClose }) => (
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={requestClose}>
+              Close
+            </Button>
+            <Button type="submit" form="pickup-override-form" disabled={pickupOverrideSaving}>
+              {pickupOverrideSaving ? "Saving..." : "Save pickup override"}
+            </Button>
+          </div>
+        )}
+      >
+        <AppAlert variant="error" message={pickupOverrideError} />
+        {pickupOverrideOrderId ? (
+          <OrderPickupOverridePanel
+            orderId={pickupOverrideOrderId}
+            onDirtyChange={setPickupOverrideDirty}
+            onSavingChange={setPickupOverrideSaving}
+            onError={setPickupOverrideError}
+            onSaved={(order) => {
+              setOrders((current) => current.map((entry) => (entry.id === order.id ? order : entry)));
+              setOrderDetailRefreshToken((current) => current + 1);
+              notify.success("Pickup details updated. Customer notification sent.");
+              closePickupOverrideFlyout();
+            }}
+          />
+        ) : null}
+      </Flyout>
 
       <Flyout
         open={Boolean(shippingOrderId)}

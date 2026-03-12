@@ -48,6 +48,84 @@ beforeEach(() => {
 });
 
 describe("customer cart route", () => {
+  test("GET reads the newest active cart without failing on duplicate active carts", async () => {
+    serverFromMock.mockImplementation((table: string) => {
+      if (table === "stores") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({
+                data: { id: "store-1", slug: "curby", status: "active" },
+                error: null
+              }))
+            }))
+          }))
+        };
+      }
+
+      if (table === "customer_carts") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    limit: vi.fn(() => ({
+                      maybeSingle: vi.fn(async () => ({
+                        data: { id: "cart-newest", created_at: "2026-03-12T00:00:00.000Z" },
+                        error: null
+                      }))
+                    }))
+                  }))
+                }))
+              }))
+            }))
+          }))
+        };
+      }
+
+      if (table === "customer_cart_items") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              returns: vi.fn(async () => ({
+                data: [
+                  {
+                    product_id: "11111111-1111-4111-8111-111111111111",
+                    product_variant_id: "22222222-2222-4222-8222-222222222222",
+                    quantity: 2
+                  }
+                ],
+                error: null
+              }))
+            }))
+          }))
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const route = await import("@/app/api/customer/cart/route");
+    const request = new NextRequest("http://localhost:3000/api/customer/cart?store=curby", {
+      method: "GET"
+    });
+
+    const response = await route.GET(request);
+    const payload = (await response.json()) as {
+      items: Array<{ productId: string; variantId?: string; quantity: number }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.items).toEqual([
+      {
+        productId: "11111111-1111-4111-8111-111111111111",
+        variantId: "22222222-2222-4222-8222-222222222222",
+        quantity: 2
+      }
+    ]);
+  });
+
   test("PUT persists validated items with price snapshots", async () => {
     const cartId = "cart-1";
 
@@ -71,7 +149,11 @@ describe("customer cart route", () => {
             eq: vi.fn(() => ({
               eq: vi.fn(() => ({
                 eq: vi.fn(() => ({
-                  maybeSingle: vi.fn(async () => ({ data: { id: cartId }, error: null }))
+                  order: vi.fn(() => ({
+                    limit: vi.fn(() => ({
+                      maybeSingle: vi.fn(async () => ({ data: { id: cartId, created_at: "2026-03-12T00:00:00.000Z" }, error: null }))
+                    }))
+                  }))
                 }))
               }))
             }))

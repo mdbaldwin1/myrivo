@@ -17,6 +17,7 @@ describe("buildDashboardHomePriorities", () => {
         }
       ],
       openOrders: [],
+      pendingInvites: [],
       managedStoreCount: 1,
       pendingFulfillmentCount: 4,
       pendingReviewCount: 1,
@@ -33,6 +34,7 @@ describe("buildDashboardHomePriorities", () => {
       unreadCount: 0,
       activeCarts: [],
       openOrders: [],
+      pendingInvites: [],
       managedStoreCount: 0,
       pendingFulfillmentCount: 0,
       pendingReviewCount: 0,

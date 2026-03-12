@@ -12,6 +12,8 @@ import {
 export const storefrontStudioSurfaceIds = ["home", "products", "about", "policies", "cart", "orderSummary", "emails"] as const;
 
 export type StorefrontStudioSurfaceId = (typeof storefrontStudioSurfaceIds)[number];
+export const storefrontStudioEditorTargetIds = ["brand", "header", "footer", "productDetail"] as const;
+export type StorefrontStudioEditorTargetId = (typeof storefrontStudioEditorTargetIds)[number];
 
 export type StorefrontStudioSurface = {
   id: StorefrontStudioSurfaceId;
@@ -93,6 +95,12 @@ export function normalizeStorefrontStudioSurface(value: string | null | undefine
   return storefrontStudioSurfaceIds.includes(value as StorefrontStudioSurfaceId) ? (value as StorefrontStudioSurfaceId) : "home";
 }
 
+export function normalizeStorefrontStudioEditorTarget(value: string | null | undefined): StorefrontStudioEditorTargetId | null {
+  return storefrontStudioEditorTargetIds.includes(value as StorefrontStudioEditorTargetId)
+    ? (value as StorefrontStudioEditorTargetId)
+    : null;
+}
+
 export function getStorefrontStudioSurface(surfaceId: StorefrontStudioSurfaceId) {
   const surface = storefrontStudioSurfaces.find((entry) => entry.id === surfaceId);
   if (surface) {
@@ -100,4 +108,85 @@ export function getStorefrontStudioSurface(surfaceId: StorefrontStudioSurfaceId)
   }
 
   return storefrontStudioSurfaces[0] as StorefrontStudioSurface;
+}
+
+export function buildStorefrontStudioSurfaceHref(
+  pathname: string,
+  currentSearchParams: Pick<URLSearchParams, "toString">,
+  surfaceId: StorefrontStudioSurfaceId
+) {
+  const nextSearchParams = new URLSearchParams(currentSearchParams.toString());
+  if (surfaceId === "home") {
+    nextSearchParams.delete("surface");
+  } else {
+    nextSearchParams.set("surface", surfaceId);
+  }
+
+  const query = nextSearchParams.toString();
+  return query ? `${pathname}?${query}` : pathname;
+}
+
+export function getStorefrontStudioSurfaceForHref(href: string, storeSlug: string): StorefrontStudioSurfaceId | null {
+  try {
+    const url = new URL(href, "https://myrivo.local");
+    const pathname = url.pathname.replace(/\/$/, "") || "/";
+    const storeParam = url.searchParams.get("store")?.trim() ?? "";
+
+    if (pathname === "/" && (!storeParam || storeParam === storeSlug)) {
+      return "home";
+    }
+
+    if (pathname === `/s/${storeSlug}` || pathname === `/s/${storeSlug}/about`) {
+      return pathname.endsWith("/about") ? "about" : "home";
+    }
+
+    if (pathname === "/about" && (!storeParam || storeParam === storeSlug)) {
+      return "about";
+    }
+
+    if (pathname === "/policies" && (!storeParam || storeParam === storeSlug)) {
+      return "policies";
+    }
+
+    if (pathname === "/cart" && (!storeParam || storeParam === storeSlug)) {
+      return "cart";
+    }
+
+    if (pathname === "/checkout" && (!storeParam || storeParam === storeSlug)) {
+      return "orderSummary";
+    }
+
+    if (pathname === "/products" && (!storeParam || storeParam === storeSlug)) {
+      return "products";
+    }
+
+    if (pathname.startsWith("/products/") && (!storeParam || storeParam === storeSlug)) {
+      return "products";
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function getStorefrontStudioProductHandleForHref(href: string, storeSlug: string): string | null {
+  try {
+    const url = new URL(href, "https://myrivo.local");
+    const pathname = url.pathname.replace(/\/$/, "") || "/";
+    const storeParam = url.searchParams.get("store")?.trim() ?? "";
+
+    if (!pathname.startsWith("/products/")) {
+      return null;
+    }
+
+    if (storeParam && storeParam !== storeSlug) {
+      return null;
+    }
+
+    const handle = pathname.slice("/products/".length).trim();
+    return handle.length > 0 ? decodeURIComponent(handle) : null;
+  } catch {
+    return null;
+  }
 }

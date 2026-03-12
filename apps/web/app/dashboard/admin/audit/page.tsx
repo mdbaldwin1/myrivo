@@ -33,7 +33,7 @@ export default async function DashboardAdminAuditPage() {
     <DashboardPageScaffold
       title="Platform Audit"
       description="Inspect platform actions across stores, moderation, and governance."
-      className="p-4 lg:p-4"
+      className="p-3"
       action={<ContextHelpLink href="/docs/audit-explorer-and-evidence#evidence-export-playbook" context="admin_audit" label="Audit Docs" />}
     >
       <PlatformAuditPanel />

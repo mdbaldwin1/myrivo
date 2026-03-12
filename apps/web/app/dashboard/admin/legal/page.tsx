@@ -33,7 +33,7 @@ export default async function DashboardAdminLegalPage() {
     <DashboardPageScaffold
       title="Legal Governance"
       description="Publish legal versions, inspect acceptance records, and export compliance reports."
-      className="p-4 lg:p-4"
+      className="p-3"
       action={<ContextHelpLink href="/docs/legal-governance-and-consent-ops#publishing-and-communication" context="admin_legal" label="Legal Ops Docs" />}
     >
       <PlatformLegalPanel />

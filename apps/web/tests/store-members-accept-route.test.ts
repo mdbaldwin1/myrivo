@@ -5,6 +5,7 @@ const hashInviteTokenMock = vi.fn();
 const logAuditEventMock = vi.fn();
 const notifyOwnersTeamInviteAcceptedMock = vi.fn();
 const adminFromMock = vi.fn();
+const updateUserByIdMock = vi.fn();
 const authGetUserMock = vi.fn();
 
 vi.mock("@/lib/stores/membership-invites", () => ({
@@ -22,7 +23,12 @@ vi.mock("@/lib/notifications/owner-notifications", () => ({
 
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: vi.fn(() => ({
-    from: (...args: unknown[]) => adminFromMock(...args)
+    from: (...args: unknown[]) => adminFromMock(...args),
+    auth: {
+      admin: {
+        updateUserById: (...args: unknown[]) => updateUserByIdMock(...args)
+      }
+    }
   }))
 }));
 
@@ -39,6 +45,7 @@ beforeEach(() => {
   logAuditEventMock.mockReset();
   notifyOwnersTeamInviteAcceptedMock.mockReset();
   adminFromMock.mockReset();
+  updateUserByIdMock.mockReset();
   authGetUserMock.mockReset();
 });
 
@@ -57,8 +64,19 @@ describe("store membership invite accept route", () => {
   });
 
   test("accepts valid invite for matching email", async () => {
-    authGetUserMock.mockResolvedValueOnce({ data: { user: { id: "u1", email: "staff@example.com" } } });
+    authGetUserMock.mockResolvedValueOnce({
+      data: {
+        user: {
+          id: "u1",
+          email: "staff@example.com",
+          user_metadata: {
+            pending_store_invite_token: "some-long-token-value"
+          }
+        }
+      }
+    });
     hashInviteTokenMock.mockReturnValue("hash-1");
+    updateUserByIdMock.mockResolvedValue({ data: null, error: null });
 
     adminFromMock.mockImplementation((table: string) => {
       if (table === "store_membership_invites") {
@@ -105,5 +123,6 @@ describe("store membership invite accept route", () => {
     await expect(response.json()).resolves.toMatchObject({ ok: true, role: "staff", storeSlug: "demo-store" });
     expect(logAuditEventMock).toHaveBeenCalledTimes(1);
     expect(notifyOwnersTeamInviteAcceptedMock).toHaveBeenCalledTimes(1);
+    expect(updateUserByIdMock).toHaveBeenCalledTimes(1);
   });
 });

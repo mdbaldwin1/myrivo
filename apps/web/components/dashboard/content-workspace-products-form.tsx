@@ -51,7 +51,7 @@ export function ContentWorkspaceProductsForm({ header }: ContentWorkspaceProduct
         void save();
       }}
     >
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 lg:p-4">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {header}
         {loading ? <p className="text-sm text-muted-foreground">Loading section...</p> : null}
 
@@ -73,6 +73,7 @@ export function ContentWorkspaceProductsForm({ header }: ContentWorkspaceProduct
                 <Input
                   value={getStringValue(draft, "copy.home.searchPlaceholder")}
                   onChange={(event) => setDraft((current) => setAtPath(current, "copy.home.searchPlaceholder", event.target.value))}
+                  placeholder="Search products..."
                 />
               </FormField>
             ) : null}

@@ -96,7 +96,7 @@ export function StoreShippingRulesForm({ header }: StoreShippingRulesFormProps) 
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 lg:p-4">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {header}
         {loading ? <p className="text-sm text-muted-foreground">Loading shipping rules...</p> : null}
 

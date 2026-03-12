@@ -1,31 +1,36 @@
 import { describe, expect, test } from "vitest";
-import { buildStoreSettingsWorkspaceStatuses, storeSettingsWorkspaceGroups } from "@/lib/store-editor/store-settings-workspace";
+import {
+  storefrontStudioOwnedStoreSettingsSectionIds,
+  storeSettingsWorkspaceNavigationSectionIds,
+  storeSettingsWorkspaceSections
+} from "@/lib/store-editor/store-settings-workspace";
 
-describe("store settings workspace metadata", () => {
-  test("keeps grouped navigation sections available", () => {
-    expect(storeSettingsWorkspaceGroups.map((group) => group.title)).toEqual([
-      "Identity & reach",
-      "Operations & fulfillment",
-      "Access & connections"
+describe("store settings workspace classification", () => {
+  test("keeps storefront-builder settings distinct from operations-only settings", () => {
+    const ownershipById = Object.fromEntries(storeSettingsWorkspaceSections.map((section) => [section.id, section.ownership]));
+
+    expect(ownershipById.general).toBe("operations");
+    expect(ownershipById.branding).toBe("builder");
+    expect(ownershipById.shipping).toBe("operations");
+    expect(ownershipById.pickup).toBe("operations");
+
+    expect(ownershipById.domains).toBe("operations");
+    expect(ownershipById.team).toBe("operations");
+    expect(ownershipById.integrations).toBe("operations");
+  });
+
+  test("exposes only operational or mixed sections in settings workspace navigation", () => {
+    expect(storeSettingsWorkspaceNavigationSectionIds).toEqual([
+      "general",
+      "shipping",
+      "pickup",
+      "domains",
+      "team",
+      "integrations"
     ]);
   });
 
-  test("builds section statuses from store health inputs", () => {
-    const statuses = buildStoreSettingsWorkspaceStatuses({
-      storeStatus: "active",
-      hasLogo: true,
-      hasVerifiedPrimaryDomain: false,
-      paymentsConnected: true,
-      shippingEnabled: true,
-      pickupEnabled: true,
-      pickupLocationCount: 2,
-      orderNoteEnabled: false,
-      activeMemberCount: 3
-    });
-
-    expect(statuses.overview).toBe("Live");
-    expect(statuses.branding).toBe("Brand assets configured");
-    expect(statuses.pickup).toBe("2 active pickup locations");
-    expect(statuses.integrations).toBe("Payments connected");
+  test("tracks Studio-owned settings sections separately from settings navigation", () => {
+    expect(storefrontStudioOwnedStoreSettingsSectionIds).toEqual(["branding"]);
   });
 });

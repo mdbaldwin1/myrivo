@@ -1,8 +1,11 @@
 import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
+import { PendingStoreInvitesCard } from "@/components/dashboard/pending-store-invites-card";
 import { StoreHubShell } from "@/components/dashboard/store-hub/store-hub-shell";
+import { getPendingStoreInvitesByEmail } from "@/lib/account/pending-store-invites";
 import { getStoreHubData } from "@/lib/dashboard/store-hub/get-store-hub-data";
 import type { StoreHubRange } from "@/lib/dashboard/store-hub/store-hub-types";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { GlobalUserRole } from "@/types/database";
 
@@ -25,6 +28,7 @@ export default async function DashboardStoresPage({ searchParams }: DashboardSto
   const compare = resolvedSearchParams?.compare === "1" || resolvedSearchParams?.compare === "true";
 
   const supabase = await createSupabaseServerClient();
+  const adminSupabase = createSupabaseAdminClient();
   const {
     data: { user }
   } = await supabase.auth.getUser();
@@ -33,9 +37,10 @@ export default async function DashboardStoresPage({ searchParams }: DashboardSto
     return null;
   }
 
-  const [{ data: profile }, bundle] = await Promise.all([
+  const [{ data: profile }, bundle, pendingInvites] = await Promise.all([
     supabase.from("user_profiles").select("global_role").eq("id", user.id).maybeSingle<{ global_role: GlobalUserRole }>(),
-    getOwnedStoreBundle(user.id, "staff")
+    getOwnedStoreBundle(user.id, "staff"),
+    getPendingStoreInvitesByEmail(adminSupabase, user.email ?? null)
   ]);
 
   const stores = bundle?.availableStores ?? [];
@@ -59,8 +64,9 @@ export default async function DashboardStoresPage({ searchParams }: DashboardSto
     <DashboardPageScaffold
       title="Store Hub"
       description="Portfolio command center across your stores with prioritized operational actions."
-      className="p-4 lg:p-4"
+      className="p-3"
     >
+      {pendingInvites.length > 0 ? <PendingStoreInvitesCard invites={pendingInvites} /> : null}
       <StoreHubShell data={data} logoByStoreId={logoByStoreId} />
     </DashboardPageScaffold>
   );

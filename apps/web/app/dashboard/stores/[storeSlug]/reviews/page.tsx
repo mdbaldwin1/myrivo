@@ -6,10 +6,12 @@ export const dynamic = "force-dynamic";
 
 type PageProps = {
   params: Promise<{ storeSlug: string }>;
+  searchParams?: Promise<{ reviewId?: string }>;
 };
 
-export default async function StoreWorkspaceReviewsPage({ params }: PageProps) {
+export default async function StoreWorkspaceReviewsPage({ params, searchParams }: PageProps) {
   const { storeSlug } = await params;
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const supabase = await createSupabaseServerClient();
   const {
     data: { user }
@@ -38,5 +40,11 @@ export default async function StoreWorkspaceReviewsPage({ params }: PageProps) {
     throw new Error(error.message);
   }
 
-  return <ReviewsModerationManager storeSlug={storeSlug} initialItems={(reviews ?? []) as ReviewRow[]} />;
+  return (
+    <ReviewsModerationManager
+      storeSlug={storeSlug}
+      initialItems={(reviews ?? []) as ReviewRow[]}
+      initialReviewId={resolvedSearchParams?.reviewId?.trim() || null}
+    />
+  );
 }

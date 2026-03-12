@@ -16,8 +16,8 @@ function PageShell({
   className?: string;
 }) {
   return (
-    <section className={cn("space-y-4 px-4 py-4 lg:px-6 lg:py-5", className)}>
-      <header className="rounded-md border border-border/70 bg-white p-4 shadow-sm">
+    <section className={cn("space-y-3 p-3", className)}>
+      <header className="rounded-md border border-border/70 bg-white px-4 py-2.5 shadow-sm">
         <div className="space-y-2">
           <Block className={cn("h-7", titleWidth)} />
           <Block className={cn("h-4 max-w-full", descriptionWidth)} />
@@ -30,7 +30,7 @@ function PageShell({
 
 export function OverviewLoadingSkeleton() {
   return (
-    <PageShell titleWidth="w-32" descriptionWidth="w-[28rem]" className="p-4 lg:p-4">
+    <PageShell titleWidth="w-32" descriptionWidth="w-[28rem]">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Block className="h-24" />
         <Block className="h-24" />
@@ -47,7 +47,7 @@ export function OverviewLoadingSkeleton() {
 
 export function CatalogLoadingSkeleton() {
   return (
-    <PageShell titleWidth="w-28" descriptionWidth="w-[26rem]" className="p-4 lg:p-4">
+    <PageShell titleWidth="w-28" descriptionWidth="w-[26rem]">
       <div className="rounded-xl border border-border/70 bg-card p-5 shadow-sm">
         <div className="mb-4 flex flex-wrap gap-2">
           <Block className="h-9 w-40" />
@@ -68,7 +68,7 @@ export function CatalogLoadingSkeleton() {
 
 export function OrdersLoadingSkeleton() {
   return (
-    <PageShell titleWidth="w-24" descriptionWidth="w-[24rem]" className="p-4 lg:p-4">
+    <PageShell titleWidth="w-24" descriptionWidth="w-[24rem]">
       <div className="rounded-xl border border-border/70 bg-card p-5 shadow-sm">
         <div className="mb-4 grid gap-2 sm:grid-cols-3">
           <Block className="h-9" />
@@ -89,8 +89,8 @@ export function OrdersLoadingSkeleton() {
 export function FormWithActionBarLoadingSkeleton({ sections = 2 }: { sections?: number }) {
   return (
     <section className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-        <header className="rounded-md border border-border/70 bg-white p-4 shadow-sm">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+        <header className="rounded-md border border-border/70 bg-white px-4 py-2.5 shadow-sm">
           <div className="space-y-2">
             <Block className="h-7 w-44" />
             <Block className="h-4 w-[22rem] max-w-full" />
@@ -111,7 +111,7 @@ export function FormWithActionBarLoadingSkeleton({ sections = 2 }: { sections?: 
           </div>
         ))}
       </div>
-      <div className="shrink-0 border-t border-border/70 bg-white px-4 py-3 lg:px-6">
+      <div className="shrink-0 border-t border-border/70 bg-white p-3">
         <div className="flex justify-end gap-2">
           <Block className="h-9 w-24" />
           <Block className="h-9 w-28" />
@@ -148,7 +148,7 @@ export function IntegrationsLoadingSkeleton() {
 
 export function MarketingLoadingSkeleton() {
   return (
-    <PageShell titleWidth="w-52" descriptionWidth="w-[24rem]" className="p-4 lg:p-4">
+    <PageShell titleWidth="w-52" descriptionWidth="w-[24rem]">
       <div className="rounded-xl border border-border/70 bg-card p-5 shadow-sm">
         <div className="mb-4 flex justify-between">
           <Block className="h-9 w-40" />
@@ -167,7 +167,7 @@ export function MarketingLoadingSkeleton() {
 
 export function ReportsLoadingSkeleton() {
   return (
-    <PageShell titleWidth="w-44" descriptionWidth="w-[28rem]" className="p-4 lg:p-4">
+    <PageShell titleWidth="w-44" descriptionWidth="w-[28rem]">
       <div className="grid gap-4 xl:grid-cols-3">
         <Block className="h-72 xl:col-span-2" />
         <Block className="h-72" />
@@ -186,7 +186,7 @@ export function ReportsLoadingSkeleton() {
 
 export function TeamLoadingSkeleton() {
   return (
-    <PageShell titleWidth="w-20" descriptionWidth="w-[24rem]" className="p-4 lg:p-4">
+    <PageShell titleWidth="w-20" descriptionWidth="w-[24rem]">
       <div className="rounded-xl border border-border/70 bg-card p-5 shadow-sm">
         <div className="mb-4 flex justify-between">
           <Block className="h-9 w-44" />
@@ -204,7 +204,7 @@ export function TeamLoadingSkeleton() {
 
 export function PlatformLoadingSkeleton() {
   return (
-    <PageShell titleWidth="w-44" descriptionWidth="w-[22rem]" className="p-4 lg:p-4">
+    <PageShell titleWidth="w-44" descriptionWidth="w-[22rem]">
       <div className="space-y-4">
         <div className="rounded-xl border border-border/70 bg-card p-5 shadow-sm">
           <div className="mb-4 grid gap-3 sm:grid-cols-2">
@@ -254,7 +254,7 @@ export function PlatformLoadingSkeleton() {
 
 export function StoreControlTowerLoadingSkeleton() {
   return (
-    <PageShell titleWidth="w-56" descriptionWidth="w-[30rem]" className="p-4 lg:p-4">
+    <PageShell titleWidth="w-56" descriptionWidth="w-[30rem]">
       <Block className="h-16 w-full" />
       <div className="rounded-xl border border-border/70 bg-card p-5 shadow-sm">
         <div className="space-y-2">

@@ -7,7 +7,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { StoreMemberRole } from "@/types/database";
 
 const updateSchema = z.object({
-  role: z.enum(["owner", "admin", "staff", "customer"]).optional(),
+  role: z.enum(["owner", "admin", "staff"]).optional(),
   status: z.enum(["active", "suspended"]).optional()
 });
 

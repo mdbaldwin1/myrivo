@@ -12,11 +12,11 @@ export function DashboardPageHeader({ title, description, className, action }: D
   return (
     <header
       className={cn(
-        "rounded-md border border-border/70 bg-white p-4 shadow-sm",
+        "rounded-md border border-border/70 bg-white px-4 py-2.5 shadow-sm",
         className
       )}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold">{title}</h1>
           <p className="text-sm text-muted-foreground">{description}</p>
