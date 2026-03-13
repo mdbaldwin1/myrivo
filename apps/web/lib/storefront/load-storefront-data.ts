@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { resolveStoreAnalyticsAccessByStoreId } from "@/lib/analytics/access";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isMissingColumnInSchemaCache, isMissingRelationInSchemaCache } from "@/lib/supabase/error-classifiers";
@@ -86,12 +87,14 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
   }
 
   const [
+    analytics,
     { data: branding, error: brandingError },
     { data: settings, error: settingsError },
     { data: contentBlocks, error: contentBlocksError },
     { data: experienceContent, error: experienceContentError },
     { data: products, error: productsError }
   ] = await Promise.all([
+    resolveStoreAnalyticsAccessByStoreId(admin, store.id),
     admin
       .from("store_branding")
       .select("logo_path,favicon_path,apple_touch_icon_path,og_image_path,twitter_image_path,primary_color,accent_color,theme_json")
@@ -455,6 +458,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
       isAuthenticated,
       canManageStore
     },
+    analytics,
     experienceContent: sectionedContent,
     branding: branding
       ? {

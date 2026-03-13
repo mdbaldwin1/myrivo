@@ -11,15 +11,20 @@ import type { StoreHubData } from "@/lib/dashboard/store-hub/store-hub-types";
 type StoreHubShellProps = {
   data: StoreHubData;
   logoByStoreId: Map<string, string | null>;
+  activeStore: {
+    slug: string;
+    name: string;
+  } | null;
 };
 
-export function StoreHubShell({ data, logoByStoreId }: StoreHubShellProps) {
+export function StoreHubShell({ data, logoByStoreId, activeStore }: StoreHubShellProps) {
   const canApprove = data.role === "admin";
 
   return (
     <section className="space-y-4">
-      <StoreHubCommandBar filters={data.filters} />
+      <StoreHubCommandBar filters={data.filters} activeStore={activeStore} />
       <StoreHubSummaryCards summary={data.summary} />
+      <StoreHubPortfolioPanel stores={data.stores} logoByStoreId={logoByStoreId} />
       <StoreHubPriorityQueuePanel items={data.priorityQueue} />
       <div className="grid gap-4 lg:grid-cols-12">
         <div className="lg:col-span-8">
@@ -29,7 +34,6 @@ export function StoreHubShell({ data, logoByStoreId }: StoreHubShellProps) {
           <StoreHubApprovalQueuePanel initialItems={data.approvalQueue} canApprove={canApprove} />
         </div>
       </div>
-      <StoreHubPortfolioPanel stores={data.stores} logoByStoreId={logoByStoreId} />
       <div className="grid gap-4 lg:grid-cols-12">
         <div className="lg:col-span-6">
           <StoreHubGrowthPanel growth={data.growth} />

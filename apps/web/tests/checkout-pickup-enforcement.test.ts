@@ -58,6 +58,29 @@ vi.mock("@/lib/supabase/admin", () => ({
   }))
 }));
 
+vi.mock("@/lib/supabase/server", () => ({
+  createSupabaseServerClient: vi.fn(async () => ({
+    auth: {
+      getUser: vi.fn(async () => ({ data: { user: null } }))
+    },
+    from: vi.fn(() => ({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              order: vi.fn(() => ({
+                limit: vi.fn(() => ({
+                  maybeSingle: vi.fn(async () => ({ data: null, error: null }))
+                }))
+              }))
+            }))
+          }))
+        }))
+      }))
+    }))
+  }))
+}));
+
 function buildRequest(body: Record<string, unknown>) {
   return new NextRequest("http://localhost:3000/api/orders/checkout?store=curby", {
     method: "POST",

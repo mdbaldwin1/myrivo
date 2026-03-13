@@ -67,7 +67,11 @@ export default async function DashboardStoresPage({ searchParams }: DashboardSto
       className="p-3"
     >
       {pendingInvites.length > 0 ? <PendingStoreInvitesCard invites={pendingInvites} /> : null}
-      <StoreHubShell data={data} logoByStoreId={logoByStoreId} />
+      <StoreHubShell
+        data={data}
+        logoByStoreId={logoByStoreId}
+        activeStore={bundle ? { slug: bundle.store.slug, name: bundle.store.name } : null}
+      />
     </DashboardPageScaffold>
   );
 }

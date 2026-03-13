@@ -29,6 +29,7 @@ type DashboardShellProps = {
   initialNotificationSoundEnabled: boolean;
   initialTestModeEnabled: boolean;
   canManageTestMode: boolean;
+  analyticsDashboardEnabled: boolean;
   hasStoreAccess: boolean;
   storeStatus: string | null;
 };
@@ -44,6 +45,7 @@ export function DashboardShell({
   initialNotificationSoundEnabled,
   initialTestModeEnabled,
   canManageTestMode,
+  analyticsDashboardEnabled,
   hasStoreAccess,
   storeStatus
 }: DashboardShellProps) {
@@ -81,6 +83,7 @@ export function DashboardShell({
               userAvatarPath={userAvatarPath}
               initialTestModeEnabled={initialTestModeEnabled}
               canManageTestMode={canManageTestMode}
+              analyticsDashboardEnabled={analyticsDashboardEnabled}
             />
           </div>
         </div>
@@ -103,6 +106,7 @@ export function DashboardShell({
               userAvatarPath={userAvatarPath}
               initialTestModeEnabled={initialTestModeEnabled}
               canManageTestMode={canManageTestMode}
+              analyticsDashboardEnabled={analyticsDashboardEnabled}
               collapsed={sidebarCollapsed}
               className={cn("w-full px-3 py-3", sidebarCollapsed && "px-0")}
             />

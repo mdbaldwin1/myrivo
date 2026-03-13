@@ -16,14 +16,31 @@ export function StorefrontAnalyticsProvider({ runtime, children }: StorefrontAna
     () =>
       createStorefrontAnalyticsClient({
         storeSlug: runtime.store.slug,
-        enabled: runtime.mode === "live"
+        enabled: runtime.mode === "live" && runtime.analytics.collectionEnabled
       }),
-    [runtime.mode, runtime.store.slug]
+    [runtime.analytics.collectionEnabled, runtime.mode, runtime.store.slug]
   );
 
   useEffect(() => {
     analytics.start();
     return () => analytics.stop();
+  }, [analytics]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !analytics.isDebugEnabled()) {
+      return;
+    }
+
+    const target = window as Window & {
+      __MYRIVO_ANALYTICS_CLIENT__?: StorefrontAnalyticsClient;
+    };
+    target.__MYRIVO_ANALYTICS_CLIENT__ = analytics;
+
+    return () => {
+      if (target.__MYRIVO_ANALYTICS_CLIENT__ === analytics) {
+        delete target.__MYRIVO_ANALYTICS_CLIENT__;
+      }
+    };
   }, [analytics]);
 
   return <StorefrontAnalyticsContext.Provider value={analytics}>{children}</StorefrontAnalyticsContext.Provider>;

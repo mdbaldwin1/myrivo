@@ -55,6 +55,7 @@ type DashboardNavProps = {
   userAvatarPath?: string | null;
   initialTestModeEnabled: boolean;
   canManageTestMode: boolean;
+  analyticsDashboardEnabled: boolean;
   mode?: "desktop" | "mobile";
   collapsed?: boolean;
   className?: string;
@@ -62,7 +63,6 @@ type DashboardNavProps = {
 };
 
 const reportsLinks = [
-  { href: "/reports/insights", label: "Insights", icon: BarChart3 },
   { href: "/reports/inventory", label: "Inventory Ledger", icon: Package },
   { href: "/reports/billing", label: "Billing Events", icon: ReceiptText }
 ] as const;
@@ -106,6 +106,7 @@ export function DashboardNav({
   userAvatarPath,
   initialTestModeEnabled,
   canManageTestMode,
+  analyticsDashboardEnabled,
   mode = "desktop",
   collapsed = false,
   className,
@@ -165,13 +166,19 @@ export function DashboardNav({
     { href: `${storeWorkspaceBaseHref}/subscribers`, label: "Subscribers", icon: Mail },
     { href: `${storeWorkspaceBaseHref}/storefront-studio`, label: "Storefront Studio", icon: Home },
     { href: `${storeWorkspaceBaseHref}/email-studio`, label: "Email Studio", icon: PenSquare },
-    { href: `${storeWorkspaceBaseHref}/reports`, label: "Reports", icon: BarChart3 },
+    { href: `${storeWorkspaceBaseHref}/reports`, label: "Reports", icon: FileText },
     { href: `${storeWorkspaceBaseHref}/store-settings/general`, label: "Settings", icon: Cog }
   ];
+  if (analyticsDashboardEnabled) {
+    storeWorkspaceLinks.splice(1, 0, { href: `${storeWorkspaceBaseHref}/analytics`, label: "Analytics", icon: BarChart3 });
+  }
   const subWorkspaceEntryHrefs = new Set([
     `${storeWorkspaceBaseHref}/reports`,
     `${storeWorkspaceBaseHref}/store-settings/general`
   ]);
+  if (analyticsDashboardEnabled) {
+    subWorkspaceEntryHrefs.add(`${storeWorkspaceBaseHref}/analytics`);
+  }
 
   const storeSettingsLinkGroups = storeSettingsWorkspaceGroups.map((group) => ({
     ...group,
@@ -402,31 +409,29 @@ export function DashboardNav({
                   <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
                 </Button>
               ) : (
-                renderCollapsedTooltip(
-                  accountName,
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="h-auto w-10 justify-center rounded-md border border-transparent px-0 py-2 hover:border-border/60"
-                  >
-                    <span className="flex min-w-0 items-center justify-center">
-                      {userAvatarPath ? (
-                        <Image
-                          src={userAvatarPath}
-                          alt="User avatar"
-                          width={32}
-                          height={32}
-                          unoptimized
-                          className="h-8 w-8 shrink-0 rounded-full border border-border object-cover"
-                        />
-                      ) : (
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border bg-muted text-xs font-semibold">
-                          {initials}
-                        </span>
-                      )}
-                    </span>
-                  </Button>
-                )
+                <Button
+                  type="button"
+                  variant="ghost"
+                  aria-label={`${accountName} account menu`}
+                  className="h-auto w-10 justify-center rounded-md border border-transparent px-0 py-2 hover:border-border/60"
+                >
+                  <span className="flex min-w-0 items-center justify-center">
+                    {userAvatarPath ? (
+                      <Image
+                        src={userAvatarPath}
+                        alt="User avatar"
+                        width={32}
+                        height={32}
+                        unoptimized
+                        className="h-8 w-8 shrink-0 rounded-full border border-border object-cover"
+                      />
+                    ) : (
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border bg-muted text-xs font-semibold">
+                        {initials}
+                      </span>
+                    )}
+                  </span>
+                </Button>
               )}
             </DropdownMenuTrigger>
             <DropdownMenuContent side="top" align={showLabels ? "start" : "center"} className="min-w-64">

@@ -582,7 +582,10 @@ export function StorefrontPage(props: StorefrontPageProps) {
           source: isProductsView ? "products" : "home"
         })
       });
-      void syncStorefrontCart(next, resolvedStore.slug);
+      void syncStorefrontCart(next, resolvedStore.slug, {
+        analyticsSessionId: analytics?.getSessionId() ?? null,
+        attribution: analytics?.getAttributionSnapshot() ?? null
+      });
       return next;
     });
   }

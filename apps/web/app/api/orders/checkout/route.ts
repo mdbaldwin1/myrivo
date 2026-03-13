@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { resolveStorefrontSessionLink } from "@/lib/analytics/session-linking";
 import { getAppUrl, isStripeStubMode } from "@/lib/env";
 import { calculatePlatformFeeCents, resolveStoreFeeProfile, writeOrderFeeBreakdown } from "@/lib/billing/fees";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
@@ -14,6 +15,7 @@ import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
 import { buildStubCheckoutRpcPayload } from "@/lib/storefront/stub-checkout";
 import { getStripeClient } from "@/lib/stripe/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const itemSchema = z
   .object({
@@ -24,6 +26,17 @@ const itemSchema = z
   .refine((value) => Boolean(value.productId || value.variantId), {
     message: "Each item requires productId or variantId"
   });
+
+const attributionTouchSchema = z.object({
+  entryPath: z.string().trim().max(512).optional(),
+  referrerUrl: z.string().trim().max(1024).optional(),
+  referrerHost: z.string().trim().max(255).optional(),
+  utmSource: z.string().trim().max(255).optional(),
+  utmMedium: z.string().trim().max(255).optional(),
+  utmCampaign: z.string().trim().max(255).optional(),
+  utmTerm: z.string().trim().max(255).optional(),
+  utmContent: z.string().trim().max(255).optional()
+});
 
 const payloadSchema = z.object({
   firstName: z.string().trim().min(1).max(80),
@@ -38,6 +51,13 @@ const payloadSchema = z.object({
   pickupWindowEndAt: z.string().datetime().optional(),
   customerNote: z.string().trim().max(1200).optional(),
   promoCode: z.string().trim().min(3).max(40).optional(),
+  analyticsSessionId: z.string().trim().min(16).max(128).optional(),
+  attribution: z
+    .object({
+      firstTouch: attributionTouchSchema.optional(),
+      lastTouch: attributionTouchSchema.optional()
+    })
+    .optional(),
   items: z.array(itemSchema).min(1)
 });
 
@@ -104,7 +124,9 @@ export async function POST(request: NextRequest) {
     pickupWindowEndAt,
     customerNote,
     items,
-    promoCode
+    promoCode,
+    analyticsSessionId,
+    attribution
   } = payload.data;
   const storeSlug = await resolveStoreSlugFromRequestAsync(request);
   if (!storeSlug) {
@@ -130,6 +152,31 @@ export async function POST(request: NextRequest) {
 
   if (!store) {
     return NextResponse.json({ error: "Store not found or inactive." }, { status: 404 });
+  }
+
+  const sessionLink = await resolveStorefrontSessionLink(supabase, {
+    storeId: store.id,
+    sessionKey: analyticsSessionId
+  });
+
+  const serverSupabase = await createSupabaseServerClient();
+  const {
+    data: { user: authenticatedUser }
+  } = await serverSupabase.auth.getUser();
+
+  let sourceCartId: string | null = null;
+  if (authenticatedUser) {
+    const { data: activeCart } = await serverSupabase
+      .from("customer_carts")
+      .select("id")
+      .eq("user_id", authenticatedUser.id)
+      .eq("store_id", store.id)
+      .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<{ id: string }>();
+
+    sourceCartId = activeCart?.id ?? null;
   }
 
   const { data: billingProfile, error: billingProfileError } = await supabase
@@ -715,11 +762,15 @@ export async function POST(request: NextRequest) {
       pickup_window_end_at: resolvedPickupWindowEndAt,
       pickup_timezone: resolvedPickupTimezone,
       promo_code: normalizedPromoCode,
+      analytics_session_key: sessionLink?.sessionKey ?? null,
+      analytics_session_id: sessionLink?.id ?? null,
+      source_cart_id: sourceCartId,
       fee_plan_key: feeProfile.planKey,
       fee_bps: feeProfile.feeBps,
       fee_fixed_cents: feeProfile.feeFixedCents,
       item_total_cents: itemTotalCents,
       platform_fee_cents: platformFeeCents,
+      attribution_json: attribution ?? {},
       items: rpcItems,
       status: "pending"
     })

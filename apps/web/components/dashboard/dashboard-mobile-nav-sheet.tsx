@@ -19,6 +19,7 @@ type DashboardMobileNavSheetProps = {
   userAvatarPath?: string | null;
   initialTestModeEnabled: boolean;
   canManageTestMode: boolean;
+  analyticsDashboardEnabled: boolean;
 };
 
 export function DashboardMobileNavSheet({
@@ -29,7 +30,8 @@ export function DashboardMobileNavSheet({
   userEmail,
   userAvatarPath,
   initialTestModeEnabled,
-  canManageTestMode
+  canManageTestMode,
+  analyticsDashboardEnabled
 }: DashboardMobileNavSheetProps) {
   const hasMounted = useHasMounted();
   const [isOpen, setIsOpen] = useState(false);
@@ -65,6 +67,7 @@ export function DashboardMobileNavSheet({
             userAvatarPath={userAvatarPath}
             initialTestModeEnabled={initialTestModeEnabled}
             canManageTestMode={canManageTestMode}
+            analyticsDashboardEnabled={analyticsDashboardEnabled}
             mode="mobile"
             className="h-full"
             onNavigate={() => setIsOpen(false)}

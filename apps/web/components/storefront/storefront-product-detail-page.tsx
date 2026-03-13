@@ -356,7 +356,10 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
       })
     });
     writeStorefrontCart(next);
-    void syncStorefrontCart(next, resolvedStore.slug);
+    void syncStorefrontCart(next, resolvedStore.slug, {
+      analyticsSessionId: analytics?.getSessionId() ?? null,
+      attribution: analytics?.getAttributionSnapshot() ?? null
+    });
   }
 
   return (
