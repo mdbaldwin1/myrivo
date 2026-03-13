@@ -197,8 +197,8 @@ export function StorefrontFooter({
         className={cn(
           "grid gap-4 py-6 sm:gap-6 sm:py-8 lg:gap-8",
           settings?.email_capture_enabled
-            ? "lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,0.85fr)_minmax(0,1.15fr)]"
-            : "sm:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)]"
+            ? "lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1.15fr)]"
+            : "sm:grid-cols-2 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.9fr)]"
         )}
       >
         <div
