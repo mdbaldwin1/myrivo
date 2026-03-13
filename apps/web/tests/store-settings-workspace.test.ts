@@ -11,6 +11,7 @@ describe("store settings workspace classification", () => {
 
     expect(ownershipById.general).toBe("operations");
     expect(ownershipById.branding).toBe("builder");
+    expect(ownershipById.legal).toBe("operations");
     expect(ownershipById.shipping).toBe("operations");
     expect(ownershipById.pickup).toBe("operations");
 
@@ -22,6 +23,7 @@ describe("store settings workspace classification", () => {
   test("exposes only operational or mixed sections in settings workspace navigation", () => {
     expect(storeSettingsWorkspaceNavigationSectionIds).toEqual([
       "general",
+      "legal",
       "shipping",
       "pickup",
       "domains",

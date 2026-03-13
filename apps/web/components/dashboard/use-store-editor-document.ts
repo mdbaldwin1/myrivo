@@ -96,6 +96,14 @@ export function useStoreEditorDocument<TDraft extends Record<string, unknown>>({
     setValidationErrors({});
   }, [baseline]);
 
+  const replaceDocument = useCallback((next: TDraft) => {
+    const cloned = cloneEditorValue(next);
+    setBaseline(cloned);
+    setDraft(cloneEditorValue(next));
+    setError(null);
+    setValidationErrors({});
+  }, []);
+
   const save = useCallback(async () => {
     if (schema) {
       const parsed = schema.safeParse(draft);
@@ -137,6 +145,7 @@ export function useStoreEditorDocument<TDraft extends Record<string, unknown>>({
     validationErrors,
     isDirty,
     save,
-    discardChanges
+    discardChanges,
+    replaceDocument
   };
 }

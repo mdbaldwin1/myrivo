@@ -1,5 +1,6 @@
 import {
   Cog,
+  FileText,
   Globe,
   Paintbrush,
   Plug,
@@ -12,6 +13,7 @@ import {
 export type StoreSettingsSectionId =
   | "general"
   | "branding"
+  | "legal"
   | "team"
   | "shipping"
   | "pickup"
@@ -55,6 +57,14 @@ export const storeSettingsWorkspaceGroups: readonly StoreSettingsWorkspaceGroup[
         description: "Theme tokens, logos, and presentation shared across the storefront.",
         icon: Paintbrush,
         ownership: "builder"
+      },
+      {
+        id: "legal",
+        href: "/store-settings/legal",
+        label: "Legal",
+        description: "Store-specific Privacy Policy and Terms & Conditions.",
+        icon: FileText,
+        ownership: "operations"
       },
       {
         id: "domains",
@@ -122,6 +132,7 @@ export const storefrontStudioOwnedStoreSettingsSectionIds = [
 
 export const storeSettingsWorkspaceNavigationSectionIds = [
   "general",
+  "legal",
   "shipping",
   "pickup",
   "domains",
@@ -145,6 +156,7 @@ export function buildStoreSettingsWorkspaceStatuses(input: StoreSettingsWorkspac
   return {
     general: input.storeStatus === "active" ? "Storefront live" : "Needs publish review",
     branding: input.hasLogo ? "Brand assets configured" : "Needs logo and theme review",
+    legal: input.storeStatus === "active" ? "Customer-facing docs ready" : "Review legal documents before launch",
     team: `${input.activeMemberCount} active ${input.activeMemberCount === 1 ? "member" : "members"}`,
     shipping: input.shippingEnabled ? "Shipping enabled" : "Shipping not configured",
     pickup: input.pickupEnabled ? `${input.pickupLocationCount} active pickup ${input.pickupLocationCount === 1 ? "location" : "locations"}` : "Pickup disabled",
