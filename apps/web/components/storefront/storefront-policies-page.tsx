@@ -404,6 +404,20 @@ export function StorefrontPoliciesPage({ store, viewer, branding, settings, stud
           </div>
         </section>
 
+        <section className={cn("space-y-3 p-4", radiusClass, cardClass)}>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            {copy.policies.formalDocumentsLabel}
+          </p>
+          <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap sm:items-center">
+            <Link href={`/privacy?store=${encodeURIComponent(resolvedStore.slug)}`} className={STOREFRONT_TEXT_LINK_EFFECT_CLASS}>
+              {copy.policies.privacyPolicyLink}
+            </Link>
+            <Link href={`/terms?store=${encodeURIComponent(resolvedStore.slug)}`} className={STOREFRONT_TEXT_LINK_EFFECT_CLASS}>
+              {copy.policies.termsConditionsLink}
+            </Link>
+          </div>
+        </section>
+
         <section className="space-y-3">
           <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             <Clock3 className="h-3.5 w-3.5" />

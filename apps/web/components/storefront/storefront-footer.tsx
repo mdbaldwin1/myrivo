@@ -98,6 +98,16 @@ export function StorefrontFooter({
 
   const normalizedStoreSlug = storeSlug?.trim() || "";
   const unsubscribeHref = normalizedStoreSlug ? `/unsubscribe?store=${encodeURIComponent(normalizedStoreSlug)}` : "/unsubscribe";
+  const legalLinks = [
+    {
+      label: copy.footer.privacyLink,
+      href: normalizedStoreSlug ? `/privacy?store=${encodeURIComponent(normalizedStoreSlug)}` : "/privacy"
+    },
+    {
+      label: copy.footer.termsLink,
+      href: normalizedStoreSlug ? `/terms?store=${encodeURIComponent(normalizedStoreSlug)}` : "/terms"
+    }
+  ];
   const navLinksWithStore = resolvedNavLinks.map((link) => ({
     ...link,
     href:
@@ -255,6 +265,23 @@ export function StorefrontFooter({
               ))}
             </div>
           ) : null}
+        </div>
+
+        <div
+          className={cn(
+            surfaceRadiusClassName,
+            surfaceCardClassName,
+            "order-5 space-y-3 p-4 text-center sm:p-5 lg:order-none lg:text-left lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0"
+          )}
+        >
+          <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{copy.footer.legalLabel}</p>
+          <div className="flex flex-col items-center gap-2 text-sm lg:items-start">
+            {legalLinks.map((link) => (
+              <Link key={`${link.href}:${link.label}`} href={link.href} className={STOREFRONT_TEXT_LINK_EFFECT_CLASS}>
+                {link.label}
+              </Link>
+            ))}
+          </div>
         </div>
 
         {settings?.email_capture_enabled || studio?.newsletterFocus ? (

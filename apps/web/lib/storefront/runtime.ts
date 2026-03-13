@@ -11,6 +11,8 @@ export type StorefrontSurface =
   | "productDetail"
   | "about"
   | "policies"
+  | "privacy"
+  | "terms"
   | "cart"
   | "checkout";
 

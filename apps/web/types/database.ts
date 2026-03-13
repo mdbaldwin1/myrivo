@@ -161,6 +161,32 @@ export type StoreSettingsRecord = {
   updated_at: string;
 };
 
+export type StoreLegalDocumentKey = "privacy" | "terms";
+export type StoreLegalDocumentSourceMode = "template" | "custom";
+
+export type StoreLegalDocumentRecord = {
+  id: string;
+  store_id: string;
+  key: StoreLegalDocumentKey;
+  source_mode: StoreLegalDocumentSourceMode;
+  template_version: string;
+  title_override: string | null;
+  body_markdown: string;
+  variables_json: Record<string, unknown>;
+  published_source_mode: StoreLegalDocumentSourceMode;
+  published_template_version: string;
+  published_title: string | null;
+  published_body_markdown: string;
+  published_variables_json: Record<string, unknown>;
+  published_version: number;
+  published_change_summary: string | null;
+  effective_at: string | null;
+  published_at: string | null;
+  published_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type StoreEmailSubscriberStatus = "subscribed" | "unsubscribed";
 
 export type StoreEmailSubscriberRecord = {

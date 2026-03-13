@@ -112,6 +112,9 @@ export type StorefrontCopyConfig = {
     supportHeading: string;
     supportBodyPrefix: string;
     supportComingSoon: string;
+    formalDocumentsLabel: string;
+    privacyPolicyLink: string;
+    termsConditionsLink: string;
     faqLabel: string;
     fallbackFaq1Question: string;
     fallbackFaq1Answer: string;
@@ -124,10 +127,13 @@ export type StorefrontCopyConfig = {
   };
   footer: {
     shopLabel: string;
+    legalLabel: string;
     allProductsLink: string;
     cartLink: string;
     aboutLink: string;
     policiesLink: string;
+    privacyLink: string;
+    termsLink: string;
     supportLabel: string;
     contactSupport: string;
     supportComingSoon: string;
@@ -284,6 +290,9 @@ export const DEFAULT_STOREFRONT_COPY: StorefrontCopyConfig = {
     supportHeading: "Need help with an order?",
     supportBodyPrefix: "Email",
     supportComingSoon: "Support contact information is coming soon.",
+    formalDocumentsLabel: "Formal documents",
+    privacyPolicyLink: "Privacy Policy",
+    termsConditionsLink: "Terms & Conditions",
     faqLabel: "FAQ",
     fallbackFaq1Question: "When will my order ship?",
     fallbackFaq1Answer: "Orders ship according to the timeline listed in our shipping policy.",
@@ -296,10 +305,13 @@ export const DEFAULT_STOREFRONT_COPY: StorefrontCopyConfig = {
   },
   footer: {
     shopLabel: "Shop",
+    legalLabel: "Legal",
     allProductsLink: "All products",
     cartLink: "Cart",
     aboutLink: "About",
     policiesLink: "Policies",
+    privacyLink: "Privacy Policy",
+    termsLink: "Terms & Conditions",
     supportLabel: "Support",
     contactSupport: "Contact support",
     supportComingSoon: "Support contact coming soon.",
