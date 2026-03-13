@@ -28,6 +28,15 @@ function buildSessionId(input: { payloadSessionId?: string; cookieSessionId?: st
   return randomUUID().replaceAll("-", "");
 }
 
+function buildEventIdempotencyKey(input?: string) {
+  const normalized = input?.trim();
+  if (normalized) {
+    return normalized;
+  }
+
+  return `evt_${randomUUID().replaceAll("-", "")}`;
+}
+
 type StoreRow = {
   id: string;
   slug: string;
@@ -149,7 +158,7 @@ export async function POST(request: NextRequest) {
   const eventRows = events.map((event) => ({
     store_id: store.id,
     session_id: sessionRow.id,
-    idempotency_key: event.idempotencyKey?.trim() || null,
+    idempotency_key: buildEventIdempotencyKey(event.idempotencyKey),
     event_type: event.eventType,
     path: event.path ?? null,
     product_id: event.productId ?? null,

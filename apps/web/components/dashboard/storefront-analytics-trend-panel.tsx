@@ -1,3 +1,5 @@
+"use client";
+
 import React from "react";
 import {
   Bar,
@@ -81,7 +83,7 @@ export function StorefrontAnalyticsTrendPanel({ summary }: StorefrontAnalyticsTr
       ) : (
         <div className="space-y-4">
           <div className="grid gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-            <article className="rounded-md border border-border/70 bg-card p-4">
+            <article className="min-w-0 rounded-md border border-border/70 bg-card p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Sessions</p>
@@ -89,8 +91,8 @@ export function StorefrontAnalyticsTrendPanel({ summary }: StorefrontAnalyticsTr
                 </div>
                 <p className="text-xs text-muted-foreground">{summary.current.sessions} total</p>
               </div>
-              <div className="mt-4 h-56 w-full">
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="mt-4 h-56 min-w-0 w-full">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={224}>
                   <LineChart data={daily} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid vertical={false} stroke="rgba(148, 163, 184, 0.2)" />
                     <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
@@ -119,7 +121,7 @@ export function StorefrontAnalyticsTrendPanel({ summary }: StorefrontAnalyticsTr
               </div>
             </article>
 
-            <article className="rounded-md border border-border/70 bg-card p-4">
+            <article className="min-w-0 rounded-md border border-border/70 bg-card p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Revenue</p>
@@ -127,8 +129,8 @@ export function StorefrontAnalyticsTrendPanel({ summary }: StorefrontAnalyticsTr
                 </div>
                 <p className="text-xs text-muted-foreground">{formatCurrency(summary.current.revenueCents)} total</p>
               </div>
-              <div className="mt-4 h-56 w-full">
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="mt-4 h-56 min-w-0 w-full">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={224}>
                   <BarChart data={daily} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid vertical={false} stroke="rgba(148, 163, 184, 0.2)" />
                     <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />

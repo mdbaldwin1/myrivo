@@ -1,3 +1,5 @@
+"use client";
+
 import React from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { SectionCard } from "@/components/ui/section-card";
@@ -82,7 +84,7 @@ export function StorefrontAnalyticsFunnelPanel({ summary }: StorefrontAnalyticsF
   return (
     <SectionCard title="Shopper Funnel" description="See where interest turns into intent and where customers drop before purchasing.">
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_16rem]">
-        <div className="rounded-md border border-border/70 bg-card p-4">
+        <div className="min-w-0 rounded-md border border-border/70 bg-card p-4">
           <div className="space-y-3">
             <div className="grid gap-2 md:grid-cols-2">
               {steps.map((step) => (
@@ -96,8 +98,8 @@ export function StorefrontAnalyticsFunnelPanel({ summary }: StorefrontAnalyticsF
               ))}
             </div>
 
-            <div className="h-[22rem] w-full">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-[22rem] min-w-0 w-full">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={352}>
                 <BarChart data={steps} layout="vertical" margin={{ top: 8, right: 16, left: 12, bottom: 0 }}>
                   <CartesianGrid horizontal={false} stroke="rgba(148, 163, 184, 0.16)" />
                   <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />

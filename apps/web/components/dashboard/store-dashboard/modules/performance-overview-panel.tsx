@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { AppAlert } from "@/components/ui/app-alert";
 import { SectionCard } from "@/components/ui/section-card";
 import type { StoreDashboardData } from "@/lib/dashboard/store-dashboard/store-dashboard-types";
@@ -21,7 +24,11 @@ function formatDelta(value: number | null | undefined) {
 }
 
 export function PerformanceOverviewPanel({ performance, errorMessage, retryHref }: PerformanceOverviewPanelProps) {
-  const maxDailyRevenue = Math.max(1, ...performance.dailySeries.map((point) => point.grossRevenueCents));
+  const dailyRevenueChartData = performance.dailySeries.map((point) => ({
+    ...point,
+    shortDate: point.date.slice(5),
+    grossRevenueDollars: point.grossRevenueCents / 100
+  }));
 
   return (
     <SectionCard title="Performance Overview" description="Revenue trends, period deltas, and top-selling products.">
@@ -52,19 +59,37 @@ export function PerformanceOverviewPanel({ performance, errorMessage, retryHref 
 
         <section className="space-y-2">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Daily Revenue</h3>
-          <div className="grid gap-1">
-            {performance.dailySeries.length === 0 ? (
+          <div className="min-w-0">
+            {dailyRevenueChartData.length === 0 ? (
               <p className="text-sm text-muted-foreground">No paid orders in this period.</p>
             ) : (
-              performance.dailySeries.map((point) => (
-                <div key={point.date} className="grid grid-cols-[80px_1fr_120px] items-center gap-2 text-xs">
-                  <span>{point.date.slice(5)}</span>
-                  <div className="h-2 overflow-hidden rounded-full bg-muted">
-                    <div className="h-full bg-primary" style={{ width: `${(point.grossRevenueCents / maxDailyRevenue) * 100}%` }} />
-                  </div>
-                  <span>{formatCurrency(point.grossRevenueCents)}</span>
-                </div>
-              ))
+              <div className="h-64 min-w-0 rounded-md border border-border bg-muted/10 p-3">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
+                  <BarChart data={dailyRevenueChartData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/60" />
+                    <XAxis
+                      dataKey="shortDate"
+                      tickLine={false}
+                      axisLine={false}
+                      fontSize={12}
+                      className="fill-muted-foreground"
+                    />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      fontSize={12}
+                      className="fill-muted-foreground"
+                      tickFormatter={(value) => `$${value}`}
+                    />
+                    <Tooltip
+                      cursor={{ fill: "hsl(var(--muted) / 0.28)" }}
+                      formatter={(value) => [`$${Number(value ?? 0).toFixed(2)}`, "Revenue"]}
+                      labelFormatter={(label) => `Date: ${label}`}
+                    />
+                    <Bar dataKey="grossRevenueDollars" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             )}
           </div>
         </section>

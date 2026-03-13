@@ -205,6 +205,63 @@ describe("analytics collect route", () => {
     expect(response.cookies.get("myrivo_analytics_sid")?.value).toBe("existing_cookie_session_1234");
   });
 
+  test("generates idempotency keys when callers omit them", async () => {
+    const upsertEventMock = vi.fn(async () => ({ error: null }));
+    const upsertSessionMock = vi.fn(() => ({
+      select: vi.fn(() => ({
+        single: vi.fn(async () => ({ data: { id: "sess-generated-idempotency" }, error: null }))
+      }))
+    }));
+
+    adminFromMock.mockImplementation((table: string) => {
+      if (table === "stores") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({
+                data: { id: "store-1", slug: "demo-store", status: "active" },
+                error: null
+              }))
+            }))
+          }))
+        };
+      }
+
+      if (table === "storefront_sessions") {
+        return {
+          upsert: upsertSessionMock
+        };
+      }
+
+      if (table === "storefront_events") {
+        return {
+          upsert: upsertEventMock
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const route = await import("@/app/api/analytics/collect/route");
+    const request = new NextRequest("http://localhost:3000/api/analytics/collect", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        storeSlug: "demo-store",
+        events: [{ eventType: "page_view", path: "/s/demo-store" }]
+      })
+    });
+
+    const response = await route.POST(request);
+    expect(response.status).toBe(200);
+
+    const mockCalls = upsertEventMock.mock.calls as unknown[];
+    const firstCall = (mockCalls[0] ?? []) as unknown[];
+    const upsertArgs = (firstCall[0] ?? []) as Array<{ idempotency_key: string }>;
+    expect(upsertArgs).toHaveLength(1);
+    expect(upsertArgs[0]?.idempotency_key).toMatch(/^evt_[a-z0-9]+$/);
+  });
+
   test("sanitizes risky attribution and event payload values before persistence", async () => {
     const upsertEventMock = vi.fn(async () => ({ error: null }));
     const upsertSessionMock = vi.fn(() => ({

@@ -260,7 +260,6 @@ export function DashboardNav({
 
   const isStoreSettingsMode =
     normalizedPath === `${storeWorkspaceBaseHref}/store-settings` || normalizedPath.startsWith(`${storeWorkspaceBaseHref}/store-settings/`);
-  const isAnalyticsMode = normalizedPath === `${storeWorkspaceBaseHref}/analytics` || normalizedPath.startsWith(`${storeWorkspaceBaseHref}/analytics/`);
   const isReportsMode = normalizedPath === `${storeWorkspaceBaseHref}/reports` || normalizedPath.startsWith(`${storeWorkspaceBaseHref}/reports/`);
   const isAdminWorkspaceMode = normalizedPath === "/dashboard/admin" || normalizedPath.startsWith("/dashboard/admin/");
 
@@ -294,13 +293,6 @@ export function DashboardNav({
                 <div className="space-y-1">
                   {showLabels ? <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Reports Workspace</p> : null}
                   {reportsWorkspaceLinks.map((link) => renderNavLink(link))}
-                </div>
-              ) : isAnalyticsMode ? (
-                <div className="space-y-1">
-                  {showLabels ? <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Analytics Workspace</p> : null}
-                  {analyticsDashboardEnabled
-                    ? renderNavLink({ href: `${storeWorkspaceBaseHref}/analytics`, label: "Overview", icon: BarChart3 })
-                    : null}
                 </div>
               ) : (
                 <div className="space-y-1">
@@ -417,31 +409,29 @@ export function DashboardNav({
                   <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
                 </Button>
               ) : (
-                renderCollapsedTooltip(
-                  accountName,
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="h-auto w-10 justify-center rounded-md border border-transparent px-0 py-2 hover:border-border/60"
-                  >
-                    <span className="flex min-w-0 items-center justify-center">
-                      {userAvatarPath ? (
-                        <Image
-                          src={userAvatarPath}
-                          alt="User avatar"
-                          width={32}
-                          height={32}
-                          unoptimized
-                          className="h-8 w-8 shrink-0 rounded-full border border-border object-cover"
-                        />
-                      ) : (
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border bg-muted text-xs font-semibold">
-                          {initials}
-                        </span>
-                      )}
-                    </span>
-                  </Button>
-                )
+                <Button
+                  type="button"
+                  variant="ghost"
+                  aria-label={`${accountName} account menu`}
+                  className="h-auto w-10 justify-center rounded-md border border-transparent px-0 py-2 hover:border-border/60"
+                >
+                  <span className="flex min-w-0 items-center justify-center">
+                    {userAvatarPath ? (
+                      <Image
+                        src={userAvatarPath}
+                        alt="User avatar"
+                        width={32}
+                        height={32}
+                        unoptimized
+                        className="h-8 w-8 shrink-0 rounded-full border border-border object-cover"
+                      />
+                    ) : (
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border bg-muted text-xs font-semibold">
+                        {initials}
+                      </span>
+                    )}
+                  </span>
+                </Button>
               )}
             </DropdownMenuTrigger>
             <DropdownMenuContent side="top" align={showLabels ? "start" : "center"} className="min-w-64">
