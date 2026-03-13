@@ -51,9 +51,11 @@ describe("storefront analytics dashboard ui", () => {
 
     expect(funnelMarkup).toContain("Shopper Funnel");
     expect(funnelMarkup).toContain("Started checkout");
+    expect(funnelMarkup).toContain("Shopper funnel summary with shopper counts");
     expect(trendMarkup).toContain("Traffic and Revenue Trend");
     expect(trendMarkup).toContain("Revenue");
     expect(trendMarkup).toContain("Mar 10");
+    expect(trendMarkup).toContain("Daily storefront traffic and revenue summary");
   });
 
   test("renders merchandising actions back into owner workflows", () => {

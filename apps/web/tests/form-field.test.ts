@@ -21,6 +21,22 @@ function FormFieldFixture() {
   );
 }
 
+function WrappedCheckboxFixture() {
+  return createElement(
+    FormFieldElement,
+    {
+      label: "Show search",
+      description: "Displays the product search field."
+    },
+    createElement(
+      "label",
+      { className: "flex h-10 items-center gap-2 text-sm" },
+      createElement("input", { type: "checkbox", defaultChecked: true }),
+      createElement("span", null, "Enabled")
+    )
+  );
+}
+
 describe("FormField", () => {
   test("associates labels and descriptions with direct controls", () => {
     const markup = renderToStaticMarkup(createElement(FormFieldFixture));
@@ -30,5 +46,14 @@ describe("FormField", () => {
     expect(markup).toContain(`id="${labelMatch?.[1]}"`);
     expect(markup).toContain("aria-describedby=");
     expect(markup).toContain("Visible to shoppers.");
+  });
+
+  test("associates wrapped checkbox controls without rendering duplicate labels", () => {
+    const markup = renderToStaticMarkup(createElement(WrappedCheckboxFixture));
+
+    expect(markup).toContain('type="checkbox"');
+    expect(markup).toContain('aria-labelledby="');
+    expect(markup).toContain("Displays the product search field.");
+    expect(markup.match(/<label[^>]*for=/g)?.length ?? 0).toBe(0);
   });
 });

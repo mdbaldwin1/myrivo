@@ -16,6 +16,7 @@ import { StorefrontImageCarousel } from "@/components/storefront/storefront-imag
 import { StorefrontCartButton } from "@/components/storefront/storefront-cart-button";
 import { StorefrontFooter } from "@/components/storefront/storefront-footer";
 import { StorefrontReviewsSection } from "@/components/storefront/storefront-reviews-section";
+import { MAIN_CONTENT_ID } from "@/lib/accessibility";
 import { StorefrontStudioEditableLink } from "@/components/storefront/storefront-studio-editable-link";
 import { StorefrontStudioEditableInputPlaceholder } from "@/components/storefront/storefront-studio-editable-input-placeholder";
 import { StorefrontStudioEditableStoreName } from "@/components/storefront/storefront-studio-editable-store-name";
@@ -679,7 +680,7 @@ export function StorefrontPage(props: StorefrontPageProps) {
         rightContent={<StorefrontCartButton storeSlug={resolvedStore.slug} buttonRadiusClass={buttonRadiusClass} ariaLabel={copy.nav.openCartAria} />}
       />
 
-      <main className={getStorefrontPageShellClass(themeConfig.pageWidth, themeConfig.spacingScale)}>
+      <main id={MAIN_CONTENT_ID} tabIndex={-1} className={cn(getStorefrontPageShellClass(themeConfig.pageWidth, themeConfig.spacingScale), "focus:outline-none")}>
         {shouldShowHomeHero ? (
           <section className="group/hero space-y-6 border-b border-border/40 pb-8 pt-1 sm:space-y-8 sm:pb-10 sm:pt-2">
             <div

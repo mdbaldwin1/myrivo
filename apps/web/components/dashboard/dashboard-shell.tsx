@@ -12,6 +12,7 @@ import { DashboardMobileNavSheet } from "@/components/dashboard/dashboard-mobile
 import { DashboardNav } from "@/components/dashboard/dashboard-nav";
 import { useLocalStorageFlag, writeLocalStorageFlag } from "@/components/dashboard/use-local-storage-flag";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { MAIN_CONTENT_ID } from "@/lib/accessibility";
 import { cn } from "@/lib/utils";
 import type { StoreOption } from "@/components/dashboard/store-switcher";
 import type { GlobalUserRole } from "@/types/database";
@@ -56,7 +57,7 @@ export function DashboardShell({
   }
 
   return (
-    <main data-dashboard-shell="true" className="fixed inset-0 flex w-full flex-col overflow-hidden bg-stone-50">
+    <div data-dashboard-shell="true" className="fixed inset-0 flex w-full flex-col overflow-hidden bg-stone-50">
       <header className="shrink-0 border-b border-border/70 bg-white/95 supports-[backdrop-filter]:bg-white/90 supports-[backdrop-filter]:backdrop-blur">
         <div className="flex h-16 items-center justify-between gap-3 px-4 lg:px-6">
           <div className="flex min-w-0 items-center gap-3">
@@ -93,6 +94,7 @@ export function DashboardShell({
         <div
           className={cn(
             "relative hidden shrink-0 transition-[width] duration-200 ease-out lg:flex",
+            "motion-reduce:transition-none",
             sidebarCollapsed ? "w-[5rem]" : "w-[18.5rem]"
           )}
         >
@@ -124,10 +126,15 @@ export function DashboardShell({
           </Button>
         </div>
 
-        <div data-dashboard-scroll-container="true" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-none bg-stone-50">
+        <main
+          id={MAIN_CONTENT_ID}
+          tabIndex={-1}
+          data-dashboard-scroll-container="true"
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-none bg-stone-50 focus:outline-none"
+        >
           <div className="flex min-h-full min-w-0 flex-1 flex-col">{children}</div>
-        </div>
+        </main>
       </div>
-    </main>
+    </div>
   );
 }

@@ -91,6 +91,7 @@ export function StorefrontMobileNavSheet({ storeName, navItems, currentPath }: S
                 <li key={item.href}>
                   <Link
                     href={item.href}
+                    aria-current={isActive ? "page" : undefined}
                     onClick={() => setIsOpen(false)}
                     className={cn(
                       STOREFRONT_TEXT_LINK_EFFECT_CLASS,

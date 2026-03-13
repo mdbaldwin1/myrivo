@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { StorefrontMobileNavSheet } from "@/components/storefront/storefront-mobile-nav-sheet";
+import { isStorefrontNavLinkActive, StorefrontMobileNavSheet } from "@/components/storefront/storefront-mobile-nav-sheet";
 import { StorefrontStudioEditableLogo } from "@/components/storefront/storefront-studio-editable-logo";
 import { useOptionalStorefrontRuntime } from "@/components/storefront/storefront-runtime-provider";
 import { resolveStorefrontThemeConfig } from "@/lib/theme/storefront-theme";
@@ -127,7 +127,7 @@ export function StorefrontHeader(props: StorefrontHeaderProps) {
         className={cn(
           studioEnabled ? "absolute inset-x-0 z-40" : "fixed left-0 right-0 z-50",
           "border-b border-border/60 bg-[color:var(--storefront-header-bg)] text-[color:var(--storefront-header-fg)]",
-          "transition-all duration-200"
+          "transition-all duration-200 motion-reduce:transition-none"
         )}
       >
         <div
@@ -152,18 +152,24 @@ export function StorefrontHeader(props: StorefrontHeaderProps) {
           <div className="flex items-center gap-2.5 sm:gap-4">
             <StorefrontMobileNavSheet storeName={storeName} navItems={navItems} currentPath={pathname} />
             <nav className="hidden items-center gap-5 text-sm text-[color:var(--storefront-header-fg)]/75 md:flex">
-              {navItems.map((item) => (
-                <Link
-                  key={item.label}
-                  href={item.href}
-                  className={cn(
-                    STOREFRONT_TEXT_LINK_EFFECT_CLASS,
-                    "px-2 py-1 hover:text-[color:var(--storefront-header-fg)]"
-                  )}
-                >
-                  {item.label}
-                </Link>
-              ))}
+              {navItems.map((item) => {
+                const isActive = isStorefrontNavLinkActive(pathname, item.href);
+
+                return (
+                  <Link
+                    key={item.label}
+                    href={item.href}
+                    aria-current={isActive ? "page" : undefined}
+                    className={cn(
+                      STOREFRONT_TEXT_LINK_EFFECT_CLASS,
+                      "px-2 py-1 hover:text-[color:var(--storefront-header-fg)]",
+                      isActive && "text-[color:var(--storefront-header-fg)]"
+                    )}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
             </nav>
             <div className="text-[color:var(--storefront-header-fg)]">{rightContent}</div>
           </div>
