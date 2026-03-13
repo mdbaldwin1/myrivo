@@ -17,6 +17,11 @@ export type OwnerDoc = {
   category: OwnerDocCategory;
   audience: string;
   lastUpdated: string;
+  owner: string;
+  reviewCadence: string;
+  reviewBy: string;
+  reviewByLabel: string;
+  isReviewOverdue: boolean;
   sections: DocSection[];
 };
 
@@ -26,8 +31,34 @@ const frontmatterSchema = z.object({
   summary: z.string().trim().min(1),
   category: z.enum(["Getting Started", "Operations", "Storefront", "Team", "Reporting"]),
   audience: z.string().trim().min(1),
-  lastUpdated: z.string().trim().min(1)
+  lastUpdated: z.string().trim().min(1),
+  owner: z.string().trim().min(1),
+  reviewCadence: z.enum(["Monthly", "Quarterly", "Semiannual"]),
+  reviewBy: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/)
 });
+
+function formatReviewDate(value: string) {
+  const reviewDate = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(reviewDate.getTime())) {
+    throw new Error(`Invalid reviewBy date: ${value}`);
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC"
+  }).format(reviewDate);
+}
+
+function isReviewOverdue(value: string) {
+  const reviewDate = new Date(`${value}T23:59:59Z`);
+  if (Number.isNaN(reviewDate.getTime())) {
+    throw new Error(`Invalid reviewBy date: ${value}`);
+  }
+
+  return reviewDate.getTime() < Date.now();
+}
 
 function resolveDocsDirectory() {
   const candidates = [path.join(process.cwd(), "content", "docs"), path.join(process.cwd(), "apps", "web", "content", "docs")];
@@ -131,6 +162,8 @@ function loadOwnerDocsFromFiles(): OwnerDoc[] {
     const parsed = parseFrontmatter(raw);
     return {
       ...parsed.metadata,
+      reviewByLabel: formatReviewDate(parsed.metadata.reviewBy),
+      isReviewOverdue: isReviewOverdue(parsed.metadata.reviewBy),
       sections: parseSections(parsed.body)
     };
   });

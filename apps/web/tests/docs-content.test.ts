@@ -25,6 +25,11 @@ describe("owner docs content", () => {
       expect(doc.title.length).toBeGreaterThan(0);
       expect(doc.summary.length).toBeGreaterThan(0);
       expect(DOC_CATEGORY_ORDER).toContain(doc.category);
+      expect(doc.owner.length).toBeGreaterThan(0);
+      expect(["Monthly", "Quarterly", "Semiannual"]).toContain(doc.reviewCadence);
+      expect(doc.reviewBy).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(doc.reviewByLabel.length).toBeGreaterThan(0);
+      expect(typeof doc.isReviewOverdue).toBe("boolean");
       expect(doc.sections.length).toBeGreaterThan(0);
       expect(slugs.has(doc.slug)).toBe(false);
       slugs.add(doc.slug);

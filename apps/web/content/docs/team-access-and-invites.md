@@ -5,6 +5,9 @@ summary: Invite staff safely and manage store-level roles without losing owner c
 category: Team
 audience: Store owners and admins
 lastUpdated: March 2026
+owner: Merchant Education
+reviewCadence: Quarterly
+reviewBy: 2026-06-30
 ---
 
 ## Role Model
@@ -18,3 +21,8 @@ Use Team settings to assign admin, staff, and customer access by store workspace
 Send invites from Team settings and share the generated `/invite/:token` link securely.
 
 Invites are enforced against the invited email account at acceptance time.
+
+## Related Docs
+
+- `/docs/getting-started`
+- `/docs/merchant-troubleshooting`

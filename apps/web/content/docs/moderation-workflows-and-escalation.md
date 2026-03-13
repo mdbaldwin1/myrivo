@@ -5,6 +5,9 @@ summary: Review user-generated content, apply consistent moderation actions, and
 category: Operations
 audience: Support and trust operators
 lastUpdated: March 2026
+owner: Trust & Safety
+reviewCadence: Monthly
+reviewBy: 2026-04-15
 ---
 
 ## Moderation Queue Triage
@@ -21,3 +24,9 @@ Target same-day handling for critical violations and 1-business-day handling for
 
 ## Evidence Handling
 Capture review ID, action taken, rationale, and timestamps for every moderation event.
+
+## Related Docs
+
+- `/docs/admin-dashboard-and-operations`
+- `/docs/audit-explorer-and-evidence`
+- `/docs/support-operations-and-escalation`

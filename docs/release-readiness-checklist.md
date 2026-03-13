@@ -21,6 +21,7 @@ This checklist is for the final release cut from `develop` to `main`.
 - [ ] `npm run typecheck` (Owner: Engineering, Target: 2026-03-10)
 - [ ] `npm run test` (Owner: Engineering, Target: 2026-03-10)
 - [ ] `npm run build` (Owner: Engineering, Target: 2026-03-10)
+- [ ] `/docs` reviewed for overdue documentation and stale workflow guidance before release cut. (Owner: Documentation, Target: 2026-03-13)
 - [ ] Latest Supabase migrations applied in target environment. (Owner: Engineering, Target: 2026-03-10)
 - [ ] `npm run verify:platform-rollout` passes in target environment. (Owner: Engineering, Target: 2026-03-10)
 - [ ] Reviews rollout gate configured (`REVIEWS_FEATURE_ENABLED`, `REVIEWS_ROLLOUT_STORE_SLUGS`) per launch phase. (Owner: Engineering, Target: 2026-03-12)

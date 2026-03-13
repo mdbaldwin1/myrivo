@@ -5,6 +5,7 @@
 2. Review `/dashboard/admin/moderation` queue and prioritize high-severity items.
 3. Review `/dashboard/admin/legal` for pending legal communication tasks.
 4. Review `/dashboard/admin/audit` for unresolved investigation follow-ups.
+5. Review `/dashboard/admin/marketing` when a public-site or signup-conversion issue is reported.
 
 ## Investigation Procedure
 1. Identify affected entity (`store`, `review`, `legal_update`, `context_help`, etc.).
@@ -25,3 +26,12 @@ bd close <issue-id>
 - Include exact route links in all handoffs.
 - Provide a concise timeline: detection, mitigation, resolution.
 - For legal/compliance requests, attach acceptance export + version metadata.
+
+## Core route map
+
+- Admin dashboard: `/dashboard/admin`
+- Store governance: `/dashboard/admin/stores`
+- Moderation: `/dashboard/admin/moderation`
+- Audit explorer: `/dashboard/admin/audit`
+- Legal governance: `/dashboard/admin/legal`
+- Marketing analytics: `/dashboard/admin/marketing`

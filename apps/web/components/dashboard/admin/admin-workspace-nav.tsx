@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Shield, Scale, MessageSquareWarning, ScrollText, LayoutDashboard, FileText } from "lucide-react";
+import { Shield, Scale, MessageSquareWarning, ScrollText, LayoutDashboard, FileText, ChartNoAxesColumn } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -11,7 +11,8 @@ const links = [
   { href: "/dashboard/admin/stores", label: "Store Governance", icon: Scale },
   { href: "/dashboard/admin/moderation", label: "Moderation", icon: MessageSquareWarning },
   { href: "/dashboard/admin/audit", label: "Audit Explorer", icon: ScrollText },
-  { href: "/dashboard/admin/legal", label: "Legal Governance", icon: FileText }
+  { href: "/dashboard/admin/legal", label: "Legal Governance", icon: FileText },
+  { href: "/dashboard/admin/marketing", label: "Marketing Analytics", icon: ChartNoAxesColumn }
 ] as const;
 
 export function AdminWorkspaceNav() {

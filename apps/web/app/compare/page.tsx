@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { MarketingSiteChrome } from "@/components/marketing/marketing-site-chrome";
-import { Button } from "@/components/ui/button";
+import { MarketingTrackedButtonLink } from "@/components/marketing/marketing-tracked-button-link";
 
 const comparisonRows = [
   {
@@ -67,19 +66,36 @@ export default function ComparePage() {
           If you are evaluating platform fit for your team, start with a free account and then map operational requirements in the docs.
         </p>
         <div className="mt-5 flex flex-wrap gap-3">
-          <Link href="/signup">
-            <Button className="h-10 rounded-full bg-background px-5 text-[hsl(var(--primary))] hover:bg-[hsl(var(--muted))]">Create account</Button>
-          </Link>
-          <Link href="/features">
-            <Button variant="outline" className="h-10 rounded-full border-[hsl(var(--primary-foreground))]/50 bg-transparent px-5 text-primary-foreground hover:bg-white/10">
-              Explore features
-            </Button>
-          </Link>
-          <Link href="/docs">
-            <Button variant="outline" className="h-10 rounded-full border-[hsl(var(--primary-foreground))]/50 bg-transparent px-5 text-primary-foreground hover:bg-white/10">
-              Open docs
-            </Button>
-          </Link>
+          <MarketingTrackedButtonLink
+            href="/signup"
+            ctaKey="compare_next_create_account"
+            ctaLabel="Create account"
+            sectionKey="next_step"
+            conversionIntent="signup"
+            className="h-10 rounded-full bg-background px-5 text-[hsl(var(--primary))] hover:bg-[hsl(var(--muted))]"
+          >
+            Create account
+          </MarketingTrackedButtonLink>
+          <MarketingTrackedButtonLink
+            href="/features"
+            ctaKey="compare_next_explore_features"
+            ctaLabel="Explore features"
+            sectionKey="next_step"
+            variant="outline"
+            className="h-10 rounded-full border-[hsl(var(--primary-foreground))]/50 bg-transparent px-5 text-primary-foreground hover:bg-white/10"
+          >
+            Explore features
+          </MarketingTrackedButtonLink>
+          <MarketingTrackedButtonLink
+            href="/docs"
+            ctaKey="compare_next_open_docs"
+            ctaLabel="Open docs"
+            sectionKey="next_step"
+            variant="outline"
+            className="h-10 rounded-full border-[hsl(var(--primary-foreground))]/50 bg-transparent px-5 text-primary-foreground hover:bg-white/10"
+          >
+            Open docs
+          </MarketingTrackedButtonLink>
         </div>
       </section>
     </MarketingSiteChrome>

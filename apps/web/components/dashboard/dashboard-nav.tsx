@@ -15,6 +15,7 @@ import {
   Home,
   LayoutDashboard,
   Bell,
+  ChartNoAxesColumn,
   LogOut,
   Mail,
   PenSquare,
@@ -153,7 +154,8 @@ export function DashboardNav({
     { href: "/dashboard/admin/stores", label: "Store Governance", icon: Store },
     { href: "/dashboard/admin/moderation", label: "Moderation", icon: ClipboardList },
     { href: "/dashboard/admin/audit", label: "Audit Explorer", icon: Shield },
-    { href: "/dashboard/admin/legal", label: "Legal Governance", icon: FileText }
+    { href: "/dashboard/admin/legal", label: "Legal Governance", icon: FileText },
+    { href: "/dashboard/admin/marketing", label: "Marketing Analytics", icon: ChartNoAxesColumn }
   ];
 
   const storeWorkspaceLinks: DashboardNavLink[] = [

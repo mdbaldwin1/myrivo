@@ -10,6 +10,11 @@ type SignupPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
+function getSingleParam(params: Record<string, string | string[] | undefined>, key: string) {
+  const value = params[key];
+  return typeof value === "string" ? value : null;
+}
+
 export default async function SignupPage({ searchParams }: SignupPageProps) {
   const resolvedSearchParams = await searchParams;
   const requestedReturnTo = typeof resolvedSearchParams.returnTo === "string" ? resolvedSearchParams.returnTo : null;
@@ -31,6 +36,13 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
     <PageShell maxWidthClassName="max-w-lg">
       <SignupForm
         returnTo={returnTo}
+        marketingAttribution={{
+          source: getSingleParam(resolvedSearchParams, "source"),
+          marketingPage: getSingleParam(resolvedSearchParams, "marketingPage"),
+          marketingSection: getSingleParam(resolvedSearchParams, "marketingSection"),
+          marketingCta: getSingleParam(resolvedSearchParams, "marketingCta"),
+          marketingLabel: getSingleParam(resolvedSearchParams, "marketingLabel")
+        }}
         legalRequirements={
           legalRequirements.terms && legalRequirements.privacy
             ? {

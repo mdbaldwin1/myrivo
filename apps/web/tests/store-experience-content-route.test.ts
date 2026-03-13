@@ -11,6 +11,7 @@ let ownedStoreBundleMock: { store: { id: string } } | null = { store: { id: "sto
 let lastRequestedStoreSlug: string | null = null;
 let originGuardResponse: Response | null = null;
 let lastUpsertPayload: Record<string, unknown> | null = null;
+let lastUpsertConflictTarget: string | null = null;
 let selectErrorMessage: string | null = null;
 let upsertErrorMessage: string | null = null;
 
@@ -72,8 +73,9 @@ function buildSupabaseMock() {
             }))
           }))
         })),
-        upsert: vi.fn((payload: Record<string, unknown>) => {
+        upsert: vi.fn((payload: Record<string, unknown>, options?: { onConflict?: string }) => {
           lastUpsertPayload = payload;
+          lastUpsertConflictTarget = options?.onConflict ?? null;
           return {
             select: vi.fn(() => ({
               single: vi.fn(async () => ({
@@ -102,6 +104,7 @@ beforeEach(() => {
   ownedStoreBundleMock = { store: { id: "store-1" } };
   originGuardResponse = null;
   lastUpsertPayload = null;
+  lastUpsertConflictTarget = null;
   selectErrorMessage = null;
   upsertErrorMessage = null;
   lastRequestedStoreSlug = null;
@@ -157,6 +160,41 @@ describe("store experience content route", () => {
 
     expect(response.status).toBe(200);
     expect(lastRequestedStoreSlug).toBe("second-store");
+  });
+
+  test("PUT resolves the requested store slug and writes only to the resolved store", async () => {
+    ownedStoreBundleMock = { store: { id: "store-2" } };
+
+    const request = new NextRequest("http://localhost:3000/api/store-experience/content?storeSlug=second-store", {
+      method: "PUT",
+      body: JSON.stringify({
+        section: "productsPage",
+        value: {
+          reviews: {
+            showSummary: false
+          }
+        }
+      }),
+      headers: {
+        "content-type": "application/json",
+        origin: "http://localhost:3000",
+        host: "localhost:3000"
+      }
+    });
+
+    const response = await callPutHandler(request);
+
+    expect(response.status).toBe(200);
+    expect(lastRequestedStoreSlug).toBe("second-store");
+    expect(lastUpsertConflictTarget).toBe("store_id");
+    expect(lastUpsertPayload).toMatchObject({
+      store_id: "store-2",
+      products_page_json: {
+        reviews: {
+          showSummary: false
+        }
+      }
+    });
   });
 
   test("PUT returns 400 for invalid body", async () => {

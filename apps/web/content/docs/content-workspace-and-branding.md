@@ -5,6 +5,9 @@ summary: Control storefront messaging, structure, and visual system across all c
 category: Storefront
 audience: Brand and content teams
 lastUpdated: March 2026
+owner: Merchant Education
+reviewCadence: Quarterly
+reviewBy: 2026-06-30
 ---
 
 ## Content Workspace Surfaces
@@ -15,3 +18,9 @@ Use Store Settings > Branding to control reusable color and visual tokens applie
 
 ## Publishing Workflow
 After major copy changes, run a mobile and desktop storefront review before campaign sends.
+
+## Related Docs
+
+- `/docs/email-studio-and-lifecycle-messages`
+- `/docs/domains-and-launch-readiness`
+- `/docs/reviews-and-customer-trust`

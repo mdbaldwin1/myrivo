@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { MarketingSiteChrome } from "@/components/marketing/marketing-site-chrome";
-import { Button } from "@/components/ui/button";
+import { MarketingTrackedButtonLink } from "@/components/marketing/marketing-tracked-button-link";
 
 export const metadata: Metadata = {
   title: "Store builder for handmade products | Myrivo",
@@ -41,14 +40,26 @@ export default function HandmadeProductsPage() {
           <h2 className="[font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-2xl">Launch your first store</h2>
           <p className="mt-3 text-sm text-[hsl(var(--primary-foreground))]">Create your account, configure catalog + fulfillment, and publish with confidence.</p>
           <div className="mt-5 flex flex-wrap gap-3">
-            <Link href="/signup">
-              <Button className="h-10 rounded-full bg-background px-5 text-[hsl(var(--primary))] hover:bg-[hsl(var(--muted))]">Start free</Button>
-            </Link>
-            <Link href="/features">
-              <Button variant="outline" className="h-10 rounded-full border-[hsl(var(--primary-foreground))]/50 bg-transparent px-5 text-primary-foreground hover:bg-white/10">
-                View features
-              </Button>
-            </Link>
+            <MarketingTrackedButtonLink
+              href="/signup"
+              ctaKey="handmade_launch_start_free"
+              ctaLabel="Start free"
+              sectionKey="launch_card"
+              conversionIntent="signup"
+              className="h-10 rounded-full bg-background px-5 text-[hsl(var(--primary))] hover:bg-[hsl(var(--muted))]"
+            >
+              Start free
+            </MarketingTrackedButtonLink>
+            <MarketingTrackedButtonLink
+              href="/features"
+              ctaKey="handmade_launch_view_features"
+              ctaLabel="View features"
+              sectionKey="launch_card"
+              variant="outline"
+              className="h-10 rounded-full border-[hsl(var(--primary-foreground))]/50 bg-transparent px-5 text-primary-foreground hover:bg-white/10"
+            >
+              View features
+            </MarketingTrackedButtonLink>
           </div>
         </article>
       </section>

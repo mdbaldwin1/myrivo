@@ -97,6 +97,18 @@ export const COOKIE_INVENTORY: readonly CookieInventoryEntry[] = [
     owner: "platform"
   },
   {
+    key: "myrivo_marketing_sid",
+    name: "Marketing-site analytics session",
+    provider: "Myrivo",
+    storageType: "cookie",
+    category: "analytics",
+    essential: false,
+    duration: "30 days",
+    surfaces: ["platform_public"],
+    purpose: "Associate visits and CTA interactions on Myrivo marketing pages with a single marketing session for funnel reporting.",
+    owner: "platform"
+  },
+  {
     key: "myrivo.analytics.session.<store-slug>",
     name: "Storefront analytics local session mirror",
     provider: "Myrivo",
@@ -106,6 +118,18 @@ export const COOKIE_INVENTORY: readonly CookieInventoryEntry[] = [
     duration: "30 days",
     surfaces: ["storefront"],
     purpose: "Mirror the storefront analytics session in local storage so client-side analytics can reuse the same session key.",
+    owner: "platform"
+  },
+  {
+    key: "myrivo.marketing.session",
+    name: "Marketing analytics local session mirror",
+    provider: "Myrivo",
+    storageType: "local_storage",
+    category: "analytics",
+    essential: false,
+    duration: "30 days",
+    surfaces: ["platform_public"],
+    purpose: "Mirror the marketing analytics session in local storage so client-side CTA and signup events reuse the same session key.",
     owner: "platform"
   }
 ] as const;

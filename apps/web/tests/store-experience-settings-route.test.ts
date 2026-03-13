@@ -38,6 +38,7 @@ let ownedStoreBundleMock:
   | null;
 let originGuardResponse: Response | null = null;
 let storesUpdatePayload: Record<string, unknown> | null = null;
+let storesUpdateTargetId: string | null = null;
 let settingsUpsertPayload: Record<string, unknown> | null = null;
 let storesUpdateErrorMessage: string | null = null;
 let brandingUpsertErrorMessage: string | null = null;
@@ -102,9 +103,15 @@ function buildSupabaseMock() {
           update: vi.fn((payload: Record<string, unknown>) => {
             storesUpdatePayload = payload;
             return {
-              eq: vi.fn(async () => ({
-                error: storesUpdateErrorMessage ? { message: storesUpdateErrorMessage } : null
-              }))
+              eq: vi.fn((column: string, value: string) => {
+                if (column === "id") {
+                  storesUpdateTargetId = value;
+                }
+
+                return Promise.resolve({
+                  error: storesUpdateErrorMessage ? { message: storesUpdateErrorMessage } : null
+                });
+              })
             };
           })
         };
@@ -164,6 +171,7 @@ beforeEach(() => {
   };
   originGuardResponse = null;
   storesUpdatePayload = null;
+  storesUpdateTargetId = null;
   settingsUpsertPayload = null;
   storesUpdateErrorMessage = null;
   brandingUpsertErrorMessage = null;
@@ -208,10 +216,64 @@ describe("store experience settings route", () => {
     expect(payload.ok).toBe(true);
     expect(payload.updatedAreas).toEqual(expect.arrayContaining(["profile", "checkoutRules"]));
     expect(storesUpdatePayload).toMatchObject({ name: "New Name" });
+    expect(storesUpdateTargetId).toBe("store-1");
     expect(settingsUpsertPayload).toMatchObject({
       store_id: "store-1",
       checkout_enable_local_pickup: true,
       checkout_local_pickup_fee_cents: 250
+    });
+  });
+
+  test("PUT resolves the requested store slug and writes only to that store", async () => {
+    ownedStoreBundleMock = {
+      store: {
+        id: "store-2",
+        name: "Second Store",
+        slug: "second-store",
+        status: "active",
+        stripe_account_id: "acct_123"
+      },
+      branding: {
+        logo_path: null,
+        primary_color: null,
+        accent_color: null,
+        theme_json: {}
+      },
+      settings: {
+        fulfillment_message: "Ready in 1 day",
+        checkout_enable_local_pickup: false,
+        checkout_local_pickup_label: "Pickup",
+        checkout_local_pickup_fee_cents: 0,
+        checkout_enable_flat_rate_shipping: true,
+        checkout_flat_rate_shipping_label: "Ship it",
+        checkout_flat_rate_shipping_fee_cents: 500,
+        checkout_allow_order_note: false,
+        checkout_order_note_prompt: "Add a note"
+      }
+    };
+
+    const request = new NextRequest("http://localhost:3000/api/store-experience/settings?storeSlug=second-store", {
+      method: "PUT",
+      body: JSON.stringify({
+        profile: { name: "Second Store Updated" },
+        seo: { title: "Second Store SEO" }
+      }),
+      headers: {
+        "content-type": "application/json",
+        origin: "http://localhost:3000",
+        host: "localhost:3000"
+      }
+    });
+
+    const response = await callPutHandler(request);
+
+    expect(response.status).toBe(200);
+    expect(lastRequestedStoreSlug).toBe("second-store");
+    expect(storesUpdateTargetId).toBe("store-2");
+    expect(storesUpdatePayload).toMatchObject({ name: "Second Store Updated" });
+    expect(settingsUpsertPayload).toMatchObject({
+      store_id: "store-2",
+      seo_title: "Second Store SEO"
     });
   });
 

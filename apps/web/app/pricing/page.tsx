@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { MarketingSiteChrome } from "@/components/marketing/marketing-site-chrome";
-import { Button } from "@/components/ui/button";
+import { MarketingTrackedButtonLink } from "@/components/marketing/marketing-tracked-button-link";
 import { formatMoney, formatPlatformFeePercent, resolvePricingPlans, type BillingPlanRow } from "@/lib/marketing/pricing";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -48,21 +47,37 @@ export default async function PricingPage() {
           Plan pricing comes from live billing config and every paid order snapshots fee math for audit-grade payout reporting.
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
-          <Link href={isAuthenticated ? "/dashboard/billing?entry=pricing" : "/signup?source=pricing"}>
-            <Button className="h-11 rounded-full bg-primary px-6 text-primary-foreground hover:bg-primary">
-              {isAuthenticated ? "Open billing" : "Start free"}
-            </Button>
-          </Link>
-          <Link href="/compare">
-            <Button variant="outline" className="h-11 rounded-full border-[hsl(var(--primary))]/35 bg-card px-6 text-[hsl(var(--primary))] hover:bg-primary/10">
-              Compare approaches
-            </Button>
-          </Link>
-          <Link href="mailto:hello@myrivo.app?subject=Myrivo%20Sales%20Question&body=I%27d%20like%20help%20choosing%20a%20plan.">
-            <Button variant="outline" className="h-11 rounded-full border-[hsl(var(--primary))]/35 bg-card px-6 text-[hsl(var(--primary))] hover:bg-primary/10">
-              Talk to sales
-            </Button>
-          </Link>
+          <MarketingTrackedButtonLink
+            href={isAuthenticated ? "/dashboard/billing?entry=pricing" : "/signup?source=pricing"}
+            ctaKey={isAuthenticated ? "pricing_hero_open_billing" : "pricing_hero_start_free"}
+            ctaLabel={isAuthenticated ? "Open billing" : "Start free"}
+            sectionKey="hero"
+            conversionIntent={isAuthenticated ? undefined : "signup"}
+            className="h-11 rounded-full bg-primary px-6 text-primary-foreground hover:bg-primary"
+          >
+            {isAuthenticated ? "Open billing" : "Start free"}
+          </MarketingTrackedButtonLink>
+          <MarketingTrackedButtonLink
+            href="/compare"
+            ctaKey="pricing_hero_compare"
+            ctaLabel="Compare approaches"
+            sectionKey="hero"
+            variant="outline"
+            className="h-11 rounded-full border-[hsl(var(--primary))]/35 bg-card px-6 text-[hsl(var(--primary))] hover:bg-primary/10"
+          >
+            Compare approaches
+          </MarketingTrackedButtonLink>
+          <MarketingTrackedButtonLink
+            href="mailto:hello@myrivo.app?subject=Myrivo%20Sales%20Question&body=I%27d%20like%20help%20choosing%20a%20plan."
+            ctaKey="pricing_hero_talk_to_sales"
+            ctaLabel="Talk to sales"
+            sectionKey="hero"
+            conversionIntent="demo_request"
+            variant="outline"
+            className="h-11 rounded-full border-[hsl(var(--primary))]/35 bg-card px-6 text-[hsl(var(--primary))] hover:bg-primary/10"
+          >
+            Talk to sales
+          </MarketingTrackedButtonLink>
         </div>
       </section>
 
@@ -91,11 +106,18 @@ export default async function PricingPage() {
                 <li key={item}>• {item}</li>
               ))}
             </ul>
-            <Link className="mt-5 inline-flex w-full" href={isAuthenticated ? "/dashboard/billing?entry=pricing-plan" : "/signup?source=pricing-plan"}>
-              <Button className="h-10 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary">
+            <div className="mt-5">
+              <MarketingTrackedButtonLink
+                href={isAuthenticated ? "/dashboard/billing?entry=pricing-plan" : "/signup?source=pricing-plan"}
+                ctaKey={`pricing_plan_${plan.key}`}
+                ctaLabel={isAuthenticated ? `Manage ${plan.name}` : `Choose ${plan.name}`}
+                sectionKey="plan_cards"
+                conversionIntent={isAuthenticated ? undefined : "signup"}
+                className="h-10 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary"
+              >
                 {isAuthenticated ? "Manage plan" : "Choose plan"}
-              </Button>
-            </Link>
+              </MarketingTrackedButtonLink>
+            </div>
           </article>
         ))}
       </section>

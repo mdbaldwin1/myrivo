@@ -28,9 +28,13 @@ export default function DocsIndexPage() {
                         {doc.title}
                       </Link>
                       <p className="mt-1 text-xs text-muted-foreground">{doc.summary}</p>
-                      <p className="mt-1 text-[11px] text-muted-foreground">
-                        Audience: {doc.audience} | Updated {doc.lastUpdated}
-                      </p>
+                      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                        <span>Audience: {doc.audience}</span>
+                        <span>Owner: {doc.owner}</span>
+                        <span>Review cadence: {doc.reviewCadence}</span>
+                        <span>Next review: {doc.reviewByLabel}</span>
+                        {doc.isReviewOverdue ? <span className="font-medium text-amber-700">Review overdue</span> : null}
+                      </div>
                     </li>
                   ))}
                 </ul>

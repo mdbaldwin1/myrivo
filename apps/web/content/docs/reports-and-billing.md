@@ -5,6 +5,9 @@ summary: Use insights, inventory ledger, and billing events to monitor store per
 category: Reporting
 audience: Owners and finance stakeholders
 lastUpdated: March 2026
+owner: Merchant Education
+reviewCadence: Quarterly
+reviewBy: 2026-06-30
 ---
 
 ## Reporting Surfaces
@@ -16,3 +19,9 @@ Use Billing Events for fee and settlement visibility.
 
 ## Review Cadence
 Run a weekly reporting review and tie outcomes to promotion, catalog, and fulfillment decisions.
+
+## Related Docs
+
+- `/docs/storefront-analytics-and-reporting`
+- `/docs/catalog-and-orders`
+- `/docs/marketing-analytics-and-experiments`

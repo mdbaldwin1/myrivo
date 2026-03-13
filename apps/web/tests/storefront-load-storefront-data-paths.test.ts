@@ -25,4 +25,16 @@ describe("loadStorefrontData nested path helpers", () => {
     expect(getString(source, "reviews.defaultSort", "newest")).toBe("newest");
     expect(getNumber(source, "reviews.itemsPerPage", 10)).toBe(10);
   });
+
+  test("falls back when an intermediate path segment is not an object", () => {
+    const source = {
+      reviews: {
+        summary: "not-an-object"
+      }
+    };
+
+    expect(getBoolean(source, "reviews.summary.enabled", true)).toBe(true);
+    expect(getString(source, "reviews.summary.label", "Summary")).toBe("Summary");
+    expect(getNumber(source, "reviews.summary.itemsPerPage", 12)).toBe(12);
+  });
 });

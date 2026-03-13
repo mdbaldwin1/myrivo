@@ -29,6 +29,25 @@ Deploy behavior:
 - Workflow targets Vercel scope `michael-baldwins-projects`.
 - Workflow runs Vercel CLI with `--cwd apps/web` for monorepo-safe Next.js builds/deploys.
 
+## Release verification commands
+
+Run these before approving release promotion:
+
+```bash
+cd apps/web
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
+
+If the change includes database migrations:
+
+```bash
+npx supabase migration list
+npx supabase db push
+```
+
 ## DNS and domains
 
 - Primary production domain should point directly to this single-store app.
@@ -38,3 +57,15 @@ Deploy behavior:
 
 - Stripe endpoint: `/api/stripe/webhooks`
 - Configure one webhook endpoint per environment.
+
+## Post-deploy route check
+
+Validate the most important production routes after deploy:
+
+- `/`
+- `/pricing`
+- `/signup`
+- `/dashboard`
+- `/dashboard/admin`
+- `/s/:storeSlug`
+- `/checkout`

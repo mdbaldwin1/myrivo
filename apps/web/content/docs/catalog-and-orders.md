@@ -5,6 +5,9 @@ summary: Manage products, inventory behavior, and order fulfillment in a single 
 category: Operations
 audience: Store owners, admins, and operations staff
 lastUpdated: March 2026
+owner: Merchant Education
+reviewCadence: Quarterly
+reviewBy: 2026-06-30
 ---
 
 ## Catalog Workflow
@@ -21,3 +24,9 @@ When changing product structure after orders exist, verify downstream reporting 
 - Review order totals
 - Confirm inventory ledger movements
 - Test shipping labels and tracking updates
+
+## Related Docs
+
+- `/docs/pickup-and-shipping-operations`
+- `/docs/reviews-and-customer-trust`
+- `/docs/storefront-analytics-and-reporting`
