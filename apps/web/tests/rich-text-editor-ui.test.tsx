@@ -18,17 +18,26 @@ function getFirstByLabelText(label: string) {
 describe("RichTextEditor UI", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    if (!HTMLElement.prototype.getClientRects) {
-      Object.defineProperty(HTMLElement.prototype, "getClientRects", {
+    const createClientRects = () =>
+      ({
+        length: 1,
+        item: () => null,
+        [Symbol.iterator]: function* iterator() {
+          yield { x: 0, y: 0, width: 100, height: 20, top: 0, right: 100, bottom: 20, left: 0 };
+        }
+      }) as DOMRectList;
+
+    if (!Element.prototype.getClientRects) {
+      Object.defineProperty(Element.prototype, "getClientRects", {
         configurable: true,
-        value: () =>
-          ({
-            length: 1,
-            item: () => null,
-            [Symbol.iterator]: function* iterator() {
-              yield { x: 0, y: 0, width: 100, height: 20, top: 0, right: 100, bottom: 20, left: 0 };
-            }
-          }) as DOMRectList
+        value: createClientRects
+      });
+    }
+
+    if (typeof Range !== "undefined" && !Range.prototype.getClientRects) {
+      Object.defineProperty(Range.prototype, "getClientRects", {
+        configurable: true,
+        value: createClientRects
       });
     }
   });
