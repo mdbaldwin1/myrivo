@@ -18,12 +18,14 @@ function getFirstByLabelText(label: string) {
 describe("RichTextEditor UI", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    const rect = { x: 0, y: 0, width: 100, height: 20, top: 0, right: 100, bottom: 20, left: 0 } as DOMRect;
     const createClientRects = () =>
       ({
+        0: rect,
         length: 1,
-        item: () => null,
+        item: (index: number) => (index === 0 ? rect : null),
         [Symbol.iterator]: function* iterator() {
-          yield { x: 0, y: 0, width: 100, height: 20, top: 0, right: 100, bottom: 20, left: 0 };
+          yield rect;
         }
       }) as DOMRectList;
 
