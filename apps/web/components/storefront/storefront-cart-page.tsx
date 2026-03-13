@@ -12,6 +12,7 @@ import { readStorefrontCart, syncStorefrontCart, writeStorefrontCart, type Store
 import { StorefrontHeader } from "@/components/storefront/storefront-header";
 import { StorefrontCartButton } from "@/components/storefront/storefront-cart-button";
 import { StorefrontFooter } from "@/components/storefront/storefront-footer";
+import { StorefrontPrivacyCollectionNotice } from "@/components/storefront/storefront-privacy-collection-notice";
 import { StorefrontStudioEditableButtonLabel } from "@/components/storefront/storefront-studio-editable-button-label";
 import { StorefrontStudioEditableText } from "@/components/storefront/storefront-studio-editable-text";
 import { useOptionalStorefrontRuntime } from "@/components/storefront/storefront-runtime-provider";
@@ -153,6 +154,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
   const resolvedProducts = runtime?.products ?? products;
   const resolvedPresentation = runtime ? resolveStorefrontPresentation(runtime) : null;
   const resolvedSettings = resolvedPresentation?.settings ?? settings;
+  const resolvedPrivacyProfile = runtime?.privacyProfile ?? null;
   const themeConfig = resolvedPresentation?.themeConfig ?? resolveStorefrontThemeConfig(resolvedBranding?.theme_json ?? {});
   const copy = resolvedPresentation?.copy ?? resolveStorefrontCopy(resolvedSettings?.storefront_copy_json ?? {});
   const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, resolvedStore.slug);
@@ -892,6 +894,11 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
               </div>
 
               <form onSubmit={checkout} className="space-y-2">
+                <StorefrontPrivacyCollectionNotice
+                  surface="checkout"
+                  store={resolvedStore}
+                  profile={resolvedPrivacyProfile}
+                />
                 <Input
                   type="text"
                   placeholder={copy.cart.promoPlaceholder}

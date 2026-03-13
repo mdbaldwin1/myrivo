@@ -27,11 +27,29 @@ const storeLegalDocumentEditorEntrySchema = z.object({
   published_at: z.string().datetime().nullable()
 });
 
+export const storePrivacyComplianceEditorSchema = z.object({
+  notice_at_collection_enabled: z.boolean(),
+  checkout_notice_enabled: z.boolean(),
+  newsletter_notice_enabled: z.boolean(),
+  review_notice_enabled: z.boolean(),
+  show_california_notice: z.boolean(),
+  show_do_not_sell_link: z.boolean(),
+  privacy_contact_email: z.string().trim().email().or(z.literal("")),
+  privacy_rights_email: z.string().trim().email().or(z.literal("")),
+  privacy_contact_name: z.string().trim().max(120),
+  collection_notice_addendum_markdown: z.string().trim().max(10000),
+  california_notice_markdown: z.string().trim().max(15000),
+  do_not_sell_markdown: z.string().trim().max(10000),
+  request_page_intro_markdown: z.string().trim().max(10000)
+});
+
 export const storeLegalDocumentsEditorSchema = z.object({
+  privacyCompliance: storePrivacyComplianceEditorSchema,
   privacy: storeLegalDocumentEditorEntrySchema,
   terms: storeLegalDocumentEditorEntrySchema
 });
 
 export type CheckoutExperienceEditorSnapshot = z.infer<typeof checkoutExperienceEditorSchema>;
 export type ShippingRulesEditorSnapshot = z.infer<typeof shippingRulesEditorSchema>;
+export type StorePrivacyComplianceEditorSnapshot = z.infer<typeof storePrivacyComplianceEditorSchema>;
 export type StoreLegalDocumentsEditorSnapshot = z.infer<typeof storeLegalDocumentsEditorSchema>;

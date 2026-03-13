@@ -19,6 +19,7 @@ let ownedStoreBundleMock:
   | null;
 let upsertPayload: Array<Record<string, unknown>> | null = null;
 let updatePayload: Record<string, unknown> | null = null;
+let privacyProfileUpsertPayload: Record<string, unknown> | null = null;
 let requestedStoreSlug: string | null = null;
 
 vi.mock("@/lib/security/request-origin", () => ({
@@ -66,6 +67,42 @@ function buildSupabaseMock(): SupabaseMock {
               eq: vi.fn(() => chain)
             };
             return chain;
+          })
+        };
+      }
+
+      if (table === "store_privacy_profiles") {
+        return {
+          select: vi.fn(() => {
+            const chain = {
+              eq: vi.fn(() => chain),
+              maybeSingle: vi.fn(async () => ({
+                data: {
+                  store_id: "store-1",
+                  notice_at_collection_enabled: true,
+                  checkout_notice_enabled: true,
+                  newsletter_notice_enabled: true,
+                  review_notice_enabled: true,
+                  show_california_notice: true,
+                  show_do_not_sell_link: false,
+                  privacy_contact_email: "privacy@example.com",
+                  privacy_rights_email: "rights@example.com",
+                  privacy_contact_name: "Privacy team",
+                  collection_notice_addendum_markdown: "",
+                  california_notice_markdown: "California rights apply.",
+                  do_not_sell_markdown: "",
+                  request_page_intro_markdown: "",
+                  created_at: "2026-03-12T00:00:00.000Z",
+                  updated_at: "2026-03-12T00:00:00.000Z"
+                },
+                error: null
+              }))
+            };
+            return chain;
+          }),
+          upsert: vi.fn(async (payload: Record<string, unknown>) => {
+            privacyProfileUpsertPayload = payload;
+            return { error: null };
           })
         };
       }
@@ -159,6 +196,7 @@ beforeEach(() => {
   requestedStoreSlug = null;
   upsertPayload = null;
   updatePayload = null;
+  privacyProfileUpsertPayload = null;
   enforceTrustedOriginMock.mockReset();
   logAuditEventMock.mockReset();
   getStoreLegalDocumentsByStoreIdMock.mockReset();
@@ -216,6 +254,7 @@ describe("store legal documents route", () => {
     const response = await callGet();
     const payload = (await response.json()) as {
       documents: {
+        privacyCompliance: { show_california_notice: boolean; privacy_rights_email: string };
         privacy: { body_markdown: string; variables_json: Record<string, string>; published_version: number; published_at: string | null };
         terms: { title_override: string; source_mode: string };
       };
@@ -226,6 +265,10 @@ describe("store legal documents route", () => {
     expect(requestedStoreSlug).toBe("apothecary");
     expect(payload.store.name).toBe("At Home Apothecary");
     expect(payload.store.supportEmail).toBe("hello@example.com");
+    expect(payload.documents.privacyCompliance).toMatchObject({
+      show_california_notice: true,
+      privacy_rights_email: "rights@example.com"
+    });
     expect(payload.documents.privacy.body_markdown).toBe("Custom privacy body for {storeName}.");
     expect(payload.documents.privacy.variables_json).toEqual({ supportEmail: "hello@example.com" });
     expect(payload.documents.privacy.published_version).toBe(2);
@@ -238,6 +281,21 @@ describe("store legal documents route", () => {
 
   test("PUT upserts both store legal documents and logs an audit event", async () => {
     const response = await callPut({
+      privacyCompliance: {
+        notice_at_collection_enabled: true,
+        checkout_notice_enabled: true,
+        newsletter_notice_enabled: true,
+        review_notice_enabled: false,
+        show_california_notice: true,
+        show_do_not_sell_link: true,
+        privacy_contact_email: "privacy@example.com",
+        privacy_rights_email: "rights@example.com",
+        privacy_contact_name: "Privacy team",
+        collection_notice_addendum_markdown: "",
+        california_notice_markdown: "California rights apply.",
+        do_not_sell_markdown: "Opt out details.",
+        request_page_intro_markdown: "Use this form for privacy requests."
+      },
       privacy: buildEditorEntry({
         body_markdown: "Privacy body",
         variables_json: { supportEmail: "help@example.com" }
@@ -272,6 +330,14 @@ describe("store legal documents route", () => {
         body_markdown: "Terms body"
       })
     ]);
+    expect(privacyProfileUpsertPayload).toEqual(
+      expect.objectContaining({
+        store_id: "store-1",
+        show_california_notice: true,
+        show_do_not_sell_link: true,
+        review_notice_enabled: false
+      })
+    );
     expect(logAuditEventMock).toHaveBeenCalledTimes(1);
   });
 
@@ -287,6 +353,21 @@ describe("store legal documents route", () => {
     ownedStoreBundleMock = null;
 
     const response = await callPut({
+      privacyCompliance: {
+        notice_at_collection_enabled: true,
+        checkout_notice_enabled: true,
+        newsletter_notice_enabled: true,
+        review_notice_enabled: true,
+        show_california_notice: false,
+        show_do_not_sell_link: false,
+        privacy_contact_email: "privacy@example.com",
+        privacy_rights_email: "privacy@example.com",
+        privacy_contact_name: "Privacy team",
+        collection_notice_addendum_markdown: "",
+        california_notice_markdown: "",
+        do_not_sell_markdown: "",
+        request_page_intro_markdown: ""
+      },
       privacy: buildEditorEntry({ body_markdown: "Privacy body" }),
       terms: buildEditorEntry({
         title_override: "Terms & Conditions",

@@ -9,11 +9,13 @@ import {
   getStoreLegalDocumentsByStoreId,
   type StoreLegalDocumentRow
 } from "@/lib/legal/store-documents";
+import { resolveStorePrivacyProfile } from "@/lib/privacy/store-privacy";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { storeLegalDocumentsEditorSchema } from "@/lib/store-editor/schemas";
 import { getStoreLegalDocument, type StoreLegalDocumentKey } from "@/lib/storefront/store-legal-documents";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
+import type { StorePrivacyProfileRecord } from "@/types/database";
 
 type StoreLegalDocumentApiSnapshot = z.infer<typeof storeLegalDocumentsEditorSchema>;
 const publishStoreLegalDocumentSchema = z.object({
@@ -50,6 +52,28 @@ function buildDocumentEntry(
   };
 }
 
+function buildPrivacyComplianceEntry(
+  profile: StorePrivacyProfileRecord | null | undefined,
+  supportEmail: string | null
+) {
+  const resolved = resolveStorePrivacyProfile(profile, { support_email: supportEmail });
+  return {
+    notice_at_collection_enabled: resolved.noticeAtCollectionEnabled,
+    checkout_notice_enabled: resolved.checkoutNoticeEnabled,
+    newsletter_notice_enabled: resolved.newsletterNoticeEnabled,
+    review_notice_enabled: resolved.reviewNoticeEnabled,
+    show_california_notice: resolved.showCaliforniaNotice,
+    show_do_not_sell_link: resolved.showDoNotSellLink,
+    privacy_contact_email: resolved.privacyContactEmail,
+    privacy_rights_email: resolved.privacyRightsEmail,
+    privacy_contact_name: resolved.privacyContactName,
+    collection_notice_addendum_markdown: resolved.collectionNoticeAddendumMarkdown,
+    california_notice_markdown: resolved.californiaNoticeMarkdown,
+    do_not_sell_markdown: resolved.doNotSellMarkdown,
+    request_page_intro_markdown: resolved.requestPageIntroMarkdown
+  };
+}
+
 async function resolveOwnerContext(request: NextRequest) {
   const supabase = await createSupabaseServerClient();
   const {
@@ -75,11 +99,18 @@ export async function GET(request: NextRequest) {
   }
 
   const { supabase, bundle } = resolved;
-  const documents = await getStoreLegalDocumentsByStoreId(supabase, bundle.store.id);
+  const [documents, privacyProfileResult] = await Promise.all([
+    getStoreLegalDocumentsByStoreId(supabase, bundle.store.id),
+    supabase.from("store_privacy_profiles").select("*").eq("store_id", bundle.store.id).maybeSingle<StorePrivacyProfileRecord>()
+  ]);
+  if (privacyProfileResult.error) {
+    return NextResponse.json({ error: privacyProfileResult.error.message }, { status: 500 });
+  }
   const privacy = documents.find((entry) => entry.key === "privacy");
   const terms = documents.find((entry) => entry.key === "terms");
 
   const snapshot: StoreLegalDocumentApiSnapshot = {
+    privacyCompliance: buildPrivacyComplianceEntry(privacyProfileResult.data, bundle.settings?.support_email ?? null),
     privacy: buildDocumentEntry("privacy", privacy),
     terms: buildDocumentEntry("terms", terms)
   };
@@ -130,10 +161,19 @@ export async function PUT(request: NextRequest) {
     }
   ];
 
-  const { error } = await supabase.from("store_legal_documents").upsert(rows, { onConflict: "store_id,key" });
+  const [{ error: documentsError }, { error: privacyError }] = await Promise.all([
+    supabase.from("store_legal_documents").upsert(rows, { onConflict: "store_id,key" }),
+    supabase.from("store_privacy_profiles").upsert(
+      {
+        store_id: bundle.store.id,
+        ...payload.data.privacyCompliance
+      },
+      { onConflict: "store_id" }
+    )
+  ]);
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (documentsError || privacyError) {
+    return NextResponse.json({ error: documentsError?.message ?? privacyError?.message ?? "Unable to save legal settings." }, { status: 500 });
   }
 
   await logAuditEvent({
@@ -145,7 +185,10 @@ export async function PUT(request: NextRequest) {
     metadata: {
       keys: rows.map((row) => row.key),
       privacySourceMode: payload.data.privacy.source_mode,
-      termsSourceMode: payload.data.terms.source_mode
+      termsSourceMode: payload.data.terms.source_mode,
+      noticeAtCollectionEnabled: payload.data.privacyCompliance.notice_at_collection_enabled,
+      californiaNoticeEnabled: payload.data.privacyCompliance.show_california_notice,
+      doNotSellLinkEnabled: payload.data.privacyCompliance.show_do_not_sell_link
     }
   });
 
@@ -169,7 +212,13 @@ export async function PATCH(request: NextRequest) {
   }
 
   const { supabase, bundle, user } = resolved;
-  const documents = await getStoreLegalDocumentsByStoreId(supabase, bundle.store.id);
+  const [documents, privacyProfileResult] = await Promise.all([
+    getStoreLegalDocumentsByStoreId(supabase, bundle.store.id),
+    supabase.from("store_privacy_profiles").select("*").eq("store_id", bundle.store.id).maybeSingle<StorePrivacyProfileRecord>()
+  ]);
+  if (privacyProfileResult.error) {
+    return NextResponse.json({ error: privacyProfileResult.error.message }, { status: 500 });
+  }
   const target = documents.find((entry) => entry.key === payload.data.key);
 
   if (!target) {
@@ -229,6 +278,7 @@ export async function PATCH(request: NextRequest) {
 
   return NextResponse.json({
     documents: {
+      privacyCompliance: buildPrivacyComplianceEntry(privacyProfileResult.data, bundle.settings?.support_email ?? null),
       privacy: buildDocumentEntry("privacy", privacy),
       terms: buildDocumentEntry("terms", terms)
     }

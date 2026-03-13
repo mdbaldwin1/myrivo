@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useOptionalStorefrontRuntime } from "@/components/storefront/storefront-runtime-provider";
 import { StorefrontCartButton } from "@/components/storefront/storefront-cart-button";
 import { StorefrontFooter } from "@/components/storefront/storefront-footer";
 import { StorefrontHeader } from "@/components/storefront/storefront-header";
 import { useStorefrontPageView } from "@/components/storefront/use-storefront-analytics-events";
 import { LegalMarkdown } from "@/components/legal/legal-markdown";
+import type { ResolvedStorePrivacyProfile } from "@/lib/privacy/store-privacy";
 import { resolveStorefrontCopy } from "@/lib/storefront/copy";
 import { getStorefrontPageWidthClass } from "@/lib/storefront/layout";
 import { resolveFooterNavLinks, resolveHeaderNavLinks } from "@/lib/storefront/navigation";
@@ -53,6 +55,7 @@ type StorefrontLegalPageProps = {
     email_capture_description?: string | null;
     email_capture_success_message?: string | null;
   } | null;
+  privacyProfile: ResolvedStorePrivacyProfile | null;
 };
 
 export function StorefrontLegalPage({
@@ -61,13 +64,15 @@ export function StorefrontLegalPage({
   store,
   viewer,
   branding,
-  settings
+  settings,
+  privacyProfile
 }: StorefrontLegalPageProps) {
   const runtime = useOptionalStorefrontRuntime();
   const resolvedStore = runtime?.store ?? store;
   const resolvedViewer = runtime?.viewer ?? viewer;
   const resolvedBranding = runtime?.branding ?? branding;
   const resolvedSettings = runtime?.settings ?? settings;
+  const resolvedPrivacyProfile = runtime?.privacyProfile ?? privacyProfile;
   const themeConfig = runtime?.themeConfig ?? resolveStorefrontThemeConfig(resolvedBranding?.theme_json ?? {});
   const copy = runtime?.copy ?? resolveStorefrontCopy(resolvedSettings?.storefront_copy_json ?? {});
   const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, resolvedStore.slug);
@@ -129,6 +134,54 @@ export function StorefrontLegalPage({
           </header>
 
           <LegalMarkdown content={document.bodyMarkdown} />
+
+          {documentKey === "privacy" && resolvedPrivacyProfile ? (
+            <div className="space-y-5 border-t border-border/40 pt-6">
+              <section className="space-y-2">
+                <h2 className="text-xl font-semibold [font-family:var(--storefront-font-heading)]">Privacy contact</h2>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  Contact {resolvedPrivacyProfile.privacyContactName} at{" "}
+                  <a className="font-medium underline underline-offset-4" href={`mailto:${resolvedPrivacyProfile.privacyRightsEmail}`}>
+                    {resolvedPrivacyProfile.privacyRightsEmail}
+                  </a>{" "}
+                  for privacy questions or requests.
+                </p>
+              </section>
+
+              {resolvedPrivacyProfile.showCaliforniaNotice ? (
+                <section id="california-privacy-notice" className="space-y-3 rounded-xl border border-border/60 bg-card/40 p-4">
+                  <div className="space-y-1">
+                    <h2 className="text-xl font-semibold [font-family:var(--storefront-font-heading)]">Your California privacy rights</h2>
+                    <p className="text-sm leading-relaxed text-muted-foreground">
+                      California residents can request access, deletion, correction, or additional details about how personal information is handled for this storefront.
+                    </p>
+                  </div>
+                  {resolvedPrivacyProfile.californiaNoticeMarkdown ? (
+                    <LegalMarkdown content={resolvedPrivacyProfile.californiaNoticeMarkdown} />
+                  ) : null}
+                  <div className="flex flex-wrap gap-3">
+                    <Link
+                      href={`/privacy/request?store=${encodeURIComponent(resolvedStore.slug)}`}
+                      className="inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted/30"
+                    >
+                      Submit privacy request
+                    </Link>
+                    {resolvedPrivacyProfile.showDoNotSellLink ? (
+                      <Link
+                        href={`/privacy/request?store=${encodeURIComponent(resolvedStore.slug)}&type=opt_out_sale_share`}
+                        className="inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted/30"
+                      >
+                        Do Not Sell or Share My Personal Information
+                      </Link>
+                    ) : null}
+                  </div>
+                  {resolvedPrivacyProfile.doNotSellMarkdown ? (
+                    <LegalMarkdown content={resolvedPrivacyProfile.doNotSellMarkdown} />
+                  ) : null}
+                </section>
+              ) : null}
+            </div>
+          ) : null}
         </article>
       </main>
 

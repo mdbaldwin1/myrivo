@@ -5,6 +5,8 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { Facebook, Instagram, Music2 } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { useOptionalStorefrontAnalytics } from "@/components/storefront/storefront-analytics-provider";
+import { useOptionalStorefrontRuntime } from "@/components/storefront/storefront-runtime-provider";
+import { StorefrontPrivacyCollectionNotice } from "@/components/storefront/storefront-privacy-collection-notice";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,12 +68,14 @@ export function StorefrontFooter({
   studio
 }: StorefrontFooterProps) {
   const analytics = useOptionalStorefrontAnalytics();
+  const runtime = useOptionalStorefrontRuntime();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [subscribeError, setSubscribeError] = useState<string | null>(null);
   const [subscribeSuccess, setSubscribeSuccess] = useState<string | null>(null);
+  const resolvedPrivacyProfile = runtime?.privacyProfile ?? null;
 
   const footerLinks = [
     { label: "Instagram", href: settings?.instagram_url ?? null },
@@ -106,7 +110,23 @@ export function StorefrontFooter({
     {
       label: copy.footer.termsLink,
       href: normalizedStoreSlug ? `/terms?store=${encodeURIComponent(normalizedStoreSlug)}` : "/terms"
-    }
+    },
+    ...(resolvedPrivacyProfile?.showCaliforniaNotice
+      ? [
+          {
+            label: "California Privacy Rights",
+            href: normalizedStoreSlug ? `/privacy?store=${encodeURIComponent(normalizedStoreSlug)}#california-privacy-notice` : "/privacy#california-privacy-notice"
+          }
+        ]
+      : []),
+    ...(resolvedPrivacyProfile?.showDoNotSellLink
+      ? [
+          {
+            label: "Do Not Sell / Share",
+            href: normalizedStoreSlug ? `/privacy/request?store=${encodeURIComponent(normalizedStoreSlug)}&type=opt_out_sale_share` : "/privacy/request?type=opt_out_sale_share"
+          }
+        ]
+      : [])
   ];
   const navLinksWithStore = resolvedNavLinks.map((link) => ({
     ...link,
@@ -352,6 +372,13 @@ export function StorefrontFooter({
                 {submitting ? "Submitting..." : "Subscribe"}
               </Button>
             </form>
+            {normalizedStoreSlug ? (
+              <StorefrontPrivacyCollectionNotice
+                surface="newsletter"
+                store={{ name: storeName, slug: normalizedStoreSlug }}
+                profile={resolvedPrivacyProfile}
+              />
+            ) : null}
             <AppAlert variant="error" compact className="text-xs" message={subscribeError} />
             <AppAlert variant="success" compact className="text-xs" message={subscribeSuccess} />
             <p className="text-xs text-muted-foreground">

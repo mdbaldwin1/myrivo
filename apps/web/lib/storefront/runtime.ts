@@ -1,5 +1,6 @@
 import type { StoreExperienceContent } from "@/lib/store-experience/content";
 import type { StoreAnalyticsAccess } from "@/lib/analytics/access";
+import type { ResolvedStorePrivacyProfile } from "@/lib/privacy/store-privacy";
 import { resolveStorefrontCopy, type StorefrontCopyConfig } from "@/lib/storefront/copy";
 import { resolveStorefrontThemeConfig, type StorefrontThemeConfig } from "@/lib/theme/storefront-theme";
 
@@ -139,6 +140,7 @@ export type StorefrontData = {
   analytics: StoreAnalyticsAccess;
   branding: StorefrontBranding;
   settings: StorefrontSettings;
+  privacyProfile: ResolvedStorePrivacyProfile | null;
   experienceContent: StoreExperienceContent;
   contentBlocks: StorefrontContentBlock[];
   products: StorefrontProduct[];
@@ -152,8 +154,9 @@ export type StorefrontRuntime = StorefrontData & {
 };
 
 export function createStorefrontRuntime(
-  input: Omit<StorefrontData, "analytics"> & {
+  input: Omit<StorefrontData, "analytics" | "privacyProfile"> & {
     analytics?: StoreAnalyticsAccess;
+    privacyProfile?: ResolvedStorePrivacyProfile | null;
     mode?: StorefrontMode;
     surface: StorefrontSurface;
   }
@@ -170,6 +173,7 @@ export function createStorefrontRuntime(
   return {
     ...input,
     analytics,
+    privacyProfile: input.privacyProfile ?? null,
     mode: input.mode ?? "live",
     themeConfig,
     copy
