@@ -11,9 +11,11 @@ import { OrderPickupOverridePanel } from "@/components/dashboard/order-pickup-ov
 import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
-import { RowActionButton, RowActions } from "@/components/ui/row-actions";
+import { MoreHorizontal } from "lucide-react";
+import { RowActions } from "@/components/ui/row-actions";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { notify } from "@/lib/feedback/toast";
@@ -347,7 +349,7 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
                   <TableHead>Status</TableHead>
                   <TableHead>Fulfillment</TableHead>
                   <TableHead>Tracking</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -407,47 +409,54 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
                           <span className="text-xs text-muted-foreground">Not shipped</span>
                         )}
                       </TableCell>
-                      <TableCell>
-                        <RowActions align="start">
-                          <RowActionButton type="button" onClick={() => openOrderDetail(order.id)}>
-                            View
-                          </RowActionButton>
-                          {order.fulfillment_method === "pickup" && order.fulfillment_status !== "delivered" ? (
-                            <RowActionButton type="button" onClick={() => setPickupOverrideOrderId(order.id)}>
-                              Reschedule pickup
-                            </RowActionButton>
-                          ) : null}
-                          <RowActionButton
-                            type="button"
-                            onClick={() => {
-                              setShippingOrderId(order.id);
-                              setShippingError(null);
-                              const initialCarrier = order.carrier ?? "usps";
-                              const initialTracking = order.tracking_number ?? "";
-                              setShippingCarrier(initialCarrier);
-                              setTrackingNumber(initialTracking);
-                              setShippingInitialCarrier(initialCarrier);
-                              setShippingInitialTrackingNumber(initialTracking);
-                            }}
-                          >
-                            {order.tracking_number ? "Edit Ship" : "Ship"}
-                          </RowActionButton>
-                          <RowActionButton
-                            type="button"
-                            onClick={() => void refreshTracking(order.id)}
-                            disabled={!order.tracking_number || syncingOrderId === order.id}
-                          >
-                            {syncingOrderId === order.id ? "Syncing..." : "Sync"}
-                          </RowActionButton>
-                          <RowActionButton type="button" asChild>
-                            <Link
-                              href={buildStoreWorkspacePath(activeStoreSlug, `/orders/${order.id}/packing-slip`, "/dashboard/stores")}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              Slip
-                            </Link>
-                          </RowActionButton>
+                      <TableCell className="text-right">
+                        <RowActions>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button type="button" variant="ghost" size="icon" className="h-8 w-8 p-0" aria-label="More order actions">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => openOrderDetail(order.id)}>View</DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              {order.fulfillment_method === "pickup" && order.fulfillment_status !== "delivered" ? (
+                                <>
+                                  <DropdownMenuItem onClick={() => setPickupOverrideOrderId(order.id)}>Reschedule pickup</DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                </>
+                              ) : null}
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setShippingOrderId(order.id);
+                                  setShippingError(null);
+                                  const initialCarrier = order.carrier ?? "usps";
+                                  const initialTracking = order.tracking_number ?? "";
+                                  setShippingCarrier(initialCarrier);
+                                  setTrackingNumber(initialTracking);
+                                  setShippingInitialCarrier(initialCarrier);
+                                  setShippingInitialTrackingNumber(initialTracking);
+                                }}
+                              >
+                                {order.tracking_number ? "Edit shipment" : "Mark shipped"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => void refreshTracking(order.id)}
+                                disabled={!order.tracking_number || syncingOrderId === order.id}
+                              >
+                                {syncingOrderId === order.id ? "Syncing tracking..." : "Sync tracking"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem asChild>
+                                <Link
+                                  href={buildStoreWorkspacePath(activeStoreSlug, `/orders/${order.id}/packing-slip`, "/dashboard/stores")}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  Open packing slip
+                                </Link>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </RowActions>
                       </TableCell>
                       </TableRow>
@@ -472,7 +481,6 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
       >
         <OrderDetailPanel
           orderId={selectedOrderId}
-          onClose={closeOrderDetail}
           onReschedulePickup={(orderId) => setPickupOverrideOrderId(orderId)}
           refreshToken={orderDetailRefreshToken}
         />

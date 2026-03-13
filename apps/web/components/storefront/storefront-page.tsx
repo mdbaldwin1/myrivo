@@ -1080,11 +1080,18 @@ export function StorefrontPage(props: StorefrontPageProps) {
                           onValueChange={setSearchQuery}
                           placeholder={copy.home.searchPlaceholder}
                           onPlaceholderChange={(value) => updateProductsField("copy.home.searchPlaceholder", value)}
+                          inputClassName={buttonRadiusClass}
+                          panelClassName={radiusClass}
                         />
                       ) : (
                         <div className="relative">
                           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                          <Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={copy.home.searchPlaceholder} className="pl-9" />
+                          <Input
+                            value={searchQuery}
+                            onChange={(event) => setSearchQuery(event.target.value)}
+                            placeholder={copy.home.searchPlaceholder}
+                            className={cn("pl-9", buttonRadiusClass)}
+                          />
                         </div>
                       )}
                     </label>
@@ -1092,7 +1099,11 @@ export function StorefrontPage(props: StorefrontPageProps) {
                   {themeConfig.productsShowSort ? (
                     <label className="grid gap-1">
                       <span className="text-xs font-medium text-muted-foreground">{copy.home.sortLabel}</span>
-                      <Select value={sortMode} onChange={(event) => setSortMode(event.target.value as ProductSortMode)}>
+                      <Select
+                        value={sortMode}
+                        onChange={(event) => setSortMode(event.target.value as ProductSortMode)}
+                        className={buttonRadiusClass}
+                      >
                         <option value="featured">{copy.sort.featuredFirst}</option>
                         <option value="newest">{copy.sort.newestFirst}</option>
                         <option value="price-asc">{copy.sort.priceLowToHigh}</option>
@@ -1104,7 +1115,11 @@ export function StorefrontPage(props: StorefrontPageProps) {
                   {themeConfig.productsShowAvailability ? (
                     <label className="grid gap-1">
                       <span className="text-xs font-medium text-muted-foreground">{copy.home.availabilityLabel}</span>
-                      <Select value={availabilityFilter} onChange={(event) => setAvailabilityFilter(event.target.value as AvailabilityFilterMode)}>
+                      <Select
+                        value={availabilityFilter}
+                        onChange={(event) => setAvailabilityFilter(event.target.value as AvailabilityFilterMode)}
+                        className={buttonRadiusClass}
+                      >
                         <option value="all">{copy.availabilityFilter.all}</option>
                         <option value="in-stock">{copy.availabilityFilter.inStock}</option>
                         <option value="made-to-order">{copy.availabilityFilter.madeToOrder}</option>
@@ -1161,11 +1176,18 @@ export function StorefrontPage(props: StorefrontPageProps) {
                           onValueChange={setSearchQuery}
                           placeholder={copy.home.searchPlaceholder}
                           onPlaceholderChange={(value) => updateProductsField("copy.home.searchPlaceholder", value)}
+                          inputClassName={buttonRadiusClass}
+                          panelClassName={radiusClass}
                         />
                       ) : (
                         <div className="relative">
                           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                          <Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={copy.home.searchPlaceholder} className="pl-9" />
+                          <Input
+                            value={searchQuery}
+                            onChange={(event) => setSearchQuery(event.target.value)}
+                            placeholder={copy.home.searchPlaceholder}
+                            className={cn("pl-9", buttonRadiusClass)}
+                          />
                         </div>
                       )}
                     </label>
@@ -1173,7 +1195,11 @@ export function StorefrontPage(props: StorefrontPageProps) {
                   {themeConfig.productsShowSort ? (
                     <label className="grid gap-1">
                       <span className="text-xs font-medium text-muted-foreground">{copy.home.sortLabel}</span>
-                      <Select value={sortMode} onChange={(event) => setSortMode(event.target.value as ProductSortMode)}>
+                      <Select
+                        value={sortMode}
+                        onChange={(event) => setSortMode(event.target.value as ProductSortMode)}
+                        className={buttonRadiusClass}
+                      >
                         <option value="featured">{copy.sort.featuredFirst}</option>
                         <option value="newest">{copy.sort.newestFirst}</option>
                         <option value="price-asc">{copy.sort.priceLowToHigh}</option>
@@ -1185,7 +1211,11 @@ export function StorefrontPage(props: StorefrontPageProps) {
                   {themeConfig.productsShowAvailability ? (
                     <label className="grid gap-1">
                       <span className="text-xs font-medium text-muted-foreground">{copy.home.availabilityLabel}</span>
-                      <Select value={availabilityFilter} onChange={(event) => setAvailabilityFilter(event.target.value as AvailabilityFilterMode)}>
+                      <Select
+                        value={availabilityFilter}
+                        onChange={(event) => setAvailabilityFilter(event.target.value as AvailabilityFilterMode)}
+                        className={buttonRadiusClass}
+                      >
                         <option value="all">{copy.availabilityFilter.all}</option>
                         <option value="in-stock">{copy.availabilityFilter.inStock}</option>
                         <option value="made-to-order">{copy.availabilityFilter.madeToOrder}</option>
@@ -1198,7 +1228,14 @@ export function StorefrontPage(props: StorefrontPageProps) {
                         const options = availableAxisValuesByName[axis] ?? [];
                         const selectedValues = effectiveSelectedFilterValuesByAxis[axis] ?? [];
                         return (
-                          <div key={axis} className={cn("space-y-2 rounded-md p-2", isIntegrated ? "border-t border-border/60 first:border-t-0" : "border border-border bg-[color:var(--storefront-surface)]")}>
+                          <div
+                            key={axis}
+                            className={cn(
+                              "space-y-2 p-2",
+                              radiusClass,
+                              isIntegrated ? "border-t border-border/60 first:border-t-0" : "border border-border bg-[color:var(--storefront-surface)]"
+                            )}
+                          >
                             <div className="flex items-center justify-between gap-2">
                               <p className="text-xs font-medium text-muted-foreground">{axis}</p>
                               {selectedValues.length > 0 ? (

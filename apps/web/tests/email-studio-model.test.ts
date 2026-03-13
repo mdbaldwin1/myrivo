@@ -16,6 +16,9 @@ describe("email studio model", () => {
     expect(document.templates.customerConfirmation.subject).toContain("{orderShortId}");
     expect(document.templates.customerConfirmation.bodyHtml).toContain("{items}");
     expect(document.templates.pickupUpdated.bodyHtml).toContain("{previousPickupDetails}");
+    expect(document.templates.refundIssued.bodyHtml).toContain("{refundAmount}");
+    expect(document.templates.disputeOpened.bodyHtml).toContain("{disputeReason}");
+    expect(document.templates.disputeResolved.footerNote).toContain("{policiesUrl}");
     expect(document.templates.failed.headline).toContain("problem");
     expect(document.templates.shipped.ctaUrl).toContain("{trackingUrl}");
     expect(document.templates.delivered.footerNote).toContain("{replyToEmail}");
@@ -68,6 +71,8 @@ describe("email studio model", () => {
     document.templates.customerConfirmation.bodyHtml = "<p>B</p>";
     document.templates.pickupUpdated.subject = "C";
     document.templates.pickupUpdated.bodyHtml = "<p>D</p>";
+    document.templates.refundIssued.subject = "E";
+    document.templates.refundIssued.bodyHtml = "<p>F</p>";
 
     const serialized = serializeEmailStudioDocument(document);
     const transactional = serialized.transactional as Record<string, unknown>;
@@ -79,8 +84,11 @@ describe("email studio model", () => {
     expect(templates.customerConfirmation?.bodyHtml).toBe("<p>B</p>");
     expect(templates.pickupUpdated?.subject).toBe("C");
     expect(templates.pickupUpdated?.bodyHtml).toBe("<p>D</p>");
+    expect(templates.refundIssued?.subject).toBe("E");
+    expect(templates.refundIssued?.bodyHtml).toBe("<p>F</p>");
     expect(transactional.customerConfirmationBodyTemplate).toBe("B");
     expect(transactional.pickupUpdatedBodyTemplate).toBe("D");
+    expect(transactional.refundIssuedBodyTemplate).toBe("F");
   });
 
   test("keeps token metadata centralized for the Email Studio UI", () => {
@@ -89,5 +97,8 @@ describe("email studio model", () => {
     expect(EMAIL_STUDIO_TOKENS.some((token) => token.token === "{previousPickupDetails}")).toBe(true);
     expect(EMAIL_STUDIO_TOKENS.some((token) => token.token === "{pickupUpdateReason}")).toBe(true);
     expect(EMAIL_STUDIO_TOKENS.some((token) => token.token === "{trackingUrl}")).toBe(true);
+    expect(EMAIL_STUDIO_TOKENS.some((token) => token.token === "{policiesUrl}")).toBe(true);
+    expect(EMAIL_STUDIO_TOKENS.some((token) => token.token === "{refundAmount}")).toBe(true);
+    expect(EMAIL_STUDIO_TOKENS.some((token) => token.token === "{disputeStatus}")).toBe(true);
   });
 });

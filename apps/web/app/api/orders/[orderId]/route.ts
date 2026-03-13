@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { OrderDisputeRecord, OrderRefundRecord } from "@/types/database";
 
 const paramsSchema = z.object({
   orderId: z.string().uuid()
@@ -60,5 +62,30 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: itemsError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ order, items: items ?? [] });
+  const admin = createSupabaseAdminClient();
+  const { data: refunds, error: refundsError } = await admin
+    .from("order_refunds")
+    .select("id,order_id,store_id,requested_by_user_id,processed_by_user_id,amount_cents,reason_key,reason_note,customer_message,status,stripe_refund_id,metadata_json,processed_at,created_at,updated_at")
+    .eq("order_id", order.id)
+    .eq("store_id", bundle.store.id)
+    .order("created_at", { ascending: false })
+    .returns<OrderRefundRecord[]>();
+
+  if (refundsError) {
+    return NextResponse.json({ error: refundsError.message }, { status: 500 });
+  }
+
+  const { data: disputes, error: disputesError } = await admin
+    .from("order_disputes")
+    .select("id,order_id,store_id,stripe_dispute_id,stripe_charge_id,stripe_payment_intent_id,amount_cents,currency,reason,status,is_charge_refundable,response_due_by,metadata_json,closed_at,created_at,updated_at")
+    .eq("order_id", order.id)
+    .eq("store_id", bundle.store.id)
+    .order("created_at", { ascending: false })
+    .returns<OrderDisputeRecord[]>();
+
+  if (disputesError) {
+    return NextResponse.json({ error: disputesError.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ order, items: items ?? [], refunds: refunds ?? [], disputes: disputes ?? [] });
 }

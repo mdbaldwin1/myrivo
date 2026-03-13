@@ -211,6 +211,7 @@ export function ContentWorkspaceAboutForm({ header }: ContentWorkspaceAboutFormP
               onChange={(nextValue) => setDraft((current) => setAtPath(current, "aboutArticleHtml", nextValue))}
               placeholder="Tell your brand story..."
               rows={14}
+              imageUpload={{ folder: "content-workspace-about" }}
             />
           </FormField>
         </SectionCard>

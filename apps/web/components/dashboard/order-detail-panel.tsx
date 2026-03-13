@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { OrderDisputeSummaryPanel } from "@/components/dashboard/order-dispute-summary-panel";
+import { OrderRefundRequestPanel } from "@/components/dashboard/order-refund-request-panel";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusChip } from "@/components/ui/status-chip";
+import { OrderDisputeRecord, OrderRefundRecord } from "@/types/database";
+import { OrderFinancialStatus } from "@/lib/orders/refunds";
 
 type OrderDetailPanelProps = {
   orderId: string | null;
-  onClose: () => void;
   onReschedulePickup?: (orderId: string) => void;
   refreshToken?: number;
 };
@@ -19,7 +21,7 @@ type OrderDetailResponse = {
     customer_email: string;
     subtotal_cents: number;
     total_cents: number;
-    status: string;
+    status: OrderFinancialStatus;
     fulfillment_method: "pickup" | "shipping" | null;
     fulfillment_label: string | null;
     fulfillment_status: string;
@@ -67,6 +69,8 @@ type OrderDetailResponse = {
     unit_price_cents: number;
     products?: { title?: string } | null;
   }>;
+  refunds?: OrderRefundRecord[];
+  disputes?: OrderDisputeRecord[];
   error?: string;
 };
 
@@ -85,7 +89,7 @@ function buildPickupAddress(snapshot: Record<string, unknown> | null): string | 
   return [line1, line2, [city, stateRegion, postalCode].filter(Boolean).join(", "), countryCode].filter(Boolean).join(" • ") || null;
 }
 
-export function OrderDetailPanel({ orderId, onClose, onReschedulePickup, refreshToken = 0 }: OrderDetailPanelProps) {
+export function OrderDetailPanel({ orderId, onReschedulePickup, refreshToken = 0 }: OrderDetailPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [payload, setPayload] = useState<OrderDetailResponse | null>(null);
@@ -157,121 +161,154 @@ export function OrderDetailPanel({ orderId, onClose, onReschedulePickup, refresh
           payload.order.pickup_timezone ? ` (${payload.order.pickup_timezone})` : ""
         }`
       : null;
+  const order = payload?.order ?? null;
+  const items = payload?.items ?? [];
+  const refunds = payload?.refunds ?? [];
+  const disputes = payload?.disputes ?? [];
 
   return (
-    <Card className="bg-muted/30">
-      <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
-        <div className="space-y-1">
-          <CardTitle className="text-lg">Order Detail</CardTitle>
-          <CardDescription>Customer, payment, fulfillment, and line-item detail for this order.</CardDescription>
-        </div>
-        <div className="flex items-center gap-2">
-          {payload?.order?.fulfillment_method === "pickup" && payload.order.fulfillment_status !== "delivered" && onReschedulePickup ? (
-            <Button type="button" onClick={() => onReschedulePickup(payload.order!.id)} variant="outline" size="sm" className="h-7 text-xs">
-              Reschedule pickup
-            </Button>
-          ) : null}
-          <Button type="button" onClick={onClose} variant="outline" size="sm" className="h-7 text-xs">
-            Close
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {loading ? <p className="text-sm text-muted-foreground">Loading order details...</p> : null}
-        <AppAlert variant="error" message={error} />
+    <div className="space-y-5">
+      {loading ? <p className="text-sm text-muted-foreground">Loading order details...</p> : null}
+      <AppAlert variant="error" message={error} />
 
-        {!loading && !error && payload?.order ? (
-          <div className="space-y-3 text-sm">
-            <div className="grid gap-2 sm:grid-cols-2">
-              <p>
-                <span className="font-medium">Order:</span> {payload.order.id}
-              </p>
-              <p>
-                <span className="font-medium">Customer:</span> {payload.order.customer_email}
-              </p>
-              <p>
-                <span className="font-medium">Status:</span> <StatusChip label={payload.order.status} tone={orderTone(payload.order.status)} />
-              </p>
-              <p>
-                <span className="font-medium">Fulfillment:</span>{" "}
-                <StatusChip label={formatFulfillmentStatus(payload.order.fulfillment_status)} tone={orderTone(payload.order.fulfillment_status)} />
-              </p>
-              <p>
-                <span className="font-medium">Created:</span> {new Date(payload.order.created_at).toLocaleString()}
-              </p>
-              <p>
-                <span className="font-medium">Fulfillment method:</span> {payload.order.fulfillment_label ?? payload.order.fulfillment_method ?? "-"}
-              </p>
-              <p>
-                <span className="font-medium">Subtotal:</span> ${(payload.order.subtotal_cents / 100).toFixed(2)}
-              </p>
-              <p>
-                <span className="font-medium">Total:</span> ${(payload.order.total_cents / 100).toFixed(2)}
-              </p>
-              <p>
-                <span className="font-medium">Discount:</span> ${(payload.order.discount_cents / 100).toFixed(2)}
-              </p>
-              <p>
-                <span className="font-medium">Platform fee:</span> ${((feeBreakdown?.platform_fee_cents ?? 0) / 100).toFixed(2)}
-              </p>
-              <p>
-                <span className="font-medium">Net payout:</span> ${((feeBreakdown?.net_payout_cents ?? 0) / 100).toFixed(2)}
-              </p>
-              <p>
-                <span className="font-medium">Fee basis:</span>{" "}
-                {feeBreakdown ? `${(feeBreakdown.fee_bps / 100).toFixed(2)}% + $${(feeBreakdown.fee_fixed_cents / 100).toFixed(2)}` : "-"}
-              </p>
-              <p>
-                <span className="font-medium">Billing plan:</span> {feeBreakdown?.plan_key ?? "-"}
-              </p>
-              <p>
-                <span className="font-medium">Promo:</span> {payload.order.promo_code ?? "none"}
-              </p>
-              <p>
-                <span className="font-medium">Carrier:</span> {payload.order.carrier ?? "-"}
-              </p>
-              <p>
-                <span className="font-medium">Tracking:</span> {payload.order.tracking_number ?? "-"}
-              </p>
-              <p>
-                <span className="font-medium">Shipment status:</span> {payload.order.shipment_status ?? "-"}
-              </p>
-              {payload.order.fulfillment_method === "pickup" ? (
-                <>
-                  <p>
-                    <span className="font-medium">Pickup location:</span> {pickupAddress ?? "-"}
-                  </p>
-                  <p>
-                    <span className="font-medium">Pickup window:</span> {pickupWindow ?? "-"}
-                  </p>
-                </>
-              ) : null}
-              {payload.order.tracking_url ? (
-                <p>
-                  <a href={payload.order.tracking_url} target="_blank" rel="noreferrer" className="text-primary hover:underline">
-                    Open tracking details
-                  </a>
+      {!loading && !error && order ? (
+        <div className="space-y-5 text-sm">
+          <section className="rounded-xl border border-border/70 bg-muted/30 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-base font-semibold text-foreground">{order.id}</span>
+                  <StatusChip label={order.status} tone={orderTone(order.status)} />
+                  <StatusChip label={formatFulfillmentStatus(order.fulfillment_status)} tone={orderTone(order.fulfillment_status)} />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {order.customer_email} • Created {new Date(order.created_at).toLocaleString()}
                 </p>
+              </div>
+              {order.fulfillment_method === "pickup" && order.fulfillment_status !== "delivered" && onReschedulePickup ? (
+                <Button type="button" onClick={() => onReschedulePickup(order.id)} variant="outline" size="sm">
+                  Reschedule pickup
+                </Button>
               ) : null}
             </div>
+          </section>
 
-            <div className="space-y-2">
-              <h4 className="font-medium">Items</h4>
+          <section className="space-y-3">
+            <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Order summary</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-border/70 bg-background p-4">
+                <dl className="grid gap-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <dt className="text-muted-foreground">Fulfillment method</dt>
+                    <dd className="text-right font-medium">{order.fulfillment_label ?? order.fulfillment_method ?? "-"}</dd>
+                  </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <dt className="text-muted-foreground">Promo code</dt>
+                    <dd className="text-right font-medium">{order.promo_code ?? "None"}</dd>
+                  </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <dt className="text-muted-foreground">Carrier</dt>
+                    <dd className="text-right font-medium">{order.carrier ?? "-"}</dd>
+                  </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <dt className="text-muted-foreground">Tracking number</dt>
+                    <dd className="text-right font-medium">{order.tracking_number ?? "-"}</dd>
+                  </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <dt className="text-muted-foreground">Shipment status</dt>
+                    <dd className="text-right font-medium">{order.shipment_status ?? "-"}</dd>
+                  </div>
+                  {order.tracking_url ? (
+                    <div className="pt-1">
+                      <a href={order.tracking_url} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                        Open tracking details
+                      </a>
+                    </div>
+                  ) : null}
+                </dl>
+              </div>
+
+              <div className="rounded-xl border border-border/70 bg-background p-4">
+                <dl className="grid gap-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <dt className="text-muted-foreground">Subtotal</dt>
+                    <dd className="text-right font-medium">${(order.subtotal_cents / 100).toFixed(2)}</dd>
+                  </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <dt className="text-muted-foreground">Discount</dt>
+                    <dd className="text-right font-medium">${(order.discount_cents / 100).toFixed(2)}</dd>
+                  </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <dt className="text-muted-foreground">Total</dt>
+                    <dd className="text-right font-medium">${(order.total_cents / 100).toFixed(2)}</dd>
+                  </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <dt className="text-muted-foreground">Platform fee</dt>
+                    <dd className="text-right font-medium">${((feeBreakdown?.platform_fee_cents ?? 0) / 100).toFixed(2)}</dd>
+                  </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <dt className="text-muted-foreground">Net payout</dt>
+                    <dd className="text-right font-medium">${((feeBreakdown?.net_payout_cents ?? 0) / 100).toFixed(2)}</dd>
+                  </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <dt className="text-muted-foreground">Fee basis</dt>
+                    <dd className="text-right font-medium">
+                      {feeBreakdown ? `${(feeBreakdown.fee_bps / 100).toFixed(2)}% + $${(feeBreakdown.fee_fixed_cents / 100).toFixed(2)}` : "-"}
+                    </dd>
+                  </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <dt className="text-muted-foreground">Billing plan</dt>
+                    <dd className="text-right font-medium">{feeBreakdown?.plan_key ?? "-"}</dd>
+                  </div>
+                </dl>
+              </div>
+            </div>
+          </section>
+
+          {order.fulfillment_method === "pickup" ? (
+            <section className="space-y-3">
+              <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Pickup details</h3>
+              <div className="rounded-xl border border-border/70 bg-background p-4">
+                <dl className="grid gap-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <dt className="text-muted-foreground">Pickup location</dt>
+                    <dd className="text-right font-medium">{pickupAddress ?? "-"}</dd>
+                  </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <dt className="text-muted-foreground">Pickup window</dt>
+                    <dd className="text-right font-medium">{pickupWindow ?? "-"}</dd>
+                  </div>
+                </dl>
+              </div>
+            </section>
+          ) : null}
+
+            <section className="space-y-3">
+              <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Items</h3>
               <ul className="space-y-2">
-                {(payload.items ?? []).map((item) => (
-                  <li key={item.id} className="rounded-md border border-border bg-background px-3 py-2">
+                {items.map((item) => (
+                  <li key={item.id} className="rounded-xl border border-border/70 bg-background px-4 py-3">
                     <p className="font-medium">{item.products?.title ?? item.product_id}</p>
                     {item.variant_label ? <p className="text-xs text-muted-foreground">Variant: {item.variant_label}</p> : null}
-                    <p className="text-xs text-muted-foreground">
-                      Qty {item.quantity} x ${(item.unit_price_cents / 100).toFixed(2)}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        ) : null}
-      </CardContent>
-    </Card>
+                  <p className="text-xs text-muted-foreground">
+                    Qty {item.quantity} x ${(item.unit_price_cents / 100).toFixed(2)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <OrderRefundRequestPanel
+            orderId={order.id}
+            orderTotalCents={order.total_cents}
+            currency={order.currency}
+            orderStatus={order.status}
+            refunds={refunds}
+          />
+
+          <OrderDisputeSummaryPanel disputes={disputes} currency={order.currency} />
+        </div>
+      ) : null}
+    </div>
   );
 }

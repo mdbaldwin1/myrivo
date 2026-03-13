@@ -343,6 +343,7 @@ export function StorefrontAboutPage({ store, viewer, branding, settings, content
               />
             ) : (
               <article
+                data-rich-text-content="true"
                 className="prose prose-sm max-w-none text-[color:var(--storefront-text)] prose-headings:[font-family:var(--storefront-font-heading)] prose-p:leading-relaxed prose-li:leading-relaxed"
                 dangerouslySetInnerHTML={{ __html: aboutArticleHtml }}
               />

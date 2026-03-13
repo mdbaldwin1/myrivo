@@ -4,6 +4,9 @@ export const emailStudioTemplateIds = [
   "customerConfirmation",
   "ownerNewOrder",
   "pickupUpdated",
+  "refundIssued",
+  "disputeOpened",
+  "disputeResolved",
   "failed",
   "cancelled",
   "shipped",
@@ -18,7 +21,7 @@ export type EmailStudioFieldToken = {
   token: string;
   label: string;
   description: string;
-  category: "order" | "customer" | "money" | "links" | "fulfillment" | "shipping";
+  category: "order" | "customer" | "money" | "links" | "fulfillment" | "shipping" | "refunds" | "disputes";
 };
 
 export const EMAIL_STUDIO_TOKENS: readonly EmailStudioFieldToken[] = [
@@ -39,6 +42,7 @@ export const EMAIL_STUDIO_TOKENS: readonly EmailStudioFieldToken[] = [
   { token: "{dashboardUrl}", label: "Dashboard URL", description: "Owner or customer dashboard deep link.", category: "links" },
   { token: "{orderUrl}", label: "Order URL", description: "Customer order details URL.", category: "links" },
   { token: "{storeUrl}", label: "Store URL", description: "Storefront URL.", category: "links" },
+  { token: "{policiesUrl}", label: "Policies URL", description: "Store policies page URL.", category: "links" },
   { token: "{fulfillmentMethod}", label: "Fulfillment method", description: "Pickup or shipping.", category: "fulfillment" },
   { token: "{pickupLocationName}", label: "Pickup location", description: "Resolved pickup location name.", category: "fulfillment" },
   { token: "{pickupAddress}", label: "Pickup address", description: "Pickup address text.", category: "fulfillment" },
@@ -61,7 +65,14 @@ export const EMAIL_STUDIO_TOKENS: readonly EmailStudioFieldToken[] = [
   { token: "{status}", label: "Status", description: "Shipping lifecycle status.", category: "shipping" },
   { token: "{trackingUrl}", label: "Tracking URL", description: "Shipment tracking URL.", category: "shipping" },
   { token: "{trackingNumber}", label: "Tracking number", description: "Shipment tracking number.", category: "shipping" },
-  { token: "{carrier}", label: "Carrier", description: "Shipping carrier name.", category: "shipping" }
+  { token: "{carrier}", label: "Carrier", description: "Shipping carrier name.", category: "shipping" },
+  { token: "{refundAmount}", label: "Refund amount", description: "Formatted refund amount.", category: "refunds" },
+  { token: "{refundReason}", label: "Refund reason", description: "Merchant-selected refund reason label.", category: "refunds" },
+  { token: "{refundCustomerMessage}", label: "Refund customer note", description: "Optional customer-facing note saved with the refund.", category: "refunds" },
+  { token: "{disputeAmount}", label: "Dispute amount", description: "Formatted disputed amount.", category: "disputes" },
+  { token: "{disputeReason}", label: "Dispute reason", description: "Stripe dispute reason.", category: "disputes" },
+  { token: "{disputeStatus}", label: "Dispute status", description: "Human-readable dispute status.", category: "disputes" },
+  { token: "{disputeResponseDueBy}", label: "Dispute response due by", description: "Response due date when available.", category: "disputes" }
 ] as const;
 
 export type EmailStudioThemeDocument = {
@@ -206,6 +217,70 @@ function buildDefaultTemplateMap(storeName: string): Record<EmailStudioTemplateI
       ctaUrl: "{orderUrl}",
       footerNote: "Questions? Contact {replyToEmail}."
     },
+    refundIssued: {
+      id: "refundIssued",
+      label: "Refund issued",
+      audience: "customer",
+      description: "Sent when a refund has been successfully issued for an order.",
+      subject: "Refund issued for order {orderShortId}",
+      preheader: "A refund was issued for your order.",
+      headline: "Your refund is on the way",
+      bodyHtml: sanitizeRichTextHtml(
+        paragraphsToHtml([
+          "A refund has been issued for your order with {storeName}.",
+          "Order: {orderId}",
+          "Refund amount: {refundAmount}",
+          "Reason: {refundReason}",
+          "Note from the store: {refundCustomerMessage}"
+        ])
+      ),
+      ctaLabel: "Review order",
+      ctaUrl: "{orderUrl}",
+      footerNote: "Questions? Contact {replyToEmail}. Store policies: {policiesUrl}"
+    },
+    disputeOpened: {
+      id: "disputeOpened",
+      label: "Dispute opened",
+      audience: "customer",
+      description: "Sent when a payment dispute or chargeback opens on an order.",
+      subject: "We’re reviewing a payment dispute for order {orderShortId}",
+      preheader: "A payment dispute was opened for your order.",
+      headline: "A payment dispute is under review",
+      bodyHtml: sanitizeRichTextHtml(
+        paragraphsToHtml([
+          "A payment dispute was opened for your order with {storeName}.",
+          "Order: {orderId}",
+          "Disputed amount: {disputeAmount}",
+          "Reason: {disputeReason}",
+          "Status: {disputeStatus}",
+          "Response due by: {disputeResponseDueBy}"
+        ])
+      ),
+      ctaLabel: "View order",
+      ctaUrl: "{orderUrl}",
+      footerNote: "Questions? Contact {replyToEmail}. Store policies: {policiesUrl}"
+    },
+    disputeResolved: {
+      id: "disputeResolved",
+      label: "Dispute resolved",
+      audience: "customer",
+      description: "Sent when a payment dispute reaches a terminal outcome.",
+      subject: "Dispute update for order {orderShortId}",
+      preheader: "Your payment dispute status changed.",
+      headline: "Your dispute status changed",
+      bodyHtml: sanitizeRichTextHtml(
+        paragraphsToHtml([
+          "There’s an update on the payment dispute for your order with {storeName}.",
+          "Order: {orderId}",
+          "Disputed amount: {disputeAmount}",
+          "Reason: {disputeReason}",
+          "Current status: {disputeStatus}"
+        ])
+      ),
+      ctaLabel: "View order",
+      ctaUrl: "{orderUrl}",
+      footerNote: "Questions? Contact {replyToEmail}. Store policies: {policiesUrl}"
+    },
     failed: {
       id: "failed",
       label: "Order failed",
@@ -324,6 +399,12 @@ function resolveLegacyTemplateSubject(transactional: TransactionalRecord, templa
       return getString(transactional, "ownerNewOrderSubjectTemplate");
     case "pickupUpdated":
       return getString(transactional, "pickupUpdatedSubjectTemplate");
+    case "refundIssued":
+      return getString(transactional, "refundIssuedSubjectTemplate");
+    case "disputeOpened":
+      return getString(transactional, "disputeOpenedSubjectTemplate");
+    case "disputeResolved":
+      return getString(transactional, "disputeResolvedSubjectTemplate");
     case "failed":
       return getString(transactional, "failedSubjectTemplate");
     case "cancelled":
@@ -343,6 +424,12 @@ function resolveLegacyTemplateBody(transactional: TransactionalRecord, templateI
       return getString(transactional, "ownerNewOrderBodyTemplate");
     case "pickupUpdated":
       return getString(transactional, "pickupUpdatedBodyTemplate");
+    case "refundIssued":
+      return getString(transactional, "refundIssuedBodyTemplate");
+    case "disputeOpened":
+      return getString(transactional, "disputeOpenedBodyTemplate");
+    case "disputeResolved":
+      return getString(transactional, "disputeResolvedBodyTemplate");
     case "failed":
       return getString(transactional, "failedBodyTemplate");
     case "cancelled":
@@ -453,6 +540,12 @@ export function serializeEmailStudioDocument(document: EmailStudioDocument) {
       ownerNewOrderBodyTemplate: richTextToPlainText(document.templates.ownerNewOrder.bodyHtml),
       pickupUpdatedSubjectTemplate: document.templates.pickupUpdated.subject.trim(),
       pickupUpdatedBodyTemplate: richTextToPlainText(document.templates.pickupUpdated.bodyHtml),
+      refundIssuedSubjectTemplate: document.templates.refundIssued.subject.trim(),
+      refundIssuedBodyTemplate: richTextToPlainText(document.templates.refundIssued.bodyHtml),
+      disputeOpenedSubjectTemplate: document.templates.disputeOpened.subject.trim(),
+      disputeOpenedBodyTemplate: richTextToPlainText(document.templates.disputeOpened.bodyHtml),
+      disputeResolvedSubjectTemplate: document.templates.disputeResolved.subject.trim(),
+      disputeResolvedBodyTemplate: richTextToPlainText(document.templates.disputeResolved.bodyHtml),
       failedSubjectTemplate: document.templates.failed.subject.trim(),
       failedBodyTemplate: richTextToPlainText(document.templates.failed.bodyHtml),
       cancelledSubjectTemplate: document.templates.cancelled.subject.trim(),

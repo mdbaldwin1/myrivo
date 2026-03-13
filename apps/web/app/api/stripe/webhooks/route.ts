@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { getStripeEnv, isStripeStubMode } from "@/lib/env";
+import { syncStripeDisputeRecord, syncStripeRefundRecord } from "@/lib/orders/refund-dispute-sync";
 import { finalizeStorefrontCheckout, markStorefrontCheckoutFailed } from "@/lib/storefront/checkout-finalization";
 import { getStripeClient } from "@/lib/stripe/server";
 
@@ -54,6 +55,32 @@ export async function POST(request: Request) {
       return NextResponse.json({ received: true, checkoutKind });
     }
 
+  }
+
+  if (event.type === "refund.created" || event.type === "refund.updated" || event.type === "charge.refund.updated") {
+    const refund = event.data.object as Stripe.Refund;
+    await syncStripeRefundRecord(refund);
+    return NextResponse.json({ received: true, type: event.type });
+  }
+
+  if (
+    event.type === "charge.dispute.created" ||
+    event.type === "charge.dispute.updated" ||
+    event.type === "charge.dispute.closed" ||
+    event.type === "charge.dispute.funds_withdrawn" ||
+    event.type === "charge.dispute.funds_reinstated"
+  ) {
+    const dispute = event.data.object as Stripe.Dispute;
+    const paymentIntentId = typeof dispute.payment_intent === "string" ? dispute.payment_intent : dispute.payment_intent?.id ?? null;
+
+    if (!paymentIntentId && dispute.charge) {
+      const chargeId = typeof dispute.charge === "string" ? dispute.charge : dispute.charge.id;
+      const charge = await getStripeClient().charges.retrieve(chargeId);
+      dispute.payment_intent = charge.payment_intent;
+    }
+
+    await syncStripeDisputeRecord(dispute);
+    return NextResponse.json({ received: true, type: event.type });
   }
 
   return NextResponse.json({ received: true });

@@ -80,7 +80,7 @@ export function StorefrontStudioEditableRichText({
 
       {editing ? (
         <div className={cn("rounded-2xl border border-slate-300 bg-white/95 p-3 shadow-sm", editorClassName)}>
-          <RichTextEditor value={value} onChange={onChange} placeholder={placeholder} rows={10} />
+          <RichTextEditor value={value} onChange={onChange} placeholder={placeholder} rows={10} imageUpload={{ folder: "storefront-studio" }} />
           <div className="mt-2 flex justify-end">
             <button
               type="button"
@@ -93,6 +93,7 @@ export function StorefrontStudioEditableRichText({
         </div>
       ) : sanitizedValue ? (
         <article
+          data-rich-text-content="true"
           className={displayClassName}
           dangerouslySetInnerHTML={{ __html: sanitizedValue }}
         />

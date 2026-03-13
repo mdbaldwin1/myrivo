@@ -163,22 +163,36 @@ export function resolveCookieConsent(rawValue: string | null | undefined): Cooki
     return getDefaultCookieConsent();
   }
 
-  try {
-    const parsed = JSON.parse(decodeURIComponent(rawValue)) as Partial<CookieConsentRecord> & { version?: string };
-    if (parsed.version !== "v1") {
-      return getDefaultCookieConsent();
-    }
+  let candidate = rawValue.trim();
 
-    return {
-      version: "v1",
-      essential: true,
-      analytics: parsed.analytics === true,
-      hasRecordedChoice: parsed.hasRecordedChoice === true,
-      updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : null
-    };
-  } catch {
-    return getDefaultCookieConsent();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const parsed = JSON.parse(candidate) as Partial<CookieConsentRecord> & { version?: string };
+      if (parsed.version !== "v1") {
+        return getDefaultCookieConsent();
+      }
+
+      return {
+        version: "v1",
+        essential: true,
+        analytics: parsed.analytics === true,
+        hasRecordedChoice: parsed.hasRecordedChoice === true,
+        updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : null
+      };
+    } catch {
+      try {
+        const decoded = decodeURIComponent(candidate);
+        if (decoded === candidate) {
+          break;
+        }
+        candidate = decoded;
+      } catch {
+        break;
+      }
+    }
   }
+
+  return getDefaultCookieConsent();
 }
 
 export function serializeCookieConsent(consent: CookieConsentRecord) {
@@ -191,6 +205,16 @@ export function serializeCookieConsent(consent: CookieConsentRecord) {
       updatedAt: consent.updatedAt
     })
   );
+}
+
+export function serializeCookieConsentForResponse(consent: CookieConsentRecord) {
+  return JSON.stringify({
+    version: consent.version,
+    essential: true,
+    analytics: consent.analytics,
+    hasRecordedChoice: consent.hasRecordedChoice,
+    updatedAt: consent.updatedAt
+  });
 }
 
 export function hasAnalyticsConsent(consent: CookieConsentRecord) {

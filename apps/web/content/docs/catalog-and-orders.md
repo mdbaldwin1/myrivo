@@ -28,5 +28,6 @@ When changing product structure after orders exist, verify downstream reporting 
 ## Related Docs
 
 - `/docs/pickup-and-shipping-operations`
+- `/docs/refunds-disputes-and-customer-issues`
 - `/docs/reviews-and-customer-trust`
 - `/docs/storefront-analytics-and-reporting`
