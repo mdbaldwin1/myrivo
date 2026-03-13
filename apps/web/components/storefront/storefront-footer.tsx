@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Facebook, Instagram, Music2 } from "lucide-react";
 import { type FormEvent, useState } from "react";
+import { CookiePreferencesButton } from "@/components/privacy/cookie-preferences-button";
 import { useOptionalStorefrontAnalytics } from "@/components/storefront/storefront-analytics-provider";
 import { useOptionalStorefrontRuntime } from "@/components/storefront/storefront-runtime-provider";
 import { StorefrontPrivacyCollectionNotice } from "@/components/storefront/storefront-privacy-collection-notice";
@@ -106,6 +107,10 @@ export function StorefrontFooter({
     {
       label: copy.footer.privacyLink,
       href: normalizedStoreSlug ? `/privacy?store=${encodeURIComponent(normalizedStoreSlug)}` : "/privacy"
+    },
+    {
+      label: "Cookie Policy",
+      href: normalizedStoreSlug ? `/cookies?store=${encodeURIComponent(normalizedStoreSlug)}` : "/cookies"
     },
     {
       label: copy.footer.termsLink,
@@ -304,6 +309,7 @@ export function StorefrontFooter({
                 {link.label}
               </Link>
             ))}
+            <CookiePreferencesButton className={STOREFRONT_TEXT_LINK_EFFECT_CLASS}>Manage cookies</CookiePreferencesButton>
           </div>
         </div>
 

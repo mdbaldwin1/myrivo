@@ -1,7 +1,12 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
-import { createStorefrontAnalyticsClient, type StorefrontAnalyticsClient } from "@/lib/analytics/client";
+import { useOptionalCookieConsent } from "@/components/privacy/cookie-consent-provider";
+import {
+  clearStorefrontAnalyticsPersistence,
+  createStorefrontAnalyticsClient,
+  type StorefrontAnalyticsClient
+} from "@/lib/analytics/client";
 import type { StorefrontRuntime } from "@/lib/storefront/runtime";
 
 const StorefrontAnalyticsContext = createContext<StorefrontAnalyticsClient | null>(null);
@@ -12,19 +17,29 @@ type StorefrontAnalyticsProviderProps = {
 };
 
 export function StorefrontAnalyticsProvider({ runtime, children }: StorefrontAnalyticsProviderProps) {
+  const cookieConsent = useOptionalCookieConsent();
+  const analyticsConsentGranted = cookieConsent?.analyticsEnabled ?? false;
   const analytics = useMemo(
     () =>
       createStorefrontAnalyticsClient({
         storeSlug: runtime.store.slug,
-        enabled: runtime.mode === "live" && runtime.analytics.collectionEnabled
+        enabled: runtime.mode === "live" && runtime.analytics.collectionEnabled && analyticsConsentGranted
       }),
-    [runtime.analytics.collectionEnabled, runtime.mode, runtime.store.slug]
+    [analyticsConsentGranted, runtime.analytics.collectionEnabled, runtime.mode, runtime.store.slug]
   );
 
   useEffect(() => {
     analytics.start();
     return () => analytics.stop();
   }, [analytics]);
+
+  useEffect(() => {
+    if (analyticsConsentGranted) {
+      return;
+    }
+
+    clearStorefrontAnalyticsPersistence(runtime.store.slug);
+  }, [analyticsConsentGranted, runtime.store.slug]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !analytics.isDebugEnabled()) {

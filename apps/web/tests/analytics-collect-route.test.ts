@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { createCookieConsentRecord, serializeCookieConsent } from "@/lib/privacy/cookies";
 
 const checkRateLimitMock = vi.fn();
 const adminFromMock = vi.fn();
@@ -34,11 +35,13 @@ beforeEach(() => {
 });
 
 describe("analytics collect route", () => {
+  const analyticsConsentCookie = `myrivo_cookie_consent=${serializeCookieConsent(createCookieConsentRecord({ analytics: true }))}`;
+
   test("returns 400 for malformed payload", async () => {
     const route = await import("@/app/api/analytics/collect/route");
     const request = new NextRequest("http://localhost:3000/api/analytics/collect", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", cookie: analyticsConsentCookie },
       body: JSON.stringify({ storeSlug: "demo", events: [{ eventType: "bad-event" }] })
     });
     const response = await route.POST(request);
@@ -86,7 +89,7 @@ describe("analytics collect route", () => {
     const route = await import("@/app/api/analytics/collect/route");
     const request = new NextRequest("http://localhost:3000/api/analytics/collect", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", cookie: analyticsConsentCookie },
       body: JSON.stringify({
         storeSlug: "demo-store",
         events: [
@@ -164,7 +167,7 @@ describe("analytics collect route", () => {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        cookie: "myrivo_analytics_sid=existing_cookie_session_1234"
+        cookie: `${analyticsConsentCookie}; myrivo_analytics_sid=existing_cookie_session_1234`
       },
       body: JSON.stringify({
         storeSlug: "demo-store",
@@ -245,7 +248,7 @@ describe("analytics collect route", () => {
     const route = await import("@/app/api/analytics/collect/route");
     const request = new NextRequest("http://localhost:3000/api/analytics/collect", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", cookie: analyticsConsentCookie },
       body: JSON.stringify({
         storeSlug: "demo-store",
         events: [{ eventType: "page_view", path: "/s/demo-store" }]
@@ -302,7 +305,7 @@ describe("analytics collect route", () => {
     const route = await import("@/app/api/analytics/collect/route");
     const request = new NextRequest("http://localhost:3000/api/analytics/collect", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", cookie: analyticsConsentCookie },
       body: JSON.stringify({
         storeSlug: "demo-store",
         entryPath: "/products/body-oil?utm_source=instagram&email=test@example.com",
@@ -396,7 +399,7 @@ describe("analytics collect route", () => {
     const route = await import("@/app/api/analytics/collect/route");
     const request = new NextRequest("http://localhost:3000/api/analytics/collect", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", cookie: analyticsConsentCookie },
       body: JSON.stringify({
         storeSlug: "demo-store",
         events: [{ eventType: "page_view", path: "/s/demo-store" }]
@@ -450,6 +453,56 @@ describe("analytics collect route", () => {
     const route = await import("@/app/api/analytics/collect/route");
     const request = new NextRequest("http://localhost:3000/api/analytics/collect", {
       method: "POST",
+      headers: { "content-type": "application/json", cookie: analyticsConsentCookie },
+      body: JSON.stringify({
+        storeSlug: "demo-store",
+        events: [{ eventType: "page_view", path: "/s/demo-store" }]
+      })
+    });
+
+    const response = await route.POST(request);
+    const payload = (await response.json()) as { ok: boolean; acceptedEvents: number; sessionId?: string };
+
+    expect(response.status).toBe(200);
+    expect(payload.ok).toBe(true);
+    expect(payload.acceptedEvents).toBe(0);
+    expect(payload.sessionId).toBeUndefined();
+    expect(upsertSessionMock).not.toHaveBeenCalled();
+    expect(upsertEventMock).not.toHaveBeenCalled();
+  });
+
+  test("no-ops cleanly when analytics consent is absent", async () => {
+    const upsertEventMock = vi.fn(async () => ({ error: null }));
+    const upsertSessionMock = vi.fn();
+
+    adminFromMock.mockImplementation((table: string) => {
+      if (table === "stores") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({
+                data: { id: "store-1", slug: "demo-store", status: "active" },
+                error: null
+              }))
+            }))
+          }))
+        };
+      }
+
+      if (table === "storefront_sessions") {
+        return { upsert: upsertSessionMock };
+      }
+
+      if (table === "storefront_events") {
+        return { upsert: upsertEventMock };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const route = await import("@/app/api/analytics/collect/route");
+    const request = new NextRequest("http://localhost:3000/api/analytics/collect", {
+      method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         storeSlug: "demo-store",
@@ -463,8 +516,9 @@ describe("analytics collect route", () => {
     expect(response.status).toBe(200);
     expect(payload.ok).toBe(true);
     expect(payload.acceptedEvents).toBe(0);
-    expect(payload.sessionId).toBeTruthy();
+    expect(payload.sessionId).toBeUndefined();
     expect(upsertSessionMock).not.toHaveBeenCalled();
     expect(upsertEventMock).not.toHaveBeenCalled();
+    expect(response.cookies.get("myrivo_analytics_sid")).toBeUndefined();
   });
 });
