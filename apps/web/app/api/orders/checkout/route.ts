@@ -111,7 +111,6 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = createSupabaseAdminClient();
-  const serverSupabase = await createSupabaseServerClient();
   const {
     firstName,
     lastName,
@@ -160,6 +159,7 @@ export async function POST(request: NextRequest) {
     sessionKey: analyticsSessionId
   });
 
+  const serverSupabase = await createSupabaseServerClient();
   const {
     data: { user: authenticatedUser }
   } = await serverSupabase.auth.getUser();
