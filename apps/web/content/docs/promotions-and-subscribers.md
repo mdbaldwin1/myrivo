@@ -5,6 +5,9 @@ summary: Launch discount campaigns and grow your audience with repeatable promot
 category: Operations
 audience: Marketing and growth teams
 lastUpdated: March 2026
+owner: Merchant Education
+reviewCadence: Quarterly
+reviewBy: 2026-06-30
 ---
 
 ## Promotion Setup
@@ -14,3 +17,9 @@ Create promotions with clear start/end windows and test with representative cart
 Use subscriber tools for list growth and segmentation.
 
 Coordinate subscriber messaging with your Content Workspace email capture copy.
+
+## Related Docs
+
+- `/docs/email-studio-and-lifecycle-messages`
+- `/docs/storefront-analytics-and-reporting`
+- `/docs/merchant-troubleshooting`

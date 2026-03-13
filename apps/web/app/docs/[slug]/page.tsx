@@ -53,9 +53,20 @@ export default async function DocDetailPage({ params }: DocDetailPageProps) {
     <PageShell>
       <DocsLayout currentSlug={doc.slug}>
         <SectionCard title={doc.title} description={doc.summary}>
-          <p className="text-xs text-muted-foreground">
-            Audience: {doc.audience} | Updated {doc.lastUpdated}
-          </p>
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              <span>Audience: {doc.audience}</span>
+              <span>Owner: {doc.owner}</span>
+              <span>Updated {doc.lastUpdated}</span>
+              <span>Review cadence: {doc.reviewCadence}</span>
+              <span>Next review: {doc.reviewByLabel}</span>
+            </div>
+            {doc.isReviewOverdue ? (
+              <p className="text-xs font-medium text-amber-700">
+                This guide is past its review date. Validate the workflow before relying on it operationally.
+              </p>
+            ) : null}
+          </div>
           <div className="mt-4 space-y-6">
                 {doc.sections.map((section) => (
                   <section key={section.heading} className="space-y-2">

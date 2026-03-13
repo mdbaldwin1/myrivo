@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { MarketingSiteChrome } from "@/components/marketing/marketing-site-chrome";
+import { MarketingTrackedButtonLink } from "@/components/marketing/marketing-tracked-button-link";
 import { Button } from "@/components/ui/button";
 
 const featureGroups = [
@@ -50,14 +51,26 @@ export default function FeaturesPage() {
           customer communications, and compliance.
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
-          <Link href="/signup">
-            <Button className="h-11 rounded-full bg-primary px-6 text-primary-foreground hover:bg-primary">Create account</Button>
-          </Link>
-          <Link href="/pricing">
-            <Button variant="outline" className="h-11 rounded-full border-[hsl(var(--primary))]/35 bg-card px-6 text-[hsl(var(--primary))] hover:bg-primary/10">
-              View pricing
-            </Button>
-          </Link>
+          <MarketingTrackedButtonLink
+            href="/signup"
+            ctaKey="features_hero_create_account"
+            ctaLabel="Create account"
+            sectionKey="hero"
+            conversionIntent="signup"
+            className="h-11 rounded-full bg-primary px-6 text-primary-foreground hover:bg-primary"
+          >
+            Create account
+          </MarketingTrackedButtonLink>
+          <MarketingTrackedButtonLink
+            href="/pricing"
+            ctaKey="features_hero_view_pricing"
+            ctaLabel="View pricing"
+            sectionKey="hero"
+            variant="outline"
+            className="h-11 rounded-full border-[hsl(var(--primary))]/35 bg-card px-6 text-[hsl(var(--primary))] hover:bg-primary/10"
+          >
+            View pricing
+          </MarketingTrackedButtonLink>
         </div>
       </section>
 

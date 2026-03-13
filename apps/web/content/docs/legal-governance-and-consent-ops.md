@@ -5,6 +5,9 @@ summary: Publish legal versions, communicate required updates, and produce accep
 category: Team
 audience: Platform admins and compliance operators
 lastUpdated: March 2026
+owner: Compliance Operations
+reviewCadence: Monthly
+reviewBy: 2026-04-15
 ---
 
 ## Publishing and Communication
@@ -19,3 +22,9 @@ Export CSV for legal evidence requests and include acceptance surface + accepted
 
 ## Incident Response Tie-in
 For delivery failures or dispute handling, follow `docs/runbooks/legal-update-communications.md`.
+
+## Related Docs
+
+- `/docs/admin-dashboard-and-operations`
+- `/docs/audit-explorer-and-evidence`
+- `/docs/support-operations-and-escalation`

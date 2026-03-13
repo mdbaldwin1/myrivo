@@ -5,6 +5,9 @@ summary: Investigate platform actions and build evidence packs for disputes or c
 category: Reporting
 audience: Platform admins, support leads, and compliance stakeholders
 lastUpdated: March 2026
+owner: Platform Operations
+reviewCadence: Monthly
+reviewBy: 2026-04-15
 ---
 
 ## Audit Search Basics
@@ -23,3 +26,9 @@ Reference runbooks in `docs/runbooks/legal-update-communications.md` and `docs/r
 
 ## Validation Steps
 Cross-check audit entries against operational panels (stores, moderation, legal) before issuing a final response.
+
+## Related Docs
+
+- `/docs/admin-dashboard-and-operations`
+- `/docs/store-governance-and-approvals`
+- `/docs/support-operations-and-escalation`

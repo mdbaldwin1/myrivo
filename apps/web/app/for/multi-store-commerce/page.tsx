@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { MarketingSiteChrome } from "@/components/marketing/marketing-site-chrome";
-import { Button } from "@/components/ui/button";
+import { MarketingTrackedButtonLink } from "@/components/marketing/marketing-tracked-button-link";
 
 export const metadata: Metadata = {
   title: "Multi-store commerce platform | Myrivo",
@@ -41,14 +40,26 @@ export default function MultiStoreCommercePage() {
           <h2 className="[font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-2xl">See the architecture</h2>
           <p className="mt-3 text-sm text-[hsl(var(--primary-foreground))]">Review operational tradeoffs, governance depth, and launch strategy in minutes.</p>
           <div className="mt-5 flex flex-wrap gap-3">
-            <Link href="/signup">
-              <Button className="h-10 rounded-full bg-background px-5 text-[hsl(var(--primary))] hover:bg-[hsl(var(--muted))]">Start free</Button>
-            </Link>
-            <Link href="/compare">
-              <Button variant="outline" className="h-10 rounded-full border-[hsl(var(--primary-foreground))]/50 bg-transparent px-5 text-primary-foreground hover:bg-white/10">
-                Compare approaches
-              </Button>
-            </Link>
+            <MarketingTrackedButtonLink
+              href="/signup"
+              ctaKey="multi_store_launch_start_free"
+              ctaLabel="Start free"
+              sectionKey="architecture_card"
+              conversionIntent="signup"
+              className="h-10 rounded-full bg-background px-5 text-[hsl(var(--primary))] hover:bg-[hsl(var(--muted))]"
+            >
+              Start free
+            </MarketingTrackedButtonLink>
+            <MarketingTrackedButtonLink
+              href="/compare"
+              ctaKey="multi_store_launch_compare"
+              ctaLabel="Compare approaches"
+              sectionKey="architecture_card"
+              variant="outline"
+              className="h-10 rounded-full border-[hsl(var(--primary-foreground))]/50 bg-transparent px-5 text-primary-foreground hover:bg-white/10"
+            >
+              Compare approaches
+            </MarketingTrackedButtonLink>
           </div>
         </article>
       </section>

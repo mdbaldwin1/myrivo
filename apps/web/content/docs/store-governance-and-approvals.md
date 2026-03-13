@@ -5,6 +5,9 @@ summary: Approve, reject, and suspend stores with consistent reasoning and defen
 category: Operations
 audience: Platform admins and support operators
 lastUpdated: March 2026
+owner: Platform Operations
+reviewCadence: Monthly
+reviewBy: 2026-04-15
 ---
 
 ## Approval Workflow
@@ -21,3 +24,9 @@ Approve only when store profile, operational policies, and compliance posture ar
 
 ## Escalation Rules
 Escalate unclear or high-risk decisions to the platform owner before changing store status.
+
+## Related Docs
+
+- `/docs/admin-dashboard-and-operations`
+- `/docs/audit-explorer-and-evidence`
+- `/docs/support-operations-and-escalation`

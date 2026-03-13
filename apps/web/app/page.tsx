@@ -1,6 +1,6 @@
-import Link from "next/link";
+import { HomepagePrimaryCta } from "@/components/marketing/homepage-primary-cta";
 import { MarketingSiteChrome } from "@/components/marketing/marketing-site-chrome";
-import { Button } from "@/components/ui/button";
+import { MarketingTrackedButtonLink } from "@/components/marketing/marketing-tracked-button-link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -28,16 +28,17 @@ export default async function HomePage() {
           No brittle plugin stack. No fragmented admin.
         </p>
         <div className="mt-7 flex flex-wrap gap-3">
-          <Link href={isAuthenticated ? "/dashboard" : "/signup"}>
-            <Button className="h-11 rounded-full bg-primary px-6 text-primary-foreground hover:bg-primary">
-              {isAuthenticated ? "Open dashboard" : "Start free"}
-            </Button>
-          </Link>
-          <Link href="/pricing">
-            <Button variant="outline" className="h-11 rounded-full border-[hsl(var(--primary))]/35 bg-card px-6 text-[hsl(var(--primary))] hover:bg-primary/10">
-              See pricing
-            </Button>
-          </Link>
+          <HomepagePrimaryCta isAuthenticated={isAuthenticated} />
+          <MarketingTrackedButtonLink
+            href="/pricing"
+            ctaKey="home_hero_see_pricing"
+            ctaLabel="See pricing"
+            sectionKey="hero"
+            variant="outline"
+            className="h-11 rounded-full border-[hsl(var(--primary))]/35 bg-card px-6 text-[hsl(var(--primary))] hover:bg-primary/10"
+          >
+            See pricing
+          </MarketingTrackedButtonLink>
         </div>
       </section>
 

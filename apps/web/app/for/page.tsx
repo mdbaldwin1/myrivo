@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { MarketingSiteChrome } from "@/components/marketing/marketing-site-chrome";
-import { Button } from "@/components/ui/button";
+import { MarketingTrackedButtonLink } from "@/components/marketing/marketing-tracked-button-link";
 
 const solutions = [
   {
@@ -39,11 +38,17 @@ export default function SolutionsIndexPage() {
             <h2 className="[font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-2xl text-foreground">{solution.title}</h2>
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{solution.description}</p>
             <div className="mt-4">
-              <Link href={solution.href}>
-                <Button variant="outline" size="sm" className="rounded-full border-[hsl(var(--primary))]/35 bg-card text-[hsl(var(--primary))] hover:bg-primary/10">
-                  Open solution
-                </Button>
-              </Link>
+              <MarketingTrackedButtonLink
+                href={solution.href}
+                ctaKey={`solutions_grid_${solution.href.split("/").at(-1) ?? "detail"}`}
+                ctaLabel={`Open ${solution.title}`}
+                sectionKey="solutions_grid"
+                variant="outline"
+                size="sm"
+                className="rounded-full border-[hsl(var(--primary))]/35 bg-card text-[hsl(var(--primary))] hover:bg-primary/10"
+              >
+                Open solution
+              </MarketingTrackedButtonLink>
             </div>
           </article>
         ))}

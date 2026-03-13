@@ -5,6 +5,9 @@ summary: Set up your account, create your first store, and establish operating d
 category: Getting Started
 audience: Store owners and admins
 lastUpdated: March 2026
+owner: Merchant Education
+reviewCadence: Quarterly
+reviewBy: 2026-06-30
 ---
 
 ## Create Your Workspace
@@ -22,3 +25,15 @@ Complete general settings, branding, shipping or pickup, and checkout experience
 
 ## Production Readiness
 Before launch, test a full cart and order flow in your storefront at `/s/:storeSlug`.
+
+- Confirm shipping or pickup messaging in the live storefront
+- Confirm Privacy Policy and Terms are published
+- Confirm domains, payments, and analytics are configured the way you expect
+
+## Related Docs
+
+- `/docs/content-workspace-and-branding`
+- `/docs/catalog-and-orders`
+- `/docs/pickup-and-shipping-operations`
+- `/docs/domains-and-launch-readiness`
+- `/docs/storefront-analytics-and-reporting`

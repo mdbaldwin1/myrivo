@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Added governance metadata to the Myrivo docs library, including documented ownership, review cadence, next-review dates, and an overdue-doc review process.
+
+- Added public-site marketing analytics with CTA/signup funnel tracking, admin reporting at `/dashboard/admin/marketing`, and lightweight experiment support for conversion optimization.
 - Added a platform-managed cookie compliance layer with a public cookie policy, shopper cookie preferences banner, footer cookie controls, and consent-gated storefront analytics.
 - Added a store privacy compliance layer with configurable point-of-collection notices, California rights surfaces, shopper privacy request intake, and operator workflow hooks in Store Settings > Legal.
 - Added store-level Privacy Policy and Terms & Conditions management with Store Settings > Legal, storefront legal routes, template-backed previews, and explicit draft/publish safeguards.

@@ -341,6 +341,48 @@ describe("store legal documents route", () => {
     expect(logAuditEventMock).toHaveBeenCalledTimes(1);
   });
 
+  test("PUT resolves the requested store slug and writes only to the resolved store", async () => {
+    ownedStoreBundleMock = {
+      store: { id: "store-2", slug: "apothecary", name: "Second Store" },
+      settings: { support_email: "second@example.com" }
+    };
+
+    const response = await callPut({
+      privacyCompliance: {
+        notice_at_collection_enabled: true,
+        checkout_notice_enabled: true,
+        newsletter_notice_enabled: false,
+        review_notice_enabled: true,
+        show_california_notice: false,
+        show_do_not_sell_link: false,
+        privacy_contact_email: "privacy@second.example.com",
+        privacy_rights_email: "rights@second.example.com",
+        privacy_contact_name: "Second Privacy",
+        collection_notice_addendum_markdown: "",
+        california_notice_markdown: "",
+        do_not_sell_markdown: "",
+        request_page_intro_markdown: ""
+      },
+      privacy: buildEditorEntry({ title_override: "Second Store Privacy" }),
+      terms: buildEditorEntry({ title_override: "Second Store Terms" })
+    });
+
+    expect(response.status).toBe(200);
+    expect(requestedStoreSlug).toBe("apothecary");
+    expect(upsertPayload).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ store_id: "store-2", key: "privacy", title_override: "Second Store Privacy" }),
+        expect.objectContaining({ store_id: "store-2", key: "terms", title_override: "Second Store Terms" })
+      ])
+    );
+    expect(privacyProfileUpsertPayload).toEqual(
+      expect.objectContaining({
+        store_id: "store-2",
+        privacy_contact_email: "privacy@second.example.com"
+      })
+    );
+  });
+
   test("GET returns 401 when no user is authenticated", async () => {
     supabaseMock.auth.getUser.mockResolvedValueOnce({ data: { user: null } });
 
@@ -411,6 +453,58 @@ describe("store legal documents route", () => {
           key: "privacy",
           publishedVersion: 3
         })
+      })
+    );
+  });
+
+  test("PATCH resolves the requested store slug and publishes against the resolved store context", async () => {
+    ownedStoreBundleMock = {
+      store: { id: "store-2", slug: "apothecary", name: "Second Store" },
+      settings: { support_email: "second@example.com" }
+    };
+    getStoreLegalDocumentsByStoreIdMock.mockResolvedValueOnce([
+      {
+        id: "privacy-2",
+        store_id: "store-2",
+        key: "privacy",
+        source_mode: "custom",
+        template_version: "v1",
+        title_override: "Second Store Privacy",
+        body_markdown: "Updated privacy body.",
+        variables_json: {},
+        published_source_mode: "template",
+        published_template_version: "v1",
+        published_title: "Published Privacy Policy",
+        published_body_markdown: "Published privacy body.",
+        published_variables_json: {},
+        published_version: 1,
+        published_change_summary: null,
+        effective_at: null,
+        published_at: "2026-03-12T00:00:00.000Z",
+        published_by_user_id: "user-1",
+        created_at: "2026-03-12T00:00:00.000Z",
+        updated_at: "2026-03-12T00:00:00.000Z"
+      }
+    ]);
+
+    const response = await callPatch({
+      key: "privacy",
+      changeSummary: "Clarified second store privacy controls."
+    });
+
+    expect(response.status).toBe(200);
+    expect(requestedStoreSlug).toBe("apothecary");
+    expect(updatePayload).toEqual(
+      expect.objectContaining({
+        published_title: "Second Store Privacy",
+        published_version: 2,
+        published_by_user_id: "user-1"
+      })
+    );
+    expect(logAuditEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        storeId: "store-2",
+        entityId: "store-2:privacy"
       })
     );
   });

@@ -11,16 +11,47 @@ import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { extractPendingStoreInviteTokenFromReturnTo } from "@/lib/auth/pending-store-invite";
 import type { LegalRequirement } from "@/lib/legal/documents";
+import {
+  MARKETING_ANALYTICS_COOKIE_NAME,
+  MARKETING_ANALYTICS_SESSION_STORAGE_KEY,
+  isMarketingPageKey,
+  type MarketingPageKey
+} from "@/lib/marketing/analytics";
 import { withReturnTo } from "@/lib/auth/return-to";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+
+type SignupMarketingAttribution = {
+  source: string | null;
+  marketingPage: string | null;
+  marketingSection: string | null;
+  marketingCta: string | null;
+  marketingLabel: string | null;
+};
 
 type SignupFormProps = {
   returnTo: string;
   legalRequirements: { terms: LegalRequirement; privacy: LegalRequirement } | null;
   legalUnavailable: boolean;
+  marketingAttribution: SignupMarketingAttribution;
 };
 
-export function SignupForm({ returnTo, legalRequirements, legalUnavailable }: SignupFormProps) {
+function readMarketingSessionKey() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const stored = window.localStorage.getItem(MARKETING_ANALYTICS_SESSION_STORAGE_KEY);
+  if (stored?.trim()) {
+    return stored;
+  }
+
+  const cookieEntry = document.cookie
+    .split("; ")
+    .find((entry) => entry.startsWith(`${MARKETING_ANALYTICS_COOKIE_NAME}=`));
+  return cookieEntry?.slice(`${MARKETING_ANALYTICS_COOKIE_NAME}=`.length) ?? null;
+}
+
+export function SignupForm({ returnTo, legalRequirements, legalUnavailable, marketingAttribution }: SignupFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
@@ -89,6 +120,37 @@ export function SignupForm({ returnTo, legalRequirements, legalUnavailable }: Si
     if (!consentResponse.ok) {
       setError(consentPayload.error ?? "Account created, but legal acceptance capture failed. Please contact support before continuing.");
       return;
+    }
+
+    if (marketingAttribution.marketingCta || marketingAttribution.source) {
+      const marketingSessionKey = readMarketingSessionKey();
+      if (marketingSessionKey) {
+        void fetch("/api/marketing/analytics/collect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionKey: marketingSessionKey,
+            entryPath: window.location.pathname + window.location.search,
+            referrer: document.referrer || undefined,
+            userAgent: navigator.userAgent,
+            events: [
+              {
+                eventType: "signup_completed",
+                path: window.location.pathname + window.location.search,
+                pageKey: isMarketingPageKey(marketingAttribution.marketingPage) ? (marketingAttribution.marketingPage as MarketingPageKey) : undefined,
+                sectionKey: marketingAttribution.marketingSection ?? undefined,
+                ctaKey: marketingAttribution.marketingCta ?? marketingAttribution.source ?? undefined,
+                ctaLabel: marketingAttribution.marketingLabel ?? undefined,
+                value: {
+                  source: marketingAttribution.source ?? undefined,
+                  returnTo
+                }
+              }
+            ]
+          }),
+          keepalive: true
+        });
+      }
     }
 
     router.push(returnTo);
