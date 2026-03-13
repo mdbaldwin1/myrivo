@@ -187,6 +187,44 @@ export type StoreLegalDocumentRecord = {
   updated_at: string;
 };
 
+export type StorePrivacyRequestType = "access" | "deletion" | "correction" | "know" | "opt_out_sale_share";
+export type StorePrivacyRequestStatus = "open" | "in_progress" | "completed" | "closed";
+
+export type StorePrivacyProfileRecord = {
+  store_id: string;
+  notice_at_collection_enabled: boolean;
+  checkout_notice_enabled: boolean;
+  newsletter_notice_enabled: boolean;
+  review_notice_enabled: boolean;
+  show_california_notice: boolean;
+  show_do_not_sell_link: boolean;
+  privacy_contact_email: string | null;
+  privacy_rights_email: string | null;
+  privacy_contact_name: string | null;
+  collection_notice_addendum_markdown: string;
+  california_notice_markdown: string;
+  do_not_sell_markdown: string;
+  request_page_intro_markdown: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StorePrivacyRequestRecord = {
+  id: string;
+  store_id: string;
+  email: string;
+  full_name: string | null;
+  request_type: StorePrivacyRequestType;
+  status: StorePrivacyRequestStatus;
+  source: "privacy_page" | "support" | "manual";
+  details: string | null;
+  metadata_json: Record<string, unknown>;
+  resolved_at: string | null;
+  resolved_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type StoreEmailSubscriberStatus = "subscribed" | "unsubscribed";
 
 export type StoreEmailSubscriberRecord = {

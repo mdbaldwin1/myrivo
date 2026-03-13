@@ -93,6 +93,7 @@ export default async function PrivacyPage({ searchParams }: PrivacyPageProps) {
           viewer={data.viewer}
           branding={data.branding}
           settings={data.settings}
+          privacyProfile={data.privacyProfile}
         />
       </StorefrontRuntimeProvider>
     );

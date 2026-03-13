@@ -5,6 +5,7 @@ import { Pencil, Plus, Star, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { Input } from "@/components/ui/input";
+import { StorefrontPrivacyCollectionNotice } from "@/components/storefront/storefront-privacy-collection-notice";
 import { StorefrontStudioEditableTemplateText } from "@/components/storefront/storefront-studio-editable-template-text";
 import { StorefrontStudioEditableText } from "@/components/storefront/storefront-studio-editable-text";
 import { Textarea } from "@/components/ui/textarea";
@@ -187,6 +188,7 @@ export function StorefrontReviewsSection({
 }: Props) {
   const runtime = useOptionalStorefrontRuntime();
   const studioEnabled = runtime?.mode === "studio";
+  const resolvedPrivacyProfile = runtime?.privacyProfile ?? null;
   const radiusClass = getStorefrontRadiusClass(reviewsTheme.radiusScale);
   const resolvedStoreSlug = storeSlug.trim() || runtime?.store.slug?.trim() || "";
   const [cursor, setCursor] = useState<string | null>(null);
@@ -563,6 +565,12 @@ export function StorefrontReviewsSection({
           rows={4}
           maxLength={5000}
           className={buttonRadiusClass}
+        />
+
+        <StorefrontPrivacyCollectionNotice
+          surface="review"
+          store={{ name: runtime?.store.name ?? "this storefront", slug: resolvedStoreSlug }}
+          profile={resolvedPrivacyProfile}
         />
 
         <div className="space-y-2">

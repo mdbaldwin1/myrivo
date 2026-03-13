@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { LegalMarkdown } from "@/components/legal/legal-markdown";
 import { SectionCard } from "@/components/ui/section-card";
 import { Select } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { resolveStoreLegalDocument } from "@/lib/legal/store-documents";
 import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
@@ -111,6 +112,21 @@ export function StoreLegalDocumentsForm({ header }: StoreLegalDocumentsFormProps
   const { draft, error, isDirty, loading, save, saving, setFieldValue, discardChanges, replaceDocument } =
     useStoreEditorDocument<StoreLegalDocumentsEditorSnapshot>({
       emptyDraft: {
+        privacyCompliance: {
+          notice_at_collection_enabled: true,
+          checkout_notice_enabled: true,
+          newsletter_notice_enabled: true,
+          review_notice_enabled: true,
+          show_california_notice: false,
+          show_do_not_sell_link: false,
+          privacy_contact_email: "",
+          privacy_rights_email: "",
+          privacy_contact_name: "Privacy team",
+          collection_notice_addendum_markdown: "",
+          california_notice_markdown: "",
+          do_not_sell_markdown: "",
+          request_page_intro_markdown: ""
+        },
         privacy: {
           source_mode: "template",
           title_override: "Privacy Policy",
@@ -149,6 +165,7 @@ export function StoreLegalDocumentsForm({ header }: StoreLegalDocumentsFormProps
     });
 
   const activeDocumentDraft = draft[activeDocument];
+  const privacyComplianceDraft = draft.privacyCompliance;
   const activeDocumentMeta = useMemo(
     () => DOCUMENT_TABS.find((document) => document.id === activeDocument) ?? DEFAULT_DOCUMENT_META,
     [activeDocument]
@@ -305,6 +322,183 @@ export function StoreLegalDocumentsForm({ header }: StoreLegalDocumentsFormProps
 
         {!loading ? (
           <form id={formId} onSubmit={handleSubmit} className="space-y-4">
+            <SectionCard
+              title="Privacy compliance"
+              description="Configure point-of-collection notices, privacy contact details, and California-specific shopper rights surfaces."
+            >
+              <div className="space-y-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <FormField
+                    label="Enable notice at collection"
+                    description="Show privacy notice language anywhere shopper information is collected on the storefront."
+                  >
+                    <div className="flex min-h-11 items-center justify-between rounded-xl border border-border/70 bg-background px-3">
+                      <p className="text-sm text-muted-foreground">Turns on the shared privacy notice component for supported collection points.</p>
+                      <Switch
+                        checked={privacyComplianceDraft.notice_at_collection_enabled}
+                        onChange={(event) => setFieldValue("privacyCompliance.notice_at_collection_enabled", event.target.checked)}
+                      />
+                    </div>
+                  </FormField>
+
+                  <FormField
+                    label="Show California privacy rights section"
+                    description="Adds California-specific rights language to the storefront privacy experience."
+                  >
+                    <div className="flex min-h-11 items-center justify-between rounded-xl border border-border/70 bg-background px-3">
+                      <p className="text-sm text-muted-foreground">Enable when the store needs California-specific disclosure and rights messaging.</p>
+                      <Switch
+                        checked={privacyComplianceDraft.show_california_notice}
+                        onChange={(event) => setFieldValue("privacyCompliance.show_california_notice", event.target.checked)}
+                      />
+                    </div>
+                  </FormField>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  <FormField label="Checkout notice" description="Show privacy notice text near checkout submission.">
+                    <div className="flex min-h-11 items-center justify-between rounded-xl border border-border/70 bg-background px-3">
+                      <span className="text-sm text-muted-foreground">Checkout</span>
+                      <Switch
+                        checked={privacyComplianceDraft.checkout_notice_enabled}
+                        disabled={!privacyComplianceDraft.notice_at_collection_enabled}
+                        onChange={(event) => setFieldValue("privacyCompliance.checkout_notice_enabled", event.target.checked)}
+                      />
+                    </div>
+                  </FormField>
+
+                  <FormField label="Newsletter notice" description="Show privacy notice text near newsletter signup.">
+                    <div className="flex min-h-11 items-center justify-between rounded-xl border border-border/70 bg-background px-3">
+                      <span className="text-sm text-muted-foreground">Newsletter</span>
+                      <Switch
+                        checked={privacyComplianceDraft.newsletter_notice_enabled}
+                        disabled={!privacyComplianceDraft.notice_at_collection_enabled}
+                        onChange={(event) => setFieldValue("privacyCompliance.newsletter_notice_enabled", event.target.checked)}
+                      />
+                    </div>
+                  </FormField>
+
+                  <FormField label="Review notice" description="Show privacy notice text near review submission.">
+                    <div className="flex min-h-11 items-center justify-between rounded-xl border border-border/70 bg-background px-3">
+                      <span className="text-sm text-muted-foreground">Reviews</span>
+                      <Switch
+                        checked={privacyComplianceDraft.review_notice_enabled}
+                        disabled={!privacyComplianceDraft.notice_at_collection_enabled}
+                        onChange={(event) => setFieldValue("privacyCompliance.review_notice_enabled", event.target.checked)}
+                      />
+                    </div>
+                  </FormField>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <FormField
+                    label="Privacy contact email"
+                    description="Shown on privacy disclosures and used as the main privacy contact if rights contact is left blank."
+                  >
+                    <Input
+                      type="email"
+                      value={privacyComplianceDraft.privacy_contact_email}
+                      onChange={(event) => setFieldValue("privacyCompliance.privacy_contact_email", event.target.value)}
+                      placeholder={storeContext?.supportEmail ?? "privacy@example.com"}
+                    />
+                  </FormField>
+
+                  <FormField
+                    label="Privacy rights contact email"
+                    description="Shown on rights-request surfaces and used for California/privacy requests."
+                  >
+                    <Input
+                      type="email"
+                      value={privacyComplianceDraft.privacy_rights_email}
+                      onChange={(event) => setFieldValue("privacyCompliance.privacy_rights_email", event.target.value)}
+                      placeholder={privacyComplianceDraft.privacy_contact_email || storeContext?.supportEmail || "privacy@example.com"}
+                    />
+                  </FormField>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <FormField
+                    label="Privacy contact name"
+                    description="Friendly label shown on privacy request pages and California rights sections."
+                  >
+                    <Input
+                      value={privacyComplianceDraft.privacy_contact_name}
+                      onChange={(event) => setFieldValue("privacyCompliance.privacy_contact_name", event.target.value)}
+                      placeholder="Privacy team"
+                    />
+                  </FormField>
+
+                  <FormField
+                    label="Show Do Not Sell / Share link"
+                    description="Expose a direct shopper path for opt-out requests when California rights are enabled."
+                  >
+                    <div className="flex min-h-11 items-center justify-between rounded-xl border border-border/70 bg-background px-3">
+                      <p className="text-sm text-muted-foreground">Link to the privacy request form with the opt-out request preselected.</p>
+                      <Switch
+                        checked={privacyComplianceDraft.show_do_not_sell_link}
+                        disabled={!privacyComplianceDraft.show_california_notice}
+                        onChange={(event) => setFieldValue("privacyCompliance.show_do_not_sell_link", event.target.checked)}
+                      />
+                    </div>
+                  </FormField>
+                </div>
+
+                <FormField
+                  label="Collection notice addendum"
+                  description="Optional extra markdown appended below the shared notice at checkout, newsletter signup, and reviews."
+                >
+                  <Textarea
+                    rows={5}
+                    value={privacyComplianceDraft.collection_notice_addendum_markdown}
+                    onChange={(event) => setFieldValue("privacyCompliance.collection_notice_addendum_markdown", event.target.value)}
+                    placeholder="Optional extra collection notice details for this storefront."
+                  />
+                </FormField>
+
+                {privacyComplianceDraft.show_california_notice ? (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <FormField
+                      label="California notice addendum"
+                      description="Optional extra markdown for California-specific rights language on the storefront privacy page."
+                    >
+                      <Textarea
+                        rows={6}
+                        value={privacyComplianceDraft.california_notice_markdown}
+                        onChange={(event) => setFieldValue("privacyCompliance.california_notice_markdown", event.target.value)}
+                        placeholder="Optional California-specific rights details."
+                      />
+                    </FormField>
+
+                    <FormField
+                      label="Privacy request page intro"
+                      description="Optional introduction shown above the shopper privacy request form."
+                    >
+                      <Textarea
+                        rows={6}
+                        value={privacyComplianceDraft.request_page_intro_markdown}
+                        onChange={(event) => setFieldValue("privacyCompliance.request_page_intro_markdown", event.target.value)}
+                        placeholder="Explain how privacy requests are handled and when customers should use this form."
+                      />
+                    </FormField>
+                  </div>
+                ) : null}
+
+                {privacyComplianceDraft.show_do_not_sell_link ? (
+                  <FormField
+                    label="Do Not Sell / Share addendum"
+                    description="Optional extra markdown shown anywhere the do-not-sell/share link or rights surfaces appear."
+                  >
+                    <Textarea
+                      rows={5}
+                      value={privacyComplianceDraft.do_not_sell_markdown}
+                      onChange={(event) => setFieldValue("privacyCompliance.do_not_sell_markdown", event.target.value)}
+                      placeholder="Optional opt-out language for California rights surfaces."
+                    />
+                  </FormField>
+                ) : null}
+              </div>
+            </SectionCard>
+
             <SectionCard title="Documents" description="Choose which formal store document you are editing.">
               <div className="flex flex-wrap gap-2">
                 {DOCUMENT_TABS.map((document) => {

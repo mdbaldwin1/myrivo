@@ -93,6 +93,7 @@ export default async function TermsPage({ searchParams }: TermsPageProps) {
           viewer={data.viewer}
           branding={data.branding}
           settings={data.settings}
+          privacyProfile={data.privacyProfile}
         />
       </StorefrontRuntimeProvider>
     );

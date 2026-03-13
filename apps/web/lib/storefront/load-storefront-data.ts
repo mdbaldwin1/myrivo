@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { resolveStoreAnalyticsAccessByStoreId } from "@/lib/analytics/access";
+import { resolveStorePrivacyProfile } from "@/lib/privacy/store-privacy";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isMissingColumnInSchemaCache, isMissingRelationInSchemaCache } from "@/lib/supabase/error-classifiers";
@@ -90,6 +91,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
     analytics,
     { data: branding, error: brandingError },
     { data: settings, error: settingsError },
+    { data: privacyProfile, error: privacyProfileError },
     { data: contentBlocks, error: contentBlocksError },
     { data: experienceContent, error: experienceContentError },
     { data: products, error: productsError }
@@ -107,6 +109,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
       )
       .eq("store_id", store.id)
       .maybeSingle(),
+    admin.from("store_privacy_profiles").select("*").eq("store_id", store.id).maybeSingle(),
     admin
       .from("store_content_blocks")
       .select("id,sort_order,eyebrow,title,body,cta_label,cta_url,is_active")
@@ -199,6 +202,10 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
 
   if (resolvedSettingsError && !isMissingRelationInSchemaCache(resolvedSettingsError)) {
     throw new Error(resolvedSettingsError.message);
+  }
+
+  if (privacyProfileError && !isMissingRelationInSchemaCache(privacyProfileError)) {
+    throw new Error(privacyProfileError.message);
   }
 
   if (contentBlocksError && !isMissingRelationInSchemaCache(contentBlocksError)) {
@@ -459,6 +466,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
       canManageStore
     },
     analytics,
+    privacyProfile: resolveStorePrivacyProfile(privacyProfileError ? null : privacyProfile, finalSettings),
     experienceContent: sectionedContent,
     branding: branding
       ? {
