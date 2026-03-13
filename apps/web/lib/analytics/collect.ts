@@ -22,12 +22,29 @@ const eventSchema = z.object({
   value: z.record(z.string(), z.unknown()).optional()
 });
 
+const attributionTouchSchema = z.object({
+  entryPath: z.string().trim().max(512).optional(),
+  referrerUrl: z.string().trim().max(1024).optional(),
+  referrerHost: z.string().trim().max(255).optional(),
+  utmSource: z.string().trim().max(255).optional(),
+  utmMedium: z.string().trim().max(255).optional(),
+  utmCampaign: z.string().trim().max(255).optional(),
+  utmTerm: z.string().trim().max(255).optional(),
+  utmContent: z.string().trim().max(255).optional()
+});
+
 export const collectAnalyticsSchema = z.object({
   storeSlug: z.string().trim().min(2).max(120),
   sessionId: z.string().trim().min(16).max(128).optional(),
   referrer: z.string().trim().max(1024).optional(),
   userAgent: z.string().trim().max(1024).optional(),
   entryPath: z.string().trim().max(512).optional(),
+  attribution: z
+    .object({
+      firstTouch: attributionTouchSchema.optional(),
+      lastTouch: attributionTouchSchema.optional()
+    })
+    .optional(),
   events: z.array(eventSchema).min(1).max(50)
 });
 

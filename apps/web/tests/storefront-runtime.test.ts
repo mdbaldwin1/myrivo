@@ -31,6 +31,8 @@ describe("storefront runtime", () => {
     expect(runtime.themeConfig.heroHeadline).toBe(DEFAULT_STOREFRONT_THEME_CONFIG.heroHeadline);
     expect(runtime.themeConfig.showPolicyStrip).toBe(DEFAULT_STOREFRONT_THEME_CONFIG.showPolicyStrip);
     expect(runtime.copy.nav.home).toBe(DEFAULT_STOREFRONT_COPY.nav.home);
+    expect(runtime.analytics.collectionEnabled).toBe(false);
+    expect(runtime.analytics.dashboardEnabled).toBe(false);
   });
 
   test("resolves theme and copy overrides from storefront configuration", () => {
@@ -43,6 +45,12 @@ describe("storefront runtime", () => {
       viewer: {
         isAuthenticated: true,
         canManageStore: true
+      },
+      analytics: {
+        planKey: "standard",
+        planAllowsAnalytics: true,
+        collectionEnabled: true,
+        dashboardEnabled: true
       },
       branding: {
         logo_path: "/logo.png",
@@ -83,5 +91,6 @@ describe("storefront runtime", () => {
     expect(runtime.themeConfig.productGridColumns).toBe(4);
     expect(runtime.copy.nav.home).toBe("Start");
     expect(runtime.copy.nav.products).toBe(DEFAULT_STOREFRONT_COPY.nav.products);
+    expect(runtime.analytics.collectionEnabled).toBe(true);
   });
 });

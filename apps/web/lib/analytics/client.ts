@@ -1,5 +1,13 @@
 import type { CollectAnalyticsEvent } from "@/lib/analytics/collect";
+import {
+  buildStorefrontAttributionTouch,
+  mergeStorefrontAttributionSnapshot,
+  readStorefrontAttributionSnapshot,
+  writeStorefrontAttributionSnapshot,
+  type StorefrontAttributionSnapshot
+} from "@/lib/analytics/attribution";
 import { sanitizeSessionId, storefrontEventTypes } from "@/lib/analytics/collect";
+import { emitStorefrontAnalyticsDebugEvent, getStorefrontAnalyticsDebugStorage, shouldEnableStorefrontAnalyticsDebug } from "@/lib/analytics/debug";
 
 type StorefrontAnalyticsEventType = (typeof storefrontEventTypes)[number];
 
@@ -18,6 +26,7 @@ type StorefrontAnalyticsTransport = (payload: {
   entryPath?: string;
   referrer?: string;
   userAgent?: string;
+  attribution?: StorefrontAttributionSnapshot;
   events: StorefrontAnalyticsQueuedEvent[];
 }, options?: { keepalive?: boolean }) => Promise<StorefrontAnalyticsResponse>;
 
@@ -45,6 +54,8 @@ type StorefrontAnalyticsClientOptions = {
   addDocumentListener?: (type: string, listener: EventListener) => void;
   removeDocumentListener?: (type: string, listener: EventListener) => void;
   getDocumentVisibilityState?: () => DocumentVisibilityState | undefined;
+  debug?: boolean;
+  getSearch?: () => string | undefined;
 };
 
 type TrackStorefrontAnalyticsEventInput = Omit<CollectAnalyticsEvent, "idempotencyKey"> & {
@@ -132,8 +143,10 @@ export class StorefrontAnalyticsClient {
   private readonly addDocumentListener: NonNullable<StorefrontAnalyticsClientOptions["addDocumentListener"]>;
   private readonly removeDocumentListener: NonNullable<StorefrontAnalyticsClientOptions["removeDocumentListener"]>;
   private readonly getDocumentVisibilityState: NonNullable<StorefrontAnalyticsClientOptions["getDocumentVisibilityState"]>;
+  private readonly debugEnabled: boolean;
 
   private sessionId: string | null = null;
+  private attributionSnapshot: StorefrontAttributionSnapshot | null = null;
   private queue: Array<{ event: StorefrontAnalyticsQueuedEvent; attempt: number }> = [];
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private flushing = false;
@@ -172,6 +185,12 @@ export class StorefrontAnalyticsClient {
     this.addDocumentListener = options.addDocumentListener ?? ((type, listener) => document.addEventListener(type, listener));
     this.removeDocumentListener = options.removeDocumentListener ?? ((type, listener) => document.removeEventListener(type, listener));
     this.getDocumentVisibilityState = options.getDocumentVisibilityState ?? (() => (typeof document !== "undefined" ? document.visibilityState : undefined));
+    this.debugEnabled =
+      options.debug ??
+      shouldEnableStorefrontAnalyticsDebug({
+        search: options.getSearch ? options.getSearch() : typeof window !== "undefined" ? window.location.search : undefined,
+        storage: getStorefrontAnalyticsDebugStorage(this.storage)
+      });
   }
 
   start() {
@@ -181,6 +200,7 @@ export class StorefrontAnalyticsClient {
 
     this.started = true;
     this.ensureSessionId();
+    this.captureAttributionTouch(this.getEntryPath());
     this.addDocumentListener("visibilitychange", this.handleVisibilityChange);
     this.addWindowListener("pagehide", this.handlePageHide);
     this.addWindowListener("online", this.handleOnline);
@@ -210,8 +230,16 @@ export class StorefrontAnalyticsClient {
     return this.ensureSessionId();
   }
 
+  getAttributionSnapshot() {
+    return this.resolveAttributionSnapshot();
+  }
+
   getQueuedEventCount() {
     return this.queue.length;
+  }
+
+  isDebugEnabled() {
+    return this.debugEnabled;
   }
 
   track(input: TrackStorefrontAnalyticsEventInput) {
@@ -230,7 +258,14 @@ export class StorefrontAnalyticsClient {
       idempotencyKey: `${input.eventType}_${this.generateId()}`
     };
 
+    this.captureAttributionTouch(event.path);
     this.queue.push({ event, attempt: 0 });
+    this.emitDebug({
+      phase: "track",
+      eventType: event.eventType,
+      queuedCount: this.queue.length,
+      eventCount: 1
+    });
     this.scheduleFlush();
   }
 
@@ -261,12 +296,19 @@ export class StorefrontAnalyticsClient {
           entryPath: this.getEntryPath(),
           referrer: this.getReferrer(),
           userAgent: this.getUserAgent(),
+          attribution: this.resolveAttributionSnapshot() ?? undefined,
           events: batch.map((entry) => entry.event)
         },
         { keepalive: options?.keepalive ?? false }
       );
 
       if (!result.ok) {
+        this.emitDebug({
+          phase: "flush_failure",
+          eventCount: batch.length,
+          queuedCount: this.queue.length + batch.length,
+          reason: "transport_failed"
+        });
         this.requeueFailedBatch(batch);
         return;
       }
@@ -274,6 +316,12 @@ export class StorefrontAnalyticsClient {
       if (result.sessionId) {
         this.setSessionId(result.sessionId);
       }
+
+      this.emitDebug({
+        phase: "flush_success",
+        eventCount: batch.length,
+        queuedCount: this.queue.length
+      });
 
       if (this.queue.length > 0 && !options?.immediate) {
         this.scheduleFlush(50);
@@ -289,6 +337,12 @@ export class StorefrontAnalyticsClient {
       .filter((entry) => entry.attempt <= this.maxRetries);
 
     if (retryable.length === 0) {
+      this.emitDebug({
+        phase: "dropped",
+        eventCount: batch.length,
+        queuedCount: this.queue.length,
+        reason: "max_retries_exceeded"
+      });
       return;
     }
 
@@ -325,6 +379,34 @@ export class StorefrontAnalyticsClient {
     return this.sessionId;
   }
 
+  private resolveAttributionSnapshot() {
+    if (this.attributionSnapshot) {
+      return this.attributionSnapshot;
+    }
+
+    this.attributionSnapshot = readStorefrontAttributionSnapshot(this.storeSlug, this.storage);
+    if (!this.attributionSnapshot) {
+      this.captureAttributionTouch(this.getEntryPath());
+    }
+
+    return this.attributionSnapshot;
+  }
+
+  private captureAttributionTouch(entryPath?: string) {
+    if (!this.storage) {
+      return;
+    }
+
+    const nextTouch = buildStorefrontAttributionTouch({
+      entryPath,
+      referrer: this.getReferrer(),
+      storeSlug: this.storeSlug
+    });
+    const merged = mergeStorefrontAttributionSnapshot(this.attributionSnapshot, nextTouch);
+    this.attributionSnapshot = merged;
+    writeStorefrontAttributionSnapshot(this.storeSlug, merged, this.storage);
+  }
+
   private setSessionId(value: string) {
     const normalized = sanitizeSessionId(value);
     if (!normalized) {
@@ -335,6 +417,18 @@ export class StorefrontAnalyticsClient {
     if (this.storage) {
       this.storage.setItem(buildStorageKey(this.storeSlug), normalized);
     }
+  }
+
+  private emitDebug(event: Omit<Parameters<typeof emitStorefrontAnalyticsDebugEvent>[0], "storeSlug" | "sessionId">) {
+    if (!this.debugEnabled) {
+      return;
+    }
+
+    emitStorefrontAnalyticsDebugEvent({
+      ...event,
+      storeSlug: this.storeSlug,
+      sessionId: this.sessionId
+    });
   }
 }
 

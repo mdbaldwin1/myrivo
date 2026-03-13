@@ -1,4 +1,5 @@
 import type { StoreExperienceContent } from "@/lib/store-experience/content";
+import type { StoreAnalyticsAccess } from "@/lib/analytics/access";
 import { resolveStorefrontCopy, type StorefrontCopyConfig } from "@/lib/storefront/copy";
 import { resolveStorefrontThemeConfig, type StorefrontThemeConfig } from "@/lib/theme/storefront-theme";
 
@@ -133,6 +134,7 @@ export type StorefrontProduct = {
 export type StorefrontData = {
   store: StorefrontStore;
   viewer: StorefrontViewer;
+  analytics: StoreAnalyticsAccess;
   branding: StorefrontBranding;
   settings: StorefrontSettings;
   experienceContent: StoreExperienceContent;
@@ -148,16 +150,24 @@ export type StorefrontRuntime = StorefrontData & {
 };
 
 export function createStorefrontRuntime(
-  input: StorefrontData & {
+  input: Omit<StorefrontData, "analytics"> & {
+    analytics?: StoreAnalyticsAccess;
     mode?: StorefrontMode;
     surface: StorefrontSurface;
   }
 ): StorefrontRuntime {
   const themeConfig = resolveStorefrontThemeConfig(input.branding?.theme_json ?? {});
   const copy = resolveStorefrontCopy(input.settings?.storefront_copy_json ?? {});
+  const analytics = input.analytics ?? {
+    planKey: null,
+    planAllowsAnalytics: false,
+    collectionEnabled: false,
+    dashboardEnabled: false
+  };
 
   return {
     ...input,
+    analytics,
     mode: input.mode ?? "live",
     themeConfig,
     copy

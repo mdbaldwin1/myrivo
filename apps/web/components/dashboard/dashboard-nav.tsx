@@ -55,6 +55,7 @@ type DashboardNavProps = {
   userAvatarPath?: string | null;
   initialTestModeEnabled: boolean;
   canManageTestMode: boolean;
+  analyticsDashboardEnabled: boolean;
   mode?: "desktop" | "mobile";
   collapsed?: boolean;
   className?: string;
@@ -62,7 +63,6 @@ type DashboardNavProps = {
 };
 
 const reportsLinks = [
-  { href: "/reports/insights", label: "Insights", icon: BarChart3 },
   { href: "/reports/inventory", label: "Inventory Ledger", icon: Package },
   { href: "/reports/billing", label: "Billing Events", icon: ReceiptText }
 ] as const;
@@ -106,6 +106,7 @@ export function DashboardNav({
   userAvatarPath,
   initialTestModeEnabled,
   canManageTestMode,
+  analyticsDashboardEnabled,
   mode = "desktop",
   collapsed = false,
   className,
@@ -165,13 +166,19 @@ export function DashboardNav({
     { href: `${storeWorkspaceBaseHref}/subscribers`, label: "Subscribers", icon: Mail },
     { href: `${storeWorkspaceBaseHref}/storefront-studio`, label: "Storefront Studio", icon: Home },
     { href: `${storeWorkspaceBaseHref}/email-studio`, label: "Email Studio", icon: PenSquare },
-    { href: `${storeWorkspaceBaseHref}/reports`, label: "Reports", icon: BarChart3 },
+    { href: `${storeWorkspaceBaseHref}/reports`, label: "Reports", icon: FileText },
     { href: `${storeWorkspaceBaseHref}/store-settings/general`, label: "Settings", icon: Cog }
   ];
+  if (analyticsDashboardEnabled) {
+    storeWorkspaceLinks.splice(1, 0, { href: `${storeWorkspaceBaseHref}/analytics`, label: "Analytics", icon: BarChart3 });
+  }
   const subWorkspaceEntryHrefs = new Set([
     `${storeWorkspaceBaseHref}/reports`,
     `${storeWorkspaceBaseHref}/store-settings/general`
   ]);
+  if (analyticsDashboardEnabled) {
+    subWorkspaceEntryHrefs.add(`${storeWorkspaceBaseHref}/analytics`);
+  }
 
   const storeSettingsLinkGroups = storeSettingsWorkspaceGroups.map((group) => ({
     ...group,
@@ -253,6 +260,7 @@ export function DashboardNav({
 
   const isStoreSettingsMode =
     normalizedPath === `${storeWorkspaceBaseHref}/store-settings` || normalizedPath.startsWith(`${storeWorkspaceBaseHref}/store-settings/`);
+  const isAnalyticsMode = normalizedPath === `${storeWorkspaceBaseHref}/analytics` || normalizedPath.startsWith(`${storeWorkspaceBaseHref}/analytics/`);
   const isReportsMode = normalizedPath === `${storeWorkspaceBaseHref}/reports` || normalizedPath.startsWith(`${storeWorkspaceBaseHref}/reports/`);
   const isAdminWorkspaceMode = normalizedPath === "/dashboard/admin" || normalizedPath.startsWith("/dashboard/admin/");
 
@@ -286,6 +294,13 @@ export function DashboardNav({
                 <div className="space-y-1">
                   {showLabels ? <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Reports Workspace</p> : null}
                   {reportsWorkspaceLinks.map((link) => renderNavLink(link))}
+                </div>
+              ) : isAnalyticsMode ? (
+                <div className="space-y-1">
+                  {showLabels ? <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Analytics Workspace</p> : null}
+                  {analyticsDashboardEnabled
+                    ? renderNavLink({ href: `${storeWorkspaceBaseHref}/analytics`, label: "Overview", icon: BarChart3 })
+                    : null}
                 </div>
               ) : (
                 <div className="space-y-1">

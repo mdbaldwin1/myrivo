@@ -275,12 +275,15 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
             merged.push(item);
           }
 
-          void syncStorefrontCart(merged, resolvedStore.slug);
+          void syncStorefrontCart(merged, resolvedStore.slug, {
+            analyticsSessionId: analytics?.getSessionId() ?? null,
+            attribution: analytics?.getAttributionSnapshot() ?? null
+          });
           return merged;
         });
       })();
     });
-  }, [resolvedProducts, resolvedStore.slug]);
+  }, [analytics, resolvedProducts, resolvedStore.slug]);
 
   useEffect(() => {
     if (!hasHydratedCartRef.current) {
@@ -298,13 +301,15 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
             productId: entry.productId,
             variantId: entry.variantId,
             quantity: entry.quantity
-          }))
+          })),
+          analyticsSessionId: analytics?.getSessionId() ?? undefined,
+          attribution: analytics?.getAttributionSnapshot() ?? undefined
         })
       });
     }, 250);
 
     return () => clearTimeout(timeout);
-  }, [cart, resolvedProducts, resolvedStore.slug]);
+  }, [analytics, cart, resolvedProducts, resolvedStore.slug]);
 
   useEffect(() => {
     if (selectedFulfillmentMethod !== "pickup" || !resolvedSettings?.checkout_enable_local_pickup) {
@@ -467,6 +472,8 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
         pickupWindowEndAt: selectedPickupSlot?.endsAt,
         customerNote: resolvedSettings?.checkout_allow_order_note ? orderNote.trim() || undefined : undefined,
         promoCode: promoCode.trim() || undefined,
+        analyticsSessionId: analytics?.getSessionId() ?? undefined,
+        attribution: analytics?.getAttributionSnapshot() ?? undefined,
         items: cartItems.map((item) => ({ productId: item.productId, variantId: item.variantId, quantity: item.quantity }))
       })
     });
@@ -513,7 +520,10 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
       void analytics?.flush({ immediate: true, keepalive: true });
       writeStorefrontCart([]);
       setCart([]);
-      void syncStorefrontCart([], resolvedStore.slug);
+      void syncStorefrontCart([], resolvedStore.slug, {
+        analyticsSessionId: analytics?.getSessionId() ?? null,
+        attribution: analytics?.getAttributionSnapshot() ?? null
+      });
       window.location.assign(
         `/checkout?status=success&orderId=${encodeURIComponent(payload.orderId)}&store=${encodeURIComponent(resolvedStore.slug)}`
       );

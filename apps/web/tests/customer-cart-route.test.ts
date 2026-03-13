@@ -12,6 +12,7 @@ const cartSelectUserEqMock = vi.fn();
 const cartSelectIdEqMock = vi.fn();
 const cartUpdateEqUserMock = vi.fn();
 const cartUpdateEqIdMock = vi.fn();
+const cartUpdateMock = vi.fn();
 
 vi.mock("@/lib/security/request-origin", () => ({
   enforceTrustedOrigin: (...args: unknown[]) => enforceTrustedOriginMock(...args)
@@ -41,6 +42,7 @@ beforeEach(() => {
   cartSelectIdEqMock.mockReset();
   cartUpdateEqUserMock.mockReset();
   cartUpdateEqIdMock.mockReset();
+  cartUpdateMock.mockReset();
 
   enforceTrustedOriginMock.mockReturnValue(null);
   authGetUserMock.mockResolvedValue({ data: { user: { id: "user-1", email: "test@example.com" } } });
@@ -128,6 +130,9 @@ describe("customer cart route", () => {
 
   test("PUT persists validated items with price snapshots", async () => {
     const cartId = "cart-1";
+    cartUpdateEqUserMock.mockResolvedValue({ error: null });
+    cartUpdateEqIdMock.mockReturnValue({ eq: cartUpdateEqUserMock });
+    cartUpdateMock.mockReturnValue({ eq: cartUpdateEqIdMock });
 
     serverFromMock.mockImplementation((table: string) => {
       if (table === "stores") {
@@ -151,10 +156,26 @@ describe("customer cart route", () => {
                 eq: vi.fn(() => ({
                   order: vi.fn(() => ({
                     limit: vi.fn(() => ({
-                      maybeSingle: vi.fn(async () => ({ data: { id: cartId, created_at: "2026-03-12T00:00:00.000Z" }, error: null }))
+                      maybeSingle: vi.fn(async () => ({
+                        data: { id: cartId, created_at: "2026-03-12T00:00:00.000Z", metadata_json: {} },
+                        error: null
+                      }))
                     }))
                   }))
                 }))
+              }))
+            }))
+          })),
+          update: cartUpdateMock
+        };
+      }
+
+      if (table === "storefront_sessions") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                maybeSingle: vi.fn(async () => ({ data: { id: "storefront-session-1" }, error: null }))
               }))
             }))
           }))
@@ -210,6 +231,13 @@ describe("customer cart route", () => {
       method: "PUT",
       headers: { "content-type": "application/json", origin: "http://localhost:3000", host: "localhost:3000" },
       body: JSON.stringify({
+        analyticsSessionId: "analytics_session_1234",
+        attribution: {
+          firstTouch: {
+            entryPath: "/s/curby?utm_source=instagram",
+            utmSource: "instagram"
+          }
+        },
         items: [
           {
             productId: "11111111-1111-4111-8111-111111111111",
@@ -235,6 +263,14 @@ describe("customer cart route", () => {
     expect(inserted).toHaveLength(1);
     expect(inserted[0]?.quantity).toBe(3);
     expect(inserted[0]?.unit_price_snapshot_cents).toBe(2500);
+    expect(cartUpdateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        analytics_session_id: "storefront-session-1",
+        analytics_session_key: "analytics_session_1234"
+      })
+    );
+    expect(cartUpdateEqIdMock).toHaveBeenCalledWith("id", cartId);
+    expect(cartUpdateEqUserMock).toHaveBeenCalledWith("user_id", "user-1");
   });
 
   test("DELETE rejects invalid cartId parameter", async () => {

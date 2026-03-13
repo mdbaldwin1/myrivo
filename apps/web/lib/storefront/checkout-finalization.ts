@@ -7,6 +7,9 @@ type StorefrontCheckoutRecord = {
   id: string;
   store_id: string;
   store_slug: string;
+  analytics_session_id: string | null;
+  analytics_session_key: string | null;
+  source_cart_id: string | null;
   customer_email: string;
   customer_first_name: string | null;
   customer_last_name: string | null;
@@ -45,7 +48,7 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
   const { data: checkout, error: checkoutError } = await supabase
     .from("storefront_checkout_sessions")
     .select(
-      "id,store_id,store_slug,customer_email,customer_first_name,customer_last_name,customer_phone,customer_note,fulfillment_method,fulfillment_label,pickup_location_id,pickup_location_snapshot_json,pickup_window_start_at,pickup_window_end_at,pickup_timezone,shipping_fee_cents,promo_code,fee_plan_key,fee_bps,fee_fixed_cents,item_total_cents,platform_fee_cents,items,order_id,status"
+      "id,store_id,store_slug,analytics_session_id,analytics_session_key,source_cart_id,customer_email,customer_first_name,customer_last_name,customer_phone,customer_note,fulfillment_method,fulfillment_label,pickup_location_id,pickup_location_snapshot_json,pickup_window_start_at,pickup_window_end_at,pickup_timezone,shipping_fee_cents,promo_code,fee_plan_key,fee_bps,fee_fixed_cents,item_total_cents,platform_fee_cents,items,order_id,status"
     )
     .eq("id", checkoutId)
     .maybeSingle<StorefrontCheckoutRecord>();
@@ -106,6 +109,10 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
           pickup_window_start_at: checkout.pickup_window_start_at,
           pickup_window_end_at: checkout.pickup_window_end_at,
           pickup_timezone: checkout.pickup_timezone,
+          analytics_session_id: checkout.analytics_session_id,
+          analytics_session_key: checkout.analytics_session_key,
+          source_cart_id: checkout.source_cart_id,
+          storefront_checkout_session_id: checkout.id,
           shipping_fee_cents: shippingFeeCents,
           total_cents: computedTotalCents
         })
@@ -113,6 +120,10 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
 
       if (orderSyncError) {
         throw new Error(orderSyncError.message);
+      }
+
+      if (checkout.source_cart_id) {
+        await supabase.from("customer_carts").update({ status: "ordered" }).eq("id", checkout.source_cart_id);
       }
 
       const { error: updateError } = await supabase
@@ -208,6 +219,10 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
       pickup_window_start_at: checkout.pickup_window_start_at,
       pickup_window_end_at: checkout.pickup_window_end_at,
       pickup_timezone: checkout.pickup_timezone,
+      analytics_session_id: checkout.analytics_session_id,
+      analytics_session_key: checkout.analytics_session_key,
+      source_cart_id: checkout.source_cart_id,
+      storefront_checkout_session_id: checkout.id,
       shipping_fee_cents: shippingFeeCents,
       total_cents: computedTotalCents
     })
@@ -215,6 +230,10 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
 
   if (orderSyncError) {
     throw new Error(orderSyncError.message);
+  }
+
+  if (checkout.source_cart_id) {
+    await supabase.from("customer_carts").update({ status: "ordered" }).eq("id", checkout.source_cart_id);
   }
 
   const { error: updateError } = await supabase

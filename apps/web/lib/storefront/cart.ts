@@ -1,3 +1,5 @@
+import type { StorefrontAttributionSnapshot } from "@/lib/analytics/attribution";
+
 export const STOREFRONT_CART_STORAGE_KEY = "aha-cart:single-store";
 
 export type StorefrontCartEntry = {
@@ -44,7 +46,11 @@ export function writeStorefrontCart(entries: StorefrontCartEntry[]) {
   window.localStorage.setItem(STOREFRONT_CART_STORAGE_KEY, JSON.stringify(entries));
 }
 
-export async function syncStorefrontCart(entries: StorefrontCartEntry[], storeSlug: string) {
+export async function syncStorefrontCart(
+  entries: StorefrontCartEntry[],
+  storeSlug: string,
+  options?: { analyticsSessionId?: string | null; attribution?: StorefrontAttributionSnapshot | null }
+) {
   if (typeof window === "undefined" || !storeSlug.trim()) {
     return;
   }
@@ -58,7 +64,9 @@ export async function syncStorefrontCart(entries: StorefrontCartEntry[], storeSl
           productId: entry.productId,
           variantId: entry.variantId,
           quantity: entry.quantity
-        }))
+        })),
+        analyticsSessionId: options?.analyticsSessionId ?? undefined,
+        attribution: options?.attribution ?? undefined
       })
     });
   } catch {

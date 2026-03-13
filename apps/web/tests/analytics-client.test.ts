@@ -36,10 +36,12 @@ describe("storefront analytics client", () => {
       storage: createMemoryStorage(),
       flushIntervalMs: 500,
       generateId: () => "session_or_event_1234",
+      getEntryPath: () => "/landing?utm_source=instagram",
+      getReferrer: () => "https://instagram.com/p/123",
       transport
     });
 
-    client.track({ eventType: "page_view", path: "/s/olive-mercantile" });
+    client.track({ eventType: "page_view", path: "/landing?utm_source=instagram" });
     client.track({ eventType: "product_view", path: "/products/body-oil" });
 
     expect(client.getQueuedEventCount()).toBe(2);
@@ -50,12 +52,18 @@ describe("storefront analytics client", () => {
     expect(client.getQueuedEventCount()).toBe(0);
 
     const firstTransportCall = transport.mock.calls as unknown as Array<
-      [{ storeSlug: string; events: Array<{ idempotencyKey: string }> }]
+      [{
+        storeSlug: string;
+        attribution?: { firstTouch?: { entryPath?: string; utmSource?: string } };
+        events: Array<{ idempotencyKey: string }>;
+      }]
     >;
     const payload = firstTransportCall[0]?.[0];
     expect(payload?.storeSlug).toBe("olive-mercantile");
     expect(payload?.events).toHaveLength(2);
     expect(payload?.events[0]?.idempotencyKey).toContain("page_view");
+    expect(payload?.attribution?.firstTouch?.entryPath).toBe("/landing?utm_source=instagram");
+    expect(payload?.attribution?.firstTouch?.utmSource).toBe("instagram");
     expect(client.getSessionId()).toBe("server_session_1234");
   });
 
