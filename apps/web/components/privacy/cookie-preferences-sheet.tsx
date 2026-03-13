@@ -9,6 +9,9 @@ import { getCookieInventoryByCategory } from "@/lib/privacy/cookies";
 type CookiePreferencesSheetProps = {
   open: boolean;
   analyticsEnabled: boolean;
+  storefrontStyled: boolean;
+  buttonRadiusClass: string;
+  surfaceRadiusClass: string;
   onOpenChange: (open: boolean) => void;
   onSave: (analyticsEnabled: boolean) => void;
 };
@@ -16,6 +19,9 @@ type CookiePreferencesSheetProps = {
 export function CookiePreferencesSheet({
   open,
   analyticsEnabled,
+  storefrontStyled,
+  buttonRadiusClass,
+  surfaceRadiusClass,
   onOpenChange,
   onSave
 }: CookiePreferencesSheetProps) {
@@ -26,7 +32,12 @@ export function CookiePreferencesSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
+      <SheetContent
+        side="right"
+        className={`w-full overflow-y-auto sm:max-w-2xl ${
+          storefrontStyled ? "[font-family:var(--storefront-font-body)] text-[color:var(--storefront-text)]" : ""
+        }`}
+      >
         <SheetHeader>
           <SheetTitle>Cookie preferences</SheetTitle>
           <SheetDescription>
@@ -35,7 +46,7 @@ export function CookiePreferencesSheet({
         </SheetHeader>
 
         <div className="mt-6 space-y-6">
-          <section className="space-y-3 rounded-xl border border-border/70 bg-card/50 p-4">
+          <section className={`space-y-3 border border-border/70 bg-card/50 p-4 ${surfaceRadiusClass || "rounded-xl"}`}>
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1">
                 <h2 className="text-sm font-semibold text-foreground">Essential cookies</h2>
@@ -47,7 +58,12 @@ export function CookiePreferencesSheet({
             </div>
             <ul className="space-y-2 text-sm text-muted-foreground">
               {essentialEntries.map((entry) => (
-                <li key={entry.key} className="rounded-lg border border-border/60 bg-background/70 p-3">
+                <li
+                  key={entry.key}
+                  className={`border border-border/60 bg-background/70 p-3 ${
+                    storefrontStyled && surfaceRadiusClass ? surfaceRadiusClass : "rounded-lg"
+                  }`}
+                >
                   <p className="font-medium text-foreground">{entry.name}</p>
                   <p className="mt-1">{entry.purpose}</p>
                   <p className="mt-1 text-xs uppercase tracking-[0.14em] text-muted-foreground">
@@ -58,7 +74,7 @@ export function CookiePreferencesSheet({
             </ul>
           </section>
 
-          <section className="space-y-3 rounded-xl border border-border/70 bg-card/50 p-4">
+          <section className={`space-y-3 border border-border/70 bg-card/50 p-4 ${surfaceRadiusClass || "rounded-xl"}`}>
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1">
                 <h2 className="text-sm font-semibold text-foreground">Analytics cookies</h2>
@@ -70,7 +86,12 @@ export function CookiePreferencesSheet({
             </div>
             <ul className="space-y-2 text-sm text-muted-foreground">
               {analyticsEntries.map((entry) => (
-                <li key={entry.key} className="rounded-lg border border-border/60 bg-background/70 p-3">
+                <li
+                  key={entry.key}
+                  className={`border border-border/60 bg-background/70 p-3 ${
+                    storefrontStyled && surfaceRadiusClass ? surfaceRadiusClass : "rounded-lg"
+                  }`}
+                >
                   <p className="font-medium text-foreground">{entry.name}</p>
                   <p className="mt-1">{entry.purpose}</p>
                   <p className="mt-1 text-xs uppercase tracking-[0.14em] text-muted-foreground">
@@ -83,11 +104,12 @@ export function CookiePreferencesSheet({
         </div>
 
         <SheetFooter className="mt-6">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="outline" className={buttonRadiusClass} onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button
             type="button"
+            className={buttonRadiusClass}
             onClick={() => {
               onSave(draftAnalyticsEnabled);
               onOpenChange(false);

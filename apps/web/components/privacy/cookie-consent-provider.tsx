@@ -19,6 +19,8 @@ import {
   serializeCookieConsent,
   type CookieConsentRecord
 } from "@/lib/privacy/cookies";
+import { getStorefrontButtonRadiusClass, getStorefrontRadiusClass } from "@/lib/storefront/appearance";
+import type { RadiusScale } from "@/lib/theme/storefront-theme";
 
 type CookieConsentContextValue = {
   consent: CookieConsentRecord;
@@ -30,6 +32,25 @@ type CookieConsentContextValue = {
 };
 
 const CookieConsentContext = createContext<CookieConsentContextValue | null>(null);
+
+function readCookieUiThemeFromDocument() {
+  if (typeof document === "undefined") {
+    return {
+      storefrontStyled: false,
+      buttonRadiusClass: "",
+      surfaceRadiusClass: ""
+    };
+  }
+
+  const radiusScale = document.body.dataset.storefrontRadiusScale as RadiusScale | undefined;
+  const storefrontStyled = document.body.dataset.cookieTheme === "storefront" && Boolean(radiusScale);
+
+  return {
+    storefrontStyled,
+    buttonRadiusClass: storefrontStyled && radiusScale ? getStorefrontButtonRadiusClass(radiusScale) : "",
+    surfaceRadiusClass: storefrontStyled && radiusScale ? getStorefrontRadiusClass(radiusScale) : ""
+  };
+}
 
 function readConsentFromDocument() {
   if (typeof document === "undefined") {
@@ -71,6 +92,7 @@ export function CookieConsentProvider({ children }: CookieConsentProviderProps) 
     typeof document === "undefined" ? getDefaultCookieConsent() : readConsentFromDocument()
   );
   const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const cookieUiTheme = readCookieUiThemeFromDocument();
 
   const saveConsent = (nextConsent: CookieConsentRecord) => {
     writeConsentToDocument(nextConsent);
@@ -98,6 +120,9 @@ export function CookieConsentProvider({ children }: CookieConsentProviderProps) 
         <>
           {!consent.hasRecordedChoice ? (
             <CookieConsentBanner
+              storefrontStyled={cookieUiTheme.storefrontStyled}
+              buttonRadiusClass={cookieUiTheme.buttonRadiusClass}
+              surfaceRadiusClass={cookieUiTheme.surfaceRadiusClass}
               onAcceptAll={value.acceptAll}
               onAcceptEssentialOnly={value.acceptEssentialOnly}
               onOpenPreferences={value.openPreferences}
@@ -107,6 +132,9 @@ export function CookieConsentProvider({ children }: CookieConsentProviderProps) 
             key={`${consent.analytics ? "analytics-on" : "analytics-off"}-${preferencesOpen ? "open" : "closed"}`}
             open={preferencesOpen}
             analyticsEnabled={consent.analytics}
+            storefrontStyled={cookieUiTheme.storefrontStyled}
+            buttonRadiusClass={cookieUiTheme.buttonRadiusClass}
+            surfaceRadiusClass={cookieUiTheme.surfaceRadiusClass}
             onOpenChange={setPreferencesOpen}
             onSave={value.savePreferences}
           />

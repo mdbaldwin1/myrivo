@@ -8,7 +8,7 @@ import { useStorefrontPageView } from "@/components/storefront/use-storefront-an
 import { resolveStorefrontCopy } from "@/lib/storefront/copy";
 import { getStorefrontPageWidthClass } from "@/lib/storefront/layout";
 import { resolveFooterNavLinks, resolveHeaderNavLinks } from "@/lib/storefront/navigation";
-import { getStorefrontButtonRadiusClass } from "@/lib/storefront/appearance";
+import { getStorefrontButtonRadiusClass, getStorefrontCardStyleClass, getStorefrontRadiusClass } from "@/lib/storefront/appearance";
 import type { StorefrontRuntime } from "@/lib/storefront/runtime";
 import { buildStorefrontThemeStyle, resolveStorefrontThemeConfig } from "@/lib/theme/storefront-theme";
 
@@ -26,6 +26,8 @@ export function StorefrontCookiePolicyPage({ runtime }: StorefrontCookiePolicyPa
     accentColor: runtime.branding?.accent_color,
     themeConfig
   });
+  const radiusClass = getStorefrontRadiusClass(themeConfig.radiusScale);
+  const cardStyleClass = getStorefrontCardStyleClass(themeConfig.cardStyle);
 
   useStorefrontPageView("policies");
 
@@ -53,7 +55,7 @@ export function StorefrontCookiePolicyPage({ runtime }: StorefrontCookiePolicyPa
       />
 
       <main className={`mx-auto w-full ${getStorefrontPageWidthClass(themeConfig.pageWidth)} px-4 py-7 sm:px-6 sm:py-9 lg:py-10`}>
-        <article className="mx-auto max-w-5xl rounded-2xl border border-border/40 bg-card/20 p-6 sm:p-8">
+        <article className={`mx-auto max-w-5xl p-6 sm:p-8 ${radiusClass} ${cardStyleClass}`}>
           <CookiePolicyContent scopeLabel={runtime.store.name} />
         </article>
       </main>
