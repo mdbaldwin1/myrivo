@@ -65,7 +65,8 @@ type TrackStorefrontAnalyticsEventInput = Omit<CollectAnalyticsEvent, "idempoten
 const DEFAULT_FLUSH_INTERVAL_MS = 1_000;
 const DEFAULT_MAX_BATCH_SIZE = 20;
 const DEFAULT_MAX_RETRIES = 3;
-const SESSION_STORAGE_KEY_PREFIX = "myrivo.analytics.session.";
+export const STOREFRONT_ANALYTICS_SESSION_COOKIE_NAME = "myrivo_analytics_sid";
+export const STOREFRONT_ANALYTICS_SESSION_STORAGE_KEY_PREFIX = "myrivo.analytics.session.";
 
 function defaultGenerateId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -76,7 +77,7 @@ function defaultGenerateId() {
 }
 
 function buildStorageKey(storeSlug: string) {
-  return `${SESSION_STORAGE_KEY_PREFIX}${storeSlug}`;
+  return `${STOREFRONT_ANALYTICS_SESSION_STORAGE_KEY_PREFIX}${storeSlug}`;
 }
 
 function createDefaultStorage(): StorefrontAnalyticsStorage | null {
@@ -122,6 +123,26 @@ function normalizePath(path: string | undefined | null) {
 
 function canUseBrowserAnalytics(enabled: boolean, storage: StorefrontAnalyticsStorage | null) {
   return enabled && Boolean(storage);
+}
+
+export function clearStorefrontAnalyticsPersistence(storeSlug?: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const normalizedStoreSlug = storeSlug?.trim().toLowerCase();
+  if (normalizedStoreSlug) {
+    window.localStorage.removeItem(buildStorageKey(normalizedStoreSlug));
+  } else {
+    const keysToRemove = Object.keys(window.localStorage).filter((key) =>
+      key.startsWith(STOREFRONT_ANALYTICS_SESSION_STORAGE_KEY_PREFIX)
+    );
+    keysToRemove.forEach((key) => window.localStorage.removeItem(key));
+  }
+
+  document.cookie = `${STOREFRONT_ANALYTICS_SESSION_COOKIE_NAME}=; Max-Age=0; Path=/; SameSite=Lax${
+    window.location.protocol === "https:" ? "; Secure" : ""
+  }`;
 }
 
 export class StorefrontAnalyticsClient {

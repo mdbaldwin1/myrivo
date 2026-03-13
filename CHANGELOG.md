@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Added a platform-managed cookie compliance layer with a public cookie policy, shopper cookie preferences banner, footer cookie controls, and consent-gated storefront analytics.
 - Added a store privacy compliance layer with configurable point-of-collection notices, California rights surfaces, shopper privacy request intake, and operator workflow hooks in Store Settings > Legal.
 - Added store-level Privacy Policy and Terms & Conditions management with Store Settings > Legal, storefront legal routes, template-backed previews, and explicit draft/publish safeguards.
 - Added a public accessibility statement, global skip link support, storefront current-page semantics, reduced-motion hardening, and accessible chart fallbacks across shared storefront and dashboard shell surfaces.

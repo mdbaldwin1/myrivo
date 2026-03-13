@@ -10,6 +10,7 @@ import {
 } from "@/lib/analytics/governance";
 import { fail } from "@/lib/http/api-response";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
+import { COOKIE_CONSENT_COOKIE_NAME, hasAnalyticsConsent, resolveCookieConsent } from "@/lib/privacy/cookies";
 import { checkRateLimit } from "@/lib/security/rate-limit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -78,28 +79,18 @@ export async function POST(request: NextRequest) {
   }
 
   const analyticsAccess = await resolveStoreAnalyticsAccessByStoreId(supabase, store.id);
+  const consent = resolveCookieConsent(request.cookies.get(COOKIE_CONSENT_COOKIE_NAME)?.value);
 
   const sessionId = buildSessionId({
     payloadSessionId: parsed.data.sessionId,
     cookieSessionId: request.cookies.get(SESSION_COOKIE)?.value
   });
 
-  if (!analyticsAccess.collectionEnabled) {
-    const response = NextResponse.json({
+  if (!analyticsAccess.collectionEnabled || !hasAnalyticsConsent(consent)) {
+    return NextResponse.json({
       ok: true,
-      sessionId,
       acceptedEvents: 0
     });
-    response.cookies.set({
-      name: SESSION_COOKIE,
-      value: sessionId,
-      maxAge: SESSION_COOKIE_AGE_SECONDS,
-      sameSite: "lax",
-      httpOnly: false,
-      secure: process.env.NODE_ENV === "production",
-      path: "/"
-    });
-    return response;
   }
 
   const nowIso = new Date().toISOString();

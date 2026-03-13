@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { CookiePreferencesButton } from "@/components/privacy/cookie-preferences-button";
 import { Button } from "@/components/ui/button";
 import { MAIN_CONTENT_ID } from "@/lib/accessibility";
 import { withReturnTo } from "@/lib/auth/return-to";
@@ -104,6 +105,12 @@ export function MarketingSiteChrome({ children, activePath, isAuthenticated = fa
             <Link href="/privacy" className="hover:text-foreground">
               Privacy
             </Link>
+            <Link href="/cookies" className="hover:text-foreground">
+              Cookies
+            </Link>
+            <CookiePreferencesButton className="hover:text-foreground">
+              Manage cookies
+            </CookiePreferencesButton>
             <Link href="/terms" className="hover:text-foreground">
               Terms
             </Link>
