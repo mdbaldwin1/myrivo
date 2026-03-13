@@ -3,6 +3,7 @@ import { isStorefrontNavLinkActive } from "@/components/storefront/storefront-mo
 
 describe("storefront mobile nav link matching", () => {
   test("matches links by pathname even when href includes a store query", () => {
+    expect(isStorefrontNavLinkActive("/s/at-home-apothecary", "/s/at-home-apothecary?store=at-home-apothecary")).toBe(true);
     expect(isStorefrontNavLinkActive("/products", "/products?store=at-home-apothecary")).toBe(true);
     expect(isStorefrontNavLinkActive("/policies", "/policies?store=at-home-apothecary")).toBe(true);
   });

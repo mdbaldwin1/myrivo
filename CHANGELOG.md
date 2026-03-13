@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 - Added store-level Privacy Policy and Terms & Conditions management with Store Settings > Legal, storefront legal routes, template-backed previews, and explicit draft/publish safeguards.
+- Added a public accessibility statement, global skip link support, storefront current-page semantics, reduced-motion hardening, and accessible chart fallbacks across shared storefront and dashboard shell surfaces.
 - Rebuilt storefront editing around Storefront Studio, moved builder-owned content/settings into the Studio canvas, and retired duplicate legacy builder routes into redirects or Studio handoff pages while leaving operational settings outside the builder.
 - Added Email Studio as the canonical transactional-template workspace, with legacy email editing routes redirected into it and sample-data preview support for lifecycle email composition.
 - Initial Myrivo platform foundation with monorepo tooling, web app scaffold, Supabase schema, and Stripe integration skeleton.

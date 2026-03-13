@@ -91,7 +91,7 @@ export function StorefrontAnalyticsTrendPanel({ summary }: StorefrontAnalyticsTr
                 </div>
                 <p className="text-xs text-muted-foreground">{summary.current.sessions} total</p>
               </div>
-              <div className="mt-4 h-56 min-w-0 w-full">
+              <div aria-hidden="true" className="mt-4 h-56 min-w-0 w-full">
                 <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={224}>
                   <LineChart data={daily} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid vertical={false} stroke="rgba(148, 163, 184, 0.2)" />
@@ -129,7 +129,7 @@ export function StorefrontAnalyticsTrendPanel({ summary }: StorefrontAnalyticsTr
                 </div>
                 <p className="text-xs text-muted-foreground">{formatCurrency(summary.current.revenueCents)} total</p>
               </div>
-              <div className="mt-4 h-56 min-w-0 w-full">
+              <div aria-hidden="true" className="mt-4 h-56 min-w-0 w-full">
                 <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={224}>
                   <BarChart data={daily} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid vertical={false} stroke="rgba(148, 163, 184, 0.2)" />
@@ -151,6 +151,7 @@ export function StorefrontAnalyticsTrendPanel({ summary }: StorefrontAnalyticsTr
 
           <div className="overflow-x-auto rounded-md border border-border/70">
             <table className="min-w-full divide-y divide-border/70 text-sm">
+              <caption className="sr-only">Daily storefront traffic and revenue summary for the selected analytics range.</caption>
               <thead className="bg-muted/30 text-left text-xs uppercase tracking-[0.14em] text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2">Date</th>

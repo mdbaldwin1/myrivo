@@ -98,7 +98,7 @@ export function StorefrontAnalyticsFunnelPanel({ summary }: StorefrontAnalyticsF
               ))}
             </div>
 
-            <div className="h-[22rem] min-w-0 w-full">
+            <div aria-hidden="true" className="h-[22rem] min-w-0 w-full">
               <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={352}>
                 <BarChart data={steps} layout="vertical" margin={{ top: 8, right: 16, left: 12, bottom: 0 }}>
                   <CartesianGrid horizontal={false} stroke="rgba(148, 163, 184, 0.16)" />
@@ -140,6 +140,30 @@ export function StorefrontAnalyticsFunnelPanel({ summary }: StorefrontAnalyticsF
             <p className="mt-1 text-sm text-muted-foreground">Sessions with completed paid orders in the selected range.</p>
           </div>
         </div>
+      </div>
+
+      <div className="overflow-x-auto rounded-md border border-border/70">
+        <table className="min-w-full divide-y divide-border/70 text-sm">
+          <caption className="sr-only">Shopper funnel summary with shopper counts, conversion rates, and explanatory notes.</caption>
+          <thead className="bg-muted/30 text-left text-xs uppercase tracking-[0.14em] text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2">Step</th>
+              <th className="px-3 py-2">Shoppers</th>
+              <th className="px-3 py-2">Conversion</th>
+              <th className="px-3 py-2">Summary</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/60 bg-card">
+            {steps.map((step) => (
+              <tr key={`${step.id}-row`}>
+                <td className="px-3 py-2 font-medium">{step.label}</td>
+                <td className="px-3 py-2">{step.value}</td>
+                <td className="px-3 py-2">{step.id === "sessions" ? "Baseline" : formatPercent(step.rate)}</td>
+                <td className="px-3 py-2 text-muted-foreground">{step.helper}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </SectionCard>
   );

@@ -17,6 +17,7 @@ import { StorefrontStudioEditableText } from "@/components/storefront/storefront
 import { useOptionalStorefrontRuntime } from "@/components/storefront/storefront-runtime-provider";
 import { useOptionalStorefrontAnalytics } from "@/components/storefront/storefront-analytics-provider";
 import { useStorefrontPageView } from "@/components/storefront/use-storefront-analytics-events";
+import { MAIN_CONTENT_ID } from "@/lib/accessibility";
 import { cn } from "@/lib/utils";
 import { buildStorefrontCartAnalyticsValue } from "@/lib/analytics/storefront-instrumentation";
 import { getStorefrontButtonRadiusClass, getStorefrontCardStyleClass, getStorefrontRadiusClass } from "@/lib/storefront/appearance";
@@ -562,7 +563,11 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
         rightContent={<StorefrontCartButton storeSlug={resolvedStore.slug} ariaLabel={copy.nav.openCartAria} buttonRadiusClass={buttonRadiusClass} />}
       />
 
-      <main className={cn("mx-auto w-full space-y-6 px-4 py-7 sm:px-6 sm:py-9 lg:py-10", getStorefrontPageWidthClass(themeConfig.pageWidth))}>
+      <main
+        id={MAIN_CONTENT_ID}
+        tabIndex={-1}
+        className={cn("mx-auto w-full space-y-6 px-4 py-7 focus:outline-none sm:px-6 sm:py-9 lg:py-10", getStorefrontPageWidthClass(themeConfig.pageWidth))}
+      >
         <div className="space-y-1">
           {studio?.enabled ? (
             <StorefrontStudioEditableText

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { ArrowLeft, Bell, Settings, UserCircle2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
+import { MAIN_CONTENT_ID } from "@/lib/accessibility";
 import { cn } from "@/lib/utils";
 
 type AccountWorkspaceShellProps = {
@@ -20,7 +21,7 @@ const navItems: Array<{ id: "profile" | "notifications" | "settings"; label: str
 
 export function AccountWorkspaceShell({ activeItem, backHref, children }: AccountWorkspaceShellProps) {
   return (
-    <main className="fixed inset-0 flex w-full flex-col overflow-hidden bg-stone-50">
+    <div className="fixed inset-0 flex w-full flex-col overflow-hidden bg-stone-50">
       <header className="shrink-0 border-b border-border/70 bg-white/95 supports-[backdrop-filter]:bg-white/90 supports-[backdrop-filter]:backdrop-blur">
         <div className="flex h-16 items-center justify-between gap-3 px-4 lg:px-6">
           <div className="flex min-w-0 items-center gap-3">
@@ -63,8 +64,14 @@ export function AccountWorkspaceShell({ activeItem, backHref, children }: Accoun
             ))}
           </div>
         </aside>
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-stone-50">{children}</div>
+        <main
+          id={MAIN_CONTENT_ID}
+          tabIndex={-1}
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-stone-50 focus:outline-none"
+        >
+          {children}
+        </main>
       </div>
-    </main>
+    </div>
   );
 }

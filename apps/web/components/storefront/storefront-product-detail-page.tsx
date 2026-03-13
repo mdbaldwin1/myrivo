@@ -20,6 +20,7 @@ import { StorefrontImageCarousel } from "@/components/storefront/storefront-imag
 import { StorefrontCartButton } from "@/components/storefront/storefront-cart-button";
 import { StorefrontFooter } from "@/components/storefront/storefront-footer";
 import { StorefrontReviewsSection } from "@/components/storefront/storefront-reviews-section";
+import { MAIN_CONTENT_ID } from "@/lib/accessibility";
 import { useOptionalStorefrontRuntime } from "@/components/storefront/storefront-runtime-provider";
 import { useOptionalStorefrontAnalytics } from "@/components/storefront/storefront-analytics-provider";
 import { useStorefrontPageView, useStorefrontProductView } from "@/components/storefront/use-storefront-analytics-events";
@@ -392,8 +393,10 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
       />
 
       <main
+        id={MAIN_CONTENT_ID}
+        tabIndex={-1}
         className={cn(
-          "mx-auto grid w-full gap-8 px-4 py-7 sm:gap-10 sm:px-6 sm:py-9 lg:py-10 xl:grid-cols-[minmax(0,1.08fr)_minmax(20rem,0.92fr)] xl:items-start",
+          "mx-auto grid w-full gap-8 px-4 py-7 focus:outline-none sm:gap-10 sm:px-6 sm:py-9 lg:py-10 xl:grid-cols-[minmax(0,1.08fr)_minmax(20rem,0.92fr)] xl:items-start",
           getStorefrontPageWidthClass(themeConfig.pageWidth)
         )}
       >

@@ -248,6 +248,9 @@ export function StorefrontFooter({
           ) : (
             <p className="text-sm text-muted-foreground">{copy.footer.supportComingSoon}</p>
           )}
+          <Link href="/accessibility" className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "text-sm")}>
+            Accessibility
+          </Link>
           {footerLinks.length > 0 ? (
             <div className="flex items-center justify-center gap-3 pt-1 lg:justify-start">
               {footerLinks.map((link) => (

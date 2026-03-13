@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { StorefrontHeader } from "@/components/storefront/storefront-header";
 import { StorefrontCartButton } from "@/components/storefront/storefront-cart-button";
 import { StorefrontFooter } from "@/components/storefront/storefront-footer";
+import { MAIN_CONTENT_ID } from "@/lib/accessibility";
 
 type AboutSection = {
   id: string;
@@ -215,7 +216,7 @@ export function StorefrontAboutPage({ store, viewer, branding, settings, content
         topOffsetPx={themeConfig.showPolicyStrip && resolvedSettings?.announcement ? 32 : 0}
         rightContent={<StorefrontCartButton storeSlug={resolvedStore.slug} buttonRadiusClass={buttonRadiusClass} ariaLabel={copy.nav.openCartAria} />}
       />
-      <main className={cn(getStorefrontPageShellClass(themeConfig.pageWidth, themeConfig.spacingScale))}>
+      <main id={MAIN_CONTENT_ID} tabIndex={-1} className={cn(getStorefrontPageShellClass(themeConfig.pageWidth, themeConfig.spacingScale), "focus:outline-none")}>
         <section className="space-y-6 border-b border-border/40 pb-8 pt-1 sm:space-y-8 sm:pb-10 sm:pt-2">
           <div className="grid gap-6 sm:gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(14rem,18rem)] xl:items-end">
             <div className="max-w-4xl space-y-4">

@@ -15,6 +15,7 @@ import { resolveFooterNavLinks, resolveHeaderNavLinks } from "@/lib/storefront/n
 import { StorefrontHeader } from "@/components/storefront/storefront-header";
 import { StorefrontCartButton } from "@/components/storefront/storefront-cart-button";
 import { StorefrontFooter } from "@/components/storefront/storefront-footer";
+import { MAIN_CONTENT_ID } from "@/lib/accessibility";
 import { useOptionalStorefrontRuntime } from "@/components/storefront/storefront-runtime-provider";
 import { useOptionalStorefrontAnalytics } from "@/components/storefront/storefront-analytics-provider";
 import { useStorefrontPageView } from "@/components/storefront/use-storefront-analytics-events";
@@ -234,7 +235,11 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
         rightContent={<StorefrontCartButton storeSlug={resolvedStore.slug} ariaLabel={copy.nav.openCartAria} buttonRadiusClass={buttonRadiusClass} />}
       />
 
-      <main className={`mx-auto w-full ${getStorefrontPageWidthClass(themeConfig.pageWidth)} space-y-6 px-4 py-7 sm:px-6 sm:py-9 lg:py-10`}>
+      <main
+        id={MAIN_CONTENT_ID}
+        tabIndex={-1}
+        className={`mx-auto w-full ${getStorefrontPageWidthClass(themeConfig.pageWidth)} space-y-6 px-4 py-7 focus:outline-none sm:px-6 sm:py-9 lg:py-10`}
+      >
         <div className={cn("mx-auto max-w-3xl space-y-5 p-4 sm:space-y-6 sm:p-6", radiusClass, cardClass, isIntegrated ? "border border-border/60 bg-[color:var(--storefront-surface)]/70 shadow-sm" : "")}>
           {studioEnabled ? (
             <StorefrontStudioCheckoutPreviewStatePicker

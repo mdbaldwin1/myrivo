@@ -72,7 +72,7 @@ export function StorefrontImageCarousel(props: StorefrontImageCarouselProps) {
                 unoptimized
                 className={cn(
                   imageFit === "contain" ? "object-contain" : "object-cover",
-                  "transition-transform duration-300",
+                  "transition-transform duration-300 motion-reduce:transition-none",
                   hoverZoom ? "group-hover:scale-105" : ""
                 )}
               />
@@ -82,7 +82,7 @@ export function StorefrontImageCarousel(props: StorefrontImageCarouselProps) {
       ) : (
         <div className="h-full w-full overflow-hidden">
           <div
-            className="flex h-full w-full transition-transform duration-300 ease-out"
+            className="flex h-full w-full transition-transform duration-300 ease-out motion-reduce:transition-none"
             style={{ transform: `translate3d(-${activeIndex * 100}%, 0, 0)` }}
           >
             {images.map((image, index) => (
@@ -94,7 +94,7 @@ export function StorefrontImageCarousel(props: StorefrontImageCarouselProps) {
                   unoptimized
                   className={cn(
                     imageFit === "contain" ? "object-contain" : "object-cover",
-                    "transition-transform duration-300",
+                    "transition-transform duration-300 motion-reduce:transition-none",
                     hoverZoom ? "group-hover:scale-105" : ""
                   )}
                 />

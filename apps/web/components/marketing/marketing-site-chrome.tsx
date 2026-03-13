@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
+import { MAIN_CONTENT_ID } from "@/lib/accessibility";
 import { withReturnTo } from "@/lib/auth/return-to";
 import { cn } from "@/lib/utils";
 
@@ -77,7 +78,9 @@ export function MarketingSiteChrome({ children, activePath, isAuthenticated = fa
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl px-4 pb-16 pt-8 sm:px-6">{children}</main>
+      <main id={MAIN_CONTENT_ID} tabIndex={-1} className="mx-auto w-full max-w-6xl px-4 pb-16 pt-8 focus:outline-none sm:px-6">
+        {children}
+      </main>
 
       <footer className="border-t border-border bg-background">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-8 sm:px-6 md:flex-row md:items-center md:justify-between">
@@ -94,6 +97,9 @@ export function MarketingSiteChrome({ children, activePath, isAuthenticated = fa
             </Link>
             <Link href="/docs" className="hover:text-foreground">
               Docs
+            </Link>
+            <Link href="/accessibility" className="hover:text-foreground">
+              Accessibility
             </Link>
             <Link href="/privacy" className="hover:text-foreground">
               Privacy

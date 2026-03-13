@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import React, { type ReactNode } from "react";
+import { MAIN_CONTENT_ID } from "@/lib/accessibility";
 
 type PageShellProps = {
   children: ReactNode;
@@ -6,5 +7,9 @@ type PageShellProps = {
 };
 
 export function PageShell({ children, maxWidthClassName = "max-w-5xl" }: PageShellProps) {
-  return <main className={`mx-auto w-full px-4 py-6 md:px-8 md:py-8 ${maxWidthClassName}`}>{children}</main>;
+  return (
+    <main id={MAIN_CONTENT_ID} tabIndex={-1} className={`mx-auto w-full px-4 py-6 md:px-8 md:py-8 ${maxWidthClassName} focus:outline-none`}>
+      {children}
+    </main>
+  );
 }
