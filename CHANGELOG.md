@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - Added governance metadata to the Myrivo docs library, including documented ownership, review cadence, next-review dates, and an overdue-doc review process.
+- Added a shared refunds/disputes contract module and new operational docs describing the intended financial statuses, refund reasons, dispute lifecycle, and merchant UX model.
+- Added order-level refund request persistence, merchant refund actions in the order flyout, refund history in order detail, and audit-backed refund request recording.
+- Added Stripe-backed refund execution, dispute synchronization, customer refund/dispute messaging with Email Studio templates, and billing-report visibility for refund/dispute operations.
 
 - Added public-site marketing analytics with CTA/signup funnel tracking, admin reporting at `/dashboard/admin/marketing`, and lightweight experiment support for conversion optimization.
 - Added a platform-managed cookie compliance layer with a public cookie policy, shopper cookie preferences banner, footer cookie controls, and consent-gated storefront analytics.

@@ -43,3 +43,4 @@ When you need support, include:
 - `/docs/catalog-and-orders`
 - `/docs/domains-and-launch-readiness`
 - `/docs/pickup-and-shipping-operations`
+- `/docs/refunds-disputes-and-customer-issues`

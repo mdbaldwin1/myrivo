@@ -2916,6 +2916,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                     value={description}
                     onChange={setDescription}
                     previewLabel="Description preview"
+                    imageUpload={{ folder: "products/rich-text" }}
                   />
                 </FormField>
                 <FormField label="Slug" description="Optional. Leave blank to auto-generate from title.">
@@ -3841,6 +3842,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                     onChange={setEditDescription}
                     previewLabel="Description preview"
                     disabled={isEditReadOnly || editPending}
+                    imageUpload={{ folder: "products/rich-text" }}
                   />
                 </FormField>
                 <FormField label="Slug" description="Optional. Leave blank to auto-generate from title.">

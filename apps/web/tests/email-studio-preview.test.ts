@@ -61,7 +61,10 @@ describe("email studio preview helpers", () => {
     expect(resolveEmailStudioPreviewScenario("customerConfirmation", "shipping").id).toBe("pickup");
     expect(resolveEmailStudioPreviewScenario("ownerNewOrder", "shipping").id).toBe("pickup");
     expect(resolveEmailStudioPreviewScenario("pickupUpdated", "shipping").id).toBe("pickup");
+    expect(resolveEmailStudioPreviewScenario("refundIssued", "shipping").id).toBe("pickup");
     expect(resolveEmailStudioPreviewScenario("shipped", "pickup").id).toBe("shipping");
+    expect(resolveEmailStudioPreviewScenario("disputeOpened", "pickup").id).toBe("shipping");
+    expect(resolveEmailStudioPreviewScenario("disputeResolved", "pickup").id).toBe("shipping");
     expect(resolveEmailStudioPreviewScenario("failed", "pickup").id).toBe("shipping");
     expect(resolveEmailStudioPreviewScenario("cancelled", "pickup").id).toBe("shipping");
     expect(resolveEmailStudioPreviewScenario("delivered", "pickup").id).toBe("shipping");

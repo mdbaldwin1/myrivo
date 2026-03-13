@@ -438,6 +438,7 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
               {resolvedProduct.title}
             </h1>
             <div
+              data-rich-text-content="true"
               className="text-sm leading-6 text-muted-foreground sm:text-[15px]"
               dangerouslySetInnerHTML={{ __html: sanitizeRichTextHtml(resolvedProduct.description) }}
             />

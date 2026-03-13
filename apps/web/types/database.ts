@@ -256,6 +256,8 @@ export type StoreContentBlockRecord = {
 
 export type OrderStatus = "pending" | "paid" | "failed" | "cancelled";
 
+export type OrderRefundStatus = "requested" | "processing" | "succeeded" | "failed" | "cancelled";
+
 export type OrderRecord = {
   id: string;
   store_id: string;
@@ -290,6 +292,53 @@ export type OrderRecord = {
   last_tracking_sync_at: string | null;
   discount_cents: number;
   promo_code: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OrderRefundRecord = {
+  id: string;
+  order_id: string;
+  store_id: string;
+  requested_by_user_id: string | null;
+  processed_by_user_id: string | null;
+  amount_cents: number;
+  reason_key: string;
+  reason_note: string | null;
+  customer_message: string | null;
+  status: OrderRefundStatus;
+  stripe_refund_id: string | null;
+  metadata_json: Record<string, unknown>;
+  processed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OrderDisputeStatus =
+  | "warning_needs_response"
+  | "warning_under_review"
+  | "warning_closed"
+  | "needs_response"
+  | "under_review"
+  | "won"
+  | "lost"
+  | "prevented";
+
+export type OrderDisputeRecord = {
+  id: string;
+  order_id: string;
+  store_id: string;
+  stripe_dispute_id: string;
+  stripe_charge_id: string | null;
+  stripe_payment_intent_id: string | null;
+  amount_cents: number;
+  currency: string;
+  reason: string;
+  status: OrderDisputeStatus;
+  is_charge_refundable: boolean;
+  response_due_by: string | null;
+  metadata_json: Record<string, unknown>;
+  closed_at: string | null;
   created_at: string;
   updated_at: string;
 };

@@ -62,11 +62,27 @@ export function StorefrontHeader(props: StorefrontHeaderProps) {
   useEffect(() => {
     const COMPACT_ENTER_Y = 72;
     const COMPACT_EXIT_Y = 48;
+    const MIN_SCROLL_RANGE_FOR_COMPACT = 160;
     const scrollRoot = studioEnabled
       ? ((headerRef.current?.closest('[data-storefront-scroll-root="true"]') as HTMLElement | null) ?? null)
       : null;
 
+    function getMaxScroll() {
+      if (scrollRoot) {
+        return Math.max(0, scrollRoot.scrollHeight - scrollRoot.clientHeight);
+      }
+
+      const doc = document.documentElement;
+      return Math.max(0, doc.scrollHeight - window.innerHeight);
+    }
+
     function onScroll() {
+      const maxScroll = getMaxScroll();
+      if (maxScroll <= MIN_SCROLL_RANGE_FOR_COMPACT) {
+        setIsCompact(false);
+        return;
+      }
+
       const y = scrollRoot ? scrollRoot.scrollTop : window.scrollY;
       if (y >= COMPACT_ENTER_Y) {
         setIsCompact(true);

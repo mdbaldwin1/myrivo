@@ -31,6 +31,7 @@ export const emailStudioPreviewScenarios: readonly EmailStudioPreviewScenario[] 
       dashboardUrl: "https://myrivo.local/dashboard/stores/olive-mercantile/orders",
       orderUrl: "https://myrivo.local/dashboard/customer-orders/ord_01HZX3K9P8WA",
       storeUrl: "https://olivemercantile.com",
+      policiesUrl: "https://olivemercantile.com/policies",
       fulfillmentMethod: "pickup",
       pickupLocationName: "Downtown counter",
       pickupAddress: "21 Center St, Burlington, VT 05401",
@@ -42,6 +43,13 @@ export const emailStudioPreviewScenarios: readonly EmailStudioPreviewScenario[] 
       previousPickupDetails:
         "Fulfillment: Pickup\nPickup Location: Riverside porch\nAddress: 8 River Rd, Burlington, VT 05401\nPickup Window: Mar 14, 2026 10:00 AM - Mar 14, 2026 12:00 PM (America/New_York)\nPickup Instructions: Text when you arrive.",
       pickupUpdateReason: "The original pickup window is no longer available.",
+      refundAmount: "$18.00",
+      refundReason: "Customer request",
+      refundCustomerMessage: "We’ve refunded the damaged item and hope the replacement works out better.",
+      disputeAmount: "$38.00",
+      disputeReason: "fraudulent",
+      disputeStatus: "Response needed",
+      disputeResponseDueBy: "Mar 20, 2026 5:00 PM (America/New_York)",
       status: "ready for pickup",
       trackingUrl: "",
       trackingNumber: "",
@@ -69,6 +77,7 @@ export const emailStudioPreviewScenarios: readonly EmailStudioPreviewScenario[] 
       dashboardUrl: "https://myrivo.local/dashboard/stores/olive-mercantile/orders",
       orderUrl: "https://myrivo.local/dashboard/customer-orders/ord_01HZZ0KT3D8C",
       storeUrl: "https://olivemercantile.com",
+      policiesUrl: "https://olivemercantile.com/policies",
       fulfillmentMethod: "shipping",
       pickupLocationName: "",
       pickupAddress: "",
@@ -78,6 +87,13 @@ export const emailStudioPreviewScenarios: readonly EmailStudioPreviewScenario[] 
       pickupDetails: "Fulfillment: Shipping",
       previousPickupDetails: "",
       pickupUpdateReason: "",
+      refundAmount: "$24.00",
+      refundReason: "Shipping failure",
+      refundCustomerMessage: "We’ve refunded the missing item while we investigate with the carrier.",
+      disputeAmount: "$72.00",
+      disputeReason: "product_not_received",
+      disputeStatus: "Under review",
+      disputeResponseDueBy: "Mar 22, 2026 4:00 PM (America/New_York)",
       status: "shipped",
       trackingUrl: "https://tracking.example.com/ZX123456789US",
       trackingNumber: "ZX123456789US",
@@ -93,7 +109,12 @@ export function applyEmailStudioPreviewTemplate(template: string, values: Record
 export function resolveEmailStudioPreviewScenario(templateId: EmailStudioTemplateId, scenarioId: EmailStudioPreviewScenarioId) {
   const base = emailStudioPreviewScenarios.find((scenario) => scenario.id === scenarioId) ?? emailStudioPreviewScenarios[0]!;
 
-  if (templateId === "customerConfirmation" || templateId === "ownerNewOrder" || templateId === "pickupUpdated") {
+  if (
+    templateId === "customerConfirmation" ||
+    templateId === "ownerNewOrder" ||
+    templateId === "pickupUpdated" ||
+    templateId === "refundIssued"
+  ) {
     return emailStudioPreviewScenarios[0]!;
   }
 

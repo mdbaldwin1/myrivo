@@ -383,6 +383,7 @@ export function StorefrontFooter({
                 surface="newsletter"
                 store={{ name: storeName, slug: normalizedStoreSlug }}
                 profile={resolvedPrivacyProfile}
+                variant="compact"
               />
             ) : null}
             <AppAlert variant="error" compact className="text-xs" message={subscribeError} />

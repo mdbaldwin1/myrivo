@@ -115,6 +115,7 @@ export function EmailStudioComposer({ storeName, document, template, activeField
                 onChange={(nextValue) => onDocumentChange(updateActiveTemplate(document, { ...template, bodyHtml: nextValue }))}
                 placeholder="Write the main email content"
                 rows={12}
+                imageUpload={{ folder: "email-studio" }}
               />
             </div>
           </FormField>

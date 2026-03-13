@@ -824,6 +824,7 @@ export function StorePoliciesForm({
                 value={aboutArticleHtml}
                 onChange={setAboutArticleHtml}
                 placeholder="Tell your brand story: who you are, what you value, and what makes your products special."
+                imageUpload={{ folder: "store-policies" }}
               />
             </FormField>
             ) : null}

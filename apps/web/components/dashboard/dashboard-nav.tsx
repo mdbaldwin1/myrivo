@@ -163,12 +163,12 @@ export function DashboardNav({
     { href: `${storeWorkspaceBaseHref}/catalog`, label: "Catalog", icon: Package },
     { href: `${storeWorkspaceBaseHref}/orders`, label: "Orders", icon: ReceiptText },
     { href: `${storeWorkspaceBaseHref}/reviews`, label: "Reviews", icon: Star },
-    { href: `${storeWorkspaceBaseHref}/notifications`, label: "Notifications", icon: Bell },
     { href: `${storeWorkspaceBaseHref}/promotions`, label: "Promotions", icon: BadgePercent },
     { href: `${storeWorkspaceBaseHref}/subscribers`, label: "Subscribers", icon: Mail },
     { href: `${storeWorkspaceBaseHref}/storefront-studio`, label: "Storefront Studio", icon: Home },
     { href: `${storeWorkspaceBaseHref}/email-studio`, label: "Email Studio", icon: PenSquare },
     { href: `${storeWorkspaceBaseHref}/reports`, label: "Reports", icon: FileText },
+    { href: `${storeWorkspaceBaseHref}/notifications`, label: "Notifications", icon: Bell },
     { href: `${storeWorkspaceBaseHref}/store-settings/general`, label: "Settings", icon: Cog }
   ];
   if (analyticsDashboardEnabled) {
@@ -178,9 +178,6 @@ export function DashboardNav({
     `${storeWorkspaceBaseHref}/reports`,
     `${storeWorkspaceBaseHref}/store-settings/general`
   ]);
-  if (analyticsDashboardEnabled) {
-    subWorkspaceEntryHrefs.add(`${storeWorkspaceBaseHref}/analytics`);
-  }
 
   const storeSettingsLinkGroups = storeSettingsWorkspaceGroups.map((group) => ({
     ...group,

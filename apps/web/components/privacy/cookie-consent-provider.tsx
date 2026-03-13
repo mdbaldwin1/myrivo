@@ -1,7 +1,9 @@
 "use client";
 
 import {
+  useCallback,
   createContext,
+  useEffect,
   useContext,
   useMemo,
   useState,
@@ -24,9 +26,10 @@ type CookieConsentContextValue = {
   consent: CookieConsentRecord;
   analyticsEnabled: boolean;
   openPreferences: () => void;
-  savePreferences: (analyticsEnabled: boolean) => void;
-  acceptAll: () => void;
-  acceptEssentialOnly: () => void;
+  savePreferences: (analyticsEnabled: boolean) => Promise<void>;
+  setConsentChoice: (analyticsEnabled: boolean) => Promise<void>;
+  acceptAll: () => Promise<void>;
+  acceptEssentialOnly: () => Promise<void>;
 };
 
 const CookieConsentContext = createContext<CookieConsentContextValue | null>(null);
@@ -40,7 +43,8 @@ function readConsentFromDocument() {
     .split("; ")
     .find((cookie) => cookie.startsWith(`${COOKIE_CONSENT_COOKIE_NAME}=`));
 
-  return resolveCookieConsent(entry ? entry.slice(`${COOKIE_CONSENT_COOKIE_NAME}=`.length) : null);
+  const rawValue = entry ? entry.slice(`${COOKIE_CONSENT_COOKIE_NAME}=`.length) : null;
+  return resolveCookieConsent(rawValue);
 }
 
 function writeConsentToDocument(consent: CookieConsentRecord) {
@@ -62,31 +66,119 @@ function shouldShowCookieUi(pathname: string | null) {
 }
 
 type CookieConsentProviderProps = {
+  initialConsent: CookieConsentRecord;
   children: ReactNode;
 };
 
-export function CookieConsentProvider({ children }: CookieConsentProviderProps) {
+export function CookieConsentProvider({ initialConsent, children }: CookieConsentProviderProps) {
   const pathname = usePathname();
-  const [consent, setConsent] = useState<CookieConsentRecord>(() =>
-    typeof document === "undefined" ? getDefaultCookieConsent() : readConsentFromDocument()
-  );
+  const [consent, setConsent] = useState<CookieConsentRecord>(initialConsent);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
 
-  const saveConsent = (nextConsent: CookieConsentRecord) => {
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const syncConsent = () => {
+      setConsent(readConsentFromDocument());
+    };
+
+    window.addEventListener("pageshow", syncConsent);
+    window.addEventListener("focus", syncConsent);
+    window.addEventListener("myrivo:cookie-consent-sync", syncConsent as EventListener);
+
+    return () => {
+      window.removeEventListener("pageshow", syncConsent);
+      window.removeEventListener("focus", syncConsent);
+      window.removeEventListener("myrivo:cookie-consent-sync", syncConsent as EventListener);
+    };
+  }, []);
+
+  const saveConsent = useCallback((nextConsent: CookieConsentRecord) => {
     writeConsentToDocument(nextConsent);
     setConsent(nextConsent);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("myrivo:cookie-consent-sync"));
+    }
+  }, []);
+
+  const persistConsent = useCallback(async (analyticsEnabled: boolean) => {
+    const nextConsent = createCookieConsentRecord({ analytics: analyticsEnabled });
+    saveConsent(nextConsent);
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const formData = new FormData();
+    formData.set("analytics", analyticsEnabled ? "true" : "false");
+    formData.set("returnTo", `${window.location.pathname}${window.location.search}`);
+
+    try {
+      await fetch("/cookies/consent", {
+        method: "POST",
+        headers: {
+          "x-myrivo-consent-request": "1"
+        },
+        body: formData,
+        credentials: "same-origin"
+      });
+    } catch {
+      // The optimistic local consent state is already applied. The next page load
+      // will resync from the server cookie path if the request eventually succeeds.
+    }
+  }, [saveConsent]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const syncFromHash = () => {
+      if (window.location.hash === "#cookie-preferences" && shouldShowCookieUi(pathname)) {
+        setPreferencesOpen(true);
+      }
+    };
+
+    syncFromHash();
+    window.addEventListener("hashchange", syncFromHash);
+    return () => window.removeEventListener("hashchange", syncFromHash);
+  }, [pathname]);
+
+  const handlePreferencesOpenChange = (open: boolean) => {
+    setPreferencesOpen(open);
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (open) {
+      if (window.location.hash !== "#cookie-preferences") {
+        window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#cookie-preferences`);
+      }
+      return;
+    }
+
+    if (window.location.hash === "#cookie-preferences") {
+      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    }
   };
 
   const value = useMemo<CookieConsentContextValue>(
     () => ({
       consent,
       analyticsEnabled: consent.analytics,
-      openPreferences: () => setPreferencesOpen(true),
-      savePreferences: (analyticsEnabled) => saveConsent(createCookieConsentRecord({ analytics: analyticsEnabled })),
-      acceptAll: () => saveConsent(createCookieConsentRecord({ analytics: true })),
-      acceptEssentialOnly: () => saveConsent(createCookieConsentRecord({ analytics: false }))
+      openPreferences: () => handlePreferencesOpenChange(true),
+      savePreferences: async (analyticsEnabled) => {
+        await persistConsent(analyticsEnabled);
+        handlePreferencesOpenChange(false);
+      },
+      setConsentChoice: persistConsent,
+      acceptAll: () => persistConsent(true),
+      acceptEssentialOnly: () => persistConsent(false)
     }),
-    [consent]
+    [consent, persistConsent]
   );
 
   const shouldRenderPublicUi = shouldShowCookieUi(pathname);
@@ -97,17 +189,13 @@ export function CookieConsentProvider({ children }: CookieConsentProviderProps) 
       {shouldRenderPublicUi ? (
         <>
           {!consent.hasRecordedChoice ? (
-            <CookieConsentBanner
-              onAcceptAll={value.acceptAll}
-              onAcceptEssentialOnly={value.acceptEssentialOnly}
-              onOpenPreferences={value.openPreferences}
-            />
+            <CookieConsentBanner onOpenPreferences={value.openPreferences} />
           ) : null}
           <CookiePreferencesSheet
             key={`${consent.analytics ? "analytics-on" : "analytics-off"}-${preferencesOpen ? "open" : "closed"}`}
             open={preferencesOpen}
             analyticsEnabled={consent.analytics}
-            onOpenChange={setPreferencesOpen}
+            onOpenChange={handlePreferencesOpenChange}
             onSave={value.savePreferences}
           />
         </>

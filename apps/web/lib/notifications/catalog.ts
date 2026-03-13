@@ -70,6 +70,24 @@ const CATALOG: Record<string, NotificationCatalogEntry> = {
     defaultSeverity: "info",
     defaultTargets: ["in_app"]
   },
+  "order.refunded.customer": {
+    eventType: "order.refunded.customer",
+    category: "order",
+    defaultSeverity: "info",
+    defaultTargets: ["in_app"]
+  },
+  "order.dispute.opened.customer": {
+    eventType: "order.dispute.opened.customer",
+    category: "order",
+    defaultSeverity: "warning",
+    defaultTargets: ["in_app"]
+  },
+  "order.dispute.resolved.customer": {
+    eventType: "order.dispute.resolved.customer",
+    category: "order",
+    defaultSeverity: "info",
+    defaultTargets: ["in_app"]
+  },
   "inventory.low_stock": {
     eventType: "inventory.low_stock",
     category: "inventory",

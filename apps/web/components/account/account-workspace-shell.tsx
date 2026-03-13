@@ -1,9 +1,13 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { ArrowLeft, Bell, Settings, UserCircle2 } from "lucide-react";
+import { ArrowLeft, Bell, PanelLeftClose, PanelLeftOpen, Settings, UserCircle2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { buttonVariants } from "@/components/ui/button";
+import { writeLocalStorageFlag, useLocalStorageFlag } from "@/components/dashboard/use-local-storage-flag";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { MAIN_CONTENT_ID } from "@/lib/accessibility";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +23,20 @@ const navItems: Array<{ id: "profile" | "notifications" | "settings"; label: str
   { id: "settings", label: "Settings", href: "/settings", icon: Settings }
 ];
 
+const DASHBOARD_SIDEBAR_STORAGE_KEY = "myrivo.dashboard-sidebar-collapsed";
+
+function renderCollapsedTooltip(label: string, child: React.ReactNode) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{child}</TooltipTrigger>
+      <TooltipContent side="right">{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function AccountWorkspaceShell({ activeItem, backHref, children }: AccountWorkspaceShellProps) {
+  const sidebarCollapsed = useLocalStorageFlag(DASHBOARD_SIDEBAR_STORAGE_KEY);
+
   return (
     <div className="fixed inset-0 flex w-full flex-col overflow-hidden bg-stone-50">
       <header className="shrink-0 border-b border-border/70 bg-white/95 supports-[backdrop-filter]:bg-white/90 supports-[backdrop-filter]:backdrop-blur">
@@ -43,27 +60,66 @@ export function AccountWorkspaceShell({ activeItem, backHref, children }: Accoun
         </div>
       </header>
       <div className="min-h-0 flex flex-1 overflow-hidden">
-        <aside className="hidden w-72 shrink-0 border-r border-border/70 bg-stone-50 px-3 py-3 lg:block">
-          <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Account Workspace</p>
-          <div className="space-y-1">
-            {navItems.map((item) => (
-              <Link
-                key={item.id}
-                href={item.href}
-                aria-current={activeItem === item.id ? "page" : undefined}
-                className={cn(
-                  buttonVariants({ variant: activeItem === item.id ? "default" : "ghost", size: "sm" }),
-                  "w-full justify-start"
-                )}
-              >
-                <span className="flex items-center gap-2">
-                  <item.icon className="h-4 w-4 shrink-0" />
-                  <span>{item.label}</span>
-                </span>
-              </Link>
-            ))}
-          </div>
-        </aside>
+        <div
+          className={cn(
+            "relative hidden shrink-0 transition-[width] duration-200 ease-out lg:flex",
+            "motion-reduce:transition-none",
+            sidebarCollapsed ? "w-[5rem]" : "w-[18.5rem]"
+          )}
+        >
+          <aside className={cn("w-full shrink-0 border-r border-border/70 bg-stone-50 py-3", sidebarCollapsed ? "px-0" : "px-3")}>
+            <TooltipProvider delayDuration={150}>
+              {!sidebarCollapsed ? (
+                <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Account Workspace</p>
+              ) : null}
+              <div className="space-y-1">
+                {navItems.map((item) => {
+                  const link = (
+                    <Link
+                      key={item.id}
+                      href={item.href}
+                      aria-current={activeItem === item.id ? "page" : undefined}
+                      className={cn(
+                        buttonVariants({ variant: activeItem === item.id ? "default" : "ghost", size: "sm" }),
+                        sidebarCollapsed ? "mx-auto h-10 w-10 justify-center rounded-xl px-0" : "w-full justify-start"
+                      )}
+                    >
+                      {sidebarCollapsed ? (
+                        <item.icon className="h-4 w-4 shrink-0" />
+                      ) : (
+                        <span className="flex items-center gap-2">
+                          <item.icon className="h-4 w-4 shrink-0" />
+                          <span>{item.label}</span>
+                        </span>
+                      )}
+                    </Link>
+                  );
+
+                  if (!sidebarCollapsed) {
+                    return link;
+                  }
+
+                  return (
+                    <div key={`${item.id}-collapsed`} className="flex w-full justify-center">
+                      {renderCollapsedTooltip(item.label, link)}
+                    </div>
+                  );
+                })}
+              </div>
+            </TooltipProvider>
+          </aside>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            aria-label={sidebarCollapsed ? "Expand navigation sidebar" : "Collapse navigation sidebar"}
+            aria-pressed={sidebarCollapsed}
+            className="absolute right-0 top-6 z-20 hidden h-9 w-9 translate-x-1/2 rounded-full border-border/80 bg-white shadow-sm lg:inline-flex"
+            onClick={() => writeLocalStorageFlag(DASHBOARD_SIDEBAR_STORAGE_KEY, !sidebarCollapsed)}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          </Button>
+        </div>
         <main
           id={MAIN_CONTENT_ID}
           tabIndex={-1}

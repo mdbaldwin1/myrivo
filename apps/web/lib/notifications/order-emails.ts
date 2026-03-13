@@ -4,6 +4,7 @@ import { renderEmailStudioTemplate } from "@/lib/email-studio/render";
 import { dispatchNotification } from "@/lib/notifications/dispatcher";
 import { sendTransactionalEmail } from "@/lib/notifications/email-provider";
 import { notifyOwnersOrderCreated, notifyOwnersOrderFulfillmentStatus } from "@/lib/notifications/owner-notifications";
+import { getDisputeStatusLabel, getRefundReasonLabel, type DisputeStatus, type MerchantRefundReason } from "@/lib/orders/refunds";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type OrderEmailItem = {
@@ -53,6 +54,9 @@ const CUSTOMER_CONFIRMATION_ACTION = "email_order_confirmation_sent";
 const CUSTOMER_ORDER_FAILED_ACTION = "email_order_failed_sent";
 const CUSTOMER_ORDER_CANCELLED_ACTION = "email_order_cancelled_sent";
 const CUSTOMER_PICKUP_UPDATED_ACTION = "email_order_pickup_updated_sent";
+const CUSTOMER_REFUND_ISSUED_ACTION = "email_order_refund_issued_sent";
+const CUSTOMER_DISPUTE_OPENED_ACTION = "email_order_dispute_opened_sent";
+const CUSTOMER_DISPUTE_RESOLVED_ACTION = "email_order_dispute_resolved_sent";
 const OWNER_NEW_ORDER_ACTION = "email_owner_new_order_sent";
 const ORDER_SHIPPED_ACTION = "email_order_shipped_sent";
 const ORDER_SHIPPED_WITH_TRACKING_ACTION = "email_order_shipped_with_tracking_sent";
@@ -264,6 +268,7 @@ function buildTemplateValues(context: OrderEmailContext, values: Record<string, 
   );
   const orderUrl = `${getAppUrl()}/dashboard/customer-orders/${context.orderId}`;
   const storeUrl = context.primaryDomain ? `https://${context.primaryDomain}` : context.storeSlug ? `${getAppUrl()}/s/${context.storeSlug}` : getAppUrl();
+  const policiesUrl = `${storeUrl.replace(/\/$/, "")}/policies`;
   const fallbackTrackingUrl = context.trackingUrl?.trim() || orderUrl;
 
   return {
@@ -282,6 +287,7 @@ function buildTemplateValues(context: OrderEmailContext, values: Record<string, 
     promoCode: context.promoCode ?? "",
     orderUrl,
     storeUrl,
+    policiesUrl,
     fulfillmentMethod: context.fulfillmentMethod ?? "",
     pickupLocationName: pickup.locationName,
     pickupAddress: pickup.address,
@@ -567,6 +573,9 @@ async function notifyCustomerOrderLifecycle(
   eventType:
     | "order.created.customer"
     | "order.pickup.updated.customer"
+    | "order.refunded.customer"
+    | "order.dispute.opened.customer"
+    | "order.dispute.resolved.customer"
     | "order.fulfillment.shipped.customer"
     | "order.fulfillment.delivered.customer"
     | "order.failed.customer"
@@ -740,6 +749,144 @@ export async function sendOrderPickupUpdatedNotification(
     );
   } catch (error) {
     console.error("sendOrderPickupUpdatedNotification failed", error);
+  }
+}
+
+function buildCustomerRefundEmail(
+  context: OrderEmailContext,
+  options: {
+    amountCents: number;
+    reasonKey: MerchantRefundReason;
+    customerMessage?: string | null;
+  }
+) {
+  const templateValues = buildTemplateValues(context, {
+    refundAmount: formatMoney(options.amountCents, context.currency),
+    refundReason: getRefundReasonLabel(options.reasonKey),
+    refundCustomerMessage: options.customerMessage?.trim() || ""
+  });
+  return renderOrderEmailTemplate(context, "refundIssued", templateValues);
+}
+
+export async function sendOrderRefundNotification(
+  orderId: string,
+  options: {
+    refundId: string;
+    amountCents: number;
+    reasonKey: MerchantRefundReason;
+    customerMessage?: string | null;
+  }
+) {
+  try {
+    const context = await loadOrderEmailContext(orderId);
+    if (!context) {
+      return;
+    }
+
+    const auditAction = `${CUSTOMER_REFUND_ISSUED_ACTION}:${options.refundId}`;
+    const alreadySent = await hasNotificationAudit(orderId, auditAction);
+    if (alreadySent) {
+      return;
+    }
+
+    const rendered = buildCustomerRefundEmail(context, options);
+    const sendResult = await sendEmail(context, [context.customerEmail], rendered.subject, rendered.text, rendered.html);
+    if (sendResult.sent) {
+      await writeNotificationAudit(context, auditAction, {
+        refundId: options.refundId,
+        amountCents: options.amountCents,
+        reasonKey: options.reasonKey,
+        recipient: context.customerEmail,
+        senderMode: sendResult.sender.mode,
+        senderReason: sendResult.sender.reason,
+        from: sendResult.sender.from
+      });
+    }
+
+    await notifyCustomerOrderLifecycle(
+      context,
+      "order.refunded.customer",
+      "Refund issued",
+      `A refund of ${formatMoney(options.amountCents, context.currency)} was issued for order ${context.orderId.slice(0, 8)}.`
+    );
+  } catch (error) {
+    console.error("sendOrderRefundNotification failed", error);
+  }
+}
+
+function isResolvedDisputeStatus(status: DisputeStatus) {
+  return status === "won" || status === "lost" || status === "prevented" || status === "warning_closed";
+}
+
+function buildCustomerDisputeEmail(
+  context: OrderEmailContext,
+  options: {
+    status: DisputeStatus;
+    amountCents: number;
+    reason: string;
+    responseDueBy?: string | null;
+  }
+) {
+  const templateValues = buildTemplateValues(context, {
+    disputeAmount: formatMoney(options.amountCents, context.currency),
+    disputeReason: options.reason.replaceAll("_", " "),
+    disputeStatus: getDisputeStatusLabel(options.status),
+    disputeResponseDueBy: options.responseDueBy
+      ? formatDateTimeInTimezone(options.responseDueBy, context.pickupTimezone)
+      : ""
+  });
+  return renderOrderEmailTemplate(context, isResolvedDisputeStatus(options.status) ? "disputeResolved" : "disputeOpened", templateValues);
+}
+
+export async function sendOrderDisputeNotification(
+  orderId: string,
+  options: {
+    disputeId: string;
+    status: DisputeStatus;
+    amountCents: number;
+    reason: string;
+    responseDueBy?: string | null;
+  }
+) {
+  try {
+    const context = await loadOrderEmailContext(orderId);
+    if (!context) {
+      return;
+    }
+
+    const actionBase = isResolvedDisputeStatus(options.status) ? CUSTOMER_DISPUTE_RESOLVED_ACTION : CUSTOMER_DISPUTE_OPENED_ACTION;
+    const auditAction = `${actionBase}:${options.disputeId}:${options.status}`;
+    const alreadySent = await hasNotificationAudit(orderId, auditAction);
+    if (alreadySent) {
+      return;
+    }
+
+    const rendered = buildCustomerDisputeEmail(context, options);
+    const sendResult = await sendEmail(context, [context.customerEmail], rendered.subject, rendered.text, rendered.html);
+    if (sendResult.sent) {
+      await writeNotificationAudit(context, auditAction, {
+        disputeId: options.disputeId,
+        amountCents: options.amountCents,
+        reason: options.reason,
+        status: options.status,
+        responseDueBy: options.responseDueBy ?? null,
+        recipient: context.customerEmail,
+        senderMode: sendResult.sender.mode,
+        senderReason: sendResult.sender.reason,
+        from: sendResult.sender.from
+      });
+    }
+
+    await notifyCustomerOrderLifecycle(
+      context,
+      isResolvedDisputeStatus(options.status) ? "order.dispute.resolved.customer" : "order.dispute.opened.customer",
+      isResolvedDisputeStatus(options.status) ? "Dispute update" : "Payment dispute opened",
+      isResolvedDisputeStatus(options.status)
+        ? `There is an update on the payment dispute for order ${context.orderId.slice(0, 8)}.`
+        : `A payment dispute was opened for order ${context.orderId.slice(0, 8)}.`
+    );
+  } catch (error) {
+    console.error("sendOrderDisputeNotification failed", error);
   }
 }
 

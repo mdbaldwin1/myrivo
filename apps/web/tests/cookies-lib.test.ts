@@ -20,6 +20,13 @@ describe("cookie consent helpers", () => {
     expect(hasAnalyticsConsent(parsed)).toBe(true);
   });
 
+  test("parses older double-encoded consent cookies", () => {
+    const consent = createCookieConsentRecord({ analytics: false, updatedAt: "2026-03-13T00:00:00.000Z" });
+    const parsed = resolveCookieConsent(encodeURIComponent(serializeCookieConsent(consent)));
+
+    expect(parsed).toEqual(consent);
+  });
+
   test("treats invalid cookie payloads as default consent", () => {
     expect(resolveCookieConsent("not-valid")).toEqual(getDefaultCookieConsent());
   });
