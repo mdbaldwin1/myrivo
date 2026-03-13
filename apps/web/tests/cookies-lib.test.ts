@@ -10,6 +10,11 @@ import {
 describe("cookie consent helpers", () => {
   test("returns the default consent state when no cookie is present", () => {
     expect(resolveCookieConsent(null)).toEqual(getDefaultCookieConsent());
+    expect(getDefaultCookieConsent()).toMatchObject({
+      essential: true,
+      analytics: false,
+      hasRecordedChoice: false
+    });
   });
 
   test("round-trips a saved consent record", () => {

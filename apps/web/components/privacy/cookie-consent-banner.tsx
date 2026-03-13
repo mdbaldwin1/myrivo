@@ -20,7 +20,7 @@ export function CookieConsentBanner({
         <div className="space-y-1">
           <p className="text-sm font-semibold text-foreground">We use cookies and similar technologies</p>
           <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
-            Essential cookies keep Myrivo and storefronts working. Optional analytics cookies help stores understand traffic and conversion performance.{" "}
+            Essential cookies keep Myrivo and storefronts working. Optional analytics cookies stay off unless you turn them on, and help stores understand traffic and conversion performance.{" "}
             <Link href="/cookies" className="font-medium text-foreground underline underline-offset-4">
               Learn more in our Cookie Policy
             </Link>

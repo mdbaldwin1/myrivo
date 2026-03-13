@@ -63,7 +63,7 @@ export function CookiePreferencesSheet({
               <div className="space-y-1">
                 <h2 className="text-sm font-semibold text-foreground">Analytics cookies</h2>
                 <p className="text-sm leading-relaxed text-muted-foreground">
-                  Help store owners understand traffic, product interest, and conversion performance on their storefronts.
+                  Help store owners understand traffic, product interest, and conversion performance on their storefronts. They stay off unless you explicitly enable them.
                 </p>
               </div>
               <Switch checked={draftAnalyticsEnabled} onChange={(event) => setDraftAnalyticsEnabled(event.target.checked)} />
