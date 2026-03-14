@@ -1,10 +1,9 @@
 "use client";
 
-import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { Pencil, Plus, X } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { BrandingAssetPicker } from "@/components/dashboard/branding-asset-picker";
 import { DashboardFormActionBar } from "@/components/dashboard/dashboard-form-action-bar";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
@@ -19,6 +18,10 @@ import type { StoreBrandingRecord, StoreRecord } from "@/types/database";
 type StoreSettingsFormProps = {
   initialStore: Pick<StoreRecord, "id" | "name" | "slug" | "status">;
   initialLogoPath: Pick<StoreBrandingRecord, "logo_path">["logo_path"] | null;
+  initialFaviconPath: Pick<StoreBrandingRecord, "favicon_path">["favicon_path"] | null;
+  initialAppleTouchIconPath: Pick<StoreBrandingRecord, "apple_touch_icon_path">["apple_touch_icon_path"] | null;
+  initialOgImagePath: Pick<StoreBrandingRecord, "og_image_path">["og_image_path"] | null;
+  initialTwitterImagePath: Pick<StoreBrandingRecord, "twitter_image_path">["twitter_image_path"] | null;
   header?: ReactNode;
   supplementalContent?: ReactNode;
 };
@@ -28,13 +31,14 @@ type StoreResponse = {
   error?: string;
 };
 
-type LogoUploadResponse = {
+type BrandingAssetUploadResponse = {
   logoPath?: string;
+  assetPath?: string;
   error?: string;
 };
 
 type BrandingResponse = {
-  branding?: Pick<StoreBrandingRecord, "logo_path">;
+  branding?: Pick<StoreBrandingRecord, "logo_path" | "favicon_path" | "apple_touch_icon_path" | "og_image_path" | "twitter_image_path">;
   error?: string;
 };
 
@@ -64,7 +68,16 @@ type StoreExperienceSettingsResponse = {
   error?: string;
 };
 
-export function StoreSettingsForm({ initialStore, initialLogoPath, header, supplementalContent }: StoreSettingsFormProps) {
+export function StoreSettingsForm({
+  initialStore,
+  initialLogoPath,
+  initialFaviconPath,
+  initialAppleTouchIconPath,
+  initialOgImagePath,
+  initialTwitterImagePath,
+  header,
+  supplementalContent
+}: StoreSettingsFormProps) {
   const formId = "store-profile-form";
   const pathname = usePathname();
   const storeSlug = getStoreSlugFromDashboardPathname(pathname);
@@ -76,6 +89,18 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header, suppl
   const [logoPath, setLogoPath] = useState(initialLogoPath ?? "");
   const [savedLogoPath, setSavedLogoPath] = useState(initialLogoPath ?? "");
   const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [faviconPath, setFaviconPath] = useState(initialFaviconPath ?? "");
+  const [savedFaviconPath, setSavedFaviconPath] = useState(initialFaviconPath ?? "");
+  const [faviconFile, setFaviconFile] = useState<File | null>(null);
+  const [appleTouchIconPath, setAppleTouchIconPath] = useState(initialAppleTouchIconPath ?? "");
+  const [savedAppleTouchIconPath, setSavedAppleTouchIconPath] = useState(initialAppleTouchIconPath ?? "");
+  const [appleTouchIconFile, setAppleTouchIconFile] = useState<File | null>(null);
+  const [ogImagePath, setOgImagePath] = useState(initialOgImagePath ?? "");
+  const [savedOgImagePath, setSavedOgImagePath] = useState(initialOgImagePath ?? "");
+  const [ogImageFile, setOgImageFile] = useState<File | null>(null);
+  const [twitterImagePath, setTwitterImagePath] = useState(initialTwitterImagePath ?? "");
+  const [savedTwitterImagePath, setSavedTwitterImagePath] = useState(initialTwitterImagePath ?? "");
+  const [twitterImageFile, setTwitterImageFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
@@ -112,11 +137,43 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header, suppl
     return logoPath || null;
   }, [logoFile, logoPath]);
 
-  const logoInputRef = useRef<HTMLInputElement | null>(null);
+  const faviconPreview = useMemo(() => {
+    if (faviconFile) {
+      return URL.createObjectURL(faviconFile);
+    }
+    return faviconPath || null;
+  }, [faviconFile, faviconPath]);
+  const appleTouchIconPreview = useMemo(() => {
+    if (appleTouchIconFile) {
+      return URL.createObjectURL(appleTouchIconFile);
+    }
+    return appleTouchIconPath || null;
+  }, [appleTouchIconFile, appleTouchIconPath]);
+  const ogImagePreview = useMemo(() => {
+    if (ogImageFile) {
+      return URL.createObjectURL(ogImageFile);
+    }
+    return ogImagePath || null;
+  }, [ogImageFile, ogImagePath]);
+  const twitterImagePreview = useMemo(() => {
+    if (twitterImageFile) {
+      return URL.createObjectURL(twitterImageFile);
+    }
+    return twitterImagePath || null;
+  }, [twitterImageFile, twitterImagePath]);
+
   const isDirty =
     name !== savedName ||
     (logoPath || "") !== savedLogoPath ||
+    (faviconPath || "") !== savedFaviconPath ||
+    (appleTouchIconPath || "") !== savedAppleTouchIconPath ||
+    (ogImagePath || "") !== savedOgImagePath ||
+    (twitterImagePath || "") !== savedTwitterImagePath ||
     logoFile !== null ||
+    faviconFile !== null ||
+    appleTouchIconFile !== null ||
+    ogImageFile !== null ||
+    twitterImageFile !== null ||
     seoTitle !== savedSeoTitle ||
     seoDescription !== savedSeoDescription ||
     seoNoindex !== savedSeoNoindex ||
@@ -136,6 +193,38 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header, suppl
 
     return () => URL.revokeObjectURL(logoPreview);
   }, [logoFile, logoPreview]);
+
+  useEffect(() => {
+    if (!faviconFile || !faviconPreview) {
+      return;
+    }
+
+    return () => URL.revokeObjectURL(faviconPreview);
+  }, [faviconFile, faviconPreview]);
+
+  useEffect(() => {
+    if (!appleTouchIconFile || !appleTouchIconPreview) {
+      return;
+    }
+
+    return () => URL.revokeObjectURL(appleTouchIconPreview);
+  }, [appleTouchIconFile, appleTouchIconPreview]);
+
+  useEffect(() => {
+    if (!ogImageFile || !ogImagePreview) {
+      return;
+    }
+
+    return () => URL.revokeObjectURL(ogImagePreview);
+  }, [ogImageFile, ogImagePreview]);
+
+  useEffect(() => {
+    if (!twitterImageFile || !twitterImagePreview) {
+      return;
+    }
+
+    return () => URL.revokeObjectURL(twitterImagePreview);
+  }, [twitterImageFile, twitterImagePreview]);
 
   useEffect(() => {
     let cancelled = false;
@@ -226,28 +315,73 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header, suppl
     setWhiteLabelSaving(false);
   }
 
-  async function uploadLogoIfNeeded() {
-    if (!logoFile) {
-      return logoPath || null;
-    }
-
+  async function uploadBrandingAsset(assetType: "logo" | "favicon" | "apple_touch_icon" | "og_image" | "twitter_image", file: File) {
     const formData = new FormData();
-    formData.append("file", logoFile);
+    formData.append("file", file);
+    formData.append("assetType", assetType);
 
     const response = await fetch(buildStoreScopedApiPath("/api/stores/branding/logo", storeSlug), {
       method: "POST",
       body: formData
     });
 
-    const payload = (await response.json()) as LogoUploadResponse;
+    const payload = (await response.json()) as BrandingAssetUploadResponse;
 
-    if (!response.ok || !payload.logoPath) {
-      throw new Error(payload.error ?? "Unable to upload logo.");
+    if (!response.ok || !payload.assetPath) {
+      throw new Error(payload.error ?? `Unable to upload ${assetType}.`);
     }
 
-    setLogoPath(payload.logoPath);
+    return payload.assetPath;
+  }
+
+  async function uploadLogoIfNeeded() {
+    if (!logoFile) {
+      return logoPath || null;
+    }
+    const nextLogoPath = await uploadBrandingAsset("logo", logoFile);
+    setLogoPath(nextLogoPath);
     setLogoFile(null);
-    return payload.logoPath;
+    return nextLogoPath;
+  }
+
+  async function uploadFaviconIfNeeded() {
+    if (!faviconFile) {
+      return faviconPath || null;
+    }
+    const nextFaviconPath = await uploadBrandingAsset("favicon", faviconFile);
+    setFaviconPath(nextFaviconPath);
+    setFaviconFile(null);
+    return nextFaviconPath;
+  }
+
+  async function uploadAppleTouchIconIfNeeded() {
+    if (!appleTouchIconFile) {
+      return appleTouchIconPath || null;
+    }
+    const nextAppleTouchIconPath = await uploadBrandingAsset("apple_touch_icon", appleTouchIconFile);
+    setAppleTouchIconPath(nextAppleTouchIconPath);
+    setAppleTouchIconFile(null);
+    return nextAppleTouchIconPath;
+  }
+
+  async function uploadOgImageIfNeeded() {
+    if (!ogImageFile) {
+      return ogImagePath || null;
+    }
+    const nextOgImagePath = await uploadBrandingAsset("og_image", ogImageFile);
+    setOgImagePath(nextOgImagePath);
+    setOgImageFile(null);
+    return nextOgImagePath;
+  }
+
+  async function uploadTwitterImageIfNeeded() {
+    if (!twitterImageFile) {
+      return twitterImagePath || null;
+    }
+    const nextTwitterImagePath = await uploadBrandingAsset("twitter_image", twitterImageFile);
+    setTwitterImagePath(nextTwitterImagePath);
+    setTwitterImageFile(null);
+    return nextTwitterImagePath;
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -256,7 +390,15 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header, suppl
     if (submitter?.value === "discard") {
       setName(savedName);
       setLogoPath(savedLogoPath);
+      setFaviconPath(savedFaviconPath);
+      setAppleTouchIconPath(savedAppleTouchIconPath);
+      setOgImagePath(savedOgImagePath);
+      setTwitterImagePath(savedTwitterImagePath);
       setLogoFile(null);
+      setFaviconFile(null);
+      setAppleTouchIconFile(null);
+      setOgImageFile(null);
+      setTwitterImageFile(null);
       setSeoTitle(savedSeoTitle);
       setSeoDescription(savedSeoDescription);
       setSeoNoindex(savedSeoNoindex);
@@ -284,6 +426,42 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header, suppl
       return;
     }
 
+    let nextFaviconPath: string | null;
+    try {
+      nextFaviconPath = await uploadFaviconIfNeeded();
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "Unable to upload favicon.");
+      setSaving(false);
+      return;
+    }
+
+    let nextAppleTouchIconPath: string | null;
+    try {
+      nextAppleTouchIconPath = await uploadAppleTouchIconIfNeeded();
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "Unable to upload apple touch icon.");
+      setSaving(false);
+      return;
+    }
+
+    let nextOgImagePath: string | null;
+    try {
+      nextOgImagePath = await uploadOgImageIfNeeded();
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "Unable to upload Open Graph image.");
+      setSaving(false);
+      return;
+    }
+
+    let nextTwitterImagePath: string | null;
+    try {
+      nextTwitterImagePath = await uploadTwitterImageIfNeeded();
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "Unable to upload Twitter image.");
+      setSaving(false);
+      return;
+    }
+
     if ((nextLogoPath ?? "") !== savedLogoPath) {
       const brandingResponse = await fetch(buildStoreScopedApiPath("/api/stores/branding", storeSlug), {
         method: "PUT",
@@ -303,6 +481,12 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header, suppl
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        branding: {
+          faviconPath: nextFaviconPath ?? null,
+          appleTouchIconPath: nextAppleTouchIconPath ?? null,
+          ogImagePath: nextOgImagePath ?? null,
+          twitterImagePath: nextTwitterImagePath ?? null
+        },
         seo: {
           title: seoTitle.trim() || null,
           description: seoDescription.trim() || null,
@@ -345,6 +529,14 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header, suppl
     setStatus(payload.store.status);
     setSavedLogoPath(nextLogoPath ?? "");
     setLogoPath(nextLogoPath ?? "");
+    setSavedFaviconPath(nextFaviconPath ?? "");
+    setFaviconPath(nextFaviconPath ?? "");
+    setSavedAppleTouchIconPath(nextAppleTouchIconPath ?? "");
+    setAppleTouchIconPath(nextAppleTouchIconPath ?? "");
+    setSavedOgImagePath(nextOgImagePath ?? "");
+    setOgImagePath(nextOgImagePath ?? "");
+    setSavedTwitterImagePath(nextTwitterImagePath ?? "");
+    setTwitterImagePath(nextTwitterImagePath ?? "");
     setSavedSeoTitle(seoTitle);
     setSavedSeoDescription(seoDescription);
     setSavedSeoNoindex(seoNoindex);
@@ -396,79 +588,126 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header, suppl
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {header}
         {supplementalContent}
+        <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+          Use Store Settings for store identity, browser icons, link preview images, SEO, and operational setup. Visual theme, layout, and page presentation live in Storefront Studio.
+        </div>
         <form id={formId} onSubmit={handleSubmit} className="space-y-4">
           <SectionCard title="Store Identity" description="Core storefront naming shown across your customer experience.">
-            <FormField label="Store Name" description="This appears in your storefront header, email copy, and checkout.">
+            <FormField label="Store Name" description="This appears in your storefront header, email copy, and checkout." inputId="store-settings-store-name">
               <Input required minLength={2} placeholder="At Home Apothecary" value={name} onChange={(event) => setName(event.target.value)} />
             </FormField>
           </SectionCard>
 
           <SectionCard title="Store Logo" description="Upload or replace the brand logo used throughout storefront and transactional surfaces.">
             <FormField label="Logo Asset">
-              <input
-                ref={logoInputRef}
-                type="file"
-                className="hidden"
+              <BrandingAssetPicker
                 accept=".png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml"
-                onChange={(event) => {
-                  const file = event.target.files?.[0] ?? null;
-                  if (!file) {
-                    return;
-                  }
-                  setLogoFile(file);
-                  event.target.value = "";
+                previewSrc={logoPreview}
+                previewAlt="Store logo preview"
+                emptyAriaLabel="Upload logo"
+                replaceAriaLabel="Replace logo"
+                removeAriaLabel="Remove logo"
+                helperText="PNG, JPEG, WEBP, or SVG up to 2MB."
+                previewPaddingClassName="p-1.5"
+                onFileSelect={(file) => setLogoFile(file)}
+                onRemove={() => {
+                  setLogoFile(null);
+                  setLogoPath("");
                 }}
               />
-              <div className="flex flex-wrap gap-2">
-                {logoPreview ? (
-                  <div
-                    className="group relative h-24 w-24 overflow-hidden rounded-md border border-border bg-muted/15 transition-transform hover:scale-[1.02]"
-                    onClick={() => logoInputRef.current?.click()}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        logoInputRef.current?.click();
-                      }
-                    }}
-                    aria-label="Replace logo"
-                  >
-                    <Image src={logoPreview} alt="Store logo preview" fill unoptimized className="object-contain bg-white p-1.5" />
-                    <div className="pointer-events-none absolute inset-0 bg-black/25 opacity-0 transition-opacity group-hover:opacity-100" />
-                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
-                      <Pencil className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]" />
-                    </div>
-                    <button
-                      type="button"
-                      className="absolute right-1 top-1 rounded-full bg-red-600 p-1 text-white transition hover:bg-red-700"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setLogoFile(null);
-                        setLogoPath("");
-                      }}
-                      aria-label="Remove logo"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    className="flex h-24 w-24 items-center justify-center rounded-md border border-dashed border-border bg-muted/10 text-muted-foreground transition hover:-translate-y-0.5 hover:border-primary/45 hover:bg-muted/25 hover:text-foreground hover:shadow-sm"
-                    onClick={() => logoInputRef.current?.click()}
-                    aria-label="Upload logo"
-                  >
-                    <Plus className="h-5 w-5" />
-                  </button>
-                )}
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">PNG, JPEG, WEBP, or SVG up to 2MB.</p>
             </FormField>
           </SectionCard>
 
+          <SectionCard
+            title="Browser & Sharing Assets"
+            description="Set the icons and preview images that represent your storefront in browser tabs, saved shortcuts, and shared links."
+          >
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <FormField
+                label="Favicon"
+                description="Shown in browser tabs for `/s/slug` storefronts and white-labeled domains."
+              >
+                <BrandingAssetPicker
+                  accept=".ico,.png,.svg,image/x-icon,image/vnd.microsoft.icon,image/png,image/svg+xml"
+                  previewSrc={faviconPreview}
+                  previewAlt="Favicon preview"
+                  emptyAriaLabel="Upload favicon"
+                  replaceAriaLabel="Replace favicon"
+                  removeAriaLabel="Remove favicon"
+                  helperText="ICO, PNG, or SVG up to 2MB."
+                  previewPaddingClassName="p-3"
+                  onFileSelect={(file) => setFaviconFile(file)}
+                  onRemove={() => {
+                    setFaviconFile(null);
+                    setFaviconPath("");
+                  }}
+                />
+              </FormField>
+              <FormField
+                label="Apple Touch Icon"
+                description="Used when customers save your storefront to an iPhone or iPad home screen."
+              >
+                <BrandingAssetPicker
+                  accept=".png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml"
+                  previewSrc={appleTouchIconPreview}
+                  previewAlt="Apple touch icon preview"
+                  emptyAriaLabel="Upload apple touch icon"
+                  replaceAriaLabel="Replace apple touch icon"
+                  removeAriaLabel="Remove apple touch icon"
+                  helperText="Square PNG recommended. Up to 2MB."
+                  previewPaddingClassName="p-3"
+                  onFileSelect={(file) => setAppleTouchIconFile(file)}
+                  onRemove={() => {
+                    setAppleTouchIconFile(null);
+                    setAppleTouchIconPath("");
+                  }}
+                />
+              </FormField>
+              <FormField
+                label="Open Graph Image"
+                description="Default preview image used when your storefront is shared in messages and social apps."
+              >
+                <BrandingAssetPicker
+                  accept=".png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml"
+                  previewSrc={ogImagePreview}
+                  previewAlt="Open Graph image preview"
+                  emptyAriaLabel="Upload Open Graph image"
+                  replaceAriaLabel="Replace Open Graph image"
+                  removeAriaLabel="Remove Open Graph image"
+                  helperText="Landscape image recommended. Up to 2MB."
+                  previewPaddingClassName="p-2"
+                  onFileSelect={(file) => setOgImageFile(file)}
+                  onRemove={() => {
+                    setOgImageFile(null);
+                    setOgImagePath("");
+                  }}
+                />
+              </FormField>
+              <FormField
+                label="Twitter / X Image"
+                description="Optional override for link previews on Twitter/X. Falls back to the Open Graph image if unset."
+              >
+                <BrandingAssetPicker
+                  accept=".png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml"
+                  previewSrc={twitterImagePreview}
+                  previewAlt="Twitter image preview"
+                  emptyAriaLabel="Upload Twitter image"
+                  replaceAriaLabel="Replace Twitter image"
+                  removeAriaLabel="Remove Twitter image"
+                  helperText="Landscape image recommended. Up to 2MB."
+                  previewPaddingClassName="p-2"
+                  onFileSelect={(file) => setTwitterImageFile(file)}
+                  onRemove={() => {
+                    setTwitterImageFile(null);
+                    setTwitterImagePath("");
+                  }}
+                />
+              </FormField>
+            </div>
+          </SectionCard>
+
           <SectionCard title="Store Visibility" description="Control whether your storefront is publicly accessible.">
-            <FormField label="Store Status" description="Status is managed through platform review workflow.">
+            <FormField label="Store Status" description="Status is managed through platform review workflow." inputId="store-settings-store-status">
               <div className="rounded-md border border-border/70 bg-muted/15 px-3 py-2 text-sm font-medium capitalize">{status.replace("_", " ")}</div>
             </FormField>
             <p className="text-sm text-muted-foreground">{statusCopy[status]}</p>
@@ -505,7 +744,7 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header, suppl
           <SectionCard title="SEO" description="Default storefront metadata used by search engines and social cards.">
             <div className="space-y-5">
               <div className="space-y-4">
-                <FormField label="SEO Title" description="Recommended max length: 60 characters.">
+                <FormField label="SEO Title" description="Recommended max length: 60 characters." inputId="store-settings-seo-title">
                   <Input
                     maxLength={120}
                     placeholder="At Home Apothecary | Small-batch wellness products"
@@ -513,7 +752,7 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header, suppl
                     onChange={(event) => setSeoTitle(event.target.value)}
                   />
                 </FormField>
-                <FormField label="SEO Description" description="Recommended max length: 155 characters.">
+                <FormField label="SEO Description" description="Recommended max length: 155 characters." inputId="store-settings-seo-description">
                   <Textarea
                     rows={3}
                     maxLength={320}
@@ -538,10 +777,10 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header, suppl
                   </p>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <FormField label="City">
+                  <FormField label="City" inputId="store-settings-seo-city">
                     <Input maxLength={120} placeholder="Albany" value={seoLocationCity} onChange={(event) => setSeoLocationCity(event.target.value)} />
                   </FormField>
-                  <FormField label="Region">
+                  <FormField label="Region" inputId="store-settings-seo-region">
                     <Input
                       maxLength={120}
                       placeholder="Capital District"
@@ -549,10 +788,10 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header, suppl
                       onChange={(event) => setSeoLocationRegion(event.target.value)}
                     />
                   </FormField>
-                  <FormField label="State / Province">
+                  <FormField label="State / Province" inputId="store-settings-seo-state">
                     <Input maxLength={120} placeholder="New York" value={seoLocationState} onChange={(event) => setSeoLocationState(event.target.value)} />
                   </FormField>
-                  <FormField label="Country Code">
+                  <FormField label="Country Code" inputId="store-settings-seo-country-code">
                     <Input
                       maxLength={2}
                       placeholder="US"
@@ -560,7 +799,7 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header, suppl
                       onChange={(event) => setSeoLocationCountryCode(event.target.value.toUpperCase())}
                     />
                   </FormField>
-                  <FormField label="Postal Code">
+                  <FormField label="Postal Code" inputId="store-settings-seo-postal-code">
                     <Input maxLength={32} placeholder="12203" value={seoLocationPostalCode} onChange={(event) => setSeoLocationPostalCode(event.target.value)} />
                   </FormField>
                 </div>
@@ -573,7 +812,7 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header, suppl
                 </div>
                 {seoLocationShowFullAddress ? (
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <FormField label="Address Line 1">
+                    <FormField label="Address Line 1" inputId="store-settings-seo-address-line-1">
                       <Input
                         maxLength={200}
                         placeholder="123 Main St"
@@ -581,7 +820,7 @@ export function StoreSettingsForm({ initialStore, initialLogoPath, header, suppl
                         onChange={(event) => setSeoLocationAddressLine1(event.target.value)}
                       />
                     </FormField>
-                    <FormField label="Address Line 2">
+                    <FormField label="Address Line 2" inputId="store-settings-seo-address-line-2">
                       <Input
                         maxLength={200}
                         placeholder="Suite B"

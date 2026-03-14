@@ -54,7 +54,18 @@ function defaultMetadata(): Metadata {
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
-  const storeSlug = await resolveStoreSlugFromDomain(host);
+  const headerStoreSlug =
+    [
+      requestHeaders.get("next-url"),
+      requestHeaders.get("x-pathname"),
+      requestHeaders.get("x-invoke-path"),
+      requestHeaders.get("x-matched-path"),
+      requestHeaders.get("referer")
+    ]
+      .map((value) => extractStorefrontSlugFromPath(value))
+      .find((value): value is string => Boolean(value)) ?? null;
+  const storeSlug = headerStoreSlug ?? (await resolveStoreSlugFromDomain(host));
+  const isPathBasedStorefront = Boolean(headerStoreSlug);
 
   if (!storeSlug) {
     return defaultMetadata();
@@ -72,7 +83,7 @@ export async function generateMetadata(): Promise<Metadata> {
       white_label_enabled: boolean;
     }>();
 
-  if (error || !store || store.status !== "active" || !store.white_label_enabled) {
+  if (error || !store || store.status !== "active" || (!isPathBasedStorefront && !store.white_label_enabled)) {
     return defaultMetadata();
   }
 

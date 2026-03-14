@@ -12,7 +12,6 @@ const HERO_BRAND_DISPLAY_OPTIONS = ["title", "logo", "logo_and_title"] as const;
 const PRODUCT_GRID_OPTIONS = [2, 3, 4] as const;
 const RADIUS_OPTIONS = ["soft", "rounded", "sharp"] as const;
 const CARD_STYLE_OPTIONS = ["solid", "outline", "elevated", "integrated"] as const;
-const BUTTON_STYLE_OPTIONS = ["rounded", "pill", "square"] as const;
 const SPACING_OPTIONS = ["compact", "comfortable", "airy"] as const;
 const FONT_PRESET_OPTIONS = ["classic", "modern", "clean"] as const;
 const STOREFRONT_FONT_FAMILY_OPTIONS = [
@@ -39,9 +38,7 @@ export type HeroBrandDisplay = (typeof HERO_BRAND_DISPLAY_OPTIONS)[number];
 export type ProductGridColumns = (typeof PRODUCT_GRID_OPTIONS)[number];
 export type RadiusScale = (typeof RADIUS_OPTIONS)[number];
 export type CardStyle = (typeof CARD_STYLE_OPTIONS)[number];
-export type ButtonStyle = (typeof BUTTON_STYLE_OPTIONS)[number];
 export type SpacingScale = (typeof SPACING_OPTIONS)[number];
-export type FontPreset = (typeof FONT_PRESET_OPTIONS)[number];
 export type StorefrontFontFamily = (typeof STOREFRONT_FONT_FAMILY_OPTIONS)[number];
 export type NavItemId = (typeof NAV_ITEM_IDS)[number];
 export type FooterItemId = (typeof FOOTER_ITEM_IDS)[number];
@@ -63,9 +60,7 @@ export type StorefrontThemeConfig = {
   productGridColumns: ProductGridColumns;
   radiusScale: RadiusScale;
   cardStyle: CardStyle;
-  buttonStyle: ButtonStyle;
   spacingScale: SpacingScale;
-  fontPreset: FontPreset;
   fontFamily: StorefrontFontFamily;
   showContentBlocks: boolean;
   showPolicyStrip: boolean;
@@ -188,9 +183,7 @@ export const DEFAULT_STOREFRONT_THEME_CONFIG: StorefrontThemeConfig = {
   productGridColumns: 2,
   radiusScale: "sharp",
   cardStyle: "integrated",
-  buttonStyle: "rounded",
   spacingScale: "comfortable",
-  fontPreset: "classic",
   fontFamily: "fraunces-manrope",
   showContentBlocks: true,
   showPolicyStrip: true,
@@ -422,6 +415,7 @@ function pickString(value: unknown, fallback: string, maxLength: number): string
 
 export function resolveStorefrontThemeConfig(raw: unknown): StorefrontThemeConfig {
   const candidate = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const legacyFontPreset = pickStringOption(candidate.fontPreset, FONT_PRESET_OPTIONS, "classic");
   const resolvedHeroBrandDisplay = pickStringOption(
     candidate.heroBrandDisplay,
     HERO_BRAND_DISPLAY_OPTIONS,
@@ -431,9 +425,9 @@ export function resolveStorefrontThemeConfig(raw: unknown): StorefrontThemeConfi
   const fallbackHeroShowTitle = resolvedHeroBrandDisplay === "title" || resolvedHeroBrandDisplay === "logo_and_title";
 
   const fallbackFontFamily =
-    candidate.fontPreset === "modern"
+    legacyFontPreset === "modern"
       ? "trebuchet"
-      : candidate.fontPreset === "clean"
+      : legacyFontPreset === "clean"
         ? "helvetica-neue"
         : DEFAULT_STOREFRONT_THEME_CONFIG.fontFamily;
 
@@ -451,9 +445,7 @@ export function resolveStorefrontThemeConfig(raw: unknown): StorefrontThemeConfi
     ),
     radiusScale: pickStringOption(candidate.radiusScale, RADIUS_OPTIONS, DEFAULT_STOREFRONT_THEME_CONFIG.radiusScale),
     cardStyle: pickStringOption(candidate.cardStyle, CARD_STYLE_OPTIONS, DEFAULT_STOREFRONT_THEME_CONFIG.cardStyle),
-    buttonStyle: pickStringOption(candidate.buttonStyle, BUTTON_STYLE_OPTIONS, DEFAULT_STOREFRONT_THEME_CONFIG.buttonStyle),
     spacingScale: pickStringOption(candidate.spacingScale, SPACING_OPTIONS, DEFAULT_STOREFRONT_THEME_CONFIG.spacingScale),
-    fontPreset: pickStringOption(candidate.fontPreset, FONT_PRESET_OPTIONS, DEFAULT_STOREFRONT_THEME_CONFIG.fontPreset),
     fontFamily: pickStringOption(candidate.fontFamily, STOREFRONT_FONT_FAMILY_OPTIONS, fallbackFontFamily),
     showContentBlocks: pickBoolean(candidate.showContentBlocks, DEFAULT_STOREFRONT_THEME_CONFIG.showContentBlocks),
     showPolicyStrip: pickBoolean(candidate.showPolicyStrip, DEFAULT_STOREFRONT_THEME_CONFIG.showPolicyStrip),

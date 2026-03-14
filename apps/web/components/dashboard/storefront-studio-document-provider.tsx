@@ -425,6 +425,10 @@ export function StorefrontStudioDocumentProvider({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           logoPath: brandingDraftSnapshot?.logo_path ?? null,
+          faviconPath: brandingDraftSnapshot?.favicon_path ?? null,
+          appleTouchIconPath: brandingDraftSnapshot?.apple_touch_icon_path ?? null,
+          ogImagePath: brandingDraftSnapshot?.og_image_path ?? null,
+          twitterImagePath: brandingDraftSnapshot?.twitter_image_path ?? null,
           primaryColor: brandingDraftSnapshot?.primary_color ?? null,
           accentColor: brandingDraftSnapshot?.accent_color ?? null,
           themeJson: brandingDraftSnapshot?.theme_json ?? {}

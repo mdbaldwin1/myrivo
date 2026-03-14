@@ -15,7 +15,7 @@ import { setEditorValueAtPath } from "@/lib/store-editor/object-path";
 export function StorefrontStudioStorefrontEditorHomeTab() {
   const document = useOptionalStorefrontStudioDocument();
   const showHeroId = useId();
-  const showTitleId = useId();
+  const heroBrandDisplayId = useId();
   const showContentBlocksId = useId();
   const showFeaturedProductsId = useId();
   const showReviewsOnHomeId = useId();
@@ -62,13 +62,19 @@ export function StorefrontStudioStorefrontEditorHomeTab() {
                 <option value="large">Large</option>
               </Select>
             </FormField>
-            <StorefrontStudioStorefrontEditorPanelToggleRow
-              label="Show title"
-              inputId={showTitleId}
-              description="Display the store name in the Home hero."
-              checked={getBoolean(section, "hero.showTitle", (getString(section, "hero.brandDisplay") || "title") !== "logo")}
-              onChange={(checked) => document.setSectionDraft("home", (current) => setEditorValueAtPath(current, "hero.showTitle", checked))}
-            />
+            <FormField label="Hero brand display" inputId={heroBrandDisplayId}>
+              <Select
+                id={heroBrandDisplayId}
+                value={getString(section, "hero.brandDisplay") || "title"}
+                onChange={(event) =>
+                  document.setSectionDraft("home", (current) => setEditorValueAtPath(current, "hero.brandDisplay", event.target.value))
+                }
+              >
+                <option value="title">Title only</option>
+                <option value="logo">Logo only</option>
+                <option value="logo_and_title">Logo and title</option>
+              </Select>
+            </FormField>
           </>
         ) : null}
       </StorefrontStudioStorefrontEditorPanelTabSection>

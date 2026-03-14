@@ -29,6 +29,10 @@ export default async function StoreWorkspaceGeneralSettingsPage({ params }: Page
       <StoreSettingsForm
         initialStore={bundle.store}
         initialLogoPath={bundle.branding?.logo_path ?? null}
+        initialFaviconPath={bundle.branding?.favicon_path ?? null}
+        initialAppleTouchIconPath={bundle.branding?.apple_touch_icon_path ?? null}
+        initialOgImagePath={bundle.branding?.og_image_path ?? null}
+        initialTwitterImagePath={bundle.branding?.twitter_image_path ?? null}
         header={<DashboardPageHeader title="General" description="Store review workflow, billing, and SEO metadata belong in Store Settings." />}
         supplementalContent={<BillingPlanSettings title="Billing Plan" />}
       />

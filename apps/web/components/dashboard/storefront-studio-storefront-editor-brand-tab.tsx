@@ -41,6 +41,9 @@ export function StorefrontStudioStorefrontEditorBrandTab() {
             : "All brand changes saved."
       }
     >
+      <p className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+        Use this tab for visual brand controls like colors, typography, spacing, and CTA style. Browser icons, social preview images, and SEO metadata live in Store Settings &gt; General.
+      </p>
       <FormField label="Primary">
         <StorefrontStudioColorField
           value={brandingDraft.primary_color ?? "#0F7B84"}
