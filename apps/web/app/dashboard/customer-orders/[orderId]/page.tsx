@@ -4,6 +4,7 @@ import { CustomerOrderDetailView } from "@/components/customer/customer-order-de
 import { sanitizeReturnTo } from "@/lib/auth/return-to";
 import { resolveCustomerStorefrontLinksBySlug } from "@/lib/customer/storefront-links";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { OrderShippingDelayRecord } from "@/types/database";
 
 const paramsSchema = z.object({
   orderId: z.string().uuid()
@@ -103,9 +104,29 @@ export default async function DashboardCustomerOrderPage({ params, searchParams 
     throw new Error(itemsError.message);
   }
 
+  const { data: shippingDelays, error: shippingDelaysError } = await supabase
+    .from("order_shipping_delays")
+    .select("id,order_id,store_id,created_by_user_id,resolved_by_user_id,status,reason_key,customer_path,original_ship_promise,revised_ship_date,internal_note,resolution_note,metadata_json,resolved_at,created_at,updated_at")
+    .eq("order_id", order.id)
+    .eq("store_id", order.store_id)
+    .order("created_at", { ascending: false })
+    .returns<OrderShippingDelayRecord[]>();
+
+  if (shippingDelaysError) {
+    throw new Error(shippingDelaysError.message);
+  }
+
   const store = Array.isArray(order.stores) ? order.stores[0] : order.stores;
   const storefrontLinksBySlug = await resolveCustomerStorefrontLinksBySlug(store?.slug ? [store.slug] : []);
   const storefrontHref = store?.slug ? storefrontLinksBySlug[store.slug]?.storefrontHref ?? null : null;
 
-  return <CustomerOrderDetailView order={order} items={items ?? []} backHref={backHref} storefrontHref={storefrontHref} />;
+  return (
+    <CustomerOrderDetailView
+      order={order}
+      items={items ?? []}
+      shippingDelays={shippingDelays ?? []}
+      backHref={backHref}
+      storefrontHref={storefrontHref}
+    />
+  );
 }

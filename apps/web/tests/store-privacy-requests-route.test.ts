@@ -87,7 +87,7 @@ beforeEach(() => {
       status: "in_progress",
       source: "privacy_page",
       details: "Need details.",
-      metadata_json: {},
+      metadata_json: { global_privacy_control: true },
       resolved_at: null,
       resolved_by_user_id: null,
       created_at: "2026-03-13T00:00:00.000Z",
@@ -107,6 +107,10 @@ describe("store privacy requests route", () => {
 
     expect(response.status).toBe(200);
     expect(payload.requests[0]).toMatchObject({ id: "request-1", status: "in_progress" });
+    expect(payload.requests[0]).toMatchObject({
+      source: "privacy_page",
+      metadata_json: { global_privacy_control: true }
+    });
   });
 
   test("PATCH updates request status and logs audit metadata", async () => {

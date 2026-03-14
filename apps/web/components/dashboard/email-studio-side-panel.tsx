@@ -19,6 +19,7 @@ const templateIcons = {
   customerConfirmation: PackageCheck,
   ownerNewOrder: UserRound,
   pickupUpdated: MapPinned,
+  shippingDelay: Truck,
   refundIssued: CreditCard,
   disputeOpened: Scale,
   disputeResolved: Scale,
@@ -59,6 +60,7 @@ export function EmailStudioSidePanel({
   const customerItems = [
     document.templates.customerConfirmation,
     document.templates.pickupUpdated,
+    document.templates.shippingDelay,
     document.templates.refundIssued,
     document.templates.disputeOpened,
     document.templates.disputeResolved,

@@ -5,6 +5,7 @@ import { CookieConsentProvider } from "@/components/privacy/cookie-consent-provi
 import { SkipLink } from "@/components/ui/skip-link";
 import { Toaster } from "@/components/ui/toaster";
 import { COOKIE_CONSENT_COOKIE_NAME, resolveCookieConsent } from "@/lib/privacy/cookies";
+import { resolveBrowserPrivacySignalsFromHeaders } from "@/lib/privacy/signals";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
@@ -133,6 +134,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const requestHeaders = await headers();
   const cookieStore = await cookies();
   const initialConsent = resolveCookieConsent(cookieStore.get(COOKIE_CONSENT_COOKIE_NAME)?.value ?? null);
+  const initialBrowserPrivacySignals = resolveBrowserPrivacySignalsFromHeaders(requestHeaders);
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
   const headerStoreSlug =
     [
@@ -201,7 +203,10 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   return (
     <html lang="en">
       <body style={storefrontBodyStyle} {...storefrontBodyDataset}>
-        <CookieConsentProvider initialConsent={initialConsent}>
+        <CookieConsentProvider
+          initialConsent={initialConsent}
+          initialBrowserPrivacySignals={initialBrowserPrivacySignals}
+        >
           <SkipLink />
           {children}
           <Toaster />

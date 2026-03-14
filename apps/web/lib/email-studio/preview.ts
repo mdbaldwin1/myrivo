@@ -53,7 +53,11 @@ export const emailStudioPreviewScenarios: readonly EmailStudioPreviewScenario[] 
       status: "ready for pickup",
       trackingUrl: "",
       trackingNumber: "",
-      carrier: ""
+      carrier: "",
+      shippingDelayReason: "Carrier disruption",
+      originalShipPromise: "Ships by Mar 16, 2026",
+      revisedShipDate: "Mar 19, 2026",
+      shippingDelayCustomerPath: "Please review the revised ship date and confirm whether you want us to continue."
     }
   },
   {
@@ -97,7 +101,11 @@ export const emailStudioPreviewScenarios: readonly EmailStudioPreviewScenario[] 
       status: "shipped",
       trackingUrl: "https://tracking.example.com/ZX123456789US",
       trackingNumber: "ZX123456789US",
-      carrier: "UPS"
+      carrier: "UPS",
+      shippingDelayReason: "Carrier disruption",
+      originalShipPromise: "Ships by Mar 16, 2026",
+      revisedShipDate: "Mar 19, 2026",
+      shippingDelayCustomerPath: "Please review the revised ship date and confirm whether you want us to continue."
     }
   }
 ] as const;

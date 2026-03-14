@@ -9,6 +9,9 @@ type NewsletterUnsubscribeFormProps = {
   initialStore: string;
 };
 
+const UNSUBSCRIBE_EMAIL_INPUT_ID = "newsletter-unsubscribe-email";
+const UNSUBSCRIBE_STORE_INPUT_ID = "newsletter-unsubscribe-store";
+
 export function NewsletterUnsubscribeForm({ initialStore }: NewsletterUnsubscribeFormProps) {
   const [email, setEmail] = useState("");
   const [store, setStore] = useState(initialStore);
@@ -30,7 +33,7 @@ export function NewsletterUnsubscribeForm({ initialStore }: NewsletterUnsubscrib
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email })
+      body: JSON.stringify({ email, source: "unsubscribe_form" })
     });
 
     const payload = (await response.json()) as { error?: string };
@@ -53,18 +56,28 @@ export function NewsletterUnsubscribeForm({ initialStore }: NewsletterUnsubscrib
       </div>
 
       <form className="space-y-3" onSubmit={handleSubmit}>
+        <label htmlFor={UNSUBSCRIBE_EMAIL_INPUT_ID} className="sr-only">
+          Email address
+        </label>
         <Input
+          id={UNSUBSCRIBE_EMAIL_INPUT_ID}
           type="email"
           required
           value={email}
           onChange={(event) => setEmail(event.target.value)}
           placeholder="you@example.com"
+          aria-label="Email address"
           className="h-11"
         />
+        <label htmlFor={UNSUBSCRIBE_STORE_INPUT_ID} className="sr-only">
+          Store slug
+        </label>
         <Input
+          id={UNSUBSCRIBE_STORE_INPUT_ID}
           value={store}
           onChange={(event) => setStore(event.target.value)}
           placeholder="store slug (optional on custom domain)"
+          aria-label="Store slug"
           className="h-11"
         />
         <Button className="h-11 w-full" type="submit" disabled={submitting}>

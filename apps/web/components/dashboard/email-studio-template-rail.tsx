@@ -8,6 +8,7 @@ const templateIcons = {
   customerConfirmation: PackageCheck,
   ownerNewOrder: UserRound,
   pickupUpdated: MapPinned,
+  shippingDelay: Truck,
   refundIssued: CreditCard,
   disputeOpened: Scale,
   disputeResolved: Scale,

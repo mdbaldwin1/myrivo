@@ -10,12 +10,15 @@ describe("email studio model", () => {
   test("builds a complete default document for the current transactional templates", () => {
     const document = buildDefaultEmailStudioDocument("Olive Mercantile");
 
+    expect(document.messageType).toBe("transactional");
     expect(document.senderName).toBe("");
     expect(document.replyToEmail).toBe("");
     expect(document.theme.accentColor).toBe("#7C5C3B");
     expect(document.templates.customerConfirmation.subject).toContain("{orderShortId}");
+    expect(document.templates.customerConfirmation.messageType).toBe("transactional");
     expect(document.templates.customerConfirmation.bodyHtml).toContain("{items}");
     expect(document.templates.pickupUpdated.bodyHtml).toContain("{previousPickupDetails}");
+    expect(document.templates.shippingDelay.bodyHtml).toContain("{shippingDelayReason}");
     expect(document.templates.refundIssued.bodyHtml).toContain("{refundAmount}");
     expect(document.templates.disputeOpened.bodyHtml).toContain("{disputeReason}");
     expect(document.templates.disputeResolved.footerNote).toContain("{policiesUrl}");
@@ -53,6 +56,7 @@ describe("email studio model", () => {
     );
 
     expect(document.senderName).toBe("Olive Mercantile");
+    expect(document.messageType).toBe("transactional");
     expect(document.replyToEmail).toBe("support@example.com");
     expect(document.theme.accentColor).toBe("#112233");
     expect(document.theme.borderRadius).toBe("pill");
@@ -97,6 +101,8 @@ describe("email studio model", () => {
     expect(EMAIL_STUDIO_TOKENS.some((token) => token.token === "{previousPickupDetails}")).toBe(true);
     expect(EMAIL_STUDIO_TOKENS.some((token) => token.token === "{pickupUpdateReason}")).toBe(true);
     expect(EMAIL_STUDIO_TOKENS.some((token) => token.token === "{trackingUrl}")).toBe(true);
+    expect(EMAIL_STUDIO_TOKENS.some((token) => token.token === "{shippingDelayReason}")).toBe(true);
+    expect(EMAIL_STUDIO_TOKENS.some((token) => token.token === "{revisedShipDate}")).toBe(true);
     expect(EMAIL_STUDIO_TOKENS.some((token) => token.token === "{policiesUrl}")).toBe(true);
     expect(EMAIL_STUDIO_TOKENS.some((token) => token.token === "{refundAmount}")).toBe(true);
     expect(EMAIL_STUDIO_TOKENS.some((token) => token.token === "{disputeStatus}")).toBe(true);

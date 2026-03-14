@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { PlatformAccessibilityReportsPanel } from "@/components/dashboard/admin/platform-accessibility-reports-panel";
 import { PlatformReviewsHealthPanel } from "@/components/dashboard/admin/platform-reviews-health-panel";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
@@ -210,6 +211,7 @@ export function PlatformConsole({ currentGlobalRole }: PlatformConsoleProps) {
       </SectionCard>
 
       <PlatformReviewsHealthPanel />
+      <PlatformAccessibilityReportsPanel />
 
       <SectionCard title="Approval Queue" description="Stores waiting for review before going live.">
         {overview ? (

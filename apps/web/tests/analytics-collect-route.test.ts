@@ -48,6 +48,43 @@ describe("analytics collect route", () => {
     expect(response.status).toBe(400);
   });
 
+  test("no-ops when Global Privacy Control is active even if consent cookie is present", async () => {
+    const route = await import("@/app/api/analytics/collect/route");
+    const request = new NextRequest("http://localhost:3000/api/analytics/collect", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: analyticsConsentCookie,
+        "sec-gpc": "1"
+      },
+      body: JSON.stringify({
+        storeSlug: "demo-store",
+        events: [{ eventType: "page_view", path: "/s/demo-store" }]
+      })
+    });
+
+    adminFromMock.mockImplementation((table: string) => {
+      if (table === "stores") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({
+                data: { id: "store-1", slug: "demo-store", status: "active" },
+                error: null
+              }))
+            }))
+          }))
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const response = await route.POST(request);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, acceptedEvents: 0 });
+  });
+
   test("upserts session and deduplicates duplicate idempotency keys", async () => {
     const upsertEventMock = vi.fn(async () => ({ error: null }));
     const upsertSessionMock = vi.fn(() => ({

@@ -10,6 +10,7 @@ import {
   sanitizeMarketingReferrerHost
 } from "@/lib/marketing/analytics-governance";
 import { COOKIE_CONSENT_COOKIE_NAME, hasAnalyticsConsent, resolveCookieConsent } from "@/lib/privacy/cookies";
+import { canEnableAnalyticsWithPrivacySignals, resolveBrowserPrivacySignalsFromHeaders } from "@/lib/privacy/signals";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -37,7 +38,8 @@ export async function POST(request: NextRequest) {
 
   const cookieStore = await cookies();
   const consent = resolveCookieConsent(cookieStore.get(COOKIE_CONSENT_COOKIE_NAME)?.value ?? null);
-  if (!hasAnalyticsConsent(consent)) {
+  const browserPrivacySignals = resolveBrowserPrivacySignalsFromHeaders(request.headers);
+  if (!hasAnalyticsConsent(consent) || !canEnableAnalyticsWithPrivacySignals(browserPrivacySignals)) {
     return NextResponse.json({ ok: true, ignored: "analytics-disabled" });
   }
 

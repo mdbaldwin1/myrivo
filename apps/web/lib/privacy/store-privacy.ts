@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
+  StorePrivacyOptOutRecord,
+  StorePrivacyOptOutState,
   StorePrivacyProfileRecord,
   StorePrivacyRequestRecord,
   StorePrivacyRequestStatus,
@@ -9,6 +11,7 @@ import type {
 } from "@/types/database";
 
 export type { StorePrivacyRequestStatus, StorePrivacyRequestType };
+export type { StorePrivacyOptOutState };
 
 export const STORE_PRIVACY_REQUEST_TYPES: readonly StorePrivacyRequestType[] = [
   "access",
@@ -18,29 +21,33 @@ export const STORE_PRIVACY_REQUEST_TYPES: readonly StorePrivacyRequestType[] = [
   "opt_out_sale_share"
 ];
 export const STORE_PRIVACY_REQUEST_STATUSES = ["open", "in_progress", "completed", "closed"] as const;
+export const STORE_PRIVACY_OPT_OUT_STATES = ["active", "revoked"] as const;
 
 export const STORE_PRIVACY_INFORMATION_ARCHITECTURE = {
   platformOwns: [
     "platform-wide privacy statement and support posture",
     "account-signup legal acceptance and platform-level privacy disclosure",
-    "future automated rights fulfillment infrastructure",
-    "global privacy control and browser-signal support when implemented"
+    "browser-signal detection and enforcement, including Global Privacy Control",
+    "future automated rights fulfillment infrastructure and shared suppression plumbing"
   ],
   storeSettingsLegalOwns: [
     "store-level privacy contact details",
     "store-level California/privacy addenda",
     "point-of-collection notice enablement",
-    "privacy request intake and operator workflow state"
+    "privacy request intake and operator workflow state",
+    "whether do-not-sell/share actions are exposed on the storefront"
   ],
   storefrontOwns: [
     "rendering privacy notices at collection points",
     "privacy policy and rights links in shopper-facing navigation",
-    "customer-facing privacy request form and confirmation messaging"
+    "customer-facing privacy request form and confirmation messaging",
+    "showing store-scoped opt-out and California rights entry points"
   ],
   nonGoals: [
     "a separate drag-and-drop privacy studio",
     "forcing every store to publish a standalone California page by default",
-    "store-managed account-signup legal acceptance"
+    "store-managed account-signup legal acceptance",
+    "store-specific browser-signal interpretation rules"
   ]
 } as const;
 
@@ -179,6 +186,21 @@ export async function getStorePrivacyRequestsByStoreId(supabase: SupabaseClient,
   return data ?? [];
 }
 
+export async function getStorePrivacyOptOutsByStoreId(supabase: SupabaseClient, storeId: string) {
+  const { data, error } = await supabase
+    .from("store_privacy_opt_outs")
+    .select("*")
+    .eq("store_id", storeId)
+    .order("updated_at", { ascending: false })
+    .returns<StorePrivacyOptOutRecord[]>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data ?? [];
+}
+
 export function getStorePrivacyRequestStatusLabel(status: StorePrivacyRequestStatus) {
   switch (status) {
     case "open":
@@ -189,5 +211,14 @@ export function getStorePrivacyRequestStatusLabel(status: StorePrivacyRequestSta
       return "Completed";
     case "closed":
       return "Closed";
+  }
+}
+
+export function getStorePrivacyOptOutStateLabel(state: StorePrivacyOptOutState) {
+  switch (state) {
+    case "active":
+      return "Active";
+    case "revoked":
+      return "Revoked";
   }
 }

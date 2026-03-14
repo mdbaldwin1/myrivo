@@ -38,6 +38,8 @@ function serializeRequest(row: StorePrivacyRequestRecord) {
     full_name: row.full_name,
     request_type: row.request_type,
     status: row.status,
+    source: row.source,
+    metadata_json: row.metadata_json,
     details: row.details,
     created_at: row.created_at,
     updated_at: row.updated_at,

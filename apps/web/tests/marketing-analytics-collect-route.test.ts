@@ -54,6 +54,41 @@ describe("marketing analytics collect route", () => {
     expect(adminFromMock).not.toHaveBeenCalled();
   });
 
+  test("ignores collection when Global Privacy Control is active", async () => {
+    cookiesMock.mockResolvedValue({
+      get: vi.fn((name: string) => {
+        if (name === "myrivo_cookie_consent") {
+          return {
+            value: serializeCookieConsent(createCookieConsentRecord({ analytics: true }))
+          };
+        }
+        return undefined;
+      })
+    });
+
+    const route = await import("@/app/api/marketing/analytics/collect/route");
+    const request = new NextRequest("http://localhost:3000/api/marketing/analytics/collect", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "http://localhost:3000",
+        referer: "http://localhost:3000/pricing",
+        host: "localhost:3000",
+        "x-forwarded-host": "localhost:3000",
+        "sec-gpc": "1"
+      },
+      body: JSON.stringify({
+        entryPath: "/pricing",
+        events: [{ eventType: "page_view", path: "/pricing", pageKey: "pricing" }]
+      })
+    });
+
+    const response = await route.POST(request);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, ignored: "analytics-disabled" });
+    expect(adminFromMock).not.toHaveBeenCalled();
+  });
+
   test("persists a session, sanitizes payloads, and stores deduplicated marketing events", async () => {
     cookiesMock.mockResolvedValue({
       get: vi.fn((name: string) => {

@@ -79,6 +79,11 @@ export function StorefrontPrivacyRequestForm({
 
   return (
     <form onSubmit={submit} className="space-y-4">
+      {requestType === "opt_out_sale_share" ? (
+        <div className="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm leading-relaxed text-muted-foreground">
+          This request records a do-not-sell/share preference for this email address and sends it to the store for follow-up.
+        </div>
+      ) : null}
       <div className="grid gap-3 sm:grid-cols-2">
         <FormField label="Full name" description="Optional, but helpful if the store needs to confirm your request.">
           <Input value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Your name" />
@@ -109,7 +114,11 @@ export function StorefrontPrivacyRequestForm({
           rows={6}
           value={details}
           onChange={(event) => setDetails(event.target.value)}
-          placeholder="Tell the store what you need, any relevant order or account details, and how they should contact you."
+          placeholder={
+            requestType === "opt_out_sale_share"
+              ? "Add any extra context, such as alternate emails, order details, or questions about this opt-out request."
+              : "Tell the store what you need, any relevant order or account details, and how they should contact you."
+          }
         />
       </FormField>
 

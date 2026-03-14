@@ -7,7 +7,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
 
 const unsubscribeSchema = z.object({
-  email: z.string().email().max(320)
+  email: z.string().email().max(320),
+  source: z.string().trim().max(80).optional().default("unsubscribe_form")
 });
 
 export async function POST(request: NextRequest) {
@@ -32,6 +33,7 @@ export async function POST(request: NextRequest) {
   }
 
   const email = parsed.data.email.trim().toLowerCase();
+  const unsubscribedAt = new Date().toISOString();
   const supabase = createSupabaseAdminClient();
   const storeSlug = await resolveStoreSlugFromRequestAsync(request);
 
@@ -72,7 +74,12 @@ export async function POST(request: NextRequest) {
     .from("store_email_subscribers")
     .update({
       status: "unsubscribed",
-      unsubscribed_at: new Date().toISOString()
+      unsubscribed_at: unsubscribedAt,
+      metadata_json: {
+        suppression_reason: "user_unsubscribed",
+        suppression_source: parsed.data.source.trim() || "unsubscribe_form",
+        suppression_recorded_at: unsubscribedAt
+      }
     })
     .eq("id", existing.id);
 

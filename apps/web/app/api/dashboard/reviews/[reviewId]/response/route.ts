@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { logAuditEvent } from "@/lib/audit/log";
 import { notifyCustomerReviewResponded } from "@/lib/notifications/owner-notifications";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getOwnedStoreBundle, getOwnedStoreBundleForSlug } from "@/lib/stores/owner-store";
@@ -101,6 +102,18 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ rev
     }).catch(() => null);
   }
 
+  await logAuditEvent({
+    storeId: bundle.store.id,
+    actorUserId: user.id,
+    action: "review_response_saved",
+    entity: "review",
+    entityId: review.id,
+    metadata: {
+      responseId: response.id,
+      responseLength: payload.data.body.length
+    }
+  });
+
   return NextResponse.json({ response });
 }
 
@@ -143,6 +156,15 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  await logAuditEvent({
+    storeId: bundle.store.id,
+    actorUserId: user.id,
+    action: "review_response_deleted",
+    entity: "review",
+    entityId: params.data.reviewId,
+    metadata: {}
+  });
 
   return NextResponse.json({ ok: true });
 }

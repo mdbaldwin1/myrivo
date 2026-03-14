@@ -38,6 +38,16 @@ Every support handoff should include:
 - audit evidence or screenshots
 - next recommended action
 
+## Accessibility Escalations
+
+For accessibility barriers, include:
+
+- the exact page or feature involved
+- assistive technology, browser, and device context
+- whether the issue blocks checkout, authentication, legal/privacy choice, or store management
+- the accessibility report id from the Admin Workspace queue when available
+- the current severity and status (`new`, `triaged`, `in_progress`, `resolved`, or `dismissed`)
+
 ## Related Docs
 
 - `/docs/admin-dashboard-and-operations`

@@ -25,6 +25,12 @@ Target same-day handling for critical violations and 1-business-day handling for
 ## Evidence Handling
 Capture review ID, action taken, rationale, and timestamps for every moderation event.
 
+For review moderation specifically:
+
+- use policy-based reasons, not sentiment-based reasons like `low rating`
+- preserve legitimate negative feedback when it is honest and on-topic
+- prefer an owner response when the issue is customer experience rather than abuse or fraud
+
 ## Related Docs
 
 - `/docs/admin-dashboard-and-operations`

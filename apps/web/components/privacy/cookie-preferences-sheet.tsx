@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 type CookiePreferencesSheetProps = {
   open: boolean;
   analyticsEnabled: boolean;
+  globalPrivacyControlEnabled?: boolean;
   onOpenChange: (open: boolean) => void;
   onSave: (analyticsEnabled: boolean) => void;
 };
@@ -19,6 +20,7 @@ type CookiePreferencesSheetProps = {
 export function CookiePreferencesSheet({
   open,
   analyticsEnabled,
+  globalPrivacyControlEnabled = false,
   onOpenChange,
   onSave
 }: CookiePreferencesSheetProps) {
@@ -94,10 +96,16 @@ export function CookiePreferencesSheet({
                 <p className="text-sm leading-relaxed text-muted-foreground">
                   Help store owners understand traffic, product interest, and conversion performance on their storefronts.
                 </p>
+                {globalPrivacyControlEnabled ? (
+                  <p className="text-sm leading-relaxed text-foreground/80">
+                    Your browser is sending a Global Privacy Control signal, so analytics stays off even if you previously opted in.
+                  </p>
+                ) : null}
               </div>
               <Switch
-                checked={draftAnalyticsEnabled}
+                checked={globalPrivacyControlEnabled ? false : draftAnalyticsEnabled}
                 onChange={(event) => setDraftAnalyticsEnabled(event.target.checked)}
+                disabled={globalPrivacyControlEnabled}
                 className={cn(radiusClass, isStorefront && "[&>span]:rounded-[inherit]")}
               />
             </div>
@@ -133,7 +141,7 @@ export function CookiePreferencesSheet({
               onClick={async () => {
                 setIsSaving(true);
                 try {
-                  await onSave(draftAnalyticsEnabled);
+                  await onSave(globalPrivacyControlEnabled ? false : draftAnalyticsEnabled);
                 } finally {
                   setIsSaving(false);
                 }

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { readReviewIncentiveDisclosure } from "@/lib/reviews/compliance";
 
 export type ReviewSort = "newest" | "highest" | "lowest";
 
@@ -43,6 +44,7 @@ type ReviewRow = {
   title: string | null;
   body: string | null;
   verified_purchase: boolean;
+  metadata: Record<string, unknown> | null;
   created_at: string;
   published_at: string | null;
   review_media?: MediaRow[] | null;
@@ -103,7 +105,7 @@ export async function listPublishedReviews(admin: SupabaseClient, filters: Revie
   let query = admin
     .from("reviews")
     .select(
-      "id,store_id,product_id,review_type,reviewer_name,rating,title,body,verified_purchase,created_at,published_at,review_media(id,storage_path,public_url,mime_type,size_bytes,width,height,sort_order,status,created_at),review_responses(id,body,created_at,updated_at)"
+      "id,store_id,product_id,review_type,reviewer_name,rating,title,body,verified_purchase,metadata,created_at,published_at,review_media(id,storage_path,public_url,mime_type,size_bytes,width,height,sort_order,status,created_at),review_responses(id,body,created_at,updated_at)"
     )
     .eq("status", "published")
     .eq("store_id", filters.storeId);
@@ -144,6 +146,7 @@ export async function listPublishedReviews(admin: SupabaseClient, filters: Revie
     const media = (row.review_media ?? []).filter((asset) => asset.status === "active").sort((a, b) => a.sort_order - b.sort_order);
     const responseRaw = row.review_responses;
     const response = Array.isArray(responseRaw) ? responseRaw[0] : responseRaw;
+    const incentiveDisclosure = readReviewIncentiveDisclosure(row.metadata);
 
     return {
       id: row.id,
@@ -155,6 +158,7 @@ export async function listPublishedReviews(admin: SupabaseClient, filters: Revie
       title: row.title,
       body: row.body,
       verifiedPurchase: row.verified_purchase,
+      incentiveDisclosure,
       createdAt: row.created_at,
       publishedAt: row.published_at,
       media: media.map((asset) => ({

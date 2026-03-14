@@ -70,6 +70,12 @@ const CATALOG: Record<string, NotificationCatalogEntry> = {
     defaultSeverity: "info",
     defaultTargets: ["in_app"]
   },
+  "order.shipping_delay.customer": {
+    eventType: "order.shipping_delay.customer",
+    category: "order",
+    defaultSeverity: "warning",
+    defaultTargets: ["in_app"]
+  },
   "order.refunded.customer": {
     eventType: "order.refunded.customer",
     category: "order",

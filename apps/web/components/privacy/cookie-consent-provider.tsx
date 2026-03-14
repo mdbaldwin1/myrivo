@@ -21,10 +21,17 @@ import {
   serializeCookieConsent,
   type CookieConsentRecord
 } from "@/lib/privacy/cookies";
+import {
+  canEnableAnalyticsWithPrivacySignals,
+  getDefaultBrowserPrivacySignals,
+  resolveBrowserPrivacySignalsFromNavigator,
+  type BrowserPrivacySignals
+} from "@/lib/privacy/signals";
 
 type CookieConsentContextValue = {
   consent: CookieConsentRecord;
   analyticsEnabled: boolean;
+  globalPrivacyControlEnabled: boolean;
   openPreferences: () => void;
   savePreferences: (analyticsEnabled: boolean) => Promise<void>;
   setConsentChoice: (analyticsEnabled: boolean) => Promise<void>;
@@ -67,13 +74,22 @@ function shouldShowCookieUi(pathname: string | null) {
 
 type CookieConsentProviderProps = {
   initialConsent: CookieConsentRecord;
+  initialBrowserPrivacySignals?: BrowserPrivacySignals;
   children: ReactNode;
 };
 
-export function CookieConsentProvider({ initialConsent, children }: CookieConsentProviderProps) {
+export function CookieConsentProvider({
+  initialConsent,
+  initialBrowserPrivacySignals = getDefaultBrowserPrivacySignals(),
+  children
+}: CookieConsentProviderProps) {
   const pathname = usePathname();
   const [consent, setConsent] = useState<CookieConsentRecord>(initialConsent);
+  const [browserPrivacySignals, setBrowserPrivacySignals] = useState<BrowserPrivacySignals>(initialBrowserPrivacySignals);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
+
+  const globalPrivacyControlEnabled = browserPrivacySignals.globalPrivacyControlEnabled;
+  const effectiveAnalyticsEnabled = consent.analytics && canEnableAnalyticsWithPrivacySignals(browserPrivacySignals);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -95,6 +111,25 @@ export function CookieConsentProvider({ initialConsent, children }: CookieConsen
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const syncSignals = () => {
+      setBrowserPrivacySignals(resolveBrowserPrivacySignalsFromNavigator());
+    };
+
+    syncSignals();
+    window.addEventListener("pageshow", syncSignals);
+    window.addEventListener("focus", syncSignals);
+
+    return () => {
+      window.removeEventListener("pageshow", syncSignals);
+      window.removeEventListener("focus", syncSignals);
+    };
+  }, []);
+
   const saveConsent = useCallback((nextConsent: CookieConsentRecord) => {
     writeConsentToDocument(nextConsent);
     setConsent(nextConsent);
@@ -104,7 +139,9 @@ export function CookieConsentProvider({ initialConsent, children }: CookieConsen
   }, []);
 
   const persistConsent = useCallback(async (analyticsEnabled: boolean) => {
-    const nextConsent = createCookieConsentRecord({ analytics: analyticsEnabled });
+    const normalizedAnalyticsEnabled =
+      analyticsEnabled && canEnableAnalyticsWithPrivacySignals(browserPrivacySignals);
+    const nextConsent = createCookieConsentRecord({ analytics: normalizedAnalyticsEnabled });
     saveConsent(nextConsent);
 
     if (typeof window === "undefined") {
@@ -112,7 +149,7 @@ export function CookieConsentProvider({ initialConsent, children }: CookieConsen
     }
 
     const formData = new FormData();
-    formData.set("analytics", analyticsEnabled ? "true" : "false");
+    formData.set("analytics", normalizedAnalyticsEnabled ? "true" : "false");
     formData.set("returnTo", `${window.location.pathname}${window.location.search}`);
 
     try {
@@ -128,7 +165,7 @@ export function CookieConsentProvider({ initialConsent, children }: CookieConsen
       // The optimistic local consent state is already applied. The next page load
       // will resync from the server cookie path if the request eventually succeeds.
     }
-  }, [saveConsent]);
+  }, [browserPrivacySignals, saveConsent]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -168,7 +205,8 @@ export function CookieConsentProvider({ initialConsent, children }: CookieConsen
   const value = useMemo<CookieConsentContextValue>(
     () => ({
       consent,
-      analyticsEnabled: consent.analytics,
+      analyticsEnabled: effectiveAnalyticsEnabled,
+      globalPrivacyControlEnabled,
       openPreferences: () => handlePreferencesOpenChange(true),
       savePreferences: async (analyticsEnabled) => {
         await persistConsent(analyticsEnabled);
@@ -178,7 +216,7 @@ export function CookieConsentProvider({ initialConsent, children }: CookieConsen
       acceptAll: () => persistConsent(true),
       acceptEssentialOnly: () => persistConsent(false)
     }),
-    [consent, persistConsent]
+    [consent, effectiveAnalyticsEnabled, globalPrivacyControlEnabled, persistConsent]
   );
 
   const shouldRenderPublicUi = shouldShowCookieUi(pathname);
@@ -192,9 +230,10 @@ export function CookieConsentProvider({ initialConsent, children }: CookieConsen
             <CookieConsentBanner onOpenPreferences={value.openPreferences} />
           ) : null}
           <CookiePreferencesSheet
-            key={`${consent.analytics ? "analytics-on" : "analytics-off"}-${preferencesOpen ? "open" : "closed"}`}
+            key={`${effectiveAnalyticsEnabled ? "analytics-on" : "analytics-off"}-${globalPrivacyControlEnabled ? "gpc-on" : "gpc-off"}-${preferencesOpen ? "open" : "closed"}`}
             open={preferencesOpen}
-            analyticsEnabled={consent.analytics}
+            analyticsEnabled={effectiveAnalyticsEnabled}
+            globalPrivacyControlEnabled={globalPrivacyControlEnabled}
             onOpenChange={handlePreferencesOpenChange}
             onSave={value.savePreferences}
           />
