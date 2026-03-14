@@ -154,6 +154,7 @@ export function BillingPlanSettings({ title = "Billing Plan", editable = false }
         <FormField
           label="Assigned Plan"
           description={billingHelper || "Plan determines the platform fee charged per successful order, on top of Stripe fees."}
+          inputId="billing-plan-assigned-plan"
         >
           {effectiveEditable ? (
             <Select value={billingPlanKey} onChange={(event) => setBillingPlanKey(event.target.value)} disabled={loading || saving}>

@@ -65,6 +65,13 @@ export function StorefrontStudioStorefrontEditorProductDetailTab() {
           checked={getBoolean(section, "reviews.showOnProductDetail", true)}
           onChange={(checked) => update("reviews.showOnProductDetail", checked)}
         />
+        <ProductDetailToggle
+          inputId="product-detail-enable-review-form"
+          label="Show review submission form"
+          description="Let customers submit a new review from the product detail page."
+          checked={getBoolean(section, "reviews.formEnabled", true)}
+          onChange={(checked) => update("reviews.formEnabled", checked)}
+        />
         <div className="space-y-3">
           <FormField label="Default sort">
             <Select value={getString(section, "reviews.defaultSort", "newest")} onChange={(event) => update("reviews.defaultSort", event.target.value)}>
