@@ -2,7 +2,6 @@ import type { CSSProperties } from "react";
 
 const DEFAULT_PRIMARY = "#0F7B84";
 const DEFAULT_ACCENT = "#1AA3A8";
-const DEFAULT_ACTION_FOREGROUND = "#FFFFFF";
 const DEFAULT_BACKGROUND = "#F5FBFB";
 const DEFAULT_SURFACE = "#FFFFFF";
 const DEFAULT_TEXT = "#143435";
@@ -320,11 +319,42 @@ function hexToHslChannels(hex: string): string {
 
 function resolveContrastingForeground(hex: string): string {
   const normalized = normalizeHex(hex) ?? "#000000";
-  const red = Number.parseInt(normalized.slice(1, 3), 16) / 255;
-  const green = Number.parseInt(normalized.slice(3, 5), 16) / 255;
-  const blue = Number.parseInt(normalized.slice(5, 7), 16) / 255;
-  const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
-  return luminance > 0.6 ? "#111111" : "#FFFFFF";
+  const luminance = getRelativeLuminance(normalized);
+  const contrastWithWhite = 1.05 / (luminance + 0.05);
+  const contrastWithBlack = (luminance + 0.05) / 0.05;
+
+  return contrastWithBlack >= contrastWithWhite ? "#111111" : "#FFFFFF";
+}
+
+function getRelativeLuminance(hex: string) {
+  const normalized = normalizeHex(hex) ?? "#000000";
+  const toLinear = (channel: string) => {
+    const normalizedChannel = Number.parseInt(channel, 16) / 255;
+    return normalizedChannel <= 0.04045 ? normalizedChannel / 12.92 : ((normalizedChannel + 0.055) / 1.055) ** 2.4;
+  };
+
+  return (
+    0.2126 * toLinear(normalized.slice(1, 3)) +
+    0.7152 * toLinear(normalized.slice(3, 5)) +
+    0.0722 * toLinear(normalized.slice(5, 7))
+  );
+}
+
+function getContrastRatio(foregroundHex: string, backgroundHex: string) {
+  const foregroundLuminance = getRelativeLuminance(foregroundHex);
+  const backgroundLuminance = getRelativeLuminance(backgroundHex);
+  const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+  const darker = Math.min(foregroundLuminance, backgroundLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function resolveAccessibleForeground(backgroundHex: string, preferredForegroundHex: string | null | undefined) {
+  const preferred = normalizeHex(preferredForegroundHex ?? null);
+  if (preferred && getContrastRatio(preferred, backgroundHex) >= 4.5) {
+    return preferred;
+  }
+
+  return resolveContrastingForeground(backgroundHex);
 }
 
 function pickStringOption<T extends readonly string[]>(value: unknown, options: T, fallback: T[number]): T[number] {
@@ -572,9 +602,9 @@ export function buildStorefrontThemeStyle(input: StorefrontThemeInput): CSSPrope
   const config = resolveStorefrontThemeConfig(input.themeConfig);
   const primaryRgb = hexToRgbTriplet(primary);
   const accentRgb = hexToRgbTriplet(accent);
-  const primaryForeground = config.primaryForegroundColor ?? DEFAULT_ACTION_FOREGROUND;
-  const accentForeground = config.accentForegroundColor ?? DEFAULT_ACTION_FOREGROUND;
-  const headerForeground = config.headerForegroundColor ?? resolveContrastingForeground(config.headerBackgroundColor);
+  const primaryForeground = resolveAccessibleForeground(primary, config.primaryForegroundColor);
+  const accentForeground = resolveAccessibleForeground(accent, config.accentForegroundColor);
+  const headerForeground = resolveAccessibleForeground(config.headerBackgroundColor, config.headerForegroundColor);
   const border = mixHex(config.textColor, config.surfaceColor, 0.2);
   const muted = mixHex(primary, config.surfaceColor, 0.12);
   const mutedForeground = mixHex(config.textColor, config.surfaceColor, 0.62);

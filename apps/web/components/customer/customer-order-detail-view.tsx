@@ -1,9 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SectionCard } from "@/components/ui/section-card";
+import {
+  getShippingDelayCustomerPathLabel,
+  getShippingDelayReasonLabel,
+  getShippingDelayStatusLabel
+} from "@/lib/orders/shipping-delays";
+import type { OrderShippingDelayRecord } from "@/types/database";
 
 type StoreSummary = {
   id: string;
@@ -53,6 +60,7 @@ type CustomerOrderItem = {
 type CustomerOrderDetailViewProps = {
   order: CustomerOrderSummary;
   items: CustomerOrderItem[];
+  shippingDelays: OrderShippingDelayRecord[];
   backHref: string;
   storefrontHref?: string | null;
 };
@@ -113,16 +121,72 @@ function statusTone(status: CustomerOrderSummary["status"]) {
   return "outline";
 }
 
-export function CustomerOrderDetailView({ order, items, backHref, storefrontHref = null }: CustomerOrderDetailViewProps) {
+function formatDate(value: string | null) {
+  if (!value) {
+    return "To be confirmed";
+  }
+
+  const iso = value.includes("T") ? value : `${value}T12:00:00.000Z`;
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium"
+  }).format(new Date(iso));
+}
+
+function getActiveShippingDelay(delays: OrderShippingDelayRecord[]) {
+  return delays.find((delay) => delay.status !== "resolved" && !delay.resolved_at) ?? null;
+}
+
+export function CustomerOrderDetailView({
+  order,
+  items,
+  shippingDelays,
+  backHref,
+  storefrontHref = null
+}: CustomerOrderDetailViewProps) {
   const store = firstRelation(order.stores);
+  const [delayItems, setDelayItems] = useState(shippingDelays);
+  const [pendingAction, setPendingAction] = useState<"approve_delay" | "request_cancellation" | null>(null);
+  const [delayFeedback, setDelayFeedback] = useState<string | null>(null);
   const pickupAddress = buildPickupAddress(order.pickup_location_snapshot_json);
   const orderedAt = formatDateTime(order.created_at);
   const shippedAt = formatDateTime(order.shipped_at);
   const deliveredAt = formatDateTime(order.delivered_at);
+  const activeDelay = getActiveShippingDelay(delayItems);
   const pickupWindow =
     order.pickup_window_start_at && order.pickup_window_end_at
       ? `${formatDateTime(order.pickup_window_start_at, order.pickup_timezone)} - ${formatDateTime(order.pickup_window_end_at, order.pickup_timezone)}`
       : null;
+
+  async function handleDelayResponse(action: "approve_delay" | "request_cancellation") {
+    setPendingAction(action);
+    setDelayFeedback(null);
+
+    try {
+      const response = await fetch(`/api/customer/orders/${order.id}/shipping-delay-response`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ action })
+      });
+
+      const payload = (await response.json()) as { error?: string; delay?: OrderShippingDelayRecord };
+      if (!response.ok || !payload.delay) {
+        throw new Error(payload.error || "Unable to save your response.");
+      }
+
+      setDelayItems((current) => [payload.delay!, ...current.filter((delay) => delay.id !== payload.delay!.id)]);
+      setDelayFeedback(
+        action === "approve_delay"
+          ? "Thanks — the store now knows you want to continue with the revised ship date."
+          : "Your cancellation request was sent to the store. They should follow up about cancellation or refund handling."
+      );
+    } catch (error) {
+      setDelayFeedback(error instanceof Error ? error.message : "Unable to save your response.");
+    } finally {
+      setPendingAction(null);
+    }
+  }
 
   return (
     <section className="space-y-4 p-4 lg:p-4">
@@ -231,6 +295,71 @@ export function CustomerOrderDetailView({ order, items, backHref, storefrontHref
           </dl>
         </SectionCard>
       </div>
+
+      {order.fulfillment_method === "shipping" && activeDelay ? (
+        <SectionCard
+          title="Shipping update"
+          description="The store reported a delay for this order and may need your response before continuing."
+          action={
+            <Badge variant={activeDelay.status === "cancel_requested" ? "secondary" : "outline"}>
+              {getShippingDelayStatusLabel(activeDelay.status)}
+            </Badge>
+          }
+        >
+          <div className="space-y-4 text-sm">
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-md border border-border/60 px-3 py-3">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Reason</p>
+                <p className="mt-1 font-medium">{getShippingDelayReasonLabel(activeDelay.reason_key)}</p>
+              </div>
+              <div className="rounded-md border border-border/60 px-3 py-3">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Store plan</p>
+                <p className="mt-1 font-medium">{getShippingDelayCustomerPathLabel(activeDelay.customer_path)}</p>
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-md border border-border/60 px-3 py-3">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Original promise</p>
+                <p className="mt-1">{activeDelay.original_ship_promise || "No original promise recorded."}</p>
+              </div>
+              <div className="rounded-md border border-border/60 px-3 py-3">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Revised ship date</p>
+                <p className="mt-1">{formatDate(activeDelay.revised_ship_date)}</p>
+              </div>
+            </div>
+
+            {activeDelay.customer_path === "notify_only" ? (
+              <p className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-3 text-emerald-900 dark:text-emerald-100">
+                The store has already communicated the revised timing. No action is required from you right now.
+              </p>
+            ) : null}
+
+            {delayFeedback ? (
+              <p className="rounded-md border border-border/60 bg-muted/40 px-3 py-3 text-muted-foreground">{delayFeedback}</p>
+            ) : null}
+
+            {activeDelay.customer_path !== "notify_only" &&
+            (activeDelay.status === "awaiting_customer_response" || activeDelay.status === "refund_required") ? (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  disabled={pendingAction !== null}
+                  onClick={() => void handleDelayResponse("approve_delay")}
+                >
+                  {activeDelay.customer_path === "offer_cancel_or_refund" ? "Keep order" : "Approve revised date"}
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={pendingAction !== null}
+                  onClick={() => void handleDelayResponse("request_cancellation")}
+                >
+                  Request cancellation
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </SectionCard>
+      ) : null}
 
       <SectionCard title="Items" description="Products included in this order.">
         <ul className="space-y-2 text-sm">

@@ -22,6 +22,13 @@ describe("email studio preview helpers", () => {
     expect(scenario.values.trackingUrl).toContain("tracking.example.com");
   });
 
+  test("uses shipping sample data for shipping delay templates", () => {
+    const scenario = resolveEmailStudioPreviewScenario("shippingDelay", "pickup");
+
+    expect(scenario.id).toBe("shipping");
+    expect(scenario.values.shippingDelayReason).toContain("Carrier");
+  });
+
   test("builds a preview envelope and rendered html/text from the active template", () => {
     const document = buildDefaultEmailStudioDocument("Olive Mercantile");
     const scenario = resolveEmailStudioPreviewScenario("delivered", "shipping");
@@ -62,6 +69,7 @@ describe("email studio preview helpers", () => {
     expect(resolveEmailStudioPreviewScenario("ownerNewOrder", "shipping").id).toBe("pickup");
     expect(resolveEmailStudioPreviewScenario("pickupUpdated", "shipping").id).toBe("pickup");
     expect(resolveEmailStudioPreviewScenario("refundIssued", "shipping").id).toBe("pickup");
+    expect(resolveEmailStudioPreviewScenario("shippingDelay", "pickup").id).toBe("shipping");
     expect(resolveEmailStudioPreviewScenario("shipped", "pickup").id).toBe("shipping");
     expect(resolveEmailStudioPreviewScenario("disputeOpened", "pickup").id).toBe("shipping");
     expect(resolveEmailStudioPreviewScenario("disputeResolved", "pickup").id).toBe("shipping");

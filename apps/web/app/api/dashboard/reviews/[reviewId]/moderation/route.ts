@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { logAuditEvent } from "@/lib/audit/log";
 import { notifyCustomerReviewModerated } from "@/lib/notifications/owner-notifications";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getOwnedStoreBundle, getOwnedStoreBundleForSlug } from "@/lib/stores/owner-store";
@@ -21,6 +22,15 @@ const allowedTransitions: Record<string, Set<string>> = {
   rejected: new Set(["publish", "restore"])
 };
 
+const SUPPRESSIVE_REJECTION_REASONS = [
+  "rejected by owner moderation",
+  "negative review",
+  "low rating",
+  "bad review",
+  "poor rating",
+  "customer unhappy"
+];
+
 export async function PATCH(request: NextRequest, context: { params: Promise<{ reviewId: string }> }) {
   const trustedOriginResponse = enforceTrustedOrigin(request);
   if (trustedOriginResponse) {
@@ -39,6 +49,17 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ r
 
   if (payload.data.action === "reject" && !payload.data.reason) {
     return NextResponse.json({ error: "reason is required when rejecting a review" }, { status: 400 });
+  }
+
+  if (
+    payload.data.action === "reject" &&
+    payload.data.reason &&
+    SUPPRESSIVE_REJECTION_REASONS.includes(payload.data.reason.trim().toLowerCase())
+  ) {
+    return NextResponse.json(
+      { error: "Provide a policy-based moderation reason, not a sentiment-based reason." },
+      { status: 400 }
+    );
   }
 
   const supabase = await createSupabaseServerClient();
@@ -118,6 +139,20 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ r
       reason: payload.data.reason ?? null
     }).catch(() => null);
   }
+
+  await logAuditEvent({
+    storeId: bundle.store.id,
+    actorUserId: user.id,
+    action: "review_moderation_updated",
+    entity: "review",
+    entityId: existing.id,
+    metadata: {
+      previousStatus: existing.status,
+      nextStatus,
+      moderationAction: payload.data.action,
+      moderationReason: payload.data.reason ?? null
+    }
+  });
 
   return NextResponse.json({ review });
 }

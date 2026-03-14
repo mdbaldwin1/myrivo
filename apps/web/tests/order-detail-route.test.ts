@@ -169,6 +169,74 @@ describe("order detail route", () => {
         };
       }
 
+      if (table === "order_shipping_delays") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  returns: vi.fn(async () => ({
+                    data: [
+                      {
+                        id: "delay-1",
+                        order_id: ORDER_ID,
+                        store_id: "store-1",
+                        created_by_user_id: "user-1",
+                        resolved_by_user_id: null,
+                        status: "awaiting_customer_response",
+                        reason_key: "carrier_disruption",
+                        customer_path: "request_delay_approval",
+                        original_ship_promise: "Ships by March 18",
+                        revised_ship_date: "2026-03-21",
+                        internal_note: "Carrier issue.",
+                        resolution_note: null,
+                        metadata_json: {},
+                        resolved_at: null,
+                        created_at: "2026-03-13T12:50:00.000Z",
+                        updated_at: "2026-03-13T12:50:00.000Z"
+                      }
+                    ],
+                    error: null
+                  }))
+                }))
+              }))
+            }))
+          }))
+        };
+      }
+
+      if (table === "audit_events") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                in: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    returns: vi.fn(async () => ({
+                      data: [
+                        {
+                          id: "audit-1",
+                          actor_user_id: "user-1",
+                          action: "shipping_delay_recorded",
+                          entity_id: ORDER_ID,
+                          metadata: {
+                            shippingDelayId: "delay-1",
+                            reasonKey: "carrier_disruption",
+                            revisedShipDate: "2026-03-21"
+                          },
+                          created_at: "2026-03-13T12:51:00.000Z"
+                        }
+                      ],
+                      error: null
+                    }))
+                  }))
+                }))
+              }))
+            }))
+          }))
+        };
+      }
+
       throw new Error(`Unexpected admin table ${table}`);
     });
 
@@ -179,6 +247,8 @@ describe("order detail route", () => {
     const payload = (await response.json()) as {
       refunds?: Array<{ id: string; amount_cents: number }>;
       disputes?: Array<{ id: string; status: string }>;
+      shippingDelays?: Array<{ id: string; status: string; customer_path: string }>;
+      timelineEvents?: Array<{ id: string; action: string }>;
     };
 
     expect(response.status).toBe(200);
@@ -186,5 +256,16 @@ describe("order detail route", () => {
     expect(payload.refunds?.[0]).toMatchObject({ id: "refund-1", amount_cents: 1200 });
     expect(payload.disputes).toHaveLength(1);
     expect(payload.disputes?.[0]).toMatchObject({ id: "dispute-1", status: "needs_response" });
+    expect(payload.shippingDelays).toHaveLength(1);
+    expect(payload.shippingDelays?.[0]).toMatchObject({
+      id: "delay-1",
+      status: "awaiting_customer_response",
+      customer_path: "request_delay_approval"
+    });
+    expect(payload.timelineEvents).toHaveLength(1);
+    expect(payload.timelineEvents?.[0]).toMatchObject({
+      id: "audit-1",
+      action: "shipping_delay_recorded"
+    });
   });
 });

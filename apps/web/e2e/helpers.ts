@@ -167,6 +167,8 @@ async function querySingleStoreOwnerIdentity(): Promise<OwnerStoreIdentity> {
   };
 }
 
+export { querySingleStoreOwnerIdentity };
+
 async function getCurrentStoreIdentity(page: Page): Promise<{ storeName: string; storeSlug: string } | null> {
   const response = await page.request.get("/api/stores/current");
   if (!response.ok()) {

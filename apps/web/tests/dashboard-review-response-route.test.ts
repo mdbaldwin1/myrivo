@@ -6,6 +6,7 @@ const getOwnedStoreBundleMock = vi.fn();
 const getOwnedStoreBundleForSlugMock = vi.fn();
 const notifyCustomerReviewRespondedMock = vi.fn();
 const createSupabaseServerClientMock = vi.fn();
+const logAuditEventMock = vi.fn();
 
 vi.mock("@/lib/security/request-origin", () => ({
   enforceTrustedOrigin: (...args: unknown[]) => enforceTrustedOriginMock(...args)
@@ -24,12 +25,17 @@ vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient: (...args: unknown[]) => createSupabaseServerClientMock(...args)
 }));
 
+vi.mock("@/lib/audit/log", () => ({
+  logAuditEvent: (...args: unknown[]) => logAuditEventMock(...args)
+}));
+
 beforeEach(() => {
   enforceTrustedOriginMock.mockReset();
   getOwnedStoreBundleMock.mockReset();
   getOwnedStoreBundleForSlugMock.mockReset();
   notifyCustomerReviewRespondedMock.mockReset();
   createSupabaseServerClientMock.mockReset();
+  logAuditEventMock.mockReset();
 
   enforceTrustedOriginMock.mockReturnValue(null);
   getOwnedStoreBundleMock.mockResolvedValue({ store: { id: "store-1", slug: "demo" }, role: "owner" });
@@ -121,5 +127,6 @@ describe("dashboard review response route", () => {
     const response = await route.PUT(request, { params: Promise.resolve({ reviewId: "9bc3e8a4-51df-4f11-866b-f2f0807294ab" }) });
     expect(response.status).toBe(200);
     expect(upsertMock).toHaveBeenCalledTimes(1);
+    expect(logAuditEventMock).toHaveBeenCalledTimes(1);
   });
 });

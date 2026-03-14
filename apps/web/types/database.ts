@@ -189,6 +189,9 @@ export type StoreLegalDocumentRecord = {
 
 export type StorePrivacyRequestType = "access" | "deletion" | "correction" | "know" | "opt_out_sale_share";
 export type StorePrivacyRequestStatus = "open" | "in_progress" | "completed" | "closed";
+export type StorePrivacyOptOutState = "active" | "revoked";
+export type AccessibilityReportStatus = "new" | "triaged" | "in_progress" | "resolved" | "dismissed";
+export type AccessibilityReportPriority = "low" | "medium" | "high" | "critical";
 
 export type StorePrivacyProfileRecord = {
   store_id: string;
@@ -221,6 +224,45 @@ export type StorePrivacyRequestRecord = {
   metadata_json: Record<string, unknown>;
   resolved_at: string | null;
   resolved_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StorePrivacyOptOutRecord = {
+  id: string;
+  store_id: string;
+  email: string;
+  full_name: string | null;
+  state: StorePrivacyOptOutState;
+  source: "privacy_page" | "browser_signal" | "support" | "manual";
+  latest_request_id: string | null;
+  metadata_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AccessibilityReportRecord = {
+  id: string;
+  reporter_name: string | null;
+  reporter_email: string;
+  page_url: string | null;
+  feature_area: string;
+  issue_summary: string;
+  expected_behavior: string | null;
+  actual_behavior: string;
+  assistive_technology: string | null;
+  browser: string | null;
+  device: string | null;
+  blocks_critical_flow: boolean;
+  status: AccessibilityReportStatus;
+  priority: AccessibilityReportPriority;
+  owner_notes: string | null;
+  remediation_notes: string | null;
+  source: "public_form" | "support" | "manual";
+  triaged_at: string | null;
+  resolved_at: string | null;
+  resolved_by_user_id: string | null;
+  metadata_json: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 };
@@ -339,6 +381,50 @@ export type OrderDisputeRecord = {
   response_due_by: string | null;
   metadata_json: Record<string, unknown>;
   closed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OrderShippingDelayStatus =
+  | "delay_detected"
+  | "customer_contact_required"
+  | "awaiting_customer_response"
+  | "delay_approved"
+  | "delay_rejected"
+  | "cancel_requested"
+  | "refund_required"
+  | "resolved";
+
+export type OrderShippingDelayReasonKey =
+  | "inventory_shortfall"
+  | "supplier_delay"
+  | "production_delay"
+  | "carrier_disruption"
+  | "weather_or_emergency"
+  | "address_or_verification_issue"
+  | "fulfillment_capacity_issue"
+  | "other";
+
+export type OrderShippingDelayCustomerPath =
+  | "notify_only"
+  | "request_delay_approval"
+  | "offer_cancel_or_refund";
+
+export type OrderShippingDelayRecord = {
+  id: string;
+  order_id: string;
+  store_id: string;
+  created_by_user_id: string | null;
+  resolved_by_user_id: string | null;
+  status: OrderShippingDelayStatus;
+  reason_key: OrderShippingDelayReasonKey;
+  customer_path: OrderShippingDelayCustomerPath;
+  original_ship_promise: string | null;
+  revised_ship_date: string | null;
+  internal_note: string | null;
+  resolution_note: string | null;
+  metadata_json: Record<string, unknown>;
+  resolved_at: string | null;
   created_at: string;
   updated_at: string;
 };

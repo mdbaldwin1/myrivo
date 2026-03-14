@@ -16,6 +16,9 @@ export function CookiePolicyContent({ scopeLabel = "Myrivo" }: CookiePolicyConte
         <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground sm:text-base">
           This page explains how {scopeLabel} uses cookies and similar technologies, what each category does, and how you can manage your preferences.
         </p>
+        <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
+          If your browser sends a Global Privacy Control signal, Myrivo treats optional analytics storage as off even if you previously opted in.
+        </p>
       </section>
 
       <section className="space-y-4">

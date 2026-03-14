@@ -35,6 +35,24 @@ When preparing to ship:
 - confirm tracking details are correct before notifying the customer
 - use delay communications when the original ship expectation cannot be met
 
+## Shipping Delay Handling
+When the original shipping expectation cannot be met, the store should treat the order as a customer expectation workflow, not just an internal ops problem.
+
+The intended workflow is:
+
+1. mark the order as delayed from the order detail surface
+2. record the reason and revised estimated ship date
+3. choose the customer path:
+   - notify only
+   - request delay approval
+   - offer cancel or refund
+4. send the customer to the order page for the response path when approval or cancellation input is needed
+5. make sure the outcome is visible in the order timeline and support history
+
+Merchants should avoid handling delayed shipments through ad hoc email alone. Delay decisions should stay attached to the order so support, audit, and refund follow-up stay clear.
+
+Your shipping policy should also explain what customers should expect if a promised ship date changes, including whether the store may ask them to approve a revised date or request cancellation.
+
 ## Related Docs
 
 - `/docs/catalog-and-orders`

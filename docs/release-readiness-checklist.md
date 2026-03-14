@@ -21,6 +21,10 @@ This checklist is for the final release cut from `develop` to `main`.
 - [ ] `npm run typecheck` (Owner: Engineering, Target: 2026-03-10)
 - [ ] `npm run test` (Owner: Engineering, Target: 2026-03-10)
 - [ ] `npm run build` (Owner: Engineering, Target: 2026-03-10)
+- [ ] `npm run e2e -- e2e/accessibility-audits.spec.ts` completed for the release candidate. (Owner: QA/Engineering, Target: 2026-03-14)
+- [ ] Accessibility spot check completed for changed flows: keyboard access, visible focus, form semantics, and reduced-motion behavior. (Owner: QA/Engineering, Target: 2026-03-14)
+- [ ] Accessibility evidence matrix reviewed for any changed target flow and support routing remains current. (Owner: Product/Engineering, Target: 2026-03-14)
+- [ ] Any changed chart or dashboard module has a readable fallback or is confirmed decorative. (Owner: Engineering/Design, Target: 2026-03-14)
 - [ ] `/docs` reviewed for overdue documentation and stale workflow guidance before release cut. (Owner: Documentation, Target: 2026-03-13)
 - [ ] Latest Supabase migrations applied in target environment. (Owner: Engineering, Target: 2026-03-10)
 - [ ] `npm run verify:platform-rollout` passes in target environment. (Owner: Engineering, Target: 2026-03-10)
@@ -49,6 +53,8 @@ This checklist is for the final release cut from `develop` to `main`.
 - [ ] Verify `Ship` action saves carrier/tracking and generates tracking URL. (Owner: Ops, Target: 2026-03-12)
 - [ ] Verify at least one real webhook event updates order to `delivered` automatically. (Owner: Ops, Target: 2026-03-12)
 - [ ] Validate printable documents: daily pick list and per-order packing slips. (Owner: Ops, Target: 2026-03-12)
+- [ ] Verify shipping-delay flow: staff can record a delay, customer receives the update, and approval/cancellation responses appear in the order timeline. (Owner: Ops, Target: 2026-03-14)
+- [ ] Confirm live shipping policy copy explains how revised ship dates and cancellation requests are handled. (Owner: Content/Ops, Target: 2026-03-14)
 
 ## Operational readiness
 
@@ -62,3 +68,7 @@ This checklist is for the final release cut from `develop` to `main`.
 - [ ] Buyer/seller post-purchase communication process documented. (Owner: Ops, Target: 2026-03-14)
 - [ ] Fulfillment workflow configured for current offline operations. (Owner: Ops, Target: 2026-03-12)
 - [ ] Email notification roadmap approved before enabling automated post-purchase messaging. (Owner: Product, Target: 2026-03-12)
+- [ ] Review collection guidance confirms neutral solicitation and disclosure expectations for any incentivized reviews. (Owner: Ops/Content, Target: 2026-03-14)
+- [ ] Privacy rights workflow verified end-to-end: GPC disables optional analytics, do-not-sell/share intake creates explicit opt-out state, and Legal workflow shows operator context. (Owner: Ops/Engineering, Target: 2026-03-14)
+- [ ] Accessibility support path verified end-to-end: `/accessibility` is reachable, intake guidance is current, and any checkout/auth/store-management barriers are triaged as release issues. (Owner: Support/Product, Target: 2026-03-14)
+- [ ] Platform accessibility queue reviewed: no unresolved critical reports are missing owner/status before release cut. (Owner: Support/Product, Target: 2026-03-14)

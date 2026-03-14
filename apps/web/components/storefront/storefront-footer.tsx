@@ -54,6 +54,8 @@ type StorefrontFooterProps = {
   };
 };
 
+const NEWSLETTER_EMAIL_INPUT_ID = "storefront-footer-newsletter-email";
+
 export function StorefrontFooter({
   storeName,
   storeSlug,
@@ -174,7 +176,11 @@ export function StorefrontFooter({
     const response = await fetch(`/api/storefront/newsletter${query}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email })
+      body: JSON.stringify({
+        email,
+        source: "storefront_footer",
+        location: pathname ?? "/"
+      })
     });
 
     const payload = (await response.json()) as { error?: string };
@@ -359,12 +365,17 @@ export function StorefrontFooter({
               ) : null}
             </div>
             <form onSubmit={subscribeToNewsletter} className="mx-auto flex max-w-md flex-col gap-2 sm:max-w-full lg:mx-0">
+              <label htmlFor={NEWSLETTER_EMAIL_INPUT_ID} className="sr-only">
+                Email address
+              </label>
               <Input
+                id={NEWSLETTER_EMAIL_INPUT_ID}
                 type="email"
                 required
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder="you@example.com"
+                aria-label="Email address"
                 className={cn("h-11 border-border/60 bg-[color:var(--storefront-surface)]", buttonRadiusClass)}
               />
               <Button

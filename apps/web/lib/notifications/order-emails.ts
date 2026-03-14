@@ -3,6 +3,12 @@ import { createEmailStudioDocumentFromSection, type EmailStudioDocument, type Em
 import { renderEmailStudioTemplate } from "@/lib/email-studio/render";
 import { dispatchNotification } from "@/lib/notifications/dispatcher";
 import { sendTransactionalEmail } from "@/lib/notifications/email-provider";
+import {
+  getShippingDelayCustomerPathLabel,
+  getShippingDelayReasonLabel,
+  type OrderShippingDelayCustomerPath,
+  type OrderShippingDelayReasonKey
+} from "@/lib/orders/shipping-delays";
 import { notifyOwnersOrderCreated, notifyOwnersOrderFulfillmentStatus } from "@/lib/notifications/owner-notifications";
 import { getDisputeStatusLabel, getRefundReasonLabel, type DisputeStatus, type MerchantRefundReason } from "@/lib/orders/refunds";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -54,6 +60,7 @@ const CUSTOMER_CONFIRMATION_ACTION = "email_order_confirmation_sent";
 const CUSTOMER_ORDER_FAILED_ACTION = "email_order_failed_sent";
 const CUSTOMER_ORDER_CANCELLED_ACTION = "email_order_cancelled_sent";
 const CUSTOMER_PICKUP_UPDATED_ACTION = "email_order_pickup_updated_sent";
+const CUSTOMER_SHIPPING_DELAY_ACTION = "email_order_shipping_delay_sent";
 const CUSTOMER_REFUND_ISSUED_ACTION = "email_order_refund_issued_sent";
 const CUSTOMER_DISPUTE_OPENED_ACTION = "email_order_dispute_opened_sent";
 const CUSTOMER_DISPUTE_RESOLVED_ACTION = "email_order_dispute_resolved_sent";
@@ -573,6 +580,7 @@ async function notifyCustomerOrderLifecycle(
   eventType:
     | "order.created.customer"
     | "order.pickup.updated.customer"
+    | "order.shipping_delay.customer"
     | "order.refunded.customer"
     | "order.dispute.opened.customer"
     | "order.dispute.resolved.customer"
@@ -766,6 +774,92 @@ function buildCustomerRefundEmail(
     refundCustomerMessage: options.customerMessage?.trim() || ""
   });
   return renderOrderEmailTemplate(context, "refundIssued", templateValues);
+}
+
+function describeShippingDelayPath(customerPath: OrderShippingDelayCustomerPath) {
+  switch (customerPath) {
+    case "notify_only":
+      return "We’re sharing a revised ship date so you know what to expect.";
+    case "request_delay_approval":
+      return "Please review the revised ship date and let us know if you want us to continue with the order.";
+    case "offer_cancel_or_refund":
+      return "If the revised timing no longer works for you, you can request cancellation or a refund review.";
+    default:
+      return getShippingDelayCustomerPathLabel(customerPath);
+  }
+}
+
+function buildCustomerShippingDelayEmail(
+  context: OrderEmailContext,
+  options: {
+    delayId: string;
+    reasonKey: OrderShippingDelayReasonKey;
+    customerPath: OrderShippingDelayCustomerPath;
+    originalShipPromise?: string | null;
+    revisedShipDate?: string | null;
+  }
+) {
+  const templateValues = buildTemplateValues(context, {
+    shippingDelayReason: getShippingDelayReasonLabel(options.reasonKey),
+    originalShipPromise: options.originalShipPromise?.trim() || "As soon as possible",
+    revisedShipDate: options.revisedShipDate
+      ? formatDateTimeInTimezone(`${options.revisedShipDate}T12:00:00.000Z`, context.pickupTimezone)
+      : "We’ll confirm an updated date shortly.",
+    shippingDelayCustomerPath: describeShippingDelayPath(options.customerPath)
+  });
+
+  return renderOrderEmailTemplate(context, "shippingDelay", templateValues);
+}
+
+export async function sendOrderShippingDelayNotification(
+  orderId: string,
+  options: {
+    delayId: string;
+    reasonKey: OrderShippingDelayReasonKey;
+    customerPath: OrderShippingDelayCustomerPath;
+    originalShipPromise?: string | null;
+    revisedShipDate?: string | null;
+  }
+) {
+  try {
+    const context = await loadOrderEmailContext(orderId);
+    if (!context || context.fulfillmentMethod !== "shipping") {
+      return;
+    }
+
+    const auditAction = `${CUSTOMER_SHIPPING_DELAY_ACTION}:${options.delayId}:${options.reasonKey}:${options.customerPath}:${options.revisedShipDate ?? "na"}`;
+    const alreadySent = await hasNotificationAudit(orderId, auditAction);
+    if (alreadySent) {
+      return;
+    }
+
+    const rendered = buildCustomerShippingDelayEmail(context, options);
+    const sendResult = await sendEmail(context, [context.customerEmail], rendered.subject, rendered.text, rendered.html);
+    if (sendResult.sent) {
+      await writeNotificationAudit(context, auditAction, {
+        delayId: options.delayId,
+        reasonKey: options.reasonKey,
+        customerPath: options.customerPath,
+        originalShipPromise: options.originalShipPromise?.trim() || null,
+        revisedShipDate: options.revisedShipDate ?? null,
+        recipient: context.customerEmail,
+        senderMode: sendResult.sender.mode,
+        senderReason: sendResult.sender.reason,
+        from: sendResult.sender.from
+      });
+    }
+
+    await notifyCustomerOrderLifecycle(
+      context,
+      "order.shipping_delay.customer",
+      "Shipping update",
+      options.customerPath === "notify_only"
+        ? `There is a revised shipping timeline for order ${context.orderId.slice(0, 8)}.`
+        : `The store needs your input on a shipping delay for order ${context.orderId.slice(0, 8)}.`
+    );
+  } catch (error) {
+    console.error("sendOrderShippingDelayNotification failed", error);
+  }
 }
 
 export async function sendOrderRefundNotification(

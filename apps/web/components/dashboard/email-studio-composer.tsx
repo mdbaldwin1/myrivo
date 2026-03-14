@@ -1,6 +1,7 @@
 "use client";
 
 import { Mail, Reply, Send, Sparkles } from "lucide-react";
+import { AppAlert } from "@/components/ui/app-alert";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
@@ -30,12 +31,17 @@ function updateActiveTemplate(document: EmailStudioDocument, template: EmailStud
 export function EmailStudioComposer({ storeName, document, template, activeField, onDocumentChange, onFieldFocus }: EmailStudioComposerProps) {
   return (
     <div className="space-y-4">
+      <AppAlert
+        variant="info"
+        title="Transactional email only"
+        message="Email Studio controls order and fulfillment emails. Marketing campaigns, subscriber consent, and unsubscribe handling belong to the Subscribers workflow and future campaign tools."
+      />
       <div className="rounded-2xl border border-border/70 bg-white p-4 shadow-sm">
         <div className="space-y-3">
           <div className="flex flex-wrap gap-3">
             <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">
               <Send className="h-3.5 w-3.5" />
-              Audience: {template.audience === "customer" ? "Customer" : "Store owner"}
+              {template.messageType === "transactional" ? "Transactional" : "Marketing"} · {template.audience === "customer" ? "Customer" : "Store owner"}
             </div>
             <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">
               <Mail className="h-3.5 w-3.5" />

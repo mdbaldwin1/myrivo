@@ -12,6 +12,7 @@ import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { notify } from "@/lib/feedback/toast";
 import { ContextHelpLink } from "@/components/dashboard/context-help-link";
+import { readReviewIncentiveDisclosure } from "@/lib/reviews/compliance";
 import { getReviewMedia, getReviewResponses, normalizeReviewCollection, normalizeReviewNestedArrays } from "@/lib/reviews/moderation";
 
 type ReviewStatus = "pending" | "published" | "rejected";
@@ -41,6 +42,7 @@ export type ReviewRow = {
   verified_purchase: boolean;
   status: ReviewStatus;
   moderation_reason: string | null;
+  metadata?: Record<string, unknown> | null;
   created_at: string;
   review_media: ReviewMedia[] | null;
   review_responses: ReviewResponse[] | null;
@@ -77,6 +79,13 @@ export function ReviewsModerationManager({ storeSlug, initialItems, initialRevie
   const [rejectReason, setRejectReason] = useState("");
   const [responseBody, setResponseBody] = useState(() => getReviewResponses(initialSelectedReview)[0]?.body ?? "");
   const [error, setError] = useState<string | null>(null);
+  const selectedReviewIncentiveDisclosure = readReviewIncentiveDisclosure(selectedReview?.metadata ?? null);
+  const selectedReviewNeedsSuppressionWarning = Boolean(
+    selectedReview && (selectedReview.status === "published" || selectedReview.rating <= 2 || selectedReview.verified_purchase)
+  );
+  const selectedQueueNeedsSuppressionWarning = items.some(
+    (item) => selectedReviewIds.includes(item.id) && (item.status === "published" || item.rating <= 2 || item.verified_purchase)
+  );
 
   function updateReviewUrl(reviewId: string | null) {
     const nextParams = new URLSearchParams(searchParams.toString());
@@ -341,6 +350,15 @@ export function ReviewsModerationManager({ storeSlug, initialItems, initialRevie
     >
       <AppAlert variant="error" message={error} />
 
+      <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-sm text-amber-950 dark:text-amber-100">
+        <p className="font-medium">Compliance reminders</p>
+        <ul className="mt-2 space-y-1 text-xs leading-relaxed">
+          <li>Reject reviews only for policy reasons such as abuse, fraud, spam, privacy violations, or clearly invalid submissions.</li>
+          <li>Do not reject a review only because it is negative, low-rated, or commercially inconvenient.</li>
+          <li>Use owner responses to clarify or resolve issues instead of trying to hide legitimate feedback.</li>
+        </ul>
+      </div>
+
       <div className="rounded-md border border-border/70 bg-card p-3">
         <div className="flex flex-wrap items-center gap-2">
           {(["pending", "published", "rejected"] as ReviewStatus[]).map((status) => (
@@ -412,6 +430,11 @@ export function ReviewsModerationManager({ storeSlug, initialItems, initialRevie
           </Button>
           <span className="text-xs text-muted-foreground">Selected: {selectedReviewIds.length}</span>
         </div>
+        {selectedQueueNeedsSuppressionWarning ? (
+          <p className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-100">
+            One or more selected reviews are published, low-rated, or verified purchases. Reject only for policy violations, not to suppress legitimate negative feedback.
+          </p>
+        ) : null}
       </div>
 
       <div className="overflow-x-auto rounded-md border border-border">
@@ -512,6 +535,20 @@ export function ReviewsModerationManager({ storeSlug, initialItems, initialRevie
               <p className="text-xs text-muted-foreground">
                 {selectedReview.reviewer_name || selectedReview.reviewer_email} · {selectedReview.rating} stars · {selectedReview.status}
               </p>
+              {selectedReviewIncentiveDisclosure.disclosed ? (
+                <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                  Incentivized review
+                  {selectedReviewIncentiveDisclosure.description ? `: ${selectedReviewIncentiveDisclosure.description}` : ""}
+                </p>
+              ) : null}
+              {selectedReviewNeedsSuppressionWarning ? (
+                <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                  Compliance note: do not reject this review just because it is negative, low-rated, or commercially inconvenient.
+                </p>
+              ) : null}
+              {selectedReview.moderation_reason ? (
+                <p className="mt-2 text-xs text-muted-foreground">Latest moderation reason: {selectedReview.moderation_reason}</p>
+              ) : null}
               <p className="mt-2 whitespace-pre-wrap text-sm">{selectedReview.body || "No body."}</p>
             </div>
 

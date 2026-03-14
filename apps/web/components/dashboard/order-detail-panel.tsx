@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { OrderActivityTimelinePanel } from "@/components/dashboard/order-activity-timeline-panel";
 import { OrderDisputeSummaryPanel } from "@/components/dashboard/order-dispute-summary-panel";
 import { OrderRefundRequestPanel } from "@/components/dashboard/order-refund-request-panel";
+import { OrderShippingDelayPanel } from "@/components/dashboard/order-shipping-delay-panel";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/ui/status-chip";
-import { OrderDisputeRecord, OrderRefundRecord } from "@/types/database";
+import { OrderDisputeRecord, OrderRefundRecord, OrderShippingDelayRecord } from "@/types/database";
 import { OrderFinancialStatus } from "@/lib/orders/refunds";
 
 type OrderDetailPanelProps = {
@@ -71,6 +73,14 @@ type OrderDetailResponse = {
   }>;
   refunds?: OrderRefundRecord[];
   disputes?: OrderDisputeRecord[];
+  shippingDelays?: OrderShippingDelayRecord[];
+  timelineEvents?: Array<{
+    id: string;
+    action: string;
+    actor_user_id: string | null;
+    created_at: string;
+    metadata: Record<string, unknown>;
+  }>;
   error?: string;
 };
 
@@ -165,6 +175,27 @@ export function OrderDetailPanel({ orderId, onReschedulePickup, refreshToken = 0
   const items = payload?.items ?? [];
   const refunds = payload?.refunds ?? [];
   const disputes = payload?.disputes ?? [];
+  const shippingDelays = payload?.shippingDelays ?? [];
+  const timelineEvents = payload?.timelineEvents ?? [];
+
+  async function refreshOrderDetail() {
+    if (!orderId) {
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    const response = await fetch(`/api/orders/${orderId}`);
+    const data = (await response.json()) as OrderDetailResponse;
+    setLoading(false);
+
+    if (!response.ok || !data.order) {
+      setError(data.error ?? "Unable to load order details.");
+      return;
+    }
+
+    setPayload(data);
+  }
 
   return (
     <div className="space-y-5">
@@ -283,6 +314,10 @@ export function OrderDetailPanel({ orderId, onReschedulePickup, refreshToken = 0
             </section>
           ) : null}
 
+          {order.fulfillment_method === "shipping" ? (
+            <OrderShippingDelayPanel orderId={order.id} shippingDelays={shippingDelays} refreshOrderDetail={refreshOrderDetail} />
+          ) : null}
+
             <section className="space-y-3">
               <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Items</h3>
               <ul className="space-y-2">
@@ -307,6 +342,8 @@ export function OrderDetailPanel({ orderId, onReschedulePickup, refreshToken = 0
           />
 
           <OrderDisputeSummaryPanel disputes={disputes} currency={order.currency} />
+
+          <OrderActivityTimelinePanel events={timelineEvents} />
         </div>
       ) : null}
     </div>

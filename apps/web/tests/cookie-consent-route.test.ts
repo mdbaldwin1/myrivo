@@ -38,4 +38,23 @@ describe("cookie consent route", () => {
     expect(response.cookies.get("myrivo_analytics_sid")?.maxAge).toBe(0);
     expect(response.cookies.get("myrivo_marketing_sid")?.maxAge).toBe(0);
   });
+
+  test("forces analytics off when Global Privacy Control is active", async () => {
+    const formData = new FormData();
+    formData.set("analytics", "true");
+    formData.set("returnTo", "/cookies");
+
+    const response = await POST(
+      new NextRequest("http://localhost:3000/cookies/consent", {
+        method: "POST",
+        headers: {
+          "sec-gpc": "1"
+        },
+        body: formData
+      })
+    );
+
+    expect(response.status).toBe(303);
+    expect(response.cookies.get("myrivo_cookie_consent")?.value).toContain("\"analytics\":false");
+  });
 });

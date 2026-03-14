@@ -5,6 +5,7 @@ import {
   createCookieConsentRecord,
   serializeCookieConsentForResponse
 } from "@/lib/privacy/cookies";
+import { canEnableAnalyticsWithPrivacySignals, resolveBrowserPrivacySignalsFromHeaders } from "@/lib/privacy/signals";
 import { STOREFRONT_ANALYTICS_SESSION_COOKIE_NAME } from "@/lib/analytics/client";
 import { MARKETING_ANALYTICS_COOKIE_NAME } from "@/lib/marketing/analytics";
 
@@ -23,7 +24,9 @@ function sanitizeReturnTo(input: FormDataEntryValue | null) {
 
 export async function POST(request: NextRequest) {
   const formData = await request.formData();
-  const analyticsEnabled = formData.get("analytics") === "true";
+  const requestedAnalyticsEnabled = formData.get("analytics") === "true";
+  const analyticsEnabled =
+    requestedAnalyticsEnabled && canEnableAnalyticsWithPrivacySignals(resolveBrowserPrivacySignalsFromHeaders(request.headers));
   const returnTo = sanitizeReturnTo(formData.get("returnTo"));
   const consent = createCookieConsentRecord({ analytics: analyticsEnabled });
   const wantsJson = request.headers.get("x-myrivo-consent-request") === "1";

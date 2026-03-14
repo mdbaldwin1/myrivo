@@ -11,6 +11,7 @@ import {
 import { fail } from "@/lib/http/api-response";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { COOKIE_CONSENT_COOKIE_NAME, hasAnalyticsConsent, resolveCookieConsent } from "@/lib/privacy/cookies";
+import { canEnableAnalyticsWithPrivacySignals, resolveBrowserPrivacySignalsFromHeaders } from "@/lib/privacy/signals";
 import { checkRateLimit } from "@/lib/security/rate-limit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -80,13 +81,18 @@ export async function POST(request: NextRequest) {
 
   const analyticsAccess = await resolveStoreAnalyticsAccessByStoreId(supabase, store.id);
   const consent = resolveCookieConsent(request.cookies.get(COOKIE_CONSENT_COOKIE_NAME)?.value);
+  const browserPrivacySignals = resolveBrowserPrivacySignalsFromHeaders(request.headers);
 
   const sessionId = buildSessionId({
     payloadSessionId: parsed.data.sessionId,
     cookieSessionId: request.cookies.get(SESSION_COOKIE)?.value
   });
 
-  if (!analyticsAccess.collectionEnabled || !hasAnalyticsConsent(consent)) {
+  if (
+    !analyticsAccess.collectionEnabled ||
+    !hasAnalyticsConsent(consent) ||
+    !canEnableAnalyticsWithPrivacySignals(browserPrivacySignals)
+  ) {
     return NextResponse.json({
       ok: true,
       acceptedEvents: 0

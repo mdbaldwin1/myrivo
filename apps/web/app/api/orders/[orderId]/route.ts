@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { OrderDisputeRecord, OrderRefundRecord } from "@/types/database";
+import { OrderDisputeRecord, OrderRefundRecord, OrderShippingDelayRecord } from "@/types/database";
 
 const paramsSchema = z.object({
   orderId: z.string().uuid()
@@ -87,5 +87,53 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: disputesError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ order, items: items ?? [], refunds: refunds ?? [], disputes: disputes ?? [] });
+  const { data: shippingDelays, error: shippingDelaysError } = await admin
+    .from("order_shipping_delays")
+    .select("id,order_id,store_id,created_by_user_id,resolved_by_user_id,status,reason_key,customer_path,original_ship_promise,revised_ship_date,internal_note,resolution_note,metadata_json,resolved_at,created_at,updated_at")
+    .eq("order_id", order.id)
+    .eq("store_id", bundle.store.id)
+    .order("created_at", { ascending: false })
+    .returns<OrderShippingDelayRecord[]>();
+
+  if (shippingDelaysError) {
+    return NextResponse.json({ error: shippingDelaysError.message }, { status: 500 });
+  }
+
+  const { data: timelineEvents, error: timelineError } = await admin
+    .from("audit_events")
+    .select("id,actor_user_id,action,entity_id,metadata,created_at")
+    .eq("entity", "order")
+    .eq("entity_id", order.id)
+    .in("action", [
+      "shipping_delay_recorded",
+      "shipping_delay_updated",
+      "shipping_delay_status_updated",
+      "shipping_delay_resolved",
+      "shipping_delay_customer_approved",
+      "shipping_delay_customer_cancel_requested"
+    ])
+    .order("created_at", { ascending: false })
+    .returns<
+      Array<{
+        id: string;
+        actor_user_id: string | null;
+        action: string;
+        entity_id: string | null;
+        metadata: Record<string, unknown>;
+        created_at: string;
+      }>
+    >();
+
+  if (timelineError) {
+    return NextResponse.json({ error: timelineError.message }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    order,
+    items: items ?? [],
+    refunds: refunds ?? [],
+    disputes: disputes ?? [],
+    shippingDelays: shippingDelays ?? [],
+    timelineEvents: timelineEvents ?? [],
+  });
 }

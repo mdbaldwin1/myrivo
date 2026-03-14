@@ -28,6 +28,10 @@ type ReviewItem = {
   title: string | null;
   body: string | null;
   verifiedPurchase: boolean;
+  incentiveDisclosure?: {
+    disclosed: boolean;
+    description: string | null;
+  };
   createdAt: string;
   media: ReviewMedia[];
 };
@@ -77,6 +81,8 @@ type ReviewFormState = {
   rating: number;
   title: string;
   body: string;
+  incentivized: boolean;
+  incentiveDescription: string;
 };
 
 type SelectedReviewFile = {
@@ -86,13 +92,19 @@ type SelectedReviewFile = {
 };
 
 const REVIEW_MAX_IMAGES = 8;
+const REVIEWER_NAME_INPUT_ID = "storefront-reviewer-name";
+const REVIEWER_EMAIL_INPUT_ID = "storefront-reviewer-email";
+const REVIEW_TITLE_INPUT_ID = "storefront-review-title";
+const REVIEW_BODY_INPUT_ID = "storefront-review-body";
 
 const initialFormState: ReviewFormState = {
   reviewerName: "",
   reviewerEmail: "",
   rating: 5,
   title: "",
-  body: ""
+  body: "",
+  incentivized: false,
+  incentiveDescription: ""
 };
 
 function formatReviewDate(value: string) {
@@ -358,6 +370,8 @@ export function StorefrontReviewsSection({
           body: form.body,
           reviewerName: form.reviewerName,
           reviewerEmail: form.reviewerEmail,
+          incentivized: form.incentivized,
+          incentiveDescription: form.incentiveDescription,
           media
         })
       });
@@ -457,6 +471,11 @@ export function StorefrontReviewsSection({
               ) : null}
             </div>
             {item.title ? <h3 className="font-medium">{item.title}</h3> : null}
+            {item.incentiveDisclosure?.disclosed ? (
+              <p className={cn("w-fit border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-900 dark:text-amber-100", buttonRadiusClass)}>
+                Incentivized review{item.incentiveDisclosure.description ? `: ${item.incentiveDisclosure.description}` : ""}
+              </p>
+            ) : null}
             {item.body ? <p className="text-sm leading-relaxed text-muted-foreground">{item.body}</p> : null}
             {reviewsTheme.reviewsShowMediaGallery && item.media.length > 0 ? (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -513,18 +532,28 @@ export function StorefrontReviewsSection({
         <FeedbackMessage type="success" message={successMessage} />
 
         <div className="grid gap-3 sm:grid-cols-2">
+          <label htmlFor={REVIEWER_NAME_INPUT_ID} className="sr-only">
+            Your name
+          </label>
           <Input
+            id={REVIEWER_NAME_INPUT_ID}
             value={form.reviewerName}
             onChange={(event) => setForm((current) => ({ ...current, reviewerName: event.target.value }))}
             placeholder={reviewsCopy.namePlaceholder}
+            aria-label="Your name"
             maxLength={120}
             className={buttonRadiusClass}
           />
+          <label htmlFor={REVIEWER_EMAIL_INPUT_ID} className="sr-only">
+            Email address
+          </label>
           <Input
+            id={REVIEWER_EMAIL_INPUT_ID}
             value={form.reviewerEmail}
             onChange={(event) => setForm((current) => ({ ...current, reviewerEmail: event.target.value }))}
             placeholder={reviewsCopy.emailPlaceholder}
             type="email"
+            aria-label="Email address"
             maxLength={320}
             className={buttonRadiusClass}
           />
@@ -550,22 +579,58 @@ export function StorefrontReviewsSection({
             <span className="ml-1 text-xs text-muted-foreground">{form.rating}/5</span>
           </div>
           <Input
+            id={REVIEW_TITLE_INPUT_ID}
             value={form.title}
             onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
             placeholder={reviewsCopy.titlePlaceholder}
+            aria-label="Review title"
             maxLength={120}
             className={buttonRadiusClass}
           />
         </div>
 
+        <label htmlFor={REVIEW_BODY_INPUT_ID} className="sr-only">
+          Review details
+        </label>
         <Textarea
+          id={REVIEW_BODY_INPUT_ID}
           value={form.body}
           onChange={(event) => setForm((current) => ({ ...current, body: event.target.value }))}
           placeholder={reviewsCopy.bodyPlaceholder}
+          aria-label="Review details"
           rows={4}
           maxLength={5000}
           className={buttonRadiusClass}
         />
+
+        <div className={cn("space-y-3 border border-border/70 bg-muted/20 p-3", buttonRadiusClass)}>
+          <label className="flex items-start gap-3 text-sm">
+            <input
+              type="checkbox"
+              checked={form.incentivized}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  incentivized: event.target.checked,
+                  incentiveDescription: event.target.checked ? current.incentiveDescription : ""
+                }))
+              }
+              className="mt-1"
+            />
+            <span>
+              I received a discount, free sample, or another incentive connected to leaving this review.
+            </span>
+          </label>
+          {form.incentivized ? (
+            <Input
+              value={form.incentiveDescription}
+              onChange={(event) => setForm((current) => ({ ...current, incentiveDescription: event.target.value }))}
+              placeholder="Example: Received a sample in exchange for an honest review"
+              maxLength={160}
+              className={buttonRadiusClass}
+            />
+          ) : null}
+        </div>
 
         <StorefrontPrivacyCollectionNotice
           surface="review"

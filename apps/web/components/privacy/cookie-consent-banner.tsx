@@ -15,7 +15,7 @@ type CookieConsentBannerProps = {
 export function CookieConsentBanner({ onOpenPreferences }: CookieConsentBannerProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { acceptAll, acceptEssentialOnly } = useCookieConsent();
+  const { acceptAll, acceptEssentialOnly, globalPrivacyControlEnabled } = useCookieConsent();
   const [isSubmitting, setIsSubmitting] = useState<"analytics" | "essential" | null>(null);
   const {
     isStorefront,
@@ -82,6 +82,11 @@ export function CookieConsentBanner({ onOpenPreferences }: CookieConsentBannerPr
             </Link>
             .
           </p>
+          {globalPrivacyControlEnabled ? (
+            <p className="max-w-3xl text-sm leading-relaxed text-foreground/80">
+              Your browser is sending a Global Privacy Control signal, so optional analytics cookies will stay off on this device.
+            </p>
+          ) : null}
         </div>
           <div className={cn("flex flex-col gap-2 sm:min-w-fit sm:items-end sm:shrink-0", isStorefront && "lg:min-w-fit")}>
             <div className="flex flex-row gap-2 sm:justify-end">
@@ -104,7 +109,7 @@ export function CookieConsentBanner({ onOpenPreferences }: CookieConsentBannerPr
               <Button
                 type="button"
                 className={cn("min-w-[10rem]", buttonRadiusClass)}
-                disabled={isSubmitting !== null}
+                disabled={isSubmitting !== null || globalPrivacyControlEnabled}
                 onClick={async () => {
                   setIsSubmitting("analytics");
                   try {
@@ -114,7 +119,7 @@ export function CookieConsentBanner({ onOpenPreferences }: CookieConsentBannerPr
                   }
                 }}
               >
-                {isSubmitting === "analytics" ? "Saving..." : "Accept all"}
+                {globalPrivacyControlEnabled ? "Browser signal active" : isSubmitting === "analytics" ? "Saving..." : "Accept all"}
               </Button>
             </div>
             <Link

@@ -7,7 +7,9 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
 
 const subscribeSchema = z.object({
-  email: z.string().email().max(320)
+  email: z.string().email().max(320),
+  source: z.string().trim().max(80).optional().default("storefront"),
+  location: z.string().trim().max(400).optional().default("")
 });
 
 export async function POST(request: NextRequest) {
@@ -32,6 +34,13 @@ export async function POST(request: NextRequest) {
   }
 
   const email = parsed.data.email.trim().toLowerCase();
+  const consentCapturedAt = new Date().toISOString();
+  const consentMetadata = {
+    consent_source: parsed.data.source.trim() || "storefront",
+    consent_location: parsed.data.location.trim() || null,
+    consent_captured_at: consentCapturedAt,
+    suppression_reason: null
+  };
   const supabase = createSupabaseAdminClient();
   const storeSlug = await resolveStoreSlugFromRequestAsync(request);
   if (!storeSlug) {
@@ -86,8 +95,12 @@ export async function POST(request: NextRequest) {
       .from("store_email_subscribers")
       .update({
         status: "subscribed",
-        subscribed_at: new Date().toISOString(),
-        unsubscribed_at: null
+        subscribed_at: consentCapturedAt,
+        unsubscribed_at: null,
+        metadata_json: {
+          ...consentMetadata,
+          resubscribed_at: consentCapturedAt
+        }
       })
       .eq("id", existing.id);
 
@@ -102,7 +115,8 @@ export async function POST(request: NextRequest) {
     store_id: store.id,
     email,
     status: "subscribed",
-    source: "storefront"
+    source: parsed.data.source.trim() || "storefront",
+    metadata_json: consentMetadata
   });
 
   if (insertError) {

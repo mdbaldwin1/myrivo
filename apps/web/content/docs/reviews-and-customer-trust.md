@@ -29,6 +29,31 @@ Use moderation to:
 - correct clearly invalid submissions
 - respond to customer concerns with context
 
+Do not use moderation to:
+
+- hide legitimate low ratings
+- remove honest customer frustration
+- pressure customers to change a review just because it hurts conversion
+
+## Review Collection Rules
+
+When asking for reviews:
+
+- invite a broad set of customers, not just obviously happy ones
+- keep the ask neutral instead of implying that positive reviews are preferred
+- disclose any incentive tied to the review
+- make sure support follow-up and review collection stay separate enough that customers do not feel coerced
+
+If you offer a discount, sample, or similar perk related to a review request, treat disclosure as mandatory.
+
+## Operational Checks
+
+Before using review collection heavily:
+
+- test one disclosed/incentivized review end to end
+- confirm the moderation queue shows enough context to review it fairly
+- make sure staff understand that owner responses are usually better than takedowns for honest complaints
+
 ## Related Docs
 
 - `/docs/catalog-and-orders`

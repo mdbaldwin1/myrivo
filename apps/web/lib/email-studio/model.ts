@@ -4,6 +4,7 @@ export const emailStudioTemplateIds = [
   "customerConfirmation",
   "ownerNewOrder",
   "pickupUpdated",
+  "shippingDelay",
   "refundIssued",
   "disputeOpened",
   "disputeResolved",
@@ -12,6 +13,26 @@ export const emailStudioTemplateIds = [
   "shipped",
   "delivered"
 ] as const;
+
+export type EmailMessageType = "transactional" | "marketing";
+
+export const EMAIL_COMPLIANCE_INFORMATION_ARCHITECTURE = {
+  emailStudioOwns: [
+    "transactional lifecycle templates tied to orders and operational events",
+    "sender name and reply-to presentation for transactional email",
+    "template copy, CTA language, and branded layout for lifecycle messages"
+  ],
+  subscriberToolsOwn: [
+    "marketing-list growth and subscriber status",
+    "unsubscribe and suppression handling for promotional email",
+    "future campaign-level consent provenance and reporting"
+  ],
+  importantBoundaries: [
+    "transactional email is not gated by marketing subscriber status",
+    "marketing email should use subscriber consent and suppression state",
+    "Email Studio is not the place to launch promotional campaigns"
+  ]
+} as const;
 
 export type EmailStudioTemplateId = (typeof emailStudioTemplateIds)[number];
 export const emailStudioThemeRadiusOptions = ["sharp", "rounded", "pill"] as const;
@@ -66,6 +87,25 @@ export const EMAIL_STUDIO_TOKENS: readonly EmailStudioFieldToken[] = [
   { token: "{trackingUrl}", label: "Tracking URL", description: "Shipment tracking URL.", category: "shipping" },
   { token: "{trackingNumber}", label: "Tracking number", description: "Shipment tracking number.", category: "shipping" },
   { token: "{carrier}", label: "Carrier", description: "Shipping carrier name.", category: "shipping" },
+  { token: "{shippingDelayReason}", label: "Delay reason", description: "Human-readable shipping delay reason.", category: "shipping" },
+  {
+    token: "{originalShipPromise}",
+    label: "Original ship promise",
+    description: "Original promised ship-by language captured by the store.",
+    category: "shipping"
+  },
+  {
+    token: "{revisedShipDate}",
+    label: "Revised ship date",
+    description: "New estimated ship date for a delayed order.",
+    category: "shipping"
+  },
+  {
+    token: "{shippingDelayCustomerPath}",
+    label: "Delay resolution path",
+    description: "How the store is asking the customer to respond to the delay.",
+    category: "shipping"
+  },
   { token: "{refundAmount}", label: "Refund amount", description: "Formatted refund amount.", category: "refunds" },
   { token: "{refundReason}", label: "Refund reason", description: "Merchant-selected refund reason label.", category: "refunds" },
   { token: "{refundCustomerMessage}", label: "Refund customer note", description: "Optional customer-facing note saved with the refund.", category: "refunds" },
@@ -87,6 +127,7 @@ export type EmailStudioThemeDocument = {
 
 export type EmailStudioTemplateDocument = {
   id: EmailStudioTemplateId;
+  messageType: "transactional";
   label: string;
   audience: "customer" | "owner";
   subject: string;
@@ -100,6 +141,7 @@ export type EmailStudioTemplateDocument = {
 };
 
 export type EmailStudioDocument = {
+  messageType: "transactional";
   senderName: string;
   replyToEmail: string;
   theme: EmailStudioThemeDocument;
@@ -149,6 +191,7 @@ function buildDefaultTemplateMap(storeName: string): Record<EmailStudioTemplateI
   return {
     customerConfirmation: {
       id: "customerConfirmation",
+      messageType: "transactional",
       label: "Customer order confirmation",
       audience: "customer",
       description: "Sent to customers right after an order is placed.",
@@ -173,6 +216,7 @@ function buildDefaultTemplateMap(storeName: string): Record<EmailStudioTemplateI
     },
     ownerNewOrder: {
       id: "ownerNewOrder",
+      messageType: "transactional",
       label: "Owner new order alert",
       audience: "owner",
       description: "Sent to store owners when a new order is placed.",
@@ -196,6 +240,7 @@ function buildDefaultTemplateMap(storeName: string): Record<EmailStudioTemplateI
     },
     pickupUpdated: {
       id: "pickupUpdated",
+      messageType: "transactional",
       label: "Pickup updated",
       audience: "customer",
       description: "Sent when the store changes the pickup location or window for an order.",
@@ -217,8 +262,32 @@ function buildDefaultTemplateMap(storeName: string): Record<EmailStudioTemplateI
       ctaUrl: "{orderUrl}",
       footerNote: "Questions? Contact {replyToEmail}."
     },
+    shippingDelay: {
+      id: "shippingDelay",
+      messageType: "transactional",
+      label: "Shipping delay update",
+      audience: "customer",
+      description: "Sent when the store needs to communicate or resolve a shipping delay.",
+      subject: "Shipping update for order {orderShortId}",
+      preheader: "There is an update to your order timeline.",
+      headline: "We have an update on your shipment",
+      bodyHtml: sanitizeRichTextHtml(
+        paragraphsToHtml([
+          "There is a shipping delay affecting your order with {storeName}.",
+          "Order: {orderId}",
+          "Reason: {shippingDelayReason}",
+          "Original timing: {originalShipPromise}",
+          "Revised ship date: {revisedShipDate}",
+          "Next step: {shippingDelayCustomerPath}"
+        ])
+      ),
+      ctaLabel: "Review order",
+      ctaUrl: "{orderUrl}",
+      footerNote: "Questions? Contact {replyToEmail}. Store policies: {policiesUrl}"
+    },
     refundIssued: {
       id: "refundIssued",
+      messageType: "transactional",
       label: "Refund issued",
       audience: "customer",
       description: "Sent when a refund has been successfully issued for an order.",
@@ -240,6 +309,7 @@ function buildDefaultTemplateMap(storeName: string): Record<EmailStudioTemplateI
     },
     disputeOpened: {
       id: "disputeOpened",
+      messageType: "transactional",
       label: "Dispute opened",
       audience: "customer",
       description: "Sent when a payment dispute or chargeback opens on an order.",
@@ -262,6 +332,7 @@ function buildDefaultTemplateMap(storeName: string): Record<EmailStudioTemplateI
     },
     disputeResolved: {
       id: "disputeResolved",
+      messageType: "transactional",
       label: "Dispute resolved",
       audience: "customer",
       description: "Sent when a payment dispute reaches a terminal outcome.",
@@ -283,6 +354,7 @@ function buildDefaultTemplateMap(storeName: string): Record<EmailStudioTemplateI
     },
     failed: {
       id: "failed",
+      messageType: "transactional",
       label: "Order failed",
       audience: "customer",
       description: "Sent when there was a problem finalizing an order.",
@@ -302,6 +374,7 @@ function buildDefaultTemplateMap(storeName: string): Record<EmailStudioTemplateI
     },
     cancelled: {
       id: "cancelled",
+      messageType: "transactional",
       label: "Order cancelled",
       audience: "customer",
       description: "Sent when an order is cancelled.",
@@ -321,6 +394,7 @@ function buildDefaultTemplateMap(storeName: string): Record<EmailStudioTemplateI
     },
     shipped: {
       id: "shipped",
+      messageType: "transactional",
       label: "Order shipped",
       audience: "customer",
       description: "Sent when a shipped order is marked shipped.",
@@ -341,6 +415,7 @@ function buildDefaultTemplateMap(storeName: string): Record<EmailStudioTemplateI
     },
     delivered: {
       id: "delivered",
+      messageType: "transactional",
       label: "Order delivered",
       audience: "customer",
       description: "Sent when a shipped order is marked delivered.",
@@ -364,6 +439,7 @@ function buildDefaultTemplateMap(storeName: string): Record<EmailStudioTemplateI
 
 export function buildDefaultEmailStudioDocument(storeName = "Your store"): EmailStudioDocument {
   return {
+    messageType: "transactional",
     senderName: "",
     replyToEmail: "",
     theme: buildDefaultTheme(),
@@ -399,6 +475,8 @@ function resolveLegacyTemplateSubject(transactional: TransactionalRecord, templa
       return getString(transactional, "ownerNewOrderSubjectTemplate");
     case "pickupUpdated":
       return getString(transactional, "pickupUpdatedSubjectTemplate");
+    case "shippingDelay":
+      return getString(transactional, "shippingDelaySubjectTemplate");
     case "refundIssued":
       return getString(transactional, "refundIssuedSubjectTemplate");
     case "disputeOpened":
@@ -424,6 +502,8 @@ function resolveLegacyTemplateBody(transactional: TransactionalRecord, templateI
       return getString(transactional, "ownerNewOrderBodyTemplate");
     case "pickupUpdated":
       return getString(transactional, "pickupUpdatedBodyTemplate");
+    case "shippingDelay":
+      return getString(transactional, "shippingDelayBodyTemplate");
     case "refundIssued":
       return getString(transactional, "refundIssuedBodyTemplate");
     case "disputeOpened":
@@ -488,6 +568,7 @@ export function createEmailStudioDocumentFromSection(section: Record<string, unk
   }, {} as Record<EmailStudioTemplateId, EmailStudioTemplateDocument>);
 
   return {
+    messageType: "transactional",
     senderName: getString(transactional, "senderName"),
     replyToEmail: getString(transactional, "replyToEmail"),
     theme: {
@@ -540,6 +621,8 @@ export function serializeEmailStudioDocument(document: EmailStudioDocument) {
       ownerNewOrderBodyTemplate: richTextToPlainText(document.templates.ownerNewOrder.bodyHtml),
       pickupUpdatedSubjectTemplate: document.templates.pickupUpdated.subject.trim(),
       pickupUpdatedBodyTemplate: richTextToPlainText(document.templates.pickupUpdated.bodyHtml),
+      shippingDelaySubjectTemplate: document.templates.shippingDelay.subject.trim(),
+      shippingDelayBodyTemplate: richTextToPlainText(document.templates.shippingDelay.bodyHtml),
       refundIssuedSubjectTemplate: document.templates.refundIssued.subject.trim(),
       refundIssuedBodyTemplate: richTextToPlainText(document.templates.refundIssued.bodyHtml),
       disputeOpenedSubjectTemplate: document.templates.disputeOpened.subject.trim(),
