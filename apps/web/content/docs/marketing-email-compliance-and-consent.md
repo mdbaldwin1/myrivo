@@ -75,3 +75,4 @@ Typical fixes:
 - `/docs/email-studio-and-lifecycle-messages`
 - `/docs/promotions-and-subscribers`
 - `/docs/legal-governance-and-consent-ops`
+- `/docs/welcome-popup-discount-campaigns`

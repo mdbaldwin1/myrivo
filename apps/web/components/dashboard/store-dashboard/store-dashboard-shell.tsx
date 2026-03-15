@@ -45,19 +45,19 @@ export function StoreDashboardShell({ data }: StoreDashboardShellProps) {
       </section>
 
       <section aria-label="Operations and health" className="grid gap-4 lg:grid-cols-12">
-        <div className="lg:col-span-8">
+        <div className="min-w-0 lg:col-span-8">
           <TodayOperationsPanel operations={data.operations} />
         </div>
-        <div className="lg:col-span-4">
+        <div className="min-w-0 lg:col-span-4">
           <StoreHealthPanel health={data.health} errorMessage={data.moduleErrors?.health} retryHref={retryHref} />
         </div>
       </section>
 
       <section aria-label="Performance and inventory" className="grid gap-4 lg:grid-cols-12">
-        <div className="lg:col-span-8">
+        <div className="min-w-0 lg:col-span-8">
           <PerformanceOverviewPanel performance={data.performance} errorMessage={data.moduleErrors?.performance} retryHref={retryHref} />
         </div>
-        <div className="lg:col-span-4">
+        <div className="min-w-0 lg:col-span-4">
           <InventoryRiskPanel
             inventory={data.inventory}
             storeSlug={data.store.slug}
@@ -68,10 +68,10 @@ export function StoreDashboardShell({ data }: StoreDashboardShellProps) {
       </section>
 
       <section aria-label="Growth and activity" className="grid gap-4 lg:grid-cols-12">
-        <div className="lg:col-span-4">
+        <div className="min-w-0 lg:col-span-4">
           <GrowthSnapshotPanel growth={data.growth} storeSlug={data.store.slug} errorMessage={data.moduleErrors?.growth} retryHref={retryHref} />
         </div>
-        <div className="lg:col-span-8">
+        <div className="min-w-0 lg:col-span-8">
           <ActivityTimelinePanel timeline={data.timeline} errorMessage={data.moduleErrors?.timeline} retryHref={retryHref} />
         </div>
       </section>

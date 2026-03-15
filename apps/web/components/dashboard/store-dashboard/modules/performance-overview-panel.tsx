@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { AppAlert } from "@/components/ui/app-alert";
@@ -24,11 +25,39 @@ function formatDelta(value: number | null | undefined) {
 }
 
 export function PerformanceOverviewPanel({ performance, errorMessage, retryHref }: PerformanceOverviewPanelProps) {
+  const chartContainerRef = useRef<HTMLDivElement | null>(null);
+  const [chartReady, setChartReady] = useState(false);
   const dailyRevenueChartData = performance.dailySeries.map((point) => ({
     ...point,
     shortDate: point.date.slice(5),
     grossRevenueDollars: point.grossRevenueCents / 100
   }));
+
+  useEffect(() => {
+    const node = chartContainerRef.current;
+    if (!node) {
+      return;
+    }
+
+    const updateChartReady = () => {
+      const nextReady = node.clientWidth > 0 && node.clientHeight > 0;
+      setChartReady((current) => (current === nextReady ? current : nextReady));
+    };
+
+    updateChartReady();
+
+    const observer = new ResizeObserver(() => {
+      updateChartReady();
+    });
+
+    observer.observe(node);
+    window.addEventListener("resize", updateChartReady);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateChartReady);
+    };
+  }, []);
 
   return (
     <SectionCard title="Performance Overview" description="Revenue trends, period deltas, and top-selling products.">
@@ -63,32 +92,38 @@ export function PerformanceOverviewPanel({ performance, errorMessage, retryHref 
             {dailyRevenueChartData.length === 0 ? (
               <p className="text-sm text-muted-foreground">No paid orders in this period.</p>
             ) : (
-              <div className="h-64 min-w-0 rounded-md border border-border bg-muted/10 p-3">
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
-                  <BarChart data={dailyRevenueChartData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/60" />
-                    <XAxis
-                      dataKey="shortDate"
-                      tickLine={false}
-                      axisLine={false}
-                      fontSize={12}
-                      className="fill-muted-foreground"
-                    />
-                    <YAxis
-                      tickLine={false}
-                      axisLine={false}
-                      fontSize={12}
-                      className="fill-muted-foreground"
-                      tickFormatter={(value) => `$${value}`}
-                    />
-                    <Tooltip
-                      cursor={{ fill: "hsl(var(--muted) / 0.28)" }}
-                      formatter={(value) => [`$${Number(value ?? 0).toFixed(2)}`, "Revenue"]}
-                      labelFormatter={(label) => `Date: ${label}`}
-                    />
-                    <Bar dataKey="grossRevenueDollars" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+              <div ref={chartContainerRef} className="h-64 w-full min-w-0 min-h-[16rem] rounded-md border border-border bg-muted/10 p-3">
+                {chartReady ? (
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
+                    <BarChart data={dailyRevenueChartData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/60" />
+                      <XAxis
+                        dataKey="shortDate"
+                        tickLine={false}
+                        axisLine={false}
+                        fontSize={12}
+                        className="fill-muted-foreground"
+                      />
+                      <YAxis
+                        tickLine={false}
+                        axisLine={false}
+                        fontSize={12}
+                        className="fill-muted-foreground"
+                        tickFormatter={(value) => `$${value}`}
+                      />
+                      <Tooltip
+                        cursor={{ fill: "hsl(var(--muted) / 0.28)" }}
+                        formatter={(value) => [`$${Number(value ?? 0).toFixed(2)}`, "Revenue"]}
+                        labelFormatter={(label) => `Date: ${label}`}
+                      />
+                      <Bar dataKey="grossRevenueDollars" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex h-full min-h-[220px] items-center justify-center text-sm text-muted-foreground">
+                    Preparing chart…
+                  </div>
+                )}
               </div>
             )}
           </div>

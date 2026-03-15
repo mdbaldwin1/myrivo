@@ -12,7 +12,7 @@ import {
 export const storefrontStudioSurfaceIds = ["home", "products", "about", "policies", "cart", "orderSummary", "emails"] as const;
 
 export type StorefrontStudioSurfaceId = (typeof storefrontStudioSurfaceIds)[number];
-export const storefrontStudioEditorTargetIds = ["brand", "header", "footer", "productDetail"] as const;
+export const storefrontStudioEditorTargetIds = ["brand", "header", "footer", "productDetail", "welcomePopup"] as const;
 export type StorefrontStudioEditorTargetId = (typeof storefrontStudioEditorTargetIds)[number];
 
 export type StorefrontStudioSurface = {

@@ -13,6 +13,10 @@ reviewBy: 2026-06-30
 ## Promotion Setup
 Create promotions with clear start/end windows and test with representative carts before activation.
 
+Use total redemption caps to limit overall campaign volume and per-customer redemption caps to control repeat use. For welcome or first-order offers, prefer `One per customer` unless you intentionally want the same shopper to redeem the code more than once.
+
+Per-customer caps are enforced at checkout against the shopper's normalized email address and, when available, their signed-in customer identity. If a customer has already reached the limit, checkout will reject the code before the order is placed.
+
 ## Subscriber Growth
 Use subscriber tools for list growth and segmentation.
 

@@ -33,8 +33,8 @@ export function EmailStudioComposer({ storeName, document, template, activeField
     <div className="space-y-4">
       <AppAlert
         variant="info"
-        title="Transactional email only"
-        message="Email Studio controls order and fulfillment emails. Marketing campaigns, subscriber consent, and unsubscribe handling belong to the Subscribers workflow and future campaign tools."
+        title="Lifecycle and welcome emails"
+        message="Email Studio controls order lifecycle templates plus the welcome discount email sent after a popup signup. Campaign triggering, subscriber consent, and unsubscribe handling still belong to the Subscribers workflow and storefront growth tools."
       />
       <div className="rounded-2xl border border-border/70 bg-white p-4 shadow-sm">
         <div className="space-y-3">

@@ -65,10 +65,10 @@ export function StorefrontStudioStorefrontEditorCartTab() {
     <StorefrontStudioStorefrontEditorPanelTabContainer
       footer={
         document.isSectionSaving("cartPage") || document.isSettingsSaving
-          ? "Saving cart settings..."
+          ? "Saving page settings..."
           : document.isSectionDirty("cartPage") || document.isSettingsDirty
             ? "Changes save automatically."
-            : "All cart changes saved."
+            : "All page changes saved."
       }
     >
       <StorefrontStudioStorefrontEditorPanelTabSection title="Buyer Note">

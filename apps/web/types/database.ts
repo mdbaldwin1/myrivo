@@ -149,6 +149,18 @@ export type StoreSettingsRecord = {
   email_capture_heading: string | null;
   email_capture_description: string | null;
   email_capture_success_message: string | null;
+  welcome_popup_enabled: boolean;
+  welcome_popup_eyebrow: string | null;
+  welcome_popup_headline: string | null;
+  welcome_popup_body: string | null;
+  welcome_popup_email_placeholder: string | null;
+  welcome_popup_cta_label: string | null;
+  welcome_popup_decline_label: string | null;
+  welcome_popup_image_layout: string | null;
+  welcome_popup_delay_seconds: number;
+  welcome_popup_dismiss_days: number;
+  welcome_popup_image_path: string | null;
+  welcome_popup_promotion_id: string | null;
   checkout_enable_local_pickup: boolean;
   checkout_local_pickup_label: string | null;
   checkout_local_pickup_fee_cents: number;
@@ -647,12 +659,23 @@ export type PromotionRecord = {
   discount_value: number;
   min_subtotal_cents: number;
   max_redemptions: number | null;
+  per_customer_redemption_limit: number | null;
   times_redeemed: number;
   starts_at: string | null;
   ends_at: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
+};
+
+export type PromotionRedemptionRecord = {
+  id: string;
+  store_id: string;
+  promotion_id: string;
+  order_id: string;
+  customer_user_id: string | null;
+  customer_email_normalized: string;
+  created_at: string;
 };
 
 export type AuditEventRecord = {

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Expand, ExternalLink, Monitor, Package, PanelBottom, PanelLeftClose, PanelLeftOpen, PanelTop, Smartphone, SwatchBook, Tablet, X } from "lucide-react";
+import { Expand, ExternalLink, Gift, Monitor, Package, PanelBottom, PanelLeftClose, PanelLeftOpen, PanelTop, Smartphone, SwatchBook, Tablet, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { StorefrontStudioCanvas } from "@/components/dashboard/storefront-studio-canvas";
@@ -23,6 +23,7 @@ import {
   storefrontStudioSurfaces,
   type StorefrontStudioSurfaceId
 } from "@/lib/store-editor/storefront-studio";
+import { setWelcomePopupStudioPreview, STOREFRONT_WELCOME_POPUP_SURFACES } from "@/lib/storefront/welcome-popup";
 import type { StorefrontData } from "@/lib/storefront/runtime";
 import { cn } from "@/lib/utils";
 
@@ -160,6 +161,17 @@ export function StorefrontStudio({ storeSlug, initialSurface, initialEditorTarge
     },
     [visiblePageSurfaces]
   );
+  const campaignTargets = useMemo(
+    () => [
+      {
+        id: "welcomePopup" as const,
+        label: "Welcome Popup",
+        description: "First-visit email capture campaign shown across eligible storefront entry pages.",
+        icon: Gift
+      }
+    ],
+    []
+  );
 
   const resolvedActiveEditorTarget: StorefrontStudioStorefrontEditorTarget = resolvedEditorParam
     ? resolvedEditorParam
@@ -168,14 +180,15 @@ export function StorefrontStudio({ storeSlug, initialSurface, initialEditorTarge
       : activeEditorTarget === "productDetail"
         ? "productDetail"
         : activePageSurfaceId;
-  const editorTargets = useMemo(() => [...structureTargets, ...pageTargets], [pageTargets, structureTargets]);
+  const editorTargets = useMemo(() => [...structureTargets, ...pageTargets, ...campaignTargets], [campaignTargets, pageTargets, structureTargets]);
   const activeEditorMeta = editorTargets.find((target) => target.id === resolvedActiveEditorTarget) ?? editorTargets[0]!;
   const editorTargetSections = useMemo(
     () => [
       { label: "Storefront structure", items: structureTargets },
-      { label: "Pages", items: pageTargets }
+      { label: "Pages", items: pageTargets },
+      { label: "Campaigns", items: campaignTargets }
     ],
-    [pageTargets, structureTargets]
+    [campaignTargets, pageTargets, structureTargets]
   );
 
   useEffect(() => {
@@ -198,6 +211,13 @@ export function StorefrontStudio({ storeSlug, initialSurface, initialEditorTarge
       }
     };
   }, []);
+
+  useEffect(() => {
+    setWelcomePopupStudioPreview(storeSlug, resolvedActiveEditorTarget === "welcomePopup");
+    return () => {
+      setWelcomePopupStudioPreview(storeSlug, false);
+    };
+  }, [resolvedActiveEditorTarget, storeSlug]);
 
   useEffect(() => {
     if (!fullscreenPreview) {
@@ -279,7 +299,7 @@ export function StorefrontStudio({ storeSlug, initialSurface, initialEditorTarge
     const currentHref = buildStorefrontStudioSurfaceHref(pathname, currentParams, normalizeStorefrontStudioSurface(currentSurfaceParam));
     const nextParams = new URLSearchParams(searchParams.toString());
 
-    if (editorTarget === "brand" || editorTarget === "header" || editorTarget === "footer" || editorTarget === "productDetail") {
+    if (editorTarget === "brand" || editorTarget === "header" || editorTarget === "footer" || editorTarget === "productDetail" || editorTarget === "welcomePopup") {
       nextParams.set("editor", editorTarget);
     } else {
       nextParams.delete("editor");
@@ -298,6 +318,13 @@ export function StorefrontStudio({ storeSlug, initialSurface, initialEditorTarge
       setActiveProductDetailHandle((current) => current ?? firstHandle);
       setActiveEditorTarget("productDetail");
       replaceStudioUrl("products", "productDetail");
+      return;
+    }
+
+    if (targetId === "welcomePopup") {
+      const nextSurface = (STOREFRONT_WELCOME_POPUP_SURFACES as readonly string[]).includes(activePageSurfaceId) ? activePageSurfaceId : "home";
+      setActiveEditorTarget("welcomePopup");
+      replaceStudioUrl(nextSurface as PageSurfaceId, "welcomePopup");
       return;
     }
 
@@ -468,10 +495,6 @@ export function StorefrontStudio({ storeSlug, initialSurface, initialEditorTarge
                           sections={editorTargetSections}
                           onSelect={(targetId) => {
                             const nextTarget = targetId as StorefrontStudioStorefrontEditorTarget;
-                            if (["brand", "header", "footer"].includes(nextTarget)) {
-                              setActiveEditorTarget(nextTarget);
-                              return;
-                            }
                             handleSelectEditorTarget(nextTarget);
                           }}
                         />

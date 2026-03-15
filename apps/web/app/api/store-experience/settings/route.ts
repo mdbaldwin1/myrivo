@@ -65,6 +65,22 @@ const settingsUpdateSchema = z.object({
       description: z.string().max(500).nullable().optional(),
       successMessage: z.string().max(240).nullable().optional()
     })
+    .optional(),
+  welcomePopup: z
+    .object({
+      enabled: z.boolean().optional(),
+      eyebrow: z.string().max(80).nullable().optional(),
+      headline: z.string().max(200).nullable().optional(),
+      body: z.string().max(500).nullable().optional(),
+      emailPlaceholder: z.string().max(120).nullable().optional(),
+      ctaLabel: z.string().max(120).nullable().optional(),
+      declineLabel: z.string().max(120).nullable().optional(),
+      imageLayout: z.enum(["top", "left"]).optional(),
+      delaySeconds: z.number().int().min(0).max(60).optional(),
+      dismissDays: z.number().int().min(1).max(365).optional(),
+      imagePath: z.string().max(500).nullable().optional(),
+      promotionId: z.string().uuid().nullable().optional()
+    })
     .optional()
 });
 
@@ -250,6 +266,47 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
     updatedAreas.push("newsletterCapture");
+  }
+
+  if (payload.data.welcomePopup) {
+    const current = bundle.settings;
+    const next = payload.data.welcomePopup;
+    const { error } = await supabase
+      .from("store_settings")
+      .upsert(
+        {
+          store_id: bundle.store.id,
+          welcome_popup_enabled: next.enabled ?? current?.welcome_popup_enabled ?? false,
+          welcome_popup_eyebrow: next.eyebrow ?? current?.welcome_popup_eyebrow ?? null,
+          welcome_popup_headline: next.headline ?? current?.welcome_popup_headline ?? null,
+          welcome_popup_body: next.body ?? current?.welcome_popup_body ?? null,
+          welcome_popup_email_placeholder: next.emailPlaceholder ?? current?.welcome_popup_email_placeholder ?? null,
+          welcome_popup_cta_label: next.ctaLabel ?? current?.welcome_popup_cta_label ?? null,
+          welcome_popup_decline_label: next.declineLabel ?? current?.welcome_popup_decline_label ?? null,
+          welcome_popup_image_layout: next.imageLayout ?? current?.welcome_popup_image_layout ?? "left",
+          welcome_popup_delay_seconds: next.delaySeconds ?? current?.welcome_popup_delay_seconds ?? 6,
+          welcome_popup_dismiss_days: next.dismissDays ?? current?.welcome_popup_dismiss_days ?? 14,
+          welcome_popup_image_path: next.imagePath ?? current?.welcome_popup_image_path ?? null,
+          welcome_popup_promotion_id: next.promotionId ?? current?.welcome_popup_promotion_id ?? null
+        },
+        { onConflict: "store_id" }
+      );
+
+    if (error) {
+      if (
+        isMissingColumnInSchemaCache(error, "welcome_popup_enabled") ||
+        isMissingColumnInSchemaCache(error, "welcome_popup_eyebrow") ||
+        isMissingColumnInSchemaCache(error, "welcome_popup_decline_label") ||
+        isMissingColumnInSchemaCache(error, "welcome_popup_image_layout")
+      ) {
+        return NextResponse.json(
+          { error: "Welcome popup settings require the latest database migration. Please run migrations and try again." },
+          { status: 400 }
+        );
+      }
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    updatedAreas.push("welcomePopup");
   }
 
   return NextResponse.json({ ok: true, updatedAreas });

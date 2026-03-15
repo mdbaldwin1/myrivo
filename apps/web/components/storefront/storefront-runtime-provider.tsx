@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, type ReactNode } from "react";
 import { StorefrontAnalyticsProvider } from "@/components/storefront/storefront-analytics-provider";
+import { StorefrontWelcomePopup } from "@/components/storefront/storefront-welcome-popup";
 import type { StorefrontMode, StorefrontRuntime } from "@/lib/storefront/runtime";
 import { buildStorefrontThemeStyle } from "@/lib/theme/storefront-theme";
 
@@ -92,7 +93,12 @@ export function StorefrontRuntimeProvider({ runtime, children }: StorefrontRunti
 
   return (
     <StorefrontRuntimeContext.Provider value={runtime}>
-      <StorefrontAnalyticsProvider runtime={runtime}>{children}</StorefrontAnalyticsProvider>
+      <StorefrontAnalyticsProvider runtime={runtime}>
+        <div className="relative h-full min-h-full">
+          {children}
+          <StorefrontWelcomePopup runtime={runtime} />
+        </div>
+      </StorefrontAnalyticsProvider>
     </StorefrontRuntimeContext.Provider>
   );
 }

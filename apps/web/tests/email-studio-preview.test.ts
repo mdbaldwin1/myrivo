@@ -5,6 +5,7 @@ import {
   renderEmailStudioPreview,
   resolveEmailStudioPreviewScenario
 } from "@/lib/email-studio/preview";
+import { renderEmailStudioTemplate } from "@/lib/email-studio/render";
 
 describe("email studio preview helpers", () => {
   test("renders template strings against sample scenario values", () => {
@@ -27,6 +28,13 @@ describe("email studio preview helpers", () => {
 
     expect(scenario.id).toBe("shipping");
     expect(scenario.values.shippingDelayReason).toContain("Carrier");
+  });
+
+  test("uses welcome sample data for the welcome discount template", () => {
+    const scenario = resolveEmailStudioPreviewScenario("welcomeDiscount", "pickup");
+
+    expect(scenario.id).toBe("welcome");
+    expect(scenario.values.discountCode).toBe("WELCOME10");
   });
 
   test("builds a preview envelope and rendered html/text from the active template", () => {
@@ -65,6 +73,7 @@ describe("email studio preview helpers", () => {
   });
 
   test("keeps pickup-oriented templates on the pickup scenario and shipping templates on the shipping scenario", () => {
+    expect(resolveEmailStudioPreviewScenario("welcomeDiscount", "shipping").id).toBe("welcome");
     expect(resolveEmailStudioPreviewScenario("customerConfirmation", "shipping").id).toBe("pickup");
     expect(resolveEmailStudioPreviewScenario("ownerNewOrder", "shipping").id).toBe("pickup");
     expect(resolveEmailStudioPreviewScenario("pickupUpdated", "shipping").id).toBe("pickup");
@@ -76,5 +85,26 @@ describe("email studio preview helpers", () => {
     expect(resolveEmailStudioPreviewScenario("failed", "pickup").id).toBe("shipping");
     expect(resolveEmailStudioPreviewScenario("cancelled", "pickup").id).toBe("shipping");
     expect(resolveEmailStudioPreviewScenario("delivered", "pickup").id).toBe("shipping");
+  });
+
+  test("decodes leftover encoded apostrophes in stored template html before rendering", () => {
+    const document = buildDefaultEmailStudioDocument("Olive Mercantile");
+    const template = {
+      ...document.templates.welcomeDiscount,
+      bodyHtml: "<p>Use this code at checkout on {storeName}&amp;#39;s storefront.</p>"
+    };
+
+    const rendered = renderEmailStudioTemplate(
+      template,
+      {
+        storeName: "Olive Mercantile"
+      },
+      document.theme,
+      "Olive Mercantile"
+    );
+
+    expect(rendered.html).toContain("Olive Mercantile&#39;s storefront");
+    expect(rendered.html).not.toContain("&amp;amp;#39;");
+    expect(rendered.text).toContain("Olive Mercantile's storefront");
   });
 });

@@ -7,6 +7,7 @@ describe("buildStubCheckoutRpcPayload", () => {
       buildStubCheckoutRpcPayload({
         storeSlug: "at-home-apothecary",
         customerEmail: "buyer@example.com",
+        customerUserId: "user-1",
         items: [{ productId: "product-1", quantity: 2 }],
         stubPaymentRef: "stub_pi_123",
         promoCode: "WELCOME10"
@@ -14,6 +15,7 @@ describe("buildStubCheckoutRpcPayload", () => {
     ).toEqual({
       p_store_slug: "at-home-apothecary",
       p_customer_email: "buyer@example.com",
+      p_customer_user_id: "user-1",
       p_items: [{ productId: "product-1", quantity: 2 }],
       p_stub_payment_ref: "stub_pi_123",
       p_discount_cents: 0,

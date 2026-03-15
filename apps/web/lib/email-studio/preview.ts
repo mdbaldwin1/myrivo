@@ -1,7 +1,7 @@
 import { renderEmailStudioTemplate } from "@/lib/email-studio/render";
 import type { EmailStudioTemplateDocument, EmailStudioTemplateId, EmailStudioThemeDocument } from "@/lib/email-studio/model";
 
-export type EmailStudioPreviewScenarioId = "pickup" | "shipping";
+export type EmailStudioPreviewScenarioId = "pickup" | "shipping" | "welcome";
 
 export type EmailStudioPreviewScenario = {
   id: EmailStudioPreviewScenarioId;
@@ -107,6 +107,61 @@ export const emailStudioPreviewScenarios: readonly EmailStudioPreviewScenario[] 
       revisedShipDate: "Mar 19, 2026",
       shippingDelayCustomerPath: "Please review the revised ship date and confirm whether you want us to continue."
     }
+  },
+  {
+    id: "welcome",
+    label: "Welcome signup",
+    values: {
+      orderId: "",
+      orderShortId: "",
+      storeName: "Olive Mercantile",
+      customerName: "Jordan Lee",
+      customerFirstName: "Jordan",
+      customerLastName: "Lee",
+      customerEmail: "jordan@example.com",
+      supportEmail: "support@olivemercantile.com",
+      replyToEmail: "support@olivemercantile.com",
+      subtotal: "",
+      discount: "",
+      total: "",
+      promoCode: "",
+      items: "",
+      dashboardUrl: "https://myrivo.local/dashboard/stores/olive-mercantile",
+      orderUrl: "",
+      storeUrl: "https://olivemercantile.com",
+      policiesUrl: "https://olivemercantile.com/policies",
+      fulfillmentMethod: "",
+      pickupLocationName: "",
+      pickupAddress: "",
+      pickupCityRegion: "",
+      pickupWindow: "",
+      pickupInstructions: "",
+      pickupDetails: "",
+      previousPickupDetails: "",
+      pickupUpdateReason: "",
+      refundAmount: "",
+      refundReason: "",
+      refundCustomerMessage: "",
+      disputeAmount: "",
+      disputeReason: "",
+      disputeStatus: "",
+      disputeResponseDueBy: "",
+      status: "",
+      trackingUrl: "",
+      trackingNumber: "",
+      carrier: "",
+      shippingDelayReason: "",
+      originalShipPromise: "",
+      revisedShipDate: "",
+      shippingDelayCustomerPath: "",
+      discountCode: "WELCOME10",
+      discountLabel: "10% off",
+      minimumSpend: "$35.00",
+      offerExpiresOn: "March 31, 2026",
+      unsubscribeUrl: "https://myrivo.local/newsletter/unsubscribe?store=olive-mercantile",
+      privacyUrl: "https://olivemercantile.com/privacy",
+      footerAddress: "Mailing address: 12 Main Street, Richmond, VA 23220"
+    }
   }
 ] as const;
 
@@ -116,6 +171,12 @@ export function applyEmailStudioPreviewTemplate(template: string, values: Record
 
 export function resolveEmailStudioPreviewScenario(templateId: EmailStudioTemplateId, scenarioId: EmailStudioPreviewScenarioId) {
   const base = emailStudioPreviewScenarios.find((scenario) => scenario.id === scenarioId) ?? emailStudioPreviewScenarios[0]!;
+
+  if (
+    templateId === "welcomeDiscount"
+  ) {
+    return emailStudioPreviewScenarios[2]!;
+  }
 
   if (
     templateId === "customerConfirmation" ||
@@ -137,14 +198,18 @@ export function renderEmailStudioPreview(
   replyToEmail: string,
   storeName: string
 ) {
-  const rendered = renderEmailStudioTemplate(template, values, theme, storeName);
+  const resolvedValues: Record<string, string> = {
+    ...values,
+    storeName: storeName.trim() || values.storeName || "Your store"
+  };
+  const rendered = renderEmailStudioTemplate(template, resolvedValues, theme, storeName);
   return {
     subject: rendered.subject,
     preheader: rendered.preheader,
     body: rendered.text,
     html: rendered.html,
     from: (senderName.trim() || storeName.trim() || "Your store").trim(),
-    replyTo: replyToEmail.trim() || values.replyToEmail || values.supportEmail || "",
+    replyTo: replyToEmail.trim() || resolvedValues.replyToEmail || resolvedValues.supportEmail || "",
     to: template.audience === "customer" ? values.customerEmail : "owner@store.test"
   };
 }

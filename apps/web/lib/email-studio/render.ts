@@ -22,15 +22,39 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#39;");
 }
 
+function decodeHtmlEntities(value: string) {
+  return value
+    .replaceAll("&nbsp;", " ")
+    .replaceAll("&amp;", "&")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&quot;", "\"")
+    .replaceAll("&#39;", "'");
+}
+
+function normalizeTemplateContent(value: string) {
+  let normalized = value;
+
+  for (let index = 0; index < 3; index += 1) {
+    const decoded = decodeHtmlEntities(normalized);
+    if (decoded === normalized) {
+      break;
+    }
+    normalized = decoded;
+  }
+
+  return normalized;
+}
+
 function applyTemplateString(template: string, values: Record<string, string>) {
-  return Object.entries(values).reduce((resolved, [key, value]) => resolved.replaceAll(`{${key}}`, value), template);
+  return Object.entries(values).reduce((resolved, [key, value]) => resolved.replaceAll(`{${key}}`, value), normalizeTemplateContent(template));
 }
 
 function applyTemplateHtml(template: string, values: Record<string, string>) {
   return Object.entries(values).reduce((resolved, [key, value]) => {
     const safeValue = escapeHtml(value).replaceAll("\n", "<br />");
     return resolved.replaceAll(`{${key}}`, safeValue);
-  }, template);
+  }, normalizeTemplateContent(template));
 }
 
 function isSafeHref(href: string) {
