@@ -198,7 +198,7 @@ export function renderEmailStudioPreview(
   replyToEmail: string,
   storeName: string
 ) {
-  const resolvedValues = {
+  const resolvedValues: Record<string, string> = {
     ...values,
     storeName: storeName.trim() || values.storeName || "Your store"
   };

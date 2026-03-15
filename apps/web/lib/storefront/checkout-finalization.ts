@@ -34,6 +34,27 @@ type StorefrontCheckoutRecord = {
   status: "pending" | "completed" | "failed";
 };
 
+async function resolveCheckoutCustomerUserId(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  sourceCartId: string | null
+) {
+  if (!sourceCartId) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("customer_carts")
+    .select("user_id")
+    .eq("id", sourceCartId)
+    .maybeSingle<{ user_id: string | null }>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data?.user_id ?? null;
+}
+
 function resolveCheckoutFeeSnapshot(checkout: StorefrontCheckoutRecord, fallback: Awaited<ReturnType<typeof resolveStoreFeeProfile>>) {
   return {
     planKey: checkout.fee_plan_key ?? fallback.planKey,
@@ -160,6 +181,7 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
     buildStubCheckoutRpcPayload({
       storeSlug: checkout.store_slug,
       customerEmail: checkout.customer_email,
+      customerUserId: await resolveCheckoutCustomerUserId(supabase, checkout.source_cart_id),
       items: checkout.items,
       stubPaymentRef: paymentIntentId,
       discountCents: 0,

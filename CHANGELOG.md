@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Added configurable per-customer promotion redemption caps with race-safe checkout enforcement, redemption ledger tracking, and merchant promotion controls for unlimited, one-per-customer, or custom customer limits.
 - Added governance metadata to the Myrivo docs library, including documented ownership, review cadence, next-review dates, and an overdue-doc review process.
 - Added a shared refunds/disputes contract module and new operational docs describing the intended financial statuses, refund reasons, dispute lifecycle, and merchant UX model.
 - Added order-level refund request persistence, merchant refund actions in the order flyout, refund history in order detail, and audit-backed refund request recording.

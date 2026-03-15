@@ -659,12 +659,23 @@ export type PromotionRecord = {
   discount_value: number;
   min_subtotal_cents: number;
   max_redemptions: number | null;
+  per_customer_redemption_limit: number | null;
   times_redeemed: number;
   starts_at: string | null;
   ends_at: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
+};
+
+export type PromotionRedemptionRecord = {
+  id: string;
+  store_id: string;
+  promotion_id: string;
+  order_id: string;
+  customer_user_id: string | null;
+  customer_email_normalized: string;
+  created_at: string;
 };
 
 export type AuditEventRecord = {

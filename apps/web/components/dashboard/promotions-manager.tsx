@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,96 +14,195 @@ import { StatusChip } from "@/components/ui/status-chip";
 import { notify } from "@/lib/feedback/toast";
 import type { PromotionRecord } from "@/types/database";
 
+type PromotionListItem = Pick<
+  PromotionRecord,
+  | "id"
+  | "code"
+  | "discount_type"
+  | "discount_value"
+  | "min_subtotal_cents"
+  | "max_redemptions"
+  | "per_customer_redemption_limit"
+  | "times_redeemed"
+  | "starts_at"
+  | "ends_at"
+  | "is_active"
+  | "created_at"
+>;
+
 type PromotionsManagerProps = {
-  initialPromotions: Array<
-    Pick<
-      PromotionRecord,
-      | "id"
-      | "code"
-      | "discount_type"
-      | "discount_value"
-      | "min_subtotal_cents"
-      | "max_redemptions"
-      | "times_redeemed"
-      | "starts_at"
-      | "ends_at"
-      | "is_active"
-      | "created_at"
-    >
-  >;
+  initialPromotions: PromotionListItem[];
 };
 
 type PromotionResponse = {
-  promotion?: Pick<
-    PromotionRecord,
-    | "id"
-    | "code"
-    | "discount_type"
-    | "discount_value"
-    | "min_subtotal_cents"
-    | "max_redemptions"
-    | "times_redeemed"
-    | "starts_at"
-    | "ends_at"
-    | "is_active"
-    | "created_at"
-  >;
+  promotion?: PromotionListItem;
   deleted?: boolean;
   error?: string;
 };
 
-export function PromotionsManager({ initialPromotions }: PromotionsManagerProps) {
-  const [promotions, setPromotions] = useState(initialPromotions);
-  const [code, setCode] = useState("");
-  const [discountType, setDiscountType] = useState<PromotionRecord["discount_type"]>("percent");
-  const [discountValue, setDiscountValue] = useState("10");
-  const [minSubtotalDollars, setMinSubtotalDollars] = useState("0.00");
-  const [isCreateFlyoutOpen, setIsCreateFlyoutOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [listError, setListError] = useState<string | null>(null);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const isCreateDirty =
-    code.trim().length > 0 || discountType !== "percent" || discountValue.trim() !== "10" || minSubtotalDollars.trim() !== "0.00";
+type GlobalCapMode = "unlimited" | "custom";
+type PerCustomerCapMode = "unlimited" | "once" | "custom";
 
-  function resetCreateDraft() {
-    setCode("");
-    setDiscountType("percent");
-    setDiscountValue("10");
-    setMinSubtotalDollars("0.00");
-    setCreateError(null);
+type PromotionDraft = {
+  code: string;
+  discountType: PromotionRecord["discount_type"];
+  discountValue: string;
+  minSubtotalDollars: string;
+  maxRedemptionsMode: GlobalCapMode;
+  maxRedemptionsValue: string;
+  perCustomerCapMode: PerCustomerCapMode;
+  perCustomerCapValue: string;
+};
+
+function createEmptyDraft(): PromotionDraft {
+  return {
+    code: "",
+    discountType: "percent",
+    discountValue: "10",
+    minSubtotalDollars: "0.00",
+    maxRedemptionsMode: "unlimited",
+    maxRedemptionsValue: "",
+    perCustomerCapMode: "unlimited",
+    perCustomerCapValue: ""
+  };
+}
+
+function promotionToDraft(promotion: PromotionListItem): PromotionDraft {
+  return {
+    code: promotion.code,
+    discountType: promotion.discount_type,
+    discountValue:
+      promotion.discount_type === "percent" ? String(promotion.discount_value) : (promotion.discount_value / 100).toFixed(2),
+    minSubtotalDollars: (promotion.min_subtotal_cents / 100).toFixed(2),
+    maxRedemptionsMode: promotion.max_redemptions === null ? "unlimited" : "custom",
+    maxRedemptionsValue: promotion.max_redemptions === null ? "" : String(promotion.max_redemptions),
+    perCustomerCapMode:
+      promotion.per_customer_redemption_limit === null
+        ? "unlimited"
+        : promotion.per_customer_redemption_limit === 1
+          ? "once"
+          : "custom",
+    perCustomerCapValue:
+      promotion.per_customer_redemption_limit === null || promotion.per_customer_redemption_limit === 1
+        ? ""
+        : String(promotion.per_customer_redemption_limit)
+  };
+}
+
+function formatDiscount(promotion: PromotionListItem) {
+  return promotion.discount_type === "percent" ? `${promotion.discount_value}%` : `$${(promotion.discount_value / 100).toFixed(2)}`;
+}
+
+function formatGlobalCap(limit: number | null) {
+  return limit === null ? "Unlimited total" : `${limit} total uses`;
+}
+
+function formatPerCustomerCap(limit: number | null) {
+  if (limit === null) {
+    return "Unlimited per customer";
   }
 
-  async function createPromotion(event: React.FormEvent<HTMLFormElement>) {
+  if (limit === 1) {
+    return "One per customer";
+  }
+
+  return `${limit} per customer`;
+}
+
+function serializeDraft(draft: PromotionDraft) {
+  const maxRedemptions = draft.maxRedemptionsMode === "custom" ? Number.parseInt(draft.maxRedemptionsValue, 10) : null;
+  const perCustomerRedemptionLimit =
+    draft.perCustomerCapMode === "unlimited"
+      ? null
+      : draft.perCustomerCapMode === "once"
+        ? 1
+        : Number.parseInt(draft.perCustomerCapValue, 10);
+
+  return {
+    code: draft.code.trim().toUpperCase(),
+    discountType: draft.discountType,
+    discountValue:
+      draft.discountType === "percent" ? Number.parseInt(draft.discountValue, 10) : Math.round(Number(draft.discountValue) * 100),
+    minSubtotalCents: Math.round(Number(draft.minSubtotalDollars) * 100),
+    maxRedemptions,
+    perCustomerRedemptionLimit,
+    isActive: true
+  };
+}
+
+export function PromotionsManager({ initialPromotions }: PromotionsManagerProps) {
+  const [promotions, setPromotions] = useState(initialPromotions);
+  const [isFlyoutOpen, setIsFlyoutOpen] = useState(false);
+  const [editingPromotionId, setEditingPromotionId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<PromotionDraft>(createEmptyDraft());
+  const [initialDraft, setInitialDraft] = useState<PromotionDraft>(createEmptyDraft());
+  const [saving, setSaving] = useState(false);
+  const [listError, setListError] = useState<string | null>(null);
+  const [flyoutError, setFlyoutError] = useState<string | null>(null);
+  const isEditMode = Boolean(editingPromotionId);
+  const isFlyoutDirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(initialDraft), [draft, initialDraft]);
+
+  function resetFlyoutState() {
+    const empty = createEmptyDraft();
+    setDraft(empty);
+    setInitialDraft(empty);
+    setEditingPromotionId(null);
+    setFlyoutError(null);
+  }
+
+  function openCreateFlyout() {
+    const empty = createEmptyDraft();
+    setDraft(empty);
+    setInitialDraft(empty);
+    setEditingPromotionId(null);
+    setFlyoutError(null);
+    setIsFlyoutOpen(true);
+  }
+
+  function openEditFlyout(promotion: PromotionListItem) {
+    const nextDraft = promotionToDraft(promotion);
+    setDraft(nextDraft);
+    setInitialDraft(nextDraft);
+    setEditingPromotionId(promotion.id);
+    setFlyoutError(null);
+    setIsFlyoutOpen(true);
+  }
+
+  async function submitPromotion(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
-    setCreateError(null);
+    setFlyoutError(null);
     setListError(null);
 
-    const minSubtotalCents = Math.round(Number(minSubtotalDollars) * 100);
+    const payload = serializeDraft(draft);
     const response = await fetch("/api/promotions", {
-      method: "POST",
+      method: isEditMode ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        code,
-        discountType,
-        discountValue: Number(discountValue),
-        minSubtotalCents,
-        isActive: true
-      })
+      body: JSON.stringify(
+        isEditMode
+          ? {
+              promotionId: editingPromotionId,
+              ...payload,
+              isActive: promotions.find((promotion) => promotion.id === editingPromotionId)?.is_active ?? true
+            }
+          : payload
+      )
     });
 
-    const payload = (await response.json()) as PromotionResponse;
+    const body = (await response.json()) as PromotionResponse;
     setSaving(false);
 
-    if (!response.ok || !payload.promotion) {
-      setCreateError(payload.error ?? "Unable to create promotion.");
+    if (!response.ok || !body.promotion) {
+      setFlyoutError(body.error ?? `Unable to ${isEditMode ? "update" : "create"} promotion.`);
       return;
     }
 
-    setPromotions((current) => [payload.promotion!, ...current]);
-    resetCreateDraft();
-    setIsCreateFlyoutOpen(false);
-    notify.success("Promotion created.");
+    setPromotions((current) =>
+      isEditMode ? current.map((item) => (item.id === body.promotion!.id ? body.promotion! : item)) : [body.promotion!, ...current]
+    );
+    notify.success(isEditMode ? "Promotion updated." : "Promotion created.");
+    resetFlyoutState();
+    setIsFlyoutOpen(false);
   }
 
   async function toggleActive(promotionId: string, isActive: boolean) {
@@ -152,7 +251,7 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
       description="Review active and inactive promo codes, monitor usage, and manage availability."
       action={
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <Button type="button" onClick={() => setIsCreateFlyoutOpen(true)}>
+          <Button type="button" onClick={openCreateFlyout}>
             Create promotion
           </Button>
         </div>
@@ -167,13 +266,16 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
             promotions.map((promo) => (
               <li key={promo.id} className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-sm">
                 <span className="font-semibold">{promo.code}</span>
-                <Badge variant="outline">
-                  {promo.discount_type === "percent" ? `${promo.discount_value}%` : `$${(promo.discount_value / 100).toFixed(2)}`}
-                </Badge>
+                <Badge variant="outline">{formatDiscount(promo)}</Badge>
                 <span className="text-xs text-muted-foreground">Min ${(promo.min_subtotal_cents / 100).toFixed(2)}</span>
+                <span className="text-xs text-muted-foreground">{formatGlobalCap(promo.max_redemptions)}</span>
+                <span className="text-xs text-muted-foreground">{formatPerCustomerCap(promo.per_customer_redemption_limit)}</span>
                 <span className="text-xs text-muted-foreground">Used {promo.times_redeemed}</span>
                 <StatusChip label={promo.is_active ? "active" : "inactive"} tone={promo.is_active ? "success" : "neutral"} />
                 <RowActions>
+                  <RowActionButton type="button" onClick={() => openEditFlyout(promo)}>
+                    Edit
+                  </RowActionButton>
                   <RowActionButton type="button" onClick={() => void toggleActive(promo.id, promo.is_active)}>
                     {promo.is_active ? "Deactivate" : "Activate"}
                   </RowActionButton>
@@ -187,52 +289,52 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
         </ul>
       </div>
       <Flyout
-        open={isCreateFlyoutOpen}
+        open={isFlyoutOpen}
         onOpenChange={(open) => {
-          setIsCreateFlyoutOpen(open);
+          setIsFlyoutOpen(open);
           if (!open) {
-            resetCreateDraft();
+            resetFlyoutState();
           }
         }}
         confirmDiscardOnClose
-        isDirty={isCreateDirty}
-        onDiscardConfirm={resetCreateDraft}
-        title="Create promotion"
-        description="Define the discount code and minimum spend requirements."
+        isDirty={isFlyoutDirty}
+        onDiscardConfirm={resetFlyoutState}
+        title={isEditMode ? "Edit promotion" : "Create promotion"}
+        description="Define the discount code, order minimum, and redemption rules."
         footer={({ requestClose }) => (
           <div className="flex items-center justify-between gap-3">
-            <AppAlert compact variant="error" message={createError} className="text-sm" />
+            <AppAlert compact variant="error" message={flyoutError} className="text-sm" />
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={requestClose}>
                 Close
               </Button>
-              <Button type="submit" form="create-promotion-form" disabled={saving}>
-                {saving ? "Creating..." : "Create promotion"}
+              <Button type="submit" form="promotion-form" disabled={saving}>
+                {saving ? (isEditMode ? "Saving..." : "Creating...") : isEditMode ? "Save promotion" : "Create promotion"}
               </Button>
             </div>
           </div>
         )}
       >
-        <form id="create-promotion-form" onSubmit={createPromotion} className="grid gap-3">
+        <form id="promotion-form" onSubmit={submitPromotion} className="grid gap-3">
           <FormField label="Promo code" description="What customers enter at checkout. Letters and numbers only works best.">
-            <Input required placeholder="WELCOME10" value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} />
+            <Input required placeholder="WELCOME10" value={draft.code} onChange={(event) => setDraft((current) => ({ ...current, code: event.target.value.toUpperCase() }))} />
           </FormField>
           <FormField label="Discount type" description="Choose a percent off or a fixed dollar amount off.">
-            <Select value={discountType} onChange={(event) => setDiscountType(event.target.value as PromotionRecord["discount_type"])}>
+            <Select value={draft.discountType} onChange={(event) => setDraft((current) => ({ ...current, discountType: event.target.value as PromotionRecord["discount_type"] }))}>
               <option value="percent">Percent</option>
               <option value="fixed">Fixed amount ($)</option>
             </Select>
           </FormField>
           <FormField
-            label={discountType === "percent" ? "Discount percent" : "Discount amount (USD)"}
-            description={discountType === "percent" ? "Example: 10 for 10% off." : "Example: 5 for $5 off."}
+            label={draft.discountType === "percent" ? "Discount percent" : "Discount amount (USD)"}
+            description={draft.discountType === "percent" ? "Example: 10 for 10% off." : "Example: 5.00 for $5 off."}
           >
             <Input
               required
               inputMode="numeric"
-              placeholder={discountType === "percent" ? "10" : "5.00"}
-              value={discountValue}
-              onChange={(event) => setDiscountValue(event.target.value)}
+              placeholder={draft.discountType === "percent" ? "10" : "5.00"}
+              value={draft.discountValue}
+              onChange={(event) => setDraft((current) => ({ ...current, discountValue: event.target.value }))}
             />
           </FormField>
           <FormField label="Minimum subtotal (USD)" description="Set to 0.00 if there is no minimum order requirement.">
@@ -240,10 +342,51 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
               required
               inputMode="decimal"
               placeholder="0.00"
-              value={minSubtotalDollars}
-              onChange={(event) => setMinSubtotalDollars(event.target.value)}
+              value={draft.minSubtotalDollars}
+              onChange={(event) => setDraft((current) => ({ ...current, minSubtotalDollars: event.target.value }))}
             />
           </FormField>
+          <FormField label="Total redemption cap" description="Limit how many times this promo can be used across all customers.">
+            <Select
+              value={draft.maxRedemptionsMode}
+              onChange={(event) => setDraft((current) => ({ ...current, maxRedemptionsMode: event.target.value as GlobalCapMode }))}
+            >
+              <option value="unlimited">Unlimited</option>
+              <option value="custom">Custom total limit</option>
+            </Select>
+          </FormField>
+          {draft.maxRedemptionsMode === "custom" ? (
+            <FormField label="Total redemption limit" description="How many successful orders can use this promo in total.">
+              <Input
+                required
+                inputMode="numeric"
+                placeholder="100"
+                value={draft.maxRedemptionsValue}
+                onChange={(event) => setDraft((current) => ({ ...current, maxRedemptionsValue: event.target.value }))}
+              />
+            </FormField>
+          ) : null}
+          <FormField label="Per-customer cap" description="Limit how many times the same customer can redeem this promo.">
+            <Select
+              value={draft.perCustomerCapMode}
+              onChange={(event) => setDraft((current) => ({ ...current, perCustomerCapMode: event.target.value as PerCustomerCapMode }))}
+            >
+              <option value="unlimited">Unlimited</option>
+              <option value="once">One per customer</option>
+              <option value="custom">Custom customer limit</option>
+            </Select>
+          </FormField>
+          {draft.perCustomerCapMode === "custom" ? (
+            <FormField label="Per-customer redemption limit" description="How many successful orders the same customer can place with this promo.">
+              <Input
+                required
+                inputMode="numeric"
+                placeholder="2"
+                value={draft.perCustomerCapValue}
+                onChange={(event) => setDraft((current) => ({ ...current, perCustomerCapValue: event.target.value }))}
+              />
+            </FormField>
+          ) : null}
         </form>
       </Flyout>
     </SectionCard>

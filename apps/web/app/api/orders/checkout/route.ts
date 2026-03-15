@@ -9,6 +9,7 @@ import { resolveAvailablePickupLocations } from "@/lib/pickup/availability";
 import { buildPickupSlots } from "@/lib/pickup/scheduling";
 import { formatVariantLabel } from "@/lib/products/variants";
 import { calculateDiscountCents } from "@/lib/promotions/calculate-discount";
+import { normalizePromotionRedemptionEmail, PROMOTION_CUSTOMER_CAP_REACHED_ERROR } from "@/lib/promotions/redemption";
 import { checkRateLimit } from "@/lib/security/rate-limit";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
@@ -572,21 +573,24 @@ export async function POST(request: NextRequest) {
 
   let discountCents = 0;
   let normalizedPromoCode: string | null = null;
+  const normalizedCustomerEmail = normalizePromotionRedemptionEmail(email);
 
   if (promoCode?.trim()) {
     normalizedPromoCode = promoCode.trim().toUpperCase();
 
     const { data: promotion, error: promotionError } = await supabase
       .from("promotions")
-      .select("code,discount_type,discount_value,min_subtotal_cents,max_redemptions,times_redeemed,starts_at,ends_at,is_active")
+      .select("id,code,discount_type,discount_value,min_subtotal_cents,max_redemptions,per_customer_redemption_limit,times_redeemed,starts_at,ends_at,is_active")
       .eq("store_id", store.id)
       .eq("code", normalizedPromoCode)
       .maybeSingle<{
+        id: string;
         code: string;
         discount_type: "percent" | "fixed";
         discount_value: number;
         min_subtotal_cents: number;
         max_redemptions: number | null;
+        per_customer_redemption_limit: number | null;
         times_redeemed: number;
         starts_at: string | null;
         ends_at: string | null;
@@ -613,6 +617,46 @@ export async function POST(request: NextRequest) {
 
     if (promotion.max_redemptions !== null && promotion.times_redeemed >= promotion.max_redemptions) {
       return NextResponse.json({ error: "Promo code redemption limit reached." }, { status: 400 });
+    }
+
+    if (promotion.per_customer_redemption_limit !== null) {
+      const redemptionIds = new Set<string>();
+
+      const { data: emailRedemptions, error: emailRedemptionsError } = await supabase
+        .from("promotion_redemptions")
+        .select("id")
+        .eq("promotion_id", promotion.id)
+        .eq("customer_email_normalized", normalizedCustomerEmail)
+        .returns<Array<{ id: string }>>();
+
+      if (emailRedemptionsError) {
+        return NextResponse.json({ error: emailRedemptionsError.message }, { status: 500 });
+      }
+
+      for (const redemption of emailRedemptions ?? []) {
+        redemptionIds.add(redemption.id);
+      }
+
+      if (authenticatedUser?.id) {
+        const { data: userRedemptions, error: userRedemptionsError } = await supabase
+          .from("promotion_redemptions")
+          .select("id")
+          .eq("promotion_id", promotion.id)
+          .eq("customer_user_id", authenticatedUser.id)
+          .returns<Array<{ id: string }>>();
+
+        if (userRedemptionsError) {
+          return NextResponse.json({ error: userRedemptionsError.message }, { status: 500 });
+        }
+
+        for (const redemption of userRedemptions ?? []) {
+          redemptionIds.add(redemption.id);
+        }
+      }
+
+      if (redemptionIds.size >= promotion.per_customer_redemption_limit) {
+        return NextResponse.json({ error: PROMOTION_CUSTOMER_CAP_REACHED_ERROR }, { status: 400 });
+      }
     }
 
     if (subtotalCents < promotion.min_subtotal_cents) {
@@ -643,6 +687,7 @@ export async function POST(request: NextRequest) {
       buildStubCheckoutRpcPayload({
         storeSlug,
         customerEmail: email,
+        customerUserId: authenticatedUser?.id ?? null,
         items: rpcItems,
         stubPaymentRef: `stub_pi_${Date.now()}`,
         discountCents,
