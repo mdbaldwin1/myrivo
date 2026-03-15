@@ -1,6 +1,7 @@
 import { richTextToPlainText, sanitizeRichTextHtml } from "@/lib/rich-text";
 
 export const emailStudioTemplateIds = [
+  "welcomeDiscount",
   "customerConfirmation",
   "ownerNewOrder",
   "pickupUpdated",
@@ -30,7 +31,7 @@ export const EMAIL_COMPLIANCE_INFORMATION_ARCHITECTURE = {
   importantBoundaries: [
     "transactional email is not gated by marketing subscriber status",
     "marketing email should use subscriber consent and suppression state",
-    "Email Studio is not the place to launch promotional campaigns"
+    "Email Studio includes the welcome discount email template, but campaign triggering and subscriber collection live in storefront growth tools"
   ]
 } as const;
 
@@ -42,7 +43,7 @@ export type EmailStudioFieldToken = {
   token: string;
   label: string;
   description: string;
-  category: "order" | "customer" | "money" | "links" | "fulfillment" | "shipping" | "refunds" | "disputes";
+  category: "order" | "customer" | "money" | "links" | "fulfillment" | "shipping" | "refunds" | "disputes" | "marketing";
 };
 
 export const EMAIL_STUDIO_TOKENS: readonly EmailStudioFieldToken[] = [
@@ -112,7 +113,14 @@ export const EMAIL_STUDIO_TOKENS: readonly EmailStudioFieldToken[] = [
   { token: "{disputeAmount}", label: "Dispute amount", description: "Formatted disputed amount.", category: "disputes" },
   { token: "{disputeReason}", label: "Dispute reason", description: "Stripe dispute reason.", category: "disputes" },
   { token: "{disputeStatus}", label: "Dispute status", description: "Human-readable dispute status.", category: "disputes" },
-  { token: "{disputeResponseDueBy}", label: "Dispute response due by", description: "Response due date when available.", category: "disputes" }
+  { token: "{disputeResponseDueBy}", label: "Dispute response due by", description: "Response due date when available.", category: "disputes" },
+  { token: "{discountCode}", label: "Discount code", description: "The welcome promotion code customers can use at checkout.", category: "marketing" },
+  { token: "{discountLabel}", label: "Discount summary", description: "Human-readable discount copy such as 10% off.", category: "marketing" },
+  { token: "{minimumSpend}", label: "Minimum spend", description: "Formatted minimum purchase requirement, when one applies.", category: "marketing" },
+  { token: "{offerExpiresOn}", label: "Offer expires on", description: "Expiration date for the welcome offer, when one applies.", category: "marketing" },
+  { token: "{unsubscribeUrl}", label: "Unsubscribe URL", description: "Link to stop future marketing emails.", category: "marketing" },
+  { token: "{privacyUrl}", label: "Privacy policy URL", description: "Link to the privacy policy used in the welcome email footer.", category: "marketing" },
+  { token: "{footerAddress}", label: "Mailing address", description: "Postal mailing address included for compliance when available.", category: "marketing" }
 ] as const;
 
 export type EmailStudioThemeDocument = {
@@ -127,7 +135,7 @@ export type EmailStudioThemeDocument = {
 
 export type EmailStudioTemplateDocument = {
   id: EmailStudioTemplateId;
-  messageType: "transactional";
+  messageType: EmailMessageType;
   label: string;
   audience: "customer" | "owner";
   subject: string;
@@ -189,6 +197,29 @@ function buildDefaultTheme(): EmailStudioThemeDocument {
 
 function buildDefaultTemplateMap(storeName: string): Record<EmailStudioTemplateId, EmailStudioTemplateDocument> {
   return {
+    welcomeDiscount: {
+      id: "welcomeDiscount",
+      messageType: "marketing",
+      label: "Welcome discount email",
+      audience: "customer",
+      description: "Sent after a shopper joins through the welcome popup and receives the active promo code by email.",
+      subject: `Your welcome discount from ${storeName}`,
+      preheader: "Here’s your promo code and how to use it.",
+      headline: "Your welcome discount is ready",
+      bodyHtml: sanitizeRichTextHtml(
+        paragraphsToHtml([
+          "Thanks for joining {storeName}.",
+          "Your offer: {discountLabel}",
+          "Discount code: {discountCode}",
+          "Minimum purchase: {minimumSpend}",
+          "Valid through: {offerExpiresOn}",
+          "Use this code at checkout on {storeName}'s storefront."
+        ])
+      ),
+      ctaLabel: "Shop the storefront",
+      ctaUrl: "{storeUrl}",
+      footerNote: "Unsubscribe: {unsubscribeUrl} · Privacy Policy: {privacyUrl}"
+    },
     customerConfirmation: {
       id: "customerConfirmation",
       messageType: "transactional",
@@ -469,6 +500,8 @@ function getStoredTemplate(transactional: TransactionalRecord, templateId: Email
 
 function resolveLegacyTemplateSubject(transactional: TransactionalRecord, templateId: EmailStudioTemplateId) {
   switch (templateId) {
+    case "welcomeDiscount":
+      return "";
     case "customerConfirmation":
       return getString(transactional, "customerConfirmationSubjectTemplate");
     case "ownerNewOrder":
@@ -496,6 +529,8 @@ function resolveLegacyTemplateSubject(transactional: TransactionalRecord, templa
 
 function resolveLegacyTemplateBody(transactional: TransactionalRecord, templateId: EmailStudioTemplateId) {
   switch (templateId) {
+    case "welcomeDiscount":
+      return "";
     case "customerConfirmation":
       return getString(transactional, "customerConfirmationBodyTemplate");
     case "ownerNewOrder":

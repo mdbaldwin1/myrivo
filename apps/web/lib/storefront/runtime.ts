@@ -69,6 +69,18 @@ export type StorefrontSettings = {
   email_capture_heading?: string | null;
   email_capture_description?: string | null;
   email_capture_success_message?: string | null;
+  welcome_popup_enabled?: boolean;
+  welcome_popup_eyebrow?: string | null;
+  welcome_popup_headline?: string | null;
+  welcome_popup_body?: string | null;
+  welcome_popup_email_placeholder?: string | null;
+  welcome_popup_cta_label?: string | null;
+  welcome_popup_decline_label?: string | null;
+  welcome_popup_image_layout?: string | null;
+  welcome_popup_delay_seconds?: number | null;
+  welcome_popup_dismiss_days?: number | null;
+  welcome_popup_image_path?: string | null;
+  welcome_popup_promotion_id?: string | null;
   checkout_enable_local_pickup?: boolean | null;
   checkout_local_pickup_label?: string | null;
   checkout_local_pickup_fee_cents?: number | null;

@@ -493,6 +493,20 @@ export function StorefrontStudioDocumentProvider({
             heading: settingsDraftSnapshot?.email_capture_heading ?? null,
             description: settingsDraftSnapshot?.email_capture_description ?? null,
             successMessage: settingsDraftSnapshot?.email_capture_success_message ?? null
+          },
+          welcomePopup: {
+            enabled: settingsDraftSnapshot?.welcome_popup_enabled ?? false,
+            eyebrow: settingsDraftSnapshot?.welcome_popup_eyebrow ?? null,
+            headline: settingsDraftSnapshot?.welcome_popup_headline ?? null,
+            body: settingsDraftSnapshot?.welcome_popup_body ?? null,
+            emailPlaceholder: settingsDraftSnapshot?.welcome_popup_email_placeholder ?? null,
+            ctaLabel: settingsDraftSnapshot?.welcome_popup_cta_label ?? null,
+            declineLabel: settingsDraftSnapshot?.welcome_popup_decline_label ?? null,
+            imageLayout: settingsDraftSnapshot?.welcome_popup_image_layout ?? "left",
+            delaySeconds: settingsDraftSnapshot?.welcome_popup_delay_seconds ?? 6,
+            dismissDays: settingsDraftSnapshot?.welcome_popup_dismiss_days ?? 14,
+            imagePath: settingsDraftSnapshot?.welcome_popup_image_path ?? null,
+            promotionId: settingsDraftSnapshot?.welcome_popup_promotion_id ?? null
           }
         })
       });

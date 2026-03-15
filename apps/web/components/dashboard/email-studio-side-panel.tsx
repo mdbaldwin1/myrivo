@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, CreditCard, MapPinned, PackageCheck, PackageOpen, PanelLeftClose, PanelLeftOpen, Scale, Truck, UserRound, XCircle } from "lucide-react";
+import { AlertCircle, CreditCard, MapPinned, PackageCheck, PackageOpen, PanelLeftClose, PanelLeftOpen, Scale, Sparkles, Truck, UserRound, XCircle } from "lucide-react";
 import { StorefrontStudioColorField } from "@/components/dashboard/storefront-studio-color-field";
 import { StorefrontStudioEditorTargetMenu } from "@/components/dashboard/storefront-studio-editor-target-menu";
 import { StorefrontStudioStorefrontEditorPanelTabContainer } from "@/components/dashboard/storefront-studio-storefront-editor-panel-tab-container";
@@ -16,6 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const templateIcons = {
+  welcomeDiscount: Sparkles,
   customerConfirmation: PackageCheck,
   ownerNewOrder: UserRound,
   pickupUpdated: MapPinned,
@@ -58,6 +59,7 @@ export function EmailStudioSidePanel({
 }: EmailStudioSidePanelProps) {
   const activeTemplate = document.templates[activeTemplateId];
   const customerItems = [
+    document.templates.welcomeDiscount,
     document.templates.customerConfirmation,
     document.templates.pickupUpdated,
     document.templates.shippingDelay,

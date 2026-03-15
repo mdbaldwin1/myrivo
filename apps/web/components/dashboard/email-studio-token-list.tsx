@@ -11,7 +11,7 @@ export function EmailStudioTokenList({ onInsertToken }: EmailStudioTokenListProp
     <div className="space-y-3 rounded-2xl border border-border/70 bg-white p-4">
       <div className="space-y-1">
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Tokens</p>
-        <p className="text-xs text-muted-foreground">Insert placeholders for order, customer, and fulfillment data.</p>
+        <p className="text-xs text-muted-foreground">Insert placeholders for order, customer, fulfillment, and welcome-offer data.</p>
       </div>
 
       <div className="flex flex-wrap gap-2">

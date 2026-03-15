@@ -39,7 +39,10 @@ export function StorefrontStudioEditableText({
     }
 
     editorRef.current?.focus();
-    editorRef.current?.select();
+    if (editorRef.current instanceof HTMLInputElement) {
+      const length = editorRef.current.value.length;
+      editorRef.current.setSelectionRange(length, length);
+    }
   }, [editing]);
 
   useEffect(() => {

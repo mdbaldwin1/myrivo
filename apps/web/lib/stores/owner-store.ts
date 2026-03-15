@@ -50,6 +50,18 @@ export type OwnedStoreBundle = {
     | "email_capture_heading"
     | "email_capture_description"
     | "email_capture_success_message"
+    | "welcome_popup_enabled"
+    | "welcome_popup_eyebrow"
+    | "welcome_popup_headline"
+    | "welcome_popup_body"
+    | "welcome_popup_email_placeholder"
+    | "welcome_popup_cta_label"
+    | "welcome_popup_decline_label"
+    | "welcome_popup_image_layout"
+    | "welcome_popup_delay_seconds"
+    | "welcome_popup_dismiss_days"
+    | "welcome_popup_image_path"
+    | "welcome_popup_promotion_id"
     | "checkout_enable_local_pickup"
     | "checkout_local_pickup_label"
     | "checkout_local_pickup_fee_cents"
@@ -173,7 +185,7 @@ async function buildOwnedStoreBundleFromResolvedStore(
       const full = await supabase
         .from("store_settings")
         .select(
-          "support_email,fulfillment_message,shipping_policy,return_policy,announcement,seo_title,seo_description,seo_noindex,seo_location_city,seo_location_region,seo_location_state,seo_location_postal_code,seo_location_country_code,seo_location_address_line1,seo_location_address_line2,seo_location_show_full_address,footer_tagline,footer_note,instagram_url,facebook_url,tiktok_url,policy_faqs,about_article_html,about_sections,storefront_copy_json,email_capture_enabled,email_capture_heading,email_capture_description,email_capture_success_message,checkout_enable_local_pickup,checkout_local_pickup_label,checkout_local_pickup_fee_cents,checkout_enable_flat_rate_shipping,checkout_flat_rate_shipping_label,checkout_flat_rate_shipping_fee_cents,checkout_allow_order_note,checkout_order_note_prompt"
+          "support_email,fulfillment_message,shipping_policy,return_policy,announcement,seo_title,seo_description,seo_noindex,seo_location_city,seo_location_region,seo_location_state,seo_location_postal_code,seo_location_country_code,seo_location_address_line1,seo_location_address_line2,seo_location_show_full_address,footer_tagline,footer_note,instagram_url,facebook_url,tiktok_url,policy_faqs,about_article_html,about_sections,storefront_copy_json,email_capture_enabled,email_capture_heading,email_capture_description,email_capture_success_message,welcome_popup_enabled,welcome_popup_eyebrow,welcome_popup_headline,welcome_popup_body,welcome_popup_email_placeholder,welcome_popup_cta_label,welcome_popup_decline_label,welcome_popup_image_layout,welcome_popup_delay_seconds,welcome_popup_dismiss_days,welcome_popup_image_path,welcome_popup_promotion_id,checkout_enable_local_pickup,checkout_local_pickup_label,checkout_local_pickup_fee_cents,checkout_enable_flat_rate_shipping,checkout_flat_rate_shipping_label,checkout_flat_rate_shipping_fee_cents,checkout_allow_order_note,checkout_order_note_prompt"
         )
         .eq("store_id", resolvedStore.id)
         .maybeSingle();
@@ -183,7 +195,12 @@ async function buildOwnedStoreBundleFromResolvedStore(
         isMissingColumnInSchemaCache(full.error, "seo_description") ||
         isMissingColumnInSchemaCache(full.error, "seo_noindex") ||
         isMissingColumnInSchemaCache(full.error, "seo_location_city") ||
-        isMissingColumnInSchemaCache(full.error, "seo_location_show_full_address")
+        isMissingColumnInSchemaCache(full.error, "seo_location_show_full_address") ||
+        isMissingColumnInSchemaCache(full.error, "welcome_popup_enabled") ||
+        isMissingColumnInSchemaCache(full.error, "welcome_popup_eyebrow") ||
+        isMissingColumnInSchemaCache(full.error, "welcome_popup_promotion_id") ||
+        isMissingColumnInSchemaCache(full.error, "welcome_popup_decline_label") ||
+        isMissingColumnInSchemaCache(full.error, "welcome_popup_image_layout")
       ) {
         const legacy = await supabase
           .from("store_settings")
@@ -207,7 +224,19 @@ async function buildOwnedStoreBundleFromResolvedStore(
                 seo_location_country_code: null,
                 seo_location_address_line1: null,
                 seo_location_address_line2: null,
-                seo_location_show_full_address: false
+                seo_location_show_full_address: false,
+                welcome_popup_enabled: false,
+                welcome_popup_eyebrow: null,
+                welcome_popup_headline: null,
+                welcome_popup_body: null,
+                welcome_popup_email_placeholder: null,
+                welcome_popup_cta_label: null,
+                welcome_popup_decline_label: null,
+                welcome_popup_image_layout: "left",
+                welcome_popup_delay_seconds: 6,
+                welcome_popup_dismiss_days: 14,
+                welcome_popup_image_path: null,
+                welcome_popup_promotion_id: null
               }
             : null,
           error: legacy.error

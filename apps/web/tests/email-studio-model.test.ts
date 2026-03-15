@@ -14,6 +14,9 @@ describe("email studio model", () => {
     expect(document.senderName).toBe("");
     expect(document.replyToEmail).toBe("");
     expect(document.theme.accentColor).toBe("#7C5C3B");
+    expect(document.templates.welcomeDiscount.messageType).toBe("marketing");
+    expect(document.templates.welcomeDiscount.subject).toContain("Olive Mercantile");
+    expect(document.templates.welcomeDiscount.bodyHtml).toContain("{discountCode}");
     expect(document.templates.customerConfirmation.subject).toContain("{orderShortId}");
     expect(document.templates.customerConfirmation.messageType).toBe("transactional");
     expect(document.templates.customerConfirmation.bodyHtml).toContain("{items}");
@@ -62,6 +65,7 @@ describe("email studio model", () => {
     expect(document.theme.borderRadius).toBe("pill");
     expect(document.templates.customerConfirmation.subject).toBe("Thanks from {storeName}");
     expect(document.templates.customerConfirmation.bodyHtml).toContain("{orderUrl}");
+    expect(document.templates.welcomeDiscount.subject).toContain("Olive Mercantile");
     expect(document.templates.shipped.subject).toBe("Legacy shipped subject");
     expect(document.templates.shipped.bodyHtml).toContain("Legacy shipped body");
   });
@@ -71,6 +75,8 @@ describe("email studio model", () => {
     document.senderName = "Olive Mercantile";
     document.replyToEmail = "support@example.com";
     document.theme.accentColor = "#123456";
+    document.templates.welcomeDiscount.subject = "Your code from {storeName}";
+    document.templates.welcomeDiscount.bodyHtml = "<p>Use {discountCode}</p>";
     document.templates.customerConfirmation.subject = "A";
     document.templates.customerConfirmation.bodyHtml = "<p>B</p>";
     document.templates.pickupUpdated.subject = "C";
@@ -84,6 +90,8 @@ describe("email studio model", () => {
 
     expect(transactional.senderName).toBe("Olive Mercantile");
     expect((transactional.theme as Record<string, string>).accentColor).toBe("#123456");
+    expect(templates.welcomeDiscount?.subject).toBe("Your code from {storeName}");
+    expect(templates.welcomeDiscount?.bodyHtml).toBe("<p>Use {discountCode}</p>");
     expect(templates.customerConfirmation?.subject).toBe("A");
     expect(templates.customerConfirmation?.bodyHtml).toBe("<p>B</p>");
     expect(templates.pickupUpdated?.subject).toBe("C");
@@ -106,5 +114,7 @@ describe("email studio model", () => {
     expect(EMAIL_STUDIO_TOKENS.some((token) => token.token === "{policiesUrl}")).toBe(true);
     expect(EMAIL_STUDIO_TOKENS.some((token) => token.token === "{refundAmount}")).toBe(true);
     expect(EMAIL_STUDIO_TOKENS.some((token) => token.token === "{disputeStatus}")).toBe(true);
+    expect(EMAIL_STUDIO_TOKENS.some((token) => token.token === "{discountCode}")).toBe(true);
+    expect(EMAIL_STUDIO_TOKENS.some((token) => token.token === "{unsubscribeUrl}")).toBe(true);
   });
 });
