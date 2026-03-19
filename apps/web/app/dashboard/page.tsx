@@ -1,10 +1,12 @@
 import { DashboardHomeShell } from "@/components/dashboard/dashboard-home-shell";
 import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
+import { resolveAuthenticatedWorkspacePath } from "@/lib/auth/authenticated-workspace";
 import { getDashboardHomeData } from "@/lib/dashboard/home/get-dashboard-home-data";
 import { resolveCustomerStorefrontLinksBySlug } from "@/lib/customer/storefront-links";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { GlobalUserRole } from "@/types/database";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +19,11 @@ export default async function DashboardPage() {
 
   if (!user) {
     return null;
+  }
+
+  const landingPath = await resolveAuthenticatedWorkspacePath(user.id);
+  if (landingPath !== "/dashboard") {
+    redirect(landingPath);
   }
 
   const [{ data: profile }, { data: savedStores }, { data: savedItems }, { data: carts }, { data: orders }] = await Promise.all([

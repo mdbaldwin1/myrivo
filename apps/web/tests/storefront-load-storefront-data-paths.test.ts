@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { getBoolean, getNumber, getString } from "@/lib/storefront/load-storefront-data";
+import { getBoolean, getNumber, getString, resolveStorefrontProductStatuses } from "@/lib/storefront/load-storefront-data";
 
 describe("loadStorefrontData nested path helpers", () => {
   test("reads nested boolean/string/number values by dotted path", () => {
@@ -36,5 +36,10 @@ describe("loadStorefrontData nested path helpers", () => {
     expect(getBoolean(source, "reviews.summary.enabled", true)).toBe(true);
     expect(getString(source, "reviews.summary.label", "Summary")).toBe("Summary");
     expect(getNumber(source, "reviews.summary.itemsPerPage", 12)).toBe(12);
+  });
+
+  test("includes draft products for owner and manager preview mode", () => {
+    expect(resolveStorefrontProductStatuses(true)).toEqual(["active", "draft"]);
+    expect(resolveStorefrontProductStatuses(false)).toEqual(["active"]);
   });
 });

@@ -20,7 +20,7 @@ const supabaseMock = {
         select: vi.fn(() => chain),
         eq: vi.fn(() => chain),
         maybeSingle: vi.fn(async () => ({
-          data: { id: "store-1", name: "At Home Apothecary", slug: "at-home-apothecary", status: "live" },
+          data: { id: "store-1", name: "Sunset Mercantile", slug: "sunset-mercantile", status: "live" },
           error: null
         }))
       };

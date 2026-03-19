@@ -38,6 +38,10 @@ export function getNumber(record: Record<string, unknown>, key: string, fallback
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+export function resolveStorefrontProductStatuses(canManageStore: boolean) {
+  return canManageStore ? (["active", "draft"] as const) : (["active"] as const);
+}
+
 export async function loadStorefrontData(explicitStoreSlug?: string | null): Promise<StorefrontData | null> {
   const supabase = await createSupabaseServerClient();
   const admin = createSupabaseAdminClient();
@@ -90,6 +94,8 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
     return null;
   }
 
+  const visibleProductStatuses = resolveStorefrontProductStatuses(canManageStore);
+
   const [
     analytics,
     { data: branding, error: brandingError },
@@ -131,7 +137,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
         "id,title,description,slug,image_urls,image_alt_text,seo_title,seo_description,is_featured,created_at,price_cents,inventory_qty,product_variants(id,title,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_made_to_order,is_default,status,sort_order,created_at),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))"
       )
       .eq("store_id", store.id)
-      .eq("status", "active")
+      .in("status", [...visibleProductStatuses])
       .order("created_at", { ascending: false })
   ]);
 
@@ -155,7 +161,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
         "id,title,description,image_urls,is_featured,created_at,price_cents,inventory_qty,product_variants(id,title,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_made_to_order,is_default,status,sort_order,created_at),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))"
       )
       .eq("store_id", store.id)
-      .eq("status", "active")
+      .in("status", [...visibleProductStatuses])
       .order("created_at", { ascending: false });
 
     resolvedProducts = (legacyProducts.data ?? []).map((product) => ({

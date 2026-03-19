@@ -110,7 +110,7 @@ export function StoreBootstrapForm({ existingStores }: StoreBootstrapFormProps) 
                   required
                   minLength={2}
                   maxLength={80}
-                  placeholder="At Home Apothecary"
+                  placeholder="Sunset Mercantile"
                   value={storeName}
                   onChange={(event) => {
                     setStoreName(event.target.value);

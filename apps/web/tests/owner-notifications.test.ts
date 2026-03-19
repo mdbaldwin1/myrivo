@@ -63,12 +63,12 @@ beforeEach(() => {
 
 describe("owner notification helpers", () => {
   test("routes owner review notifications directly to the pending review", async () => {
-    mockRecipientLookup(["admin-1"], "owner-1", "at-home-apothecary");
+    mockRecipientLookup(["admin-1"], "owner-1", "sunset-mercantile");
 
     const { notifyOwnersReviewCreated } = await import("@/lib/notifications/owner-notifications");
     await notifyOwnersReviewCreated({
       storeId: "store-1",
-      storeSlug: "at-home-apothecary",
+      storeSlug: "sunset-mercantile",
       reviewId: "review-123",
       productId: "product-1",
       rating: 5,
@@ -80,13 +80,13 @@ describe("owner notification helpers", () => {
     expect(dispatchNotificationMock).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: "review.created.owner",
-        actionUrl: "/dashboard/stores/at-home-apothecary/reviews?reviewId=review-123"
+        actionUrl: "/dashboard/stores/sunset-mercantile/reviews?reviewId=review-123"
       })
     );
   });
 
   test("routes order-created and pickup-scheduled notifications directly to the order flyout", async () => {
-    mockRecipientLookup(["admin-1"], "owner-1", "at-home-apothecary");
+    mockRecipientLookup(["admin-1"], "owner-1", "sunset-mercantile");
     adminFromMock.mockImplementation((table: string) => {
       if (table === "store_memberships") {
         return {
@@ -110,7 +110,7 @@ describe("owner notification helpers", () => {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
               maybeSingle: vi.fn(async () => ({
-                data: { owner_user_id: "owner-1", slug: "at-home-apothecary" },
+                data: { owner_user_id: "owner-1", slug: "sunset-mercantile" },
                 error: null
               }))
             }))
@@ -130,7 +130,7 @@ describe("owner notification helpers", () => {
                   fulfillment_method: "pickup",
                   pickup_window_start_at: "2026-03-15T15:00:00.000Z",
                   pickup_window_end_at: "2026-03-15T17:00:00.000Z",
-                  stores: { slug: "at-home-apothecary" }
+                  stores: { slug: "sunset-mercantile" }
                 },
                 error: null
               }))
@@ -148,14 +148,14 @@ describe("owner notification helpers", () => {
     expect(dispatchNotificationMock).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: "order.created.owner",
-        actionUrl: "/dashboard/stores/at-home-apothecary/orders?orderId=order-12345678"
+        actionUrl: "/dashboard/stores/sunset-mercantile/orders?orderId=order-12345678"
       })
     );
 
     expect(dispatchNotificationMock).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: "order.pickup.updated",
-        actionUrl: "/dashboard/stores/at-home-apothecary/orders?orderId=order-12345678"
+        actionUrl: "/dashboard/stores/sunset-mercantile/orders?orderId=order-12345678"
       })
     );
   });
@@ -167,7 +167,7 @@ describe("owner notification helpers", () => {
     await notifyOwnersInventoryLevel({
       storeId: "store-1",
       productId: "product-1",
-      productTitle: "Whipped Tallow",
+      productTitle: "Everyday Hand Cream",
       inventoryQty: 8,
       previousInventoryQty: 20,
       productStatus: "active"
@@ -191,7 +191,7 @@ describe("owner notification helpers", () => {
     await notifyOwnersInventoryLevel({
       storeId: "store-1",
       productId: "product-1",
-      productTitle: "Whipped Tallow",
+      productTitle: "Everyday Hand Cream",
       inventoryQty: 5,
       previousInventoryQty: 7,
       productStatus: "active"
@@ -207,7 +207,7 @@ describe("owner notification helpers", () => {
     await notifyOwnersInventoryLevel({
       storeId: "store-1",
       productId: "product-1",
-      productTitle: "Whipped Tallow",
+      productTitle: "Everyday Hand Cream",
       inventoryQty: 0,
       previousInventoryQty: 2,
       productStatus: "active"
@@ -223,7 +223,7 @@ describe("owner notification helpers", () => {
   });
 
   test("routes team invite accepted notifications directly to the accepted member record", async () => {
-    mockRecipientLookup(["admin-1"], "owner-1", "at-home-apothecary");
+    mockRecipientLookup(["admin-1"], "owner-1", "sunset-mercantile");
 
     const { notifyOwnersTeamInviteAccepted } = await import("@/lib/notifications/owner-notifications");
     await notifyOwnersTeamInviteAccepted({
@@ -265,8 +265,8 @@ describe("owner notification helpers", () => {
     const { notifyPlatformAdminsStoreSubmittedForReview } = await import("@/lib/notifications/owner-notifications");
     await notifyPlatformAdminsStoreSubmittedForReview({
       storeId: "store-1",
-      storeSlug: "at-home-apothecary",
-      storeName: "At Home Apothecary",
+      storeSlug: "sunset-mercantile",
+      storeName: "Sunset Mercantile",
       submittedByUserId: "owner-1"
     });
 
@@ -285,7 +285,7 @@ describe("owner notification helpers", () => {
     const { notifyOwnersSystemSetupWarning } = await import("@/lib/notifications/owner-notifications");
     await notifyOwnersSystemSetupWarning({
       storeId: "store-1",
-      storeSlug: "at-home-apothecary",
+      storeSlug: "sunset-mercantile",
       missingSteps: ["Payments", "First product"],
       source: "onboarding_launch",
       actorUserId: "admin-1"

@@ -159,7 +159,7 @@ beforeEach(() => {
   vi.resetModules();
   supabaseMock = buildSupabaseMock();
   ownedStoreBundleMock = {
-    store: { id: "store-1", slug: "apothecary", name: "At Home Apothecary" },
+    store: { id: "store-1", slug: "sunset-mercantile", name: "Sunset Mercantile" },
     settings: { support_email: "hello@example.com" }
   };
   requestedStoreSlug = null;
@@ -292,7 +292,7 @@ describe("store legal documents route", () => {
 
     expect(response.status).toBe(200);
     expect(requestedStoreSlug).toBe("apothecary");
-    expect(payload.store.name).toBe("At Home Apothecary");
+    expect(payload.store.name).toBe("Sunset Mercantile");
     expect(payload.documents.privacy.addendum_markdown).toBe("## Privacy addendum");
     expect(payload.documents.privacy.variables_json).toEqual({ privacyContactEmail: "privacy@example.com" });
     expect(payload.documents.privacy.published_base_version_label).toBe("v1.0");

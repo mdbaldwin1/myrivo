@@ -1,12 +1,12 @@
 import { describe, expect, test } from "vitest";
-import { getOnboardingNextStep } from "@/lib/stores/onboarding-steps";
+import { getLaunchReadinessChecklistItems, getOnboardingNextStep } from "@/lib/stores/onboarding-steps";
 import type { StoreOnboardingProgress } from "@/lib/stores/onboarding";
 
 function makeProgress(overrides: Partial<StoreOnboardingProgress> = {}): StoreOnboardingProgress {
   return {
     id: "store-1",
-    name: "At Home Apothecary",
-    slug: "at-home-apothecary",
+    name: "Sunset Mercantile",
+    slug: "sunset-mercantile",
     status: "draft",
     hasLaunchedOnce: false,
     role: "owner",
@@ -42,8 +42,8 @@ describe("onboarding step routes", () => {
 
     expect(nextStep).toEqual({
       id: "branding",
-      label: "Set branding",
-      href: "/dashboard/stores/at-home-apothecary/storefront-studio?editor=brand"
+      label: "Polish the storefront",
+      href: "/dashboard/stores/sunset-mercantile/storefront-studio?editor=brand"
     });
   });
 
@@ -52,9 +52,51 @@ describe("onboarding step routes", () => {
 
     expect(nextStep).toEqual({
       id: "launch",
-      label: "Apply to go live",
-      href: "/dashboard/stores/at-home-apothecary"
+      label: "Get ready to launch",
+      href: "/dashboard/stores/sunset-mercantile"
     });
+  });
+
+  test("builds launch-readiness checklist items with merchant-facing labels", () => {
+    const items = getLaunchReadinessChecklistItems(
+      makeProgress({
+        steps: {
+          profile: false,
+          branding: true,
+          firstProduct: false,
+          payments: false,
+          launch: false
+        },
+        completedStepCount: 1
+      })
+    );
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        id: "details",
+        label: "Review store details",
+        href: "/dashboard/stores/sunset-mercantile/store-settings/general",
+        completed: false
+      }),
+      expect.objectContaining({
+        id: "firstProduct",
+        label: "Add your first product",
+        href: "/dashboard/stores/sunset-mercantile/catalog",
+        completed: false
+      }),
+      expect.objectContaining({
+        id: "payments",
+        label: "Connect payments",
+        href: "/dashboard/stores/sunset-mercantile/store-settings/integrations",
+        completed: false
+      }),
+      expect.objectContaining({
+        id: "launch",
+        label: "Go live",
+        href: "/dashboard/stores/sunset-mercantile",
+        completed: false
+      })
+    ]);
   });
 
   test("hides launch next step while store is pending review", () => {

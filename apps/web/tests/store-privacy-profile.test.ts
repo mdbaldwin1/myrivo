@@ -53,10 +53,10 @@ describe("store privacy profile helpers", () => {
       null
     );
 
-    const notice = getStorePrivacyCollectionNotice("newsletter", { name: "At Home Apothecary", slug: "at-home-apothecary" }, profile);
+    const notice = getStorePrivacyCollectionNotice("newsletter", { name: "Sunset Mercantile", slug: "sunset-mercantile" }, profile);
 
-    expect(notice.policyHref).toBe("/s/at-home-apothecary/privacy");
-    expect(notice.requestHref).toBe("/s/at-home-apothecary/privacy/request");
+    expect(notice.policyHref).toBe("/s/sunset-mercantile/privacy");
+    expect(notice.requestHref).toBe("/s/sunset-mercantile/privacy/request");
     expect(notice.doNotSellHref).toContain("opt_out_sale_share");
     expect(notice.addendumMarkdown).toBe("Additional notice details.");
   });

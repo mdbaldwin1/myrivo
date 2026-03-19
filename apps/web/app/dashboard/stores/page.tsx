@@ -53,7 +53,7 @@ export default async function DashboardStoresPage() {
       className="p-3"
       action={
         <Button size="sm" asChild>
-          <Link href="/onboarding">Create Store</Link>
+          <Link href="/dashboard/stores/onboarding/new">Create Store</Link>
         </Button>
       }
     >

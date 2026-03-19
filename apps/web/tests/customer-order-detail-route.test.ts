@@ -67,7 +67,7 @@ describe("customer order detail route", () => {
                     shipment_status: null,
                     stores: {
                       id: "store-1",
-                      name: "At Home Apothecary",
+                      name: "Sunset Mercantile",
                       slug: "at-home-apothecary"
                     }
                   },

@@ -7,6 +7,9 @@ export const publicEnvSchema = z.object({
 
 export const serverEnvSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  OPENAI_API_KEY: z.string().optional(),
+  MYRIVO_ONBOARDING_AI_PROVIDER: z.enum(["openai", "deterministic"]).optional(),
+  MYRIVO_ONBOARDING_AI_MODEL: z.string().optional(),
   MYRIVO_SINGLE_STORE_SLUG: z.string().optional(),
   MYRIVO_EMAIL_PROVIDER: z.enum(["resend"]).optional(),
   RESEND_API_KEY: z.string().optional(),
@@ -83,6 +86,9 @@ export function getServerEnv() {
   if (!cachedServerEnv) {
     cachedServerEnv = serverEnvSchema.parse({
       SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+      MYRIVO_ONBOARDING_AI_PROVIDER: process.env.MYRIVO_ONBOARDING_AI_PROVIDER,
+      MYRIVO_ONBOARDING_AI_MODEL: process.env.MYRIVO_ONBOARDING_AI_MODEL,
       MYRIVO_SINGLE_STORE_SLUG: process.env.MYRIVO_SINGLE_STORE_SLUG,
       MYRIVO_EMAIL_PROVIDER: process.env.MYRIVO_EMAIL_PROVIDER,
       RESEND_API_KEY: process.env.RESEND_API_KEY,

@@ -9,7 +9,7 @@ describe("resolveMarketingEmailComplianceDefaults", () => {
     const { resolveMarketingEmailComplianceDefaults } = await import("@/lib/marketing-email/compliance");
 
     const resolved = resolveMarketingEmailComplianceDefaults(
-      { name: "At Home Apothecary", slug: "at-home-apothecary" },
+      { name: "Sunset Mercantile", slug: "sunset-mercantile" },
       {
         support_email: "support@athomeapothecary.com",
         seo_location_city: "Albany",
@@ -27,7 +27,7 @@ describe("resolveMarketingEmailComplianceDefaults", () => {
       messageType: "marketing",
       fromAddress: "no-reply@myrivo.app",
       fromMode: "platform_sender",
-      senderDisplayName: "At Home Apothecary",
+      senderDisplayName: "Sunset Mercantile",
       replyToEmail: "support@athomeapothecary.com",
       unsubscribeHref: "/unsubscribe?store=at-home-apothecary",
       privacyPolicyHref: "/s/at-home-apothecary/privacy",
@@ -42,7 +42,7 @@ describe("resolveMarketingEmailComplianceDefaults", () => {
   test("flags missing support email and mailing address", async () => {
     const { resolveMarketingEmailComplianceDefaults } = await import("@/lib/marketing-email/compliance");
 
-    const resolved = resolveMarketingEmailComplianceDefaults({ name: "At Home Apothecary", slug: "at-home-apothecary" }, null);
+    const resolved = resolveMarketingEmailComplianceDefaults({ name: "Sunset Mercantile", slug: "sunset-mercantile" }, null);
 
     expect(resolved.replyToEmail).toBeNull();
     expect(resolved.footerAddress).toBeNull();

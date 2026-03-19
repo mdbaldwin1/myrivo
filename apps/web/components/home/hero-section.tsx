@@ -2,7 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 
 const highlights = [
-  "A focused storefront built for At Home Apothecary",
+  "A focused storefront built for independent merchants",
   "Inventory and order workflows for makers",
   "Stripe checkout for secure direct payments"
 ];

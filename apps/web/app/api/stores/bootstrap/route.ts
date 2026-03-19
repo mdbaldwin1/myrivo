@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { seedStoreLegalDocumentsForStore } from "@/lib/legal/store-documents";
+import { createOrResumeOnboardingSession } from "@/lib/onboarding/session";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { toStoreSlug, withStoreSlugSuffix } from "@/lib/stores/slug";
@@ -136,7 +137,26 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const response = NextResponse.json({ store: createdStore }, { status: 201 });
+  let onboardingSessionId: string;
+
+  try {
+    const session = await createOrResumeOnboardingSession({
+      storeId: createdStore.id,
+      ownerUserId: user.id,
+      storeName: createdStore.name
+    });
+    onboardingSessionId = session.id;
+  } catch (sessionError) {
+    await supabase.from("stores").delete().eq("id", createdStore.id).eq("owner_user_id", user.id);
+    return NextResponse.json(
+      {
+        error: sessionError instanceof Error ? sessionError.message : "Store was created, but onboarding setup failed. Please contact support."
+      },
+      { status: 500 }
+    );
+  }
+
+  const response = NextResponse.json({ store: createdStore, onboardingSessionId }, { status: 201 });
   response.cookies.set(ACTIVE_STORE_COOKIE, createdStore.slug, {
     httpOnly: true,
     sameSite: "lax",

@@ -52,7 +52,7 @@ export function StoreHubCommandBar({ filters, activeStore }: StoreHubCommandBarP
           </Button>
         ) : null}
         <Button size="sm" asChild>
-          <Link href="/onboarding">Create store</Link>
+          <Link href="/dashboard/stores/onboarding/new">Create store</Link>
         </Button>
         <Button size="sm" variant="outline" asChild>
           <Link href="/dashboard">Customer dashboard</Link>

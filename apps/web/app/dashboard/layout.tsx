@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { resolveStoreAnalyticsAccessByStoreId } from "@/lib/analytics/access";
-import { getMissingRequiredLegalVersions } from "@/lib/legal/consent";
+import { getMissingRequiredLegalVersions, recordPendingSignupLegalAcceptances } from "@/lib/legal/consent";
 import { resolveAccountNotificationPreferences } from "@/lib/notifications/preferences";
 import { resolveStoreSlugFromCurrentDashboardRoute } from "@/lib/stores/active-store";
 import { getStoreOnboardingProgressForStore } from "@/lib/stores/onboarding";
@@ -22,6 +22,11 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   if (!user) {
     redirect("/login");
   }
+
+  await recordPendingSignupLegalAcceptances(supabase, {
+    userId: user.id,
+    userMetadata: user.user_metadata
+  });
 
   const missingLegalVersions = await getMissingRequiredLegalVersions(supabase, user.id);
   if (missingLegalVersions.length > 0) {

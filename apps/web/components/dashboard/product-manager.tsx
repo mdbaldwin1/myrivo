@@ -2905,7 +2905,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                   className={createStepIndex === 0 ? "w-full space-y-3 pl-1 pr-3" : "hidden"}
                 >
                 <FormField label="Title">
-                  <Input required minLength={2} placeholder="Whipped Tallow Balm" value={title} onChange={(event) => setTitle(event.target.value)} />
+                  <Input required minLength={2} placeholder="Everyday Hand Cream" value={title} onChange={(event) => setTitle(event.target.value)} />
                 </FormField>
                 <FormField label="Description">
                   <RichTextEditor
@@ -2920,15 +2920,15 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                   />
                 </FormField>
                 <FormField label="Slug" description="Optional. Leave blank to auto-generate from title.">
-                  <Input placeholder="whipped-tallow-balm" value={productSlug} onChange={(event) => setProductSlug(event.target.value)} />
+                  <Input placeholder="everyday-hand-cream" value={productSlug} onChange={(event) => setProductSlug(event.target.value)} />
                 </FormField>
                 <FormField label="SEO Title" description="Optional override used in page metadata.">
-                  <Input maxLength={120} placeholder="Whipped Tallow Balm | At Home Apothecary" value={seoTitle} onChange={(event) => setSeoTitle(event.target.value)} />
+                  <Input maxLength={120} placeholder="Everyday Hand Cream | Sunset Mercantile" value={seoTitle} onChange={(event) => setSeoTitle(event.target.value)} />
                 </FormField>
                 <FormField label="SEO Description" description="Optional override for meta description.">
                   <Input
                     maxLength={320}
-                    placeholder="Rich, small-batch tallow balm crafted for daily skin support."
+                    placeholder="A lightweight hand cream for everyday moisture and a clean finish."
                     value={seoDescription}
                     onChange={(event) => setSeoDescription(event.target.value)}
                   />
@@ -2936,7 +2936,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                 <FormField label="Primary Image Alt Text" description="Describe the product image for accessibility and SEO.">
                   <Input
                     maxLength={240}
-                    placeholder="Glass jar of whipped tallow balm on a wooden tray."
+                    placeholder="Minimal tube of hand cream beside a folded towel."
                     value={imageAltText}
                     onChange={(event) => setImageAltText(event.target.value)}
                   />
@@ -3830,7 +3830,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                   className={editStepIndex === 0 ? "w-full space-y-3 pl-1 pr-3" : "hidden"}
                 >
                 <FormField label="Title">
-                  <Input required minLength={2} placeholder="Whipped Tallow Balm" value={editTitle} onChange={(event) => setEditTitle(event.target.value)} />
+                  <Input required minLength={2} placeholder="Everyday Hand Cream" value={editTitle} onChange={(event) => setEditTitle(event.target.value)} />
                 </FormField>
                 <FormField label="Description">
                   <RichTextEditor
@@ -3847,7 +3847,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                 </FormField>
                 <FormField label="Slug" description="Optional. Leave blank to auto-generate from title.">
                   <Input
-                    placeholder="whipped-tallow-balm"
+                    placeholder="everyday-hand-cream"
                     value={editProductSlug}
                     onChange={(event) => setEditProductSlug(event.target.value)}
                     disabled={isEditReadOnly || editPending}
@@ -3856,7 +3856,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                 <FormField label="SEO Title" description="Optional override used in page metadata.">
                   <Input
                     maxLength={120}
-                    placeholder="Whipped Tallow Balm | At Home Apothecary"
+                    placeholder="Everyday Hand Cream | Sunset Mercantile"
                     value={editSeoTitle}
                     onChange={(event) => setEditSeoTitle(event.target.value)}
                     disabled={isEditReadOnly || editPending}
@@ -3865,7 +3865,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                 <FormField label="SEO Description" description="Optional override for meta description.">
                   <Input
                     maxLength={320}
-                    placeholder="Rich, small-batch tallow balm crafted for daily skin support."
+                    placeholder="A lightweight hand cream for everyday moisture and a clean finish."
                     value={editSeoDescription}
                     onChange={(event) => setEditSeoDescription(event.target.value)}
                     disabled={isEditReadOnly || editPending}
@@ -3874,7 +3874,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                 <FormField label="Primary Image Alt Text" description="Describe the product image for accessibility and SEO.">
                   <Input
                     maxLength={240}
-                    placeholder="Glass jar of whipped tallow balm on a wooden tray."
+                    placeholder="Minimal tube of hand cream beside a folded towel."
                     value={editImageAltText}
                     onChange={(event) => setEditImageAltText(event.target.value)}
                     disabled={isEditReadOnly || editPending}
