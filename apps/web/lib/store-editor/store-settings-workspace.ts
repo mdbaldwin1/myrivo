@@ -1,5 +1,6 @@
 import {
   Cog,
+  DollarSign,
   FileText,
   Globe,
   Paintbrush,
@@ -14,6 +15,8 @@ export type StoreSettingsSectionId =
   | "general"
   | "branding"
   | "legal"
+  | "privacy"
+  | "billing"
   | "team"
   | "shipping"
   | "pickup"
@@ -46,7 +49,7 @@ export const storeSettingsWorkspaceGroups: readonly StoreSettingsWorkspaceGroup[
         id: "general",
         href: "/store-settings/general",
         label: "General",
-        description: "Publish workflow, billing, and baseline SEO information.",
+        description: "Store identity, billing, and baseline SEO information.",
         icon: Cog,
         ownership: "operations"
       },
@@ -62,7 +65,15 @@ export const storeSettingsWorkspaceGroups: readonly StoreSettingsWorkspaceGroup[
         id: "legal",
         href: "/store-settings/legal",
         label: "Legal",
-        description: "Store-specific Privacy Policy and Terms & Conditions.",
+        description: "Formal Privacy Policy and Terms & Conditions.",
+        icon: FileText,
+        ownership: "operations"
+      },
+      {
+        id: "privacy",
+        href: "/store-settings/privacy",
+        label: "Privacy",
+        description: "Privacy notices, rights controls, and request handling.",
         icon: FileText,
         ownership: "operations"
       },
@@ -72,6 +83,14 @@ export const storeSettingsWorkspaceGroups: readonly StoreSettingsWorkspaceGroup[
         label: "Domains",
         description: "Custom domain verification and storefront address management.",
         icon: Globe,
+        ownership: "operations"
+      },
+      {
+        id: "billing",
+        href: "/store-settings/billing",
+        label: "Billing",
+        description: "Assigned plan and platform fee configuration.",
+        icon: DollarSign,
         ownership: "operations"
       }
     ]
@@ -133,6 +152,8 @@ export const storefrontStudioOwnedStoreSettingsSectionIds = [
 export const storeSettingsWorkspaceNavigationSectionIds = [
   "general",
   "legal",
+  "privacy",
+  "billing",
   "shipping",
   "pickup",
   "domains",
@@ -141,7 +162,7 @@ export const storeSettingsWorkspaceNavigationSectionIds = [
 ] as const satisfies readonly StoreSettingsSectionId[];
 
 export type StoreSettingsWorkspaceStatusInput = {
-  storeStatus: "draft" | "pending_review" | "active" | "suspended";
+  storeStatus: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
   hasLogo: boolean;
   hasVerifiedPrimaryDomain: boolean;
   paymentsConnected: boolean;
@@ -154,9 +175,11 @@ export type StoreSettingsWorkspaceStatusInput = {
 
 export function buildStoreSettingsWorkspaceStatuses(input: StoreSettingsWorkspaceStatusInput): Record<StoreSettingsSectionId, string> {
   return {
-    general: input.storeStatus === "active" ? "Storefront live" : "Needs publish review",
+    general: input.storeStatus === "live" ? "Storefront live" : "Core settings and assets",
     branding: input.hasLogo ? "Brand assets configured" : "Needs logo and theme review",
-    legal: input.storeStatus === "active" ? "Customer-facing docs ready" : "Review legal documents before launch",
+    legal: input.storeStatus === "live" ? "Published documents ready" : "Review legal documents before launch",
+    privacy: input.storeStatus === "live" ? "Privacy controls active" : "Complete privacy controls before launch",
+    billing: "Billing plan and fee settings",
     team: `${input.activeMemberCount} active ${input.activeMemberCount === 1 ? "member" : "members"}`,
     shipping: input.shippingEnabled ? "Shipping enabled" : "Shipping not configured",
     pickup: input.pickupEnabled ? `${input.pickupLocationCount} active pickup ${input.pickupLocationCount === 1 ? "location" : "locations"}` : "Pickup disabled",

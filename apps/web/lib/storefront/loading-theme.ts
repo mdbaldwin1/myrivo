@@ -1,8 +1,13 @@
 import type { CSSProperties } from "react";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { mapStoreExperienceContentRow } from "@/lib/store-experience/content";
+import { buildMergedStorefrontThemeJson } from "@/lib/storefront/theme-overrides";
+import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
 import { buildStorefrontThemeStyle, resolveStorefrontThemeConfig, type StorefrontThemeConfig } from "@/lib/theme/storefront-theme";
 import { cn } from "@/lib/utils";
+
+const STOREFRONT_STORE_COOKIE = "myrivo_storefront_slug";
 
 function normalizeSlug(value: string | null | undefined) {
   const normalized = value?.trim().toLowerCase();
@@ -101,17 +106,28 @@ async function loadStorefrontLoadingTheme(slug: string | null) {
     };
   }
 
-  const { data: branding } = await admin
-    .from("store_branding")
-    .select("primary_color,accent_color,theme_json")
-    .eq("store_id", store.id)
-    .maybeSingle<{
-      primary_color: string | null;
-      accent_color: string | null;
-      theme_json: Record<string, unknown> | null;
-    }>();
+  const [{ data: branding }, { data: experienceContent }] = await Promise.all([
+    admin
+      .from("store_branding")
+      .select("primary_color,accent_color,theme_json")
+      .eq("store_id", store.id)
+      .maybeSingle<{
+        primary_color: string | null;
+        accent_color: string | null;
+        theme_json: Record<string, unknown> | null;
+      }>(),
+    admin
+      .from("store_experience_content")
+      .select("store_id,home_json,products_page_json,about_page_json,policies_page_json,cart_page_json,order_summary_page_json,emails_json")
+      .eq("store_id", store.id)
+      .maybeSingle()
+  ]);
 
-  const themeConfig = resolveStorefrontThemeConfig(branding?.theme_json ?? {});
+  const mergedThemeJson = buildMergedStorefrontThemeJson(
+    branding?.theme_json ?? {},
+    mapStoreExperienceContentRow(experienceContent)
+  );
+  const themeConfig = resolveStorefrontThemeConfig(mergedThemeJson);
   const themeStyle = buildStorefrontThemeStyle({
     primaryColor: branding?.primary_color,
     accentColor: branding?.accent_color,
@@ -138,6 +154,8 @@ export type StorefrontLoadingContext = {
 
 export async function resolveStorefrontLoadingContext(explicitSlug?: string | null): Promise<StorefrontLoadingContext> {
   let routeCandidates: Array<string | null> = [];
+  let host: string | null = null;
+  let cookieSlug: string | null = null;
 
   try {
     const requestHeaders = await headers();
@@ -148,14 +166,24 @@ export async function resolveStorefrontLoadingContext(explicitSlug?: string | nu
       requestHeaders.get("x-matched-path"),
       requestHeaders.get("referer")
     ];
+    host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
   } catch {
     routeCandidates = [];
+    host = null;
+  }
+
+  try {
+    const cookieStore = await cookies();
+    cookieSlug = normalizeSlug(cookieStore.get(STOREFRONT_STORE_COOKIE)?.value);
+  } catch {
+    cookieSlug = null;
   }
 
   const headerSlug = routeCandidates
     .map((value) => extractStorefrontSlugFromPath(value))
     .find((value): value is string => Boolean(value));
-  const slug = normalizeSlug(explicitSlug) ?? headerSlug ?? null;
+  const domainSlug = headerSlug ? null : await resolveStoreSlugFromDomain(host, { includeNonPublic: true });
+  const slug = normalizeSlug(explicitSlug) ?? headerSlug ?? domainSlug ?? cookieSlug ?? null;
 
   const { themeConfig, themeStyle } = await loadStorefrontLoadingTheme(slug);
   const radiusClass = resolveRadiusClass(themeConfig);

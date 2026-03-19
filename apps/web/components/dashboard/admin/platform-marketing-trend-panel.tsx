@@ -10,7 +10,7 @@ type PlatformMarketingTrendPanelProps = {
 export function PlatformMarketingTrendPanel({ summary }: PlatformMarketingTrendPanelProps) {
   return (
     <section className="grid gap-4 xl:grid-cols-2">
-      <div className="min-w-0 rounded-xl border border-border/70 bg-background p-4">
+      <div className="min-w-0 rounded-xl border border-border/70 bg-card p-4">
         <div className="mb-3">
           <h2 className="text-sm font-semibold text-foreground">Traffic and Signup Trend</h2>
           <p className="text-xs text-muted-foreground">Daily sessions and signup starts for the selected window.</p>
@@ -29,7 +29,7 @@ export function PlatformMarketingTrendPanel({ summary }: PlatformMarketingTrendP
         </div>
       </div>
 
-      <div className="min-w-0 rounded-xl border border-border/70 bg-background p-4">
+      <div className="min-w-0 rounded-xl border border-border/70 bg-card p-4">
         <div className="mb-3">
           <h2 className="text-sm font-semibold text-foreground">Signup Completions</h2>
           <p className="text-xs text-muted-foreground">Completed signups by day so we can see funnel follow-through.</p>

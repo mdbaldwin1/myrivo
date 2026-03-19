@@ -36,11 +36,11 @@ export function getOnboardingNextStep(store: StoreOnboardingProgress): Onboardin
     return { id: "payments", label: "Connect payments", href: `/dashboard/stores/${store.slug}/store-settings/integrations` };
   }
   if (!store.steps.launch && store.canLaunch) {
-    if (store.status === "pending_review") {
+    if (store.status === "pending_review" || store.status === "suspended" || store.status === "removed" || store.status === "live") {
       return null;
     }
 
-    return { id: "launch", label: "Submit for review", href: `/dashboard/stores/${store.slug}/store-settings/general` };
+    return { id: "launch", label: "Apply to go live", href: `/dashboard/stores/${store.slug}` };
   }
   return null;
 }

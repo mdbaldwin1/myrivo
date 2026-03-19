@@ -15,16 +15,16 @@ describe("buildPeriodDelta", () => {
     });
   });
 
-  test("returns null when previous value is zero and current is non-zero", () => {
+  test("returns 'new' when previous value is zero and current is non-zero", () => {
     const delta = buildPeriodDelta(
       { grossRevenueCents: 1000, orderCount: 2, avgOrderValueCents: 500 },
       { grossRevenueCents: 0, orderCount: 0, avgOrderValueCents: 0 }
     );
 
     expect(delta).toEqual({
-      grossRevenuePct: null,
-      orderCountPct: null,
-      avgOrderValuePct: null
+      grossRevenuePct: "new",
+      orderCountPct: "new",
+      avgOrderValuePct: "new"
     });
   });
 

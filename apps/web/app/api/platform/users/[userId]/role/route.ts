@@ -27,7 +27,21 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const { userId } = await params;
   const admin = createSupabaseAdminClient();
 
-  if (auth.context?.userId === userId && payload.data.globalRole !== "admin") {
+  const { data: currentUser, error: currentUserError } = await admin
+    .from("user_profiles")
+    .select("id,global_role")
+    .eq("id", userId)
+    .maybeSingle<{ id: string; global_role: "user" | "support" | "admin" }>();
+
+  if (currentUserError) {
+    return NextResponse.json({ error: currentUserError.message }, { status: 500 });
+  }
+
+  if (!currentUser) {
+    return NextResponse.json({ error: "User profile not found." }, { status: 404 });
+  }
+
+  if (currentUser.global_role === "admin" && payload.data.globalRole !== "admin") {
     const { count, error: countError } = await admin
       .from("user_profiles")
       .select("id", { count: "exact", head: true })
@@ -59,10 +73,5 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  if (!data) {
-    return NextResponse.json({ error: "User profile not found." }, { status: 404 });
-  }
-
   return NextResponse.json({ user: data });
 }
-

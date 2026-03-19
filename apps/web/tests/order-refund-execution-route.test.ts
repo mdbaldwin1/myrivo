@@ -63,19 +63,6 @@ describe("order refund execution route", () => {
 
   test("processes a requested refund in stub mode and marks it succeeded", async () => {
     adminFromMock.mockImplementation((table: string) => {
-      if (table === "store_billing_profiles") {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              maybeSingle: vi.fn(async () => ({
-                data: { test_mode_enabled: false },
-                error: null
-              }))
-            }))
-          }))
-        };
-      }
-
       if (table === "order_refunds") {
         return {
           select: vi.fn(() => ({
@@ -169,23 +156,10 @@ describe("order refund execution route", () => {
     );
   });
 
-  test("uses stub refund execution for store test-mode orders even when env stub mode is off", async () => {
+  test("uses stub refund execution for stub payment intents even when env stub mode is off", async () => {
     isStripeStubModeMock.mockReturnValue(false);
 
     adminFromMock.mockImplementation((table: string) => {
-      if (table === "store_billing_profiles") {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              maybeSingle: vi.fn(async () => ({
-                data: { test_mode_enabled: true },
-                error: null
-              }))
-            }))
-          }))
-        };
-      }
-
       if (table === "order_refunds") {
         return {
           select: vi.fn(() => ({

@@ -36,6 +36,11 @@ import { getStorefrontPageShellClass, getStorefrontPageWidthClass } from "@/lib/
 import { STOREFRONT_TEXT_LINK_EFFECT_CLASS } from "@/lib/storefront/link-effects";
 import { resolveFooterNavLinks, resolveHeaderNavLinks } from "@/lib/storefront/navigation";
 import { resolveStorefrontPresentation } from "@/lib/storefront/presentation";
+import {
+  buildStorefrontAboutPath,
+  buildStorefrontProductPath,
+  buildStorefrontProductsPath
+} from "@/lib/storefront/paths";
 import { setEditorValueAtPath } from "@/lib/store-editor/object-path";
 import { setStorefrontStudioHomeField, updateStorefrontStudioHomeContentBlock } from "@/lib/storefront/studio-home-edit";
 
@@ -231,7 +236,7 @@ function truncateWithEllipsis(content: string, maxLength: number) {
 
 function buildProductHref(product: StorefrontProduct, storeSlug: string) {
   const key = product.slug || product.id;
-  return `/products/${key}?store=${encodeURIComponent(storeSlug)}`;
+  return buildStorefrontProductPath(storeSlug, key);
 }
 
 function getAvailabilityLabel(
@@ -379,8 +384,8 @@ export function StorefrontPage(props: StorefrontPageProps) {
   const buttonRadiusClass = getStorefrontButtonRadiusClass(themeConfig.radiusScale);
   const isProductsView = view === "products";
   const isCenteredHeroLayout = themeConfig.heroLayout === "centered";
-  const shopProductsHref = copy.home.shopProductsUrl.trim() || `/products?store=${encodeURIComponent(resolvedStore.slug)}`;
-  const aboutBrandHref = copy.home.aboutBrandUrl.trim() || `/about?store=${encodeURIComponent(resolvedStore.slug)}`;
+  const shopProductsHref = copy.home.shopProductsUrl.trim() || buildStorefrontProductsPath(resolvedStore.slug);
+  const aboutBrandHref = copy.home.aboutBrandUrl.trim() || buildStorefrontAboutPath(resolvedStore.slug);
 
   const hasFeaturedProducts = resolvedProducts.some((product) => product.is_featured);
   const sortedContentBlocks = [...resolvedContentBlocks].sort((a, b) => a.sort_order - b.sort_order);
@@ -812,7 +817,7 @@ export function StorefrontPage(props: StorefrontPageProps) {
                         label={copy.home.shopProductsCta}
                         url={copy.home.shopProductsUrl}
                         labelPlaceholder="Primary CTA label"
-                        urlPlaceholder="/products?store=your-store"
+                        urlPlaceholder="/s/your-store/products"
                         emptyLabel="Add primary CTA"
                         displayClassName={cn(getPrimaryCtaClass(themeConfig, buttonRadiusClass), "w-full justify-center sm:w-auto")}
                         placeholderClassName={cn(getPrimaryCtaClass(themeConfig, buttonRadiusClass), "w-full justify-center border-dashed opacity-75 sm:w-auto")}
@@ -825,7 +830,7 @@ export function StorefrontPage(props: StorefrontPageProps) {
                         label={copy.home.aboutBrandCta}
                         url={copy.home.aboutBrandUrl}
                         labelPlaceholder="Secondary CTA label"
-                        urlPlaceholder="/about?store=your-store"
+                        urlPlaceholder="/s/your-store/about"
                         emptyLabel="Add secondary CTA"
                         displayClassName={cn(
                           STOREFRONT_TEXT_LINK_EFFECT_CLASS,

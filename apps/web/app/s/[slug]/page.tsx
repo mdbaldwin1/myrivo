@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
+import { StorefrontUnavailablePage } from "@/components/storefront/storefront-unavailable-page";
 import { StorefrontPage } from "@/components/storefront/storefront-page";
 import { StorefrontRuntimeProvider } from "@/components/storefront/storefront-runtime-provider";
 import { isReviewsEnabledForStoreSlug } from "@/lib/reviews/feature-gating";
@@ -8,6 +9,7 @@ import { loadStorefrontData } from "@/lib/storefront/load-storefront-data";
 import { createStorefrontRuntime } from "@/lib/storefront/runtime";
 import { buildAggregateRatingSchema, buildReviewSchemaList, resolveStorefrontReviewSeoConfig } from "@/lib/storefront/reviews-seo";
 import { buildStorefrontCanonicalUrl, resolveStorefrontCanonicalRedirect } from "@/lib/storefront/seo";
+import { loadStorefrontUnavailableData } from "@/lib/storefront/unavailable";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isMissingRelationInSchemaCache } from "@/lib/supabase/error-classifiers";
 
@@ -32,6 +34,12 @@ export async function generateMetadata({ params }: StorefrontRouteParams): Promi
   const resolvedParams = await params;
   const data = await loadStorefrontData(resolvedParams.slug);
   if (!data) {
+    const unavailable = await loadStorefrontUnavailableData(resolvedParams.slug);
+    if (unavailable) {
+      return {
+        title: `${unavailable.store.name} | ${unavailable.kind === "offline" ? "Temporarily Offline" : "Coming Soon"}`
+      };
+    }
     return {
       title: "Storefront | Myrivo"
     };
@@ -61,6 +69,10 @@ export default async function StorefrontSlugPage({ params }: StorefrontRoutePara
   }
   const data = await loadStorefrontData(resolvedParams.slug);
   if (!data) {
+    const unavailable = await loadStorefrontUnavailableData(resolvedParams.slug);
+    if (unavailable) {
+      return <StorefrontUnavailablePage state={unavailable} />;
+    }
     notFound();
   }
 

@@ -5,6 +5,7 @@ import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
+import { ACTIVE_STORE_COOKIE } from "@/lib/stores/tenant-context";
 
 const updateStoreSchema = z.object({
   name: z.string().min(2).max(120).optional()
@@ -87,4 +88,68 @@ export async function PATCH(request: NextRequest) {
   });
 
   return NextResponse.json({ store: data });
+}
+
+export async function DELETE(request: NextRequest) {
+  const trustedOriginResponse = enforceTrustedOrigin(request);
+
+  if (trustedOriginResponse) {
+    return trustedOriginResponse;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, request.nextUrl.searchParams.get("storeSlug"), "admin");
+
+  if (!bundle) {
+    return NextResponse.json({ error: "No store found for account" }, { status: 404 });
+  }
+
+  const { count: ordersCount, error: ordersError } = await supabase
+    .from("orders")
+    .select("id", { count: "exact", head: true })
+    .eq("store_id", bundle.store.id);
+
+  if (ordersError) {
+    return NextResponse.json({ error: ordersError.message }, { status: 500 });
+  }
+
+  if ((ordersCount ?? 0) > 0) {
+    return NextResponse.json({ error: "Stores with orders cannot be permanently deleted." }, { status: 409 });
+  }
+
+  const { error } = await supabase.from("stores").delete().eq("id", bundle.store.id).eq("owner_user_id", user.id);
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  await logAuditEvent({
+    storeId: bundle.store.id,
+    actorUserId: user.id,
+    action: "delete",
+    entity: "store",
+    entityId: bundle.store.id,
+    metadata: {
+      slug: bundle.store.slug,
+      name: bundle.store.name,
+      source: "store_settings_delete"
+    }
+  });
+
+  const response = NextResponse.json({ ok: true });
+  response.cookies.set(ACTIVE_STORE_COOKIE, "", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: request.nextUrl.protocol.toLowerCase() === "https:",
+    path: "/",
+    maxAge: 0
+  });
+  return response;
 }

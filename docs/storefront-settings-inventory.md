@@ -46,14 +46,17 @@ Use for storefront presentation, layout, behavior, and customer-facing copy:
 - checkout presentation labels and prompts
 
 ### Store Settings > Legal
-Use for formal legal/compliance-owned storefront controls:
+Use for formal legal/compliance-owned storefront documents:
 
-- privacy notice settings
-- California notice controls
-- do-not-sell/share messaging
-- privacy request page intro
-- privacy contact identity
 - formal legal documents
+
+### Store Settings > Privacy
+Use for store-specific privacy operations:
+
+- privacy contact identity
+- privacy request page intro
+- California and do-not-sell/share addenda
+- privacy request handling
 
 ## Current Stranded Settings
 

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { getServerEnv } from "@/lib/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 
 export const REVIEW_MEDIA_BUCKET = "review-media";
 export const REVIEW_MEDIA_DEFAULT_MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024;
@@ -200,9 +201,9 @@ export async function resolveActiveStoreBySlug(slug: string): Promise<ResolvedSt
     .from("stores")
     .select("id,slug,status")
     .eq("slug", normalizedSlug)
-    .maybeSingle<{ id: string; slug: string; status: "draft" | "pending_review" | "active" | "suspended" }>();
+    .maybeSingle<{ id: string; slug: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" }>();
 
-  if (error || !data || data.status !== "active") {
+  if (error || !data || !isStorePubliclyAccessibleStatus(data.status)) {
     return null;
   }
 

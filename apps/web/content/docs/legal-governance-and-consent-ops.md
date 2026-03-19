@@ -10,15 +10,32 @@ reviewCadence: Monthly
 reviewBy: 2026-04-15
 ---
 
-## Publishing and Communication
-Open `/dashboard/admin/legal` to create and publish legal versions.
+## Two Legal Tiers
+Open `/dashboard/admin/legal` to manage both:
 
-After publish, use `Send Update Notice` to distribute in-app and email notifications for required updates.
+- `Myrivo platform policies`
+  - `platform_privacy`
+  - `platform_terms`
+- `Storefront customer-policy base templates`
+  - `store_privacy_base`
+  - `store_terms_base`
+
+Platform policies drive signup/legal-consent requirements. Storefront base templates drive the customer-facing `/privacy` and `/terms` pages for every storefront.
+
+## Publishing and Communication
+Use the legal governance page to create and publish new legal versions for either tier.
+
+After publish:
+
+- use `Send Update Notice` for required platform-policy updates
+- do not send legal-consent notices for storefront base-template updates, because those are store-policy composition changes rather than account-consent changes
 
 ## Acceptance Investigation
 Use Acceptance Lookup filters for user email, store slug, document key, and version label.
 
 Export CSV for legal evidence requests and include acceptance surface + accepted timestamp.
+
+Acceptance evidence applies to the platform-policy tier only.
 
 ## Incident Response Tie-in
 For delivery failures or dispute handling, follow `docs/runbooks/legal-update-communications.md`.

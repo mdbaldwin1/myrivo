@@ -13,7 +13,7 @@ type GovernanceResponse = {
     id: string;
     name: string;
     slug: string;
-    status: "draft" | "pending_review" | "active" | "suspended";
+    status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
     created_at: string;
   }>;
   decisions: Array<{
@@ -23,7 +23,7 @@ type GovernanceResponse = {
     reasonCode: StoreGovernanceReasonCode | null;
     reasonLabel: string | null;
     reasonDetail: string | null;
-    store: { id: string; name: string; slug: string; status: "draft" | "pending_review" | "active" | "suspended" };
+    store: { id: string; name: string; slug: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" };
     actor: { id: string; displayName: string | null; email: string | null };
   }>;
   error?: string;

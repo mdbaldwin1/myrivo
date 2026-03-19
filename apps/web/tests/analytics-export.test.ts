@@ -35,7 +35,16 @@ describe("analytics export shaping", () => {
             paidOrders: 1,
             revenueCents: 2400
           }
-        ]
+        ],
+        acquisition: {
+          externalReferrerSessions: 4,
+          campaignTaggedSessions: 3,
+          directSessions: 6,
+          topReferrers: [],
+          topSources: [],
+          topMediums: [],
+          topCampaigns: []
+        }
       },
       merchandising: {
         topPages: [],

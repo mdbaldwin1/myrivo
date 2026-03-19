@@ -74,28 +74,16 @@ beforeEach(() => {
       return {
         select: vi.fn(() => ({
           eq: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              maybeSingle: vi.fn(async () => ({
-                data: {
-                  id: "store-1",
-                  name: "Cap Shop",
-                  slug: "cap-shop",
-                  status: "active",
-                  stripe_account_id: null
-                },
-                error: null
-              }))
+            maybeSingle: vi.fn(async () => ({
+              data: {
+                id: "store-1",
+                name: "Cap Shop",
+                slug: "cap-shop",
+                status: "live",
+                stripe_account_id: null
+              },
+              error: null
             }))
-          }))
-        }))
-      };
-    }
-
-    if (table === "store_billing_profiles") {
-      return {
-        select: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            maybeSingle: vi.fn(async () => ({ data: { test_mode_enabled: true }, error: null }))
           }))
         }))
       };

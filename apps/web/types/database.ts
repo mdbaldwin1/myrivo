@@ -1,4 +1,4 @@
-export type StoreStatus = "draft" | "pending_review" | "active" | "suspended";
+export type StoreStatus = "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
 export type GlobalUserRole = "user" | "admin" | "support";
 export type StoreMemberRole = "owner" | "admin" | "staff" | "customer";
 
@@ -8,6 +8,7 @@ export type StoreRecord = {
   name: string;
   slug: string;
   status: StoreStatus;
+  has_launched_once: boolean;
   default_pickup_radius_miles: number;
   white_label_enabled: boolean;
   stripe_account_id: string | null;
@@ -33,6 +34,22 @@ export type UserProfileRecord = {
   avatar_path: string | null;
   global_role: GlobalUserRole;
   metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PlatformTeamInviteRole = "admin" | "support";
+
+export type PlatformTeamInviteRecord = {
+  id: string;
+  email: string;
+  role: PlatformTeamInviteRole;
+  status: "pending" | "accepted" | "revoked" | "expired";
+  token_hash: string;
+  invited_by_user_id: string;
+  accepted_by_user_id: string | null;
+  accepted_at: string | null;
+  expires_at: string;
   created_at: string;
   updated_at: string;
 };
@@ -185,11 +202,15 @@ export type StoreLegalDocumentRecord = {
   title_override: string | null;
   body_markdown: string;
   variables_json: Record<string, unknown>;
+  addendum_markdown: string;
   published_source_mode: StoreLegalDocumentSourceMode;
   published_template_version: string;
   published_title: string | null;
   published_body_markdown: string;
   published_variables_json: Record<string, unknown>;
+  published_addendum_markdown: string;
+  published_base_document_version_id: string | null;
+  published_base_version_label: string | null;
   published_version: number;
   published_change_summary: string | null;
   effective_at: string | null;
@@ -197,6 +218,27 @@ export type StoreLegalDocumentRecord = {
   published_by_user_id: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type StoreLegalDocumentVersionRecord = {
+  id: string;
+  store_legal_document_id: string;
+  store_id: string;
+  key: StoreLegalDocumentKey;
+  version_number: number;
+  source_mode: StoreLegalDocumentSourceMode;
+  template_version: string;
+  title: string;
+  body_markdown: string;
+  variables_json: Record<string, unknown>;
+  addendum_markdown: string;
+  base_document_version_id: string | null;
+  base_version_label: string | null;
+  change_summary: string | null;
+  effective_at: string | null;
+  published_at: string;
+  published_by_user_id: string | null;
+  created_at: string;
 };
 
 export type StorePrivacyRequestType = "access" | "deletion" | "correction" | "know" | "opt_out_sale_share";
@@ -207,12 +249,6 @@ export type AccessibilityReportPriority = "low" | "medium" | "high" | "critical"
 
 export type StorePrivacyProfileRecord = {
   store_id: string;
-  notice_at_collection_enabled: boolean;
-  checkout_notice_enabled: boolean;
-  newsletter_notice_enabled: boolean;
-  review_notice_enabled: boolean;
-  show_california_notice: boolean;
-  show_do_not_sell_link: boolean;
   privacy_contact_email: string | null;
   privacy_rights_email: string | null;
   privacy_contact_name: string | null;
@@ -220,6 +256,18 @@ export type StorePrivacyProfileRecord = {
   california_notice_markdown: string;
   do_not_sell_markdown: string;
   request_page_intro_markdown: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PlatformStorefrontPrivacySettingsRecord = {
+  key: "default";
+  notice_at_collection_enabled: boolean;
+  checkout_notice_enabled: boolean;
+  newsletter_notice_enabled: boolean;
+  review_notice_enabled: boolean;
+  show_california_notice: boolean;
+  show_do_not_sell_link: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -567,7 +615,6 @@ export type BillingPlanRecord = {
 export type StoreBillingProfileRecord = {
   store_id: string;
   billing_plan_id: string | null;
-  test_mode_enabled: boolean;
   metadata_json: Record<string, unknown>;
   created_at: string;
   updated_at: string;

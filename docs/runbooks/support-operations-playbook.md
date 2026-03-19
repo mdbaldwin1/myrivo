@@ -2,7 +2,7 @@
 
 ## Daily Workflow
 1. Review `/dashboard/admin/stores` for pending approvals.
-2. Review `/dashboard/admin/moderation` queue and prioritize high-severity items.
+2. Check review issues in the affected store workspace when a support escalation needs moderation context.
 3. Review `/dashboard/admin/legal` for pending legal communication tasks.
 4. Review `/dashboard/admin/audit` for unresolved investigation follow-ups.
 5. Review `/dashboard/admin/marketing` when a public-site or signup-conversion issue is reported.
@@ -31,7 +31,6 @@ bd close <issue-id>
 
 - Admin dashboard: `/dashboard/admin`
 - Store governance: `/dashboard/admin/stores`
-- Moderation: `/dashboard/admin/moderation`
 - Audit explorer: `/dashboard/admin/audit`
 - Legal governance: `/dashboard/admin/legal`
 - Marketing analytics: `/dashboard/admin/marketing`

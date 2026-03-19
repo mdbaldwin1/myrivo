@@ -36,16 +36,6 @@ export function StorefrontStudioStorefrontEditorPoliciesTab() {
           </ul>
         </div>
       </StorefrontStudioStorefrontEditorPanelTabSection>
-
-      <StorefrontStudioStorefrontEditorPanelTabSection
-        title="Why"
-        separated
-        description="The Control Panel stays intentionally light here because the preview now covers the customer-facing Policies content directly."
-      >
-        <p className="text-sm text-muted-foreground">
-          Edit the live policy sections and FAQs in place instead of duplicating those controls in the side panel.
-        </p>
-      </StorefrontStudioStorefrontEditorPanelTabSection>
     </StorefrontStudioStorefrontEditorPanelTabContainer>
   );
 }

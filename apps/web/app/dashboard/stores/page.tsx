@@ -1,9 +1,10 @@
+import Link from "next/link";
 import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
 import { PendingStoreInvitesCard } from "@/components/dashboard/pending-store-invites-card";
 import { StoreHubShell } from "@/components/dashboard/store-hub/store-hub-shell";
+import { Button } from "@/components/ui/button";
 import { getPendingStoreInvitesByEmail } from "@/lib/account/pending-store-invites";
 import { getStoreHubData } from "@/lib/dashboard/store-hub/get-store-hub-data";
-import type { StoreHubRange } from "@/lib/dashboard/store-hub/store-hub-types";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -11,22 +12,7 @@ import type { GlobalUserRole } from "@/types/database";
 
 export const dynamic = "force-dynamic";
 
-type DashboardStoresPageProps = {
-  searchParams?: Promise<{ range?: string; compare?: string }>;
-};
-
-function normalizeRange(value: string | undefined): StoreHubRange {
-  if (value === "today" || value === "7d" || value === "30d") {
-    return value;
-  }
-  return "7d";
-}
-
-export default async function DashboardStoresPage({ searchParams }: DashboardStoresPageProps) {
-  const resolvedSearchParams = searchParams ? await searchParams : undefined;
-  const range = normalizeRange(resolvedSearchParams?.range);
-  const compare = resolvedSearchParams?.compare === "1" || resolvedSearchParams?.compare === "true";
-
+export default async function DashboardStoresPage() {
   const supabase = await createSupabaseServerClient();
   const adminSupabase = createSupabaseAdminClient();
   const {
@@ -43,7 +29,7 @@ export default async function DashboardStoresPage({ searchParams }: DashboardSto
     getPendingStoreInvitesByEmail(adminSupabase, user.email ?? null)
   ]);
 
-  const stores = bundle?.availableStores ?? [];
+  const stores = (bundle?.availableStores ?? []).filter((store) => store.role !== "customer");
   const storeIds = stores.map((store) => store.id);
 
   const { data: brandingRows } = storeIds.length
@@ -56,22 +42,23 @@ export default async function DashboardStoresPage({ searchParams }: DashboardSto
     supabase,
     stores,
     role: profile?.global_role ?? "user",
-    range,
-    compare
+    range: "7d",
+    compare: false
   });
 
   return (
     <DashboardPageScaffold
       title="Store Hub"
-      description="Portfolio command center across your stores with prioritized operational actions."
+      description="All of your accessible stores in one place."
       className="p-3"
+      action={
+        <Button size="sm" asChild>
+          <Link href="/onboarding">Create Store</Link>
+        </Button>
+      }
     >
       {pendingInvites.length > 0 ? <PendingStoreInvitesCard invites={pendingInvites} /> : null}
-      <StoreHubShell
-        data={data}
-        logoByStoreId={logoByStoreId}
-        activeStore={bundle ? { slug: bundle.store.slug, name: bundle.store.name } : null}
-      />
+      <StoreHubShell data={data} logoByStoreId={logoByStoreId} />
     </DashboardPageScaffold>
   );
 }

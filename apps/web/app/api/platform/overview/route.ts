@@ -6,7 +6,7 @@ type StoreRow = {
   id: string;
   name: string;
   slug: string;
-  status: "draft" | "pending_review" | "active" | "suspended";
+  status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
   created_at: string;
 };
 
@@ -29,10 +29,11 @@ export async function GET() {
     { data: stores, error: storesError },
     { data: users, error: usersError },
     { count: storesTotal, error: storesTotalError },
-    { count: activeStoresCount, error: activeStoresError },
+    { count: liveStoresCount, error: liveStoresError },
     { count: pendingStoresCount, error: pendingStoresError },
     { count: draftStoresCount, error: draftStoresError },
     { count: suspendedStoresCount, error: suspendedStoresError },
+    { count: offlineStoresCount, error: offlineStoresError },
     { count: usersTotal, error: usersTotalError },
     { count: adminUsersCount, error: adminUsersError },
     { count: supportUsersCount, error: supportUsersError },
@@ -52,10 +53,11 @@ export async function GET() {
       .limit(50)
       .returns<UserRow[]>(),
     admin.from("stores").select("id", { count: "exact", head: true }),
-    admin.from("stores").select("id", { count: "exact", head: true }).eq("status", "active"),
+    admin.from("stores").select("id", { count: "exact", head: true }).eq("status", "live"),
     admin.from("stores").select("id", { count: "exact", head: true }).eq("status", "pending_review"),
     admin.from("stores").select("id", { count: "exact", head: true }).eq("status", "draft"),
     admin.from("stores").select("id", { count: "exact", head: true }).eq("status", "suspended"),
+    admin.from("stores").select("id", { count: "exact", head: true }).eq("status", "offline"),
     admin.from("user_profiles").select("id", { count: "exact", head: true }),
     admin.from("user_profiles").select("id", { count: "exact", head: true }).eq("global_role", "admin"),
     admin.from("user_profiles").select("id", { count: "exact", head: true }).eq("global_role", "support"),
@@ -73,10 +75,11 @@ export async function GET() {
 
   const aggregateError =
     storesTotalError ??
-    activeStoresError ??
+    liveStoresError ??
     pendingStoresError ??
     draftStoresError ??
     suspendedStoresError ??
+    offlineStoresError ??
     usersTotalError ??
     adminUsersError ??
     supportUsersError ??
@@ -94,10 +97,11 @@ export async function GET() {
       usersTotal: usersTotal ?? 0,
       pendingReviewsCount: pendingReviewsCount ?? 0,
       storeStatusCounts: {
-        active: activeStoresCount ?? 0,
+        live: liveStoresCount ?? 0,
         pending_review: pendingStoresCount ?? 0,
         draft: draftStoresCount ?? 0,
-        suspended: suspendedStoresCount ?? 0
+        suspended: suspendedStoresCount ?? 0,
+        offline: offlineStoresCount ?? 0
       },
       userRoleCounts: {
         admin: adminUsersCount ?? 0,

@@ -3,19 +3,18 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
 import {
   BarChart3,
   BadgePercent,
   ChevronDown,
   ChevronRight,
-  ClipboardList,
   Cog,
   FileText,
   Home,
   LayoutDashboard,
   Bell,
   ChartNoAxesColumn,
+  DollarSign,
   LogOut,
   Mail,
   PenSquare,
@@ -25,11 +24,11 @@ import {
   Shield,
   Star,
   Store,
+  Users,
   UserCircle2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { StoreOption } from "@/components/dashboard/store-switcher";
-import { AppAlert } from "@/components/ui/app-alert";
 import { useHasMounted } from "@/components/use-has-mounted";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -40,7 +39,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
-import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { withReturnTo } from "@/lib/auth/return-to";
 import { storeSettingsWorkspaceGroups, storeSettingsWorkspaceNavigationSectionIds } from "@/lib/store-editor/store-settings-workspace";
@@ -54,8 +52,6 @@ type DashboardNavProps = {
   userDisplayName?: string | null;
   userEmail?: string | null;
   userAvatarPath?: string | null;
-  initialTestModeEnabled: boolean;
-  canManageTestMode: boolean;
   analyticsDashboardEnabled: boolean;
   mode?: "desktop" | "mobile";
   collapsed?: boolean;
@@ -105,8 +101,6 @@ export function DashboardNav({
   userDisplayName,
   userEmail,
   userAvatarPath,
-  initialTestModeEnabled,
-  canManageTestMode,
   analyticsDashboardEnabled,
   mode = "desktop",
   collapsed = false,
@@ -116,15 +110,13 @@ export function DashboardNav({
   const hasMounted = useHasMounted();
   const pathname = usePathname();
   const normalizedPath = pathname?.replace(/\/$/, "") ?? "";
-  const hasStoreAccess = stores.length > 0 && Boolean(activeStoreSlug);
+  const hasAnyStoreAccess = stores.length > 0;
+  const hasActiveStore = Boolean(activeStoreSlug);
   const isStoreWorkspaceRoute = Boolean(
     activeStoreSlug &&
       (normalizedPath === `/dashboard/stores/${activeStoreSlug}` || normalizedPath.startsWith(`/dashboard/stores/${activeStoreSlug}/`))
   );
   const canAccessPlatform = globalRole === "support" || globalRole === "admin";
-  const [testModeEnabled, setTestModeEnabled] = useState(initialTestModeEnabled);
-  const [testModeSaving, setTestModeSaving] = useState(false);
-  const [testModeError, setTestModeError] = useState<string | null>(null);
   const initials = getInitials(userDisplayName, userEmail);
   const accountName = userDisplayName?.trim() || "My Account";
   const accountEmail = userEmail?.trim() || "No email";
@@ -151,8 +143,10 @@ export function DashboardNav({
   ];
   const adminWorkspaceLinks: DashboardNavLink[] = [
     { href: "/dashboard/admin", label: "Admin Dashboard", icon: LayoutDashboard },
-    { href: "/dashboard/admin/stores", label: "Store Governance", icon: Store },
-    { href: "/dashboard/admin/moderation", label: "Moderation", icon: ClipboardList },
+    { href: "/dashboard/admin/team", label: "Team", icon: Users },
+    { href: "/dashboard/admin/users", label: "Users", icon: Users },
+    { href: "/dashboard/admin/stores", label: "Stores", icon: Store },
+    { href: "/dashboard/admin/revenue", label: "Revenue", icon: DollarSign },
     { href: "/dashboard/admin/audit", label: "Audit Explorer", icon: Shield },
     { href: "/dashboard/admin/legal", label: "Legal Governance", icon: FileText },
     { href: "/dashboard/admin/marketing", label: "Marketing Analytics", icon: ChartNoAxesColumn }
@@ -232,31 +226,6 @@ export function DashboardNav({
     );
   }
 
-  async function toggleTestMode() {
-    if (!canManageTestMode || testModeSaving) {
-      return;
-    }
-
-    const nextValue = !testModeEnabled;
-    setTestModeSaving(true);
-    setTestModeError(null);
-
-    const response = await fetch("/api/stores/test-mode", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled: nextValue })
-    });
-    const payload = (await response.json()) as { enabled?: boolean; error?: string };
-    if (!response.ok) {
-      setTestModeError(payload.error ?? "Unable to update test mode.");
-      setTestModeSaving(false);
-      return;
-    }
-
-    setTestModeEnabled(Boolean(payload.enabled));
-    setTestModeSaving(false);
-  }
-
   const isStoreSettingsMode =
     normalizedPath === `${storeWorkspaceBaseHref}/store-settings` || normalizedPath.startsWith(`${storeWorkspaceBaseHref}/store-settings/`);
   const isReportsMode = normalizedPath === `${storeWorkspaceBaseHref}/reports` || normalizedPath.startsWith(`${storeWorkspaceBaseHref}/reports/`);
@@ -274,7 +243,7 @@ export function DashboardNav({
             </div>
           ) : null}
 
-          {hasStoreAccess && isStoreWorkspaceRoute && !isAdminWorkspaceMode ? (
+          {hasAnyStoreAccess && hasActiveStore && isStoreWorkspaceRoute && !isAdminWorkspaceMode ? (
             <div>
               {isStoreSettingsMode ? (
                 <div className="space-y-1">
@@ -306,25 +275,25 @@ export function DashboardNav({
             </div>
           ) : null}
 
-          {hasStoreAccess && !isStoreWorkspaceRoute && !isAdminWorkspaceMode ? (
+          {hasAnyStoreAccess && !isStoreWorkspaceRoute && !isAdminWorkspaceMode ? (
             <div>
               {showLabels ? <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Myrivo Workspace</p> : null}
               <div className="space-y-1">
                 {accountLevelLinks.map((link) => renderNavLink(link))}
                 {canAccessPlatform ? (
-                  renderNavLink({ href: "/dashboard/admin", label: "Admin Workspace", icon: Shield })
+                  renderNavLink({ href: "/dashboard/admin", label: "Admin Workspace", icon: Shield }, { trailingChevron: showLabels })
                 ) : null}
               </div>
             </div>
           ) : null}
 
-          {!hasStoreAccess && !isAdminWorkspaceMode && (
+          {!hasAnyStoreAccess && !isAdminWorkspaceMode && (
             <div>
               {showLabels ? <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Myrivo Workspace</p> : null}
               <div className="space-y-1">
                 {renderNavLink({ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard })}
                 {canAccessPlatform ? (
-                  renderNavLink({ href: "/dashboard/admin", label: "Admin Workspace", icon: Shield })
+                  renderNavLink({ href: "/dashboard/admin", label: "Admin Workspace", icon: Shield }, { trailingChevron: showLabels })
                 ) : null}
               </div>
             </div>
@@ -332,50 +301,6 @@ export function DashboardNav({
         </div>
       </div>
       <div className={cn("mt-4 shrink-0 space-y-2 border-t border-border pt-3", !showLabels && "flex w-full flex-col items-center")}>
-        {hasStoreAccess && isStoreWorkspaceRoute ? (
-          showLabels ? (
-            <div className="rounded-md border border-border/70 bg-background/70 p-2">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-medium">Test Mode</p>
-                <Switch
-                  checked={testModeEnabled}
-                  onChange={(event) => {
-                    if (event.target.checked !== testModeEnabled) {
-                      void toggleTestMode();
-                    }
-                  }}
-                  disabled={!canManageTestMode || testModeSaving}
-                />
-              </div>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                {canManageTestMode
-                  ? "Routes checkout through test credentials for this store."
-                  : "Only billing admins can change this setting."}
-              </p>
-              <AppAlert variant="error" compact className="mt-1 text-[11px]" message={testModeError} />
-            </div>
-          ) : (
-            <div className="flex w-full justify-center">
-              {renderCollapsedTooltip(
-                "Test Mode",
-                <div className="rounded-md border border-border/70 bg-background/70 px-0 py-2">
-                  <div className="flex items-center justify-center">
-                    <Switch
-                      checked={testModeEnabled}
-                      onChange={(event) => {
-                        if (event.target.checked !== testModeEnabled) {
-                          void toggleTestMode();
-                        }
-                      }}
-                      disabled={!canManageTestMode || testModeSaving}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        ) : null}
-
         {hasMounted ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

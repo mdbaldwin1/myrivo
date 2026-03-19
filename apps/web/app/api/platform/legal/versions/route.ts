@@ -19,6 +19,16 @@ const publishVersionSchema = z.object({
   effectiveAt: z.string().datetime().optional()
 });
 
+const updateDraftSchema = z.object({
+  versionId: z.string().uuid(),
+  versionLabel: z.string().trim().min(1).max(64),
+  isRequired: z.boolean().default(true),
+  contentMarkdown: z.string().min(40),
+  changeSummary: z.string().trim().max(500).optional(),
+  effectiveAt: z.string().datetime().optional(),
+  publishNow: z.boolean().default(false)
+});
+
 export async function POST(request: Request) {
   const auth = await requirePlatformRole("admin");
   if (auth.response) {
@@ -91,4 +101,49 @@ export async function PATCH(request: Request) {
   }
 
   return NextResponse.json({ ok: true });
+}
+
+export async function PUT(request: Request) {
+  const auth = await requirePlatformRole("admin");
+  if (auth.response) {
+    return auth.response;
+  }
+
+  const parsed = updateDraftSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid payload." }, { status: 400 });
+  }
+
+  const payload = parsed.data;
+  const nowIso = new Date().toISOString();
+  const contentHash = createHash("sha256").update(payload.contentMarkdown).digest("hex");
+  const admin = createSupabaseAdminClient();
+
+  const { data, error } = await admin
+    .from("legal_document_versions")
+    .update({
+      version_label: payload.versionLabel,
+      status: payload.publishNow ? "published" : "draft",
+      is_required: payload.isRequired,
+      content_markdown: payload.contentMarkdown,
+      content_hash: contentHash,
+      change_summary: payload.changeSummary ?? null,
+      effective_at: payload.effectiveAt ?? (payload.publishNow ? nowIso : null),
+      published_at: payload.publishNow ? nowIso : null,
+      published_by_user_id: payload.publishNow ? auth.context?.userId ?? null : null
+    })
+    .eq("id", payload.versionId)
+    .eq("status", "draft")
+    .select("id")
+    .maybeSingle<{ id: string }>();
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  if (!data?.id) {
+    return NextResponse.json({ error: "Draft version not found or can no longer be edited." }, { status: 404 });
+  }
+
+  return NextResponse.json({ ok: true, id: data.id, published: payload.publishNow });
 }

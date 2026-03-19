@@ -1,18 +1,19 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { StoreLegalDocumentRecord, StoreRecord, StoreSettingsRecord } from "@/types/database";
+import { getStoreBaseLegalDocumentKey } from "@/lib/legal/document-keys";
 import { getStoreLegalDocument, type StoreLegalDocumentKey } from "@/lib/storefront/store-legal-documents";
+import type { StoreLegalDocumentRecord, StoreLegalDocumentVersionRecord, StoreRecord, StoreSettingsRecord } from "@/types/database";
 
 export type ResolvedStoreLegalDocument = {
   key: StoreLegalDocumentKey;
   title: string;
   bodyMarkdown: string;
-  sourceMode: StoreLegalDocumentRecord["source_mode"];
   templateVersion: string;
   variables: Record<string, string>;
   publishedVersion: number | null;
   publishedAt: string | null;
   effectiveAt: string | null;
   changeSummary: string | null;
+  baseVersionLabel: string | null;
 };
 
 export type StoreLegalDocumentRow = Pick<
@@ -20,16 +21,14 @@ export type StoreLegalDocumentRow = Pick<
   | "id"
   | "store_id"
   | "key"
-  | "source_mode"
-  | "template_version"
-  | "title_override"
-  | "body_markdown"
   | "variables_json"
-  | "published_source_mode"
-  | "published_template_version"
+  | "addendum_markdown"
   | "published_title"
   | "published_body_markdown"
   | "published_variables_json"
+  | "published_addendum_markdown"
+  | "published_base_document_version_id"
+  | "published_base_version_label"
   | "published_version"
   | "published_change_summary"
   | "effective_at"
@@ -39,11 +38,50 @@ export type StoreLegalDocumentRow = Pick<
   | "updated_at"
 >;
 
-type StoreLegalDocumentSnapshot = Pick<
-  StoreLegalDocumentRecord,
-  "source_mode" | "template_version" | "title_override" | "body_markdown" | "variables_json"
-> &
-  Partial<Pick<StoreLegalDocumentRecord, "published_version" | "published_at" | "effective_at" | "published_change_summary">>;
+export type StoreLegalDocumentVersionRow = Pick<
+  StoreLegalDocumentVersionRecord,
+  | "id"
+  | "store_legal_document_id"
+  | "store_id"
+  | "key"
+  | "version_number"
+  | "title"
+  | "body_markdown"
+  | "variables_json"
+  | "addendum_markdown"
+  | "base_document_version_id"
+  | "base_version_label"
+  | "change_summary"
+  | "effective_at"
+  | "published_at"
+  | "published_by_user_id"
+  | "created_at"
+>;
+
+export type PublishedStoreBaseDocumentVersion = {
+  id: string;
+  key: StoreLegalDocumentKey;
+  title: string;
+  versionLabel: string;
+  bodyMarkdown: string;
+  publishedAt: string | null;
+  effectiveAt: string | null;
+};
+
+export type StoreLegalDocumentDraftSnapshot = {
+  variables_json: Record<string, unknown>;
+  addendum_markdown: string | null;
+};
+
+export type StoreLegalDocumentPublishedSnapshot = StoreLegalDocumentDraftSnapshot & {
+  published_version?: number | null;
+  published_at?: string | null;
+  effective_at?: string | null;
+  published_change_summary?: string | null;
+  published_body_markdown?: string | null;
+  published_title?: string | null;
+  published_base_version_label?: string | null;
+};
 
 function getDefaultSupportEmail(settings: Pick<StoreSettingsRecord, "support_email"> | null | undefined): string {
   return settings?.support_email?.trim() || "support@example.com";
@@ -60,10 +98,8 @@ export function buildStoreLegalDocumentVariables(
     storeSlug: store.slug,
     supportEmail,
     privacyContactEmail: supportEmail,
-    privacyAdditionalDetails: "",
     termsContactEmail: supportEmail,
-    governingLawRegion: "the jurisdiction where the store operates",
-    termsAdditionalDetails: ""
+    governingLawRegion: "the jurisdiction where the store operates"
   };
 
   if (!overrides) {
@@ -83,85 +119,99 @@ export function interpolateStoreLegalTemplate(template: string, variables: Recor
   return template.replace(/\{([a-zA-Z0-9_]+)\}/g, (_match, token) => variables[token] ?? "");
 }
 
+function appendAddendum(baseBodyMarkdown: string, addendumMarkdown?: string | null) {
+  const addendum = addendumMarkdown?.trim() ?? "";
+  if (!addendum) {
+    return baseBodyMarkdown.trim();
+  }
+  return `${baseBodyMarkdown.trim()}\n\n${addendum}`;
+}
+
 export function resolveStoreLegalDocument(
   key: StoreLegalDocumentKey,
   store: Pick<StoreRecord, "name" | "slug">,
   settings: Pick<StoreSettingsRecord, "support_email"> | null | undefined,
-  record?: StoreLegalDocumentSnapshot | null
+  input: {
+    baseDocumentTitle?: string | null;
+    baseBodyMarkdown?: string | null;
+    baseVersionLabel?: string | null;
+    variables_json?: Record<string, unknown> | null;
+    addendum_markdown?: string | null;
+    publishedVersion?: number | null;
+    publishedAt?: string | null;
+    effectiveAt?: string | null;
+    changeSummary?: string | null;
+  }
 ): ResolvedStoreLegalDocument {
-  const baseDefinition = getStoreLegalDocument(key);
-  const sourceMode = record?.source_mode ?? "template";
-  const templateVersion = record?.template_version ?? "v1";
-  const variables = buildStoreLegalDocumentVariables(store, settings, record?.variables_json ?? null);
-  const templateBody = record?.body_markdown?.trim() || baseDefinition.defaultBodyMarkdown;
+  const definition = getStoreLegalDocument(key);
+  const variables = buildStoreLegalDocumentVariables(store, settings, input.variables_json ?? null);
+  const resolvedBaseBody = interpolateStoreLegalTemplate(input.baseBodyMarkdown?.trim() || `# ${definition.title}`, variables);
 
   return {
     key,
-    title: record?.title_override?.trim() || baseDefinition.title,
-    bodyMarkdown: interpolateStoreLegalTemplate(templateBody, variables),
-    sourceMode,
-    templateVersion,
+    title: input.baseDocumentTitle?.trim() || definition.title,
+    bodyMarkdown: appendAddendum(resolvedBaseBody, input.addendum_markdown),
+    templateVersion: input.baseVersionLabel?.trim() || "unpublished",
     variables,
-    publishedVersion: record?.published_version ?? null,
-    publishedAt: record?.published_at ?? null,
-    effectiveAt: record?.effective_at ?? null,
-    changeSummary: record?.published_change_summary ?? null
+    publishedVersion: input.publishedVersion ?? null,
+    publishedAt: input.publishedAt ?? null,
+    effectiveAt: input.effectiveAt ?? null,
+    changeSummary: input.changeSummary ?? null,
+    baseVersionLabel: input.baseVersionLabel?.trim() || null
   };
 }
 
-export function getDraftStoreLegalDocumentSnapshot(record: StoreLegalDocumentRow | null | undefined): StoreLegalDocumentSnapshot | null {
+export function getDraftStoreLegalDocumentSnapshot(record: StoreLegalDocumentRow | null | undefined): StoreLegalDocumentDraftSnapshot | null {
   if (!record) {
     return null;
   }
 
   return {
-    source_mode: record.source_mode,
-    template_version: record.template_version,
-    title_override: record.title_override,
-    body_markdown: record.body_markdown,
-    variables_json: record.variables_json
+    variables_json: record.variables_json ?? {},
+    addendum_markdown: record.addendum_markdown ?? ""
   };
 }
 
-export function getPublishedStoreLegalDocumentSnapshot(record: StoreLegalDocumentRow | null | undefined): StoreLegalDocumentSnapshot | null {
+export function getPublishedStoreLegalDocumentSnapshot(
+  record: StoreLegalDocumentRow | null | undefined
+): StoreLegalDocumentPublishedSnapshot | null {
   if (!record) {
     return null;
   }
 
   return {
-    source_mode: record.published_source_mode,
-    template_version: record.published_template_version,
-    title_override: record.published_title,
-    body_markdown: record.published_body_markdown,
-    variables_json: record.published_variables_json,
-    published_version: record.published_version,
-    published_at: record.published_at,
-    effective_at: record.effective_at,
-    published_change_summary: record.published_change_summary
+    variables_json: record.published_variables_json ?? {},
+    addendum_markdown: record.published_addendum_markdown ?? "",
+    published_version: record.published_version ?? null,
+    published_at: record.published_at ?? null,
+    effective_at: record.effective_at ?? null,
+    published_change_summary: record.published_change_summary ?? null,
+    published_body_markdown: record.published_body_markdown ?? null,
+    published_title: record.published_title ?? null,
+    published_base_version_label: record.published_base_version_label ?? null
   };
 }
 
 export function areStoreLegalDocumentSnapshotsEquivalent(
-  left: StoreLegalDocumentSnapshot | null | undefined,
-  right: StoreLegalDocumentSnapshot | null | undefined
+  left: StoreLegalDocumentDraftSnapshot | null | undefined,
+  right: StoreLegalDocumentPublishedSnapshot | null | undefined
 ) {
   if (!left || !right) {
     return false;
   }
 
   return (
-    left.source_mode === right.source_mode &&
-    left.template_version === right.template_version &&
-    (left.title_override ?? "") === (right.title_override ?? "") &&
-    left.body_markdown === right.body_markdown &&
-    JSON.stringify(left.variables_json ?? {}) === JSON.stringify(right.variables_json ?? {})
+    JSON.stringify(left.variables_json ?? {}) === JSON.stringify(right.variables_json ?? {}) &&
+    (left.addendum_markdown ?? "").trim() === (right.addendum_markdown ?? "").trim()
   );
 }
 
 export async function getStoreLegalDocumentsByStoreId(supabase: SupabaseClient, storeId: string) {
   const { data, error } = await supabase
     .from("store_legal_documents")
-    .select("id,store_id,key,source_mode,template_version,title_override,body_markdown,variables_json,published_source_mode,published_template_version,published_title,published_body_markdown,published_variables_json,published_version,published_change_summary,effective_at,published_at,published_by_user_id,created_at,updated_at")
+    .select(
+      "id,store_id,key,variables_json,addendum_markdown,published_title,published_body_markdown,published_variables_json,published_addendum_markdown,published_base_document_version_id,published_base_version_label,published_version,published_change_summary,effective_at,published_at,published_by_user_id,created_at,updated_at"
+    )
     .eq("store_id", storeId)
     .order("key", { ascending: true })
     .returns<StoreLegalDocumentRow[]>();
@@ -173,14 +223,12 @@ export async function getStoreLegalDocumentsByStoreId(supabase: SupabaseClient, 
   return data ?? [];
 }
 
-export async function getStoreLegalDocumentByStoreId(
-  supabase: SupabaseClient,
-  storeId: string,
-  key: StoreLegalDocumentKey
-) {
+export async function getStoreLegalDocumentByStoreId(supabase: SupabaseClient, storeId: string, key: StoreLegalDocumentKey) {
   const { data, error } = await supabase
     .from("store_legal_documents")
-    .select("id,store_id,key,source_mode,template_version,title_override,body_markdown,variables_json,published_source_mode,published_template_version,published_title,published_body_markdown,published_variables_json,published_version,published_change_summary,effective_at,published_at,published_by_user_id,created_at,updated_at")
+    .select(
+      "id,store_id,key,variables_json,addendum_markdown,published_title,published_body_markdown,published_variables_json,published_addendum_markdown,published_base_document_version_id,published_base_version_label,published_version,published_change_summary,effective_at,published_at,published_by_user_id,created_at,updated_at"
+    )
     .eq("store_id", storeId)
     .eq("key", key)
     .maybeSingle<StoreLegalDocumentRow>();
@@ -190,4 +238,183 @@ export async function getStoreLegalDocumentByStoreId(
   }
 
   return data;
+}
+
+export async function getStoreLegalDocumentVersionsByStoreId(supabase: SupabaseClient, storeId: string) {
+  const { data, error } = await supabase
+    .from("store_legal_document_versions")
+    .select(
+      "id,store_legal_document_id,store_id,key,version_number,title,body_markdown,variables_json,addendum_markdown,base_document_version_id,base_version_label,change_summary,effective_at,published_at,published_by_user_id,created_at"
+    )
+    .eq("store_id", storeId)
+    .order("published_at", { ascending: false })
+    .returns<StoreLegalDocumentVersionRow[]>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data ?? [];
+}
+
+type PublishedStoreBaseVersionRow = {
+  id: string;
+  version_label: string;
+  content_markdown: string;
+  published_at: string | null;
+  effective_at: string | null;
+  legal_documents: { title: string; key: string } | null;
+};
+
+export async function getPublishedStoreBaseLegalDocument(
+  supabase: SupabaseClient,
+  key: StoreLegalDocumentKey
+): Promise<PublishedStoreBaseDocumentVersion | null> {
+  const { data, error } = await supabase
+    .from("legal_document_versions")
+    .select("id,version_label,content_markdown,published_at,effective_at,legal_documents!inner(title,key)")
+    .eq("status", "published")
+    .eq("legal_documents.key", getStoreBaseLegalDocumentKey(key))
+    .order("published_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<PublishedStoreBaseVersionRow>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  if (!data?.legal_documents) {
+    return null;
+  }
+
+  return {
+    id: data.id,
+    key,
+    title: data.legal_documents.title,
+    versionLabel: data.version_label,
+    bodyMarkdown: data.content_markdown,
+    publishedAt: data.published_at,
+    effectiveAt: data.effective_at
+  };
+}
+
+export async function getPublishedStoreBaseLegalDocuments(supabase: SupabaseClient) {
+  const [privacy, terms] = await Promise.all([
+    getPublishedStoreBaseLegalDocument(supabase, "privacy"),
+    getPublishedStoreBaseLegalDocument(supabase, "terms")
+  ]);
+
+  return { privacy, terms };
+}
+
+type SeedStoreLegalDocumentsInput = {
+  store: Pick<StoreRecord, "id" | "name" | "slug">;
+  settings: Pick<StoreSettingsRecord, "support_email"> | null | undefined;
+  publishedByUserId?: string | null;
+};
+
+export async function seedStoreLegalDocumentsForStore(supabase: SupabaseClient, input: SeedStoreLegalDocumentsInput) {
+  const baseTemplates = await getPublishedStoreBaseLegalDocuments(supabase);
+  const nowIso = new Date().toISOString();
+
+  const rows = (["privacy", "terms"] as const).flatMap((key) => {
+    const baseTemplate = key === "privacy" ? baseTemplates.privacy : baseTemplates.terms;
+    if (!baseTemplate) {
+      return [];
+    }
+
+    const definition = getStoreLegalDocument(key);
+    const variables = buildStoreLegalDocumentVariables(input.store, input.settings);
+    const resolved = resolveStoreLegalDocument(key, input.store, input.settings, {
+      baseDocumentTitle: definition.title,
+      baseBodyMarkdown: baseTemplate.bodyMarkdown,
+      baseVersionLabel: baseTemplate.versionLabel,
+      variables_json: variables,
+      addendum_markdown: "",
+      publishedVersion: 1,
+      publishedAt: nowIso,
+      effectiveAt: nowIso,
+      changeSummary: "Initial seeded storefront legal baseline"
+    });
+
+    return [
+      {
+        store_id: input.store.id,
+        key,
+        source_mode: "template",
+        template_version: "v1",
+        variables_json: variables,
+        addendum_markdown: "",
+        published_source_mode: "template",
+        published_template_version: baseTemplate.versionLabel,
+        published_title: definition.title,
+        published_body_markdown: resolved.bodyMarkdown,
+        published_variables_json: variables,
+        published_addendum_markdown: "",
+        published_base_document_version_id: baseTemplate.id,
+        published_base_version_label: baseTemplate.versionLabel,
+        published_version: 1,
+        published_change_summary: "Initial seeded storefront legal baseline",
+        effective_at: nowIso,
+        published_at: nowIso,
+        published_by_user_id: input.publishedByUserId ?? null
+      }
+    ];
+  });
+
+  if (!rows.length) {
+    throw new Error("Published storefront legal base templates are not available.");
+  }
+
+  const { data: seededDocuments, error: upsertError } = await supabase
+    .from("store_legal_documents")
+    .upsert(rows, { onConflict: "store_id,key" })
+    .select("id,store_id,key,published_title,published_body_markdown,published_variables_json,published_addendum_markdown,published_base_document_version_id,published_base_version_label,published_version,published_change_summary,effective_at,published_at,published_by_user_id")
+    .returns<
+      Array<{
+        id: string;
+        store_id: string;
+        key: StoreLegalDocumentKey;
+        published_title: string | null;
+        published_body_markdown: string;
+        published_variables_json: Record<string, unknown> | null;
+        published_addendum_markdown: string | null;
+        published_base_document_version_id: string | null;
+        published_base_version_label: string | null;
+        published_version: number | null;
+        published_change_summary: string | null;
+        effective_at: string | null;
+        published_at: string | null;
+        published_by_user_id: string | null;
+      }>
+    >();
+
+  if (upsertError) {
+    throw new Error(upsertError.message);
+  }
+
+  if (!seededDocuments?.length) {
+    throw new Error("Unable to seed storefront legal documents.");
+  }
+
+  const versionRows = seededDocuments.map((document) => ({
+    store_legal_document_id: document.id,
+    store_id: document.store_id,
+    key: document.key,
+    version_number: document.published_version ?? 1,
+    title: document.published_title ?? getStoreLegalDocument(document.key).title,
+    body_markdown: document.published_body_markdown,
+    variables_json: document.published_variables_json ?? {},
+    addendum_markdown: document.published_addendum_markdown ?? "",
+    base_document_version_id: document.published_base_document_version_id,
+    base_version_label: document.published_base_version_label,
+    change_summary: document.published_change_summary,
+    effective_at: document.effective_at,
+    published_at: document.published_at,
+    published_by_user_id: document.published_by_user_id
+  }));
+
+  const { error: versionError } = await supabase.from("store_legal_document_versions").insert(versionRows);
+  if (versionError) {
+    throw new Error(versionError.message);
+  }
 }

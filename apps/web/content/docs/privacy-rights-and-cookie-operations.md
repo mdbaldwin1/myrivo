@@ -22,7 +22,6 @@ Stores own the storefront-facing policy details and the operational follow-throu
 
 - privacy contact details
 - California/privacy addenda
-- whether a do-not-sell/share entry point is shown
 - manual response handling for store-level privacy requests
 - review of explicit opt-out states created from storefront requests
 
@@ -39,13 +38,18 @@ Global Privacy Control should be honored automatically when present. It is not a
 
 ## Operator Expectations
 
-Open `Store Settings > Legal` to manage:
+Open `Store Settings > Privacy` to manage:
 
 - privacy contact fields
 - California/privacy addenda
-- do-not-sell/share visibility
 - incoming privacy requests and status updates
 - explicit do-not-sell/share states for shopper emails
+
+Open `Admin > Legal` to manage:
+
+- shared storefront privacy notice behavior
+- California notice visibility
+- do-not-sell/share entry-point visibility
 
 When a do-not-sell/share request is submitted, Myrivo now keeps both:
 

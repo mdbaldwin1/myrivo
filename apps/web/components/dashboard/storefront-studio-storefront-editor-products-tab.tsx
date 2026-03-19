@@ -107,9 +107,6 @@ export function StorefrontStudioStorefrontEditorProductsTab() {
       <StorefrontStudioStorefrontEditorPanelTabSection title="Reviews" separated>
         <ProductsToggle inputId="products-enable-reviews" label="Enable reviews" description="Show reviews across storefront surfaces." checked={getBoolean(section, "reviews.enabled", true)} onChange={(checked) => update("reviews.enabled", checked)} />
         <ProductsToggle inputId="products-show-reviews-home" label="Show reviews on home" description="Display the store reviews module on the home page." checked={getBoolean(section, "reviews.showOnHome", true)} onChange={(checked) => update("reviews.showOnHome", checked)} />
-        <p className="text-sm text-muted-foreground">
-          Product-detail review visibility, sort, summary, badge, and media controls now live on the Product Detail tab.
-        </p>
       </StorefrontStudioStorefrontEditorPanelTabSection>
     </StorefrontStudioStorefrontEditorPanelTabContainer>
   );

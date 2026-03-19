@@ -26,6 +26,8 @@ export type LegalVersionSummary = {
   effectiveAt: string | null;
   publishedAt: string | null;
   createdAt: string;
+  changeSummary: string | null;
+  contentMarkdown: string;
 };
 
 export type LegalAcceptanceSummary = {
@@ -58,6 +60,8 @@ type LegalVersionRow = {
   effective_at: string | null;
   published_at: string | null;
   created_at: string;
+  change_summary: string | null;
+  content_markdown: string;
   legal_documents: { key: string; title: string } | null;
 };
 
@@ -126,7 +130,7 @@ export async function fetchLegalDocumentsAndVersions(admin: SupabaseClient) {
     admin.from("legal_documents").select("id,key,title,audience,is_active").order("key", { ascending: true }).returns<LegalDocumentRow[]>(),
     admin
       .from("legal_document_versions")
-      .select("id,legal_document_id,version_label,status,is_required,effective_at,published_at,created_at,legal_documents(key,title)")
+      .select("id,legal_document_id,version_label,status,is_required,effective_at,published_at,created_at,change_summary,content_markdown,legal_documents(key,title)")
       .order("created_at", { ascending: false })
       .limit(200)
       .returns<LegalVersionRow[]>()
@@ -157,7 +161,9 @@ export async function fetchLegalDocumentsAndVersions(admin: SupabaseClient) {
       isRequired: row.is_required,
       effectiveAt: row.effective_at,
       publishedAt: row.published_at,
-      createdAt: row.created_at
+      createdAt: row.created_at,
+      changeSummary: row.change_summary,
+      contentMarkdown: row.content_markdown
     })) satisfies LegalVersionSummary[]
   };
 }

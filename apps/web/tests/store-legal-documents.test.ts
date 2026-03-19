@@ -10,15 +10,12 @@ describe("store legal document contract", () => {
     expect(STORE_LEGAL_DOCUMENTS.map((document) => document.key)).toEqual(["privacy", "terms"]);
     expect(getStoreLegalDocument("privacy").storefrontPath).toBe("/privacy");
     expect(getStoreLegalDocument("terms").storefrontPath).toBe("/terms");
-    expect(getStoreLegalDocument("privacy").templateVariables.map((entry) => entry.key)).toEqual([
-      "privacyContactEmail",
-      "privacyAdditionalDetails"
-    ]);
-    expect(getStoreLegalDocument("terms").templateVariables.map((entry) => entry.key)).toEqual([
-      "termsContactEmail",
-      "governingLawRegion",
-      "termsAdditionalDetails"
-    ]);
+    expect(getStoreLegalDocument("privacy").baseDocumentKey).toBe("store_privacy_base");
+    expect(getStoreLegalDocument("terms").baseDocumentKey).toBe("store_terms_base");
+    expect(getStoreLegalDocument("privacy").templateVariables.map((entry) => entry.key)).toEqual(["privacyContactEmail"]);
+    expect(getStoreLegalDocument("terms").templateVariables.map((entry) => entry.key)).toEqual(["termsContactEmail", "governingLawRegion"]);
+    expect(getStoreLegalDocument("privacy").addendumField.label).toContain("addendum");
+    expect(getStoreLegalDocument("terms").addendumField.label).toContain("addendum");
   });
 
   test("keeps the intended ownership split explicit", () => {

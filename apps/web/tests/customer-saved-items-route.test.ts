@@ -40,7 +40,7 @@ describe("customer saved-items route", () => {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
               maybeSingle: vi.fn(async () => ({
-                data: { id: "11111111-1111-4111-8111-111111111111", slug: "curby", status: "active" },
+                data: { id: "11111111-1111-4111-8111-111111111111", slug: "curby", status: "live" },
                 error: null
               }))
             }))

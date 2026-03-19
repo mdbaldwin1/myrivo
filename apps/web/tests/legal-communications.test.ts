@@ -8,12 +8,12 @@ describe("legal communications", () => {
       documentKey: "terms",
       versionLabel: "v1.2",
       effectiveAt: "2026-03-10T00:00:00.000Z",
-      actionUrl: "/legal/consent"
+      actionUrl: "/legal/consent?versionId=123"
     });
 
     expect(content.title).toContain("Terms of Service");
     expect(content.body).toContain("v1.2");
     expect(content.emailSubject).toContain("v1.2");
-    expect(content.emailText).toContain("/legal/consent");
+    expect(content.emailText).toContain("/legal/consent?versionId=123");
   });
 });

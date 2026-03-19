@@ -32,7 +32,7 @@ export default async function DashboardAdminPage() {
   return (
     <DashboardPageScaffold
       title="Admin Dashboard"
-      description="Platform-wide governance, operations, and role controls."
+      description="Platform queues only. Use Users and Stores for management work."
       className="p-3"
       action={<ContextHelpLink href="/docs/admin-dashboard-and-operations#operations-checklist" context="admin_dashboard" label="Admin Docs" />}
     >

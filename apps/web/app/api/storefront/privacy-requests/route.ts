@@ -7,6 +7,7 @@ import { checkRateLimit } from "@/lib/security/rate-limit";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
+import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 
 const privacyRequestSchema = z.object({
   email: z.string().trim().email().max(320),
@@ -47,13 +48,13 @@ export async function POST(request: NextRequest) {
     .from("stores")
     .select("id,status")
     .eq("slug", storeSlug)
-    .maybeSingle<{ id: string; status: "draft" | "pending_review" | "active" | "suspended" }>();
+    .maybeSingle<{ id: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" }>();
 
   if (storeError) {
     return NextResponse.json({ error: storeError.message }, { status: 500 });
   }
 
-  if (!store || store.status !== "active") {
+  if (!store || !isStorePubliclyAccessibleStatus(store.status)) {
     return NextResponse.json({ error: "Privacy requests are not available for this storefront right now." }, { status: 400 });
   }
 

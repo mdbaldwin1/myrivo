@@ -12,6 +12,7 @@ The initial experience should be:
 
 - `Storefront Studio` keeps owning customer-facing policy presentation
 - `Store Settings > Legal` owns formal legal documents
+- `Store Settings > Privacy` owns store privacy contacts, addenda, and privacy requests
 
 This split keeps storefront editing intuitive while giving formal legal content a more stable, deliberate home.
 

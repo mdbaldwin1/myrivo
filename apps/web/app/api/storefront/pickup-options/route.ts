@@ -3,6 +3,7 @@ import { z } from "zod";
 import { resolveAvailablePickupLocations } from "@/lib/pickup/availability";
 import { buildPickupSlots } from "@/lib/pickup/scheduling";
 import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
+import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const payloadSchema = z.object({
@@ -28,14 +29,13 @@ export async function POST(request: NextRequest) {
     .from("stores")
     .select("id,status")
     .eq("slug", storeSlug)
-    .eq("status", "active")
-    .maybeSingle<{ id: string; status: string }>();
+    .maybeSingle<{ id: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" }>();
 
   if (storeError) {
     return NextResponse.json({ error: storeError.message }, { status: 500 });
   }
 
-  if (!store) {
+  if (!store || !isStorePubliclyAccessibleStatus(store.status)) {
     return NextResponse.json({ error: "Store not found" }, { status: 404 });
   }
 

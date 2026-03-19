@@ -12,8 +12,6 @@ Track automated coverage for critical review workflows across APIs, moderation, 
   - dashboard media filtering behavior
 - `apps/web/tests/reviews-health.test.ts`
   - queue latency summary calculations for health metrics
-- `apps/web/tests/platform-moderation-queue-route.test.ts`
-  - platform moderation queue aggregation and role gating
 - `apps/web/tests/dashboard-review-moderation-route.test.ts`
   - owner moderation transition behavior and validation
 - `apps/web/tests/dashboard-review-response-route.test.ts`
@@ -26,7 +24,6 @@ Track automated coverage for critical review workflows across APIs, moderation, 
   - moderation actions and response routes covered via route tests
 
 ## Permission/Routing Coverage
-- Role-gated platform moderation APIs covered by route tests with mocked auth contexts.
 - Store-scoped owner moderation APIs covered by bundle resolution and store-id scoped queries.
 
 ## Regression Focus

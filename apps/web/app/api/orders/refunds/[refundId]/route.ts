@@ -78,16 +78,6 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   }
 
   const admin = createSupabaseAdminClient();
-  const { data: billingProfile, error: billingProfileError } = await admin
-    .from("store_billing_profiles")
-    .select("test_mode_enabled")
-    .eq("store_id", bundle.store.id)
-    .maybeSingle<{ test_mode_enabled: boolean | null }>();
-
-  if (billingProfileError) {
-    return NextResponse.json({ error: billingProfileError.message }, { status: 500 });
-  }
-
   const { data: refund, error: refundError } = await admin
     .from("order_refunds")
     .select("id,order_id,store_id,amount_cents,reason_key,status,stripe_refund_id,metadata_json,orders(id,status,stripe_payment_intent_id)")
@@ -135,8 +125,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
   });
 
-  const shouldUseStubMode =
-    isStripeStubMode() || Boolean(billingProfile?.test_mode_enabled) || isStubPaymentIntentId(refund.orders.stripe_payment_intent_id);
+  const shouldUseStubMode = isStripeStubMode() || isStubPaymentIntentId(refund.orders.stripe_payment_intent_id);
 
   if (shouldUseStubMode || !refund.orders.stripe_payment_intent_id) {
     const { data: stubbedRefund, error: stubError } = await admin

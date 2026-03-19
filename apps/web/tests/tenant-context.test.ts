@@ -6,7 +6,8 @@ function makeStore(slug: string, role: AccessibleStore["role"] = "owner"): Acces
     id: `store-${slug}`,
     name: `Store ${slug}`,
     slug,
-    status: "active",
+    status: "live",
+    has_launched_once: true,
     stripe_account_id: null,
     role,
     permissions_json: {}

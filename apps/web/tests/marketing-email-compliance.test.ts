@@ -30,7 +30,7 @@ describe("resolveMarketingEmailComplianceDefaults", () => {
       senderDisplayName: "At Home Apothecary",
       replyToEmail: "support@athomeapothecary.com",
       unsubscribeHref: "/unsubscribe?store=at-home-apothecary",
-      privacyPolicyHref: "/privacy?store=at-home-apothecary",
+      privacyPolicyHref: "/s/at-home-apothecary/privacy",
       readiness: {
         status: "ready"
       }

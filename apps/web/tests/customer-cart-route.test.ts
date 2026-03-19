@@ -57,7 +57,7 @@ describe("customer cart route", () => {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
               maybeSingle: vi.fn(async () => ({
-                data: { id: "store-1", slug: "curby", status: "active" },
+                data: { id: "store-1", slug: "curby", status: "live" },
                 error: null
               }))
             }))
@@ -140,7 +140,7 @@ describe("customer cart route", () => {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
               maybeSingle: vi.fn(async () => ({
-                data: { id: "store-1", slug: "curby", status: "active" },
+                data: { id: "store-1", slug: "curby", status: "live" },
                 error: null
               }))
             }))

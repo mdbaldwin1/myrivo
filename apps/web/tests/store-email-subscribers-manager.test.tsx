@@ -14,7 +14,7 @@ describe("StoreEmailSubscribersManager", () => {
     cleanup();
   });
 
-  test("renders marketing compliance defaults returned by the API", async () => {
+  test("does not render the large compliance block when readiness is clear", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -66,17 +66,15 @@ describe("StoreEmailSubscribersManager", () => {
     render(<StoreEmailSubscribersManager />);
 
     await waitFor(() => {
-      expect(screen.getByText("Marketing send defaults")).toBeTruthy();
+      expect(screen.getByText("shopper@example.com")).toBeTruthy();
     });
 
-    expect(screen.getByText("Ready to reuse")).toBeTruthy();
-    expect(screen.getByText(/From address:\s*no-reply@myrivo\.app/i)).toBeTruthy();
-    expect(screen.getByText(/Reply-to:\s*support@apothecary\.test/i)).toBeTruthy();
-    expect(screen.getByText("/unsubscribe?store=apothecary")).toBeTruthy();
-    expect(screen.getByText(/1 Madison Ave/)).toBeTruthy();
+    expect(screen.queryByText("Marketing send defaults")).toBeNull();
+    expect(screen.queryByText("Ready to reuse")).toBeNull();
+    expect(screen.queryByText(/From address:\s*no-reply@myrivo\.app/i)).toBeNull();
   });
 
-  test("renders warnings when compliance defaults are incomplete", async () => {
+  test("renders only compact warnings when compliance defaults are incomplete", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -104,7 +102,7 @@ describe("StoreEmailSubscribersManager", () => {
               status: "attention_required",
               warnings: [
                 "Add a monitored support email so marketing replies do not fall back to a generic platform address.",
-                "Add a full mailing address in Store Settings so marketing email can include a footer disclosure."
+                "Add a valid mailing address before sending marketing email so the footer can include the required postal address."
               ]
             }
           }
@@ -115,12 +113,13 @@ describe("StoreEmailSubscribersManager", () => {
     render(<StoreEmailSubscribersManager />);
 
     await waitFor(() => {
-      expect(screen.getByText("Needs attention")).toBeTruthy();
+      expect(screen.getByText(/monitored support email/i)).toBeTruthy();
     });
 
     expect(screen.getByText(/monitored support email/i)).toBeTruthy();
-    expect(screen.getByText(/marketing email can include a footer disclosure/i)).toBeTruthy();
-    expect(screen.getByText("Update legal contact details")).toBeTruthy();
-    expect(screen.getByText("Review storefront privacy links")).toBeTruthy();
+    expect(screen.getByText(/add a valid mailing address before sending marketing email/i)).toBeTruthy();
+    expect(screen.queryByText("Marketing send defaults")).toBeNull();
+    expect(screen.queryByText("Needs attention")).toBeNull();
+    expect(screen.queryByText("Update legal contact details")).toBeNull();
   });
 });

@@ -248,7 +248,7 @@ export async function getStoreHubData(input: GetStoreHubDataInput): Promise<Stor
       .from("stores")
       .select("id,name,slug,status,created_at")
       .in("id", storeIds)
-      .returns<Array<{ id: string; name: string; slug: string; status: "draft" | "pending_review" | "active" | "suspended"; created_at: string }>>(),
+      .returns<Array<{ id: string; name: string; slug: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed"; created_at: string }>>(),
     supabase
       .from("orders")
       .select(
@@ -505,7 +505,7 @@ export async function getStoreHubData(input: GetStoreHubDataInput): Promise<Stor
   const reviewsPending = (reviews ?? []).filter((row) => row.status === "pending").length;
 
   const storesPendingReview = stores.filter((store) => store.status === "pending_review");
-  const storesWithCriticalAlerts = storeRows.filter((store) => !store.hasStripeAccount || (store.status === "active" && !store.hasVerifiedPrimaryDomain)).length;
+  const storesWithCriticalAlerts = storeRows.filter((store) => !store.hasStripeAccount || (store.status === "live" && !store.hasVerifiedPrimaryDomain)).length;
 
   return {
     role,
@@ -516,7 +516,7 @@ export async function getStoreHubData(input: GetStoreHubDataInput): Promise<Stor
     },
     summary: {
       storesTotal: stores.length,
-      storesActive: stores.filter((store) => store.status === "active").length,
+      storesActive: stores.filter((store) => store.status === "live").length,
       storesPendingReview: storesPendingReview.length,
       storesWithCriticalAlerts,
       pendingFulfillmentTotal: operationsPendingFulfillment,

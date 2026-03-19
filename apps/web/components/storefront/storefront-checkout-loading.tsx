@@ -1,4 +1,4 @@
-import { MAIN_CONTENT_ID } from "@/lib/accessibility";
+import { StorefrontLoadingShell } from "@/components/storefront/storefront-loading-shell";
 import type { StorefrontLoadingContext } from "@/lib/storefront/loading-theme";
 import { cn } from "@/lib/utils";
 
@@ -7,19 +7,10 @@ type StorefrontCheckoutLoadingProps = {
 };
 
 export function StorefrontCheckoutLoading({ context }: StorefrontCheckoutLoadingProps) {
-  const { themeStyle, pageWidthClass, spacingClass, surfaceClass } = context;
+  const { surfaceClass } = context;
 
   return (
-    <main
-      id={MAIN_CONTENT_ID}
-      tabIndex={-1}
-      style={themeStyle}
-      className={cn(
-        "mx-auto min-h-screen w-full bg-[color:var(--storefront-bg)] text-[color:var(--storefront-text)] [font-family:var(--storefront-font-body)] focus:outline-none",
-        pageWidthClass,
-        spacingClass
-      )}
-    >
+    <StorefrontLoadingShell context={context}>
       <section className="mx-auto max-w-3xl space-y-6">
         <div className="space-y-3 text-center">
           <div className="mx-auto h-4 w-28 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-primary)_20%,transparent)] motion-reduce:animate-none" />
@@ -49,6 +40,6 @@ export function StorefrontCheckoutLoading({ context }: StorefrontCheckoutLoading
           </div>
         </div>
       </section>
-    </main>
+    </StorefrontLoadingShell>
   );
 }

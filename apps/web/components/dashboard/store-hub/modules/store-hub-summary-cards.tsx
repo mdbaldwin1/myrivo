@@ -5,9 +5,12 @@ function formatCurrency(cents: number) {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-function formatDelta(value: number | null) {
+function formatDelta(value: number | "new" | null) {
   if (value === null) {
     return "--";
+  }
+  if (value === "new") {
+    return "New";
   }
   return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
 }

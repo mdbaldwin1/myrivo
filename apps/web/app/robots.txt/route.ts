@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
+import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 
 function resolveOrigin(request: NextRequest) {
   const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? "localhost:3000";
@@ -20,9 +21,9 @@ export async function GET(request: NextRequest) {
       .from("stores")
       .select("id,status,white_label_enabled")
       .eq("slug", storeSlug)
-      .maybeSingle<{ id: string; status: "draft" | "pending_review" | "active" | "suspended"; white_label_enabled: boolean }>();
+      .maybeSingle<{ id: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed"; white_label_enabled: boolean }>();
 
-    if (store?.status === "active" && store.white_label_enabled) {
+    if (store && isStorePubliclyAccessibleStatus(store.status) && store.white_label_enabled) {
       const { data: settings, error: settingsError } = await admin
         .from("store_settings")
         .select("seo_noindex")

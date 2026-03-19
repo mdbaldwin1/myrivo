@@ -101,7 +101,7 @@ type StoreSubmittedForReviewAdminInput = {
 type StoreStatusChangedOwnerInput = {
   storeId: string;
   storeSlug: string;
-  action: "approve" | "reject" | "suspend";
+  action: "approve" | "request_changes" | "reject" | "suspend" | "restore" | "remove" | "go_live" | "go_offline";
   reason?: string | null;
   actorUserId?: string;
 };
@@ -563,10 +563,30 @@ export async function notifyOwnersStoreStatusChanged(input: StoreStatusChangedOw
     eventType = "store.review.approved.owner";
     title = "Store approved";
     body = "Your store has been approved and is now live.";
+  } else if (input.action === "request_changes") {
+    eventType = "store.review.rejected.owner";
+    title = "Changes requested";
+    body = `The platform review team requested changes before your store can go live.${reasonText}`;
   } else if (input.action === "reject") {
     eventType = "store.review.rejected.owner";
-    title = "Store review needs updates";
-    body = `Your store was sent back to draft for updates.${reasonText}`;
+    title = "Store application rejected";
+    body = `Your go-live application was rejected.${reasonText}`;
+  } else if (input.action === "go_live") {
+    eventType = "store.review.approved.owner";
+    title = "Store is live again";
+    body = "Your storefront is public again.";
+  } else if (input.action === "go_offline") {
+    eventType = "store.review.suspended.owner";
+    title = "Store taken offline";
+    body = "Your storefront is now offline.";
+  } else if (input.action === "restore") {
+    eventType = "store.review.approved.owner";
+    title = "Store restored";
+    body = "Your storefront is available again.";
+  } else if (input.action === "remove") {
+    eventType = "store.review.suspended.owner";
+    title = "Store removed";
+    body = `Your storefront was removed from the platform.${reasonText}`;
   } else {
     eventType = "store.review.suspended.owner";
     title = "Store suspended";

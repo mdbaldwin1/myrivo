@@ -7,6 +7,7 @@ import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { STOREFRONT_WELCOME_POPUP_SOURCE } from "@/lib/storefront/welcome-popup";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
+import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 
 const subscribeSchema = z.object({
   email: z.string().email().max(320),
@@ -61,13 +62,13 @@ export async function POST(request: NextRequest) {
     .from("stores")
     .select("id,name,slug,status")
     .eq("slug", storeSlug)
-    .maybeSingle<{ id: string; name: string; slug: string; status: "draft" | "pending_review" | "active" | "suspended" }>();
+    .maybeSingle<{ id: string; name: string; slug: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" }>();
 
   if (storeError) {
     return NextResponse.json({ error: storeError.message }, { status: 500 });
   }
 
-  if (!store || store.status !== "active") {
+  if (!store || !isStorePubliclyAccessibleStatus(store.status)) {
     return NextResponse.json({ error: "Newsletter signup is not available right now." }, { status: 400 });
   }
 

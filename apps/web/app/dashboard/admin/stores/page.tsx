@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { ContextHelpLink } from "@/components/dashboard/context-help-link";
-import { PlatformStoreGovernancePanel } from "@/components/dashboard/admin/platform-store-governance-panel";
+import { PlatformStoresPanel } from "@/components/dashboard/admin/platform-stores-panel";
 import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
 import { hasGlobalRole } from "@/lib/auth/roles";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -31,12 +31,12 @@ export default async function DashboardAdminStoresPage() {
 
   return (
     <DashboardPageScaffold
-      title="Store Governance"
-      description="Approve, reject, and suspend stores with reasoned decisions and timeline visibility."
+      title="Stores"
+      description="Browse every store on the platform and handle approval work in one place."
       className="p-3"
       action={<ContextHelpLink href="/docs/store-governance-and-approvals#approval-workflow" context="admin_store_governance" label="Governance Docs" />}
     >
-      <PlatformStoreGovernancePanel />
+      <PlatformStoresPanel />
     </DashboardPageScaffold>
   );
 }

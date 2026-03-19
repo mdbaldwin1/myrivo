@@ -350,15 +350,6 @@ export function ReviewsModerationManager({ storeSlug, initialItems, initialRevie
     >
       <AppAlert variant="error" message={error} />
 
-      <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-sm text-amber-950 dark:text-amber-100">
-        <p className="font-medium">Compliance reminders</p>
-        <ul className="mt-2 space-y-1 text-xs leading-relaxed">
-          <li>Reject reviews only for policy reasons such as abuse, fraud, spam, privacy violations, or clearly invalid submissions.</li>
-          <li>Do not reject a review only because it is negative, low-rated, or commercially inconvenient.</li>
-          <li>Use owner responses to clarify or resolve issues instead of trying to hide legitimate feedback.</li>
-        </ul>
-      </div>
-
       <div className="rounded-md border border-border/70 bg-card p-3">
         <div className="flex flex-wrap items-center gap-2">
           {(["pending", "published", "rejected"] as ReviewStatus[]).map((status) => (

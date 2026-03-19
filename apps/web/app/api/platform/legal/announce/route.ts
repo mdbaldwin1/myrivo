@@ -89,7 +89,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, sent: 0, skipped: 0, audience });
   }
 
-  const actionUrl = "/legal/consent";
+  const actionParams = new URLSearchParams({ versionId: version.id });
+  const actionUrl = `/legal/consent?${actionParams.toString()}`;
   const content = buildLegalUpdateContent({
     documentTitle: version.legal_documents.title,
     documentKey: version.legal_documents.key,

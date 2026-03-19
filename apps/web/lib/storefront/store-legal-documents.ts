@@ -1,3 +1,5 @@
+import type { StoreBaseLegalDocumentKey } from "@/lib/legal/document-keys";
+
 export type StoreLegalDocumentKey = "privacy" | "terms";
 
 export type StoreLegalDocumentDefinition = {
@@ -5,8 +7,14 @@ export type StoreLegalDocumentDefinition = {
   title: string;
   navigationLabel: string;
   storefrontPath: string;
-  defaultBodyMarkdown: string;
+  baseDocumentKey: StoreBaseLegalDocumentKey;
   templateVariables: readonly StoreLegalTemplateVariableDefinition[];
+  addendumField: {
+    key: string;
+    label: string;
+    description: string;
+    placeholder: string;
+  };
   summaryFieldOwner: "storefront-studio";
   formalDocumentOwner: "store-settings-legal";
 };
@@ -25,48 +33,21 @@ export const STORE_LEGAL_DOCUMENTS: readonly StoreLegalDocumentDefinition[] = [
     title: "Privacy Policy",
     navigationLabel: "Privacy",
     storefrontPath: "/privacy",
-    defaultBodyMarkdown: `# Privacy Policy
-
-{storeName} respects your privacy. This policy explains what information we collect, how we use it, and how to contact us with questions.
-
-## Information we collect
-
-We may collect information you provide directly when you place an order, contact us, join our email list, or otherwise interact with the storefront. This can include your name, email address, shipping information, and any details you choose to share with us.
-
-## How we use information
-
-We use information to:
-
-- fulfill orders and provide customer support
-- communicate about purchases, pickup, shipping, or returns
-- operate and improve the storefront experience
-- comply with legal and tax obligations
-
-## Third-party services
-
-We may rely on service providers that support payments, checkout, fulfillment, email delivery, analytics, and storefront operations. Those providers process data as needed to perform their services.
-
-## Contact
-
-If you have privacy questions or requests, contact us at {privacyContactEmail}.
-
-{privacyAdditionalDetails}
-`,
+    baseDocumentKey: "store_privacy_base",
     templateVariables: [
       {
         key: "privacyContactEmail",
         label: "Privacy contact email",
-        description: "Shown as the main contact for privacy questions and requests.",
+        description: "Shown in the storefront privacy-policy contact section.",
         placeholder: "privacy@example.com"
-      },
-      {
-        key: "privacyAdditionalDetails",
-        label: "Additional privacy details",
-        description: "Optional extra markdown appended to the template for store-specific privacy disclosures.",
-        placeholder: "## Additional privacy details\n\nAdd any store-specific privacy disclosures here.",
-        multiline: true
       }
     ],
+    addendumField: {
+      key: "privacy_addendum",
+      label: "Store-specific privacy addendum",
+      description: "Optional markdown appended after the admin-managed privacy base template.",
+      placeholder: "## Store-specific privacy disclosures\n\nAdd any approved store-specific privacy details here."
+    },
     summaryFieldOwner: "storefront-studio",
     formalDocumentOwner: "store-settings-legal"
   },
@@ -75,53 +56,27 @@ If you have privacy questions or requests, contact us at {privacyContactEmail}.
     title: "Terms & Conditions",
     navigationLabel: "Terms",
     storefrontPath: "/terms",
-    defaultBodyMarkdown: `# Terms & Conditions
-
-These Terms & Conditions govern your use of the {storeName} storefront and any purchases you make from us.
-
-## Orders
-
-By placing an order, you agree that the information you provide is accurate and that you are authorized to use the selected payment method.
-
-## Pricing and availability
-
-Product availability, pricing, and fulfillment timing may change without notice. We reserve the right to correct errors, limit quantities, or cancel orders when necessary.
-
-## Fulfillment
-
-Shipping, pickup, returns, and support expectations are described throughout the storefront and in our policy pages. Please review those details before completing a purchase.
-
-## Governing law
-
-These terms are governed by the laws of {governingLawRegion}.
-
-## Contact
-
-If you have questions about these terms, contact us at {termsContactEmail}.
-
-{termsAdditionalDetails}
-`,
+    baseDocumentKey: "store_terms_base",
     templateVariables: [
       {
         key: "termsContactEmail",
         label: "Terms contact email",
-        description: "Shown as the contact for terms and order questions.",
+        description: "Shown in the storefront terms contact section.",
         placeholder: "support@example.com"
       },
       {
         key: "governingLawRegion",
         label: "Governing law region",
-        description: "Used in the governing law clause for the template-backed Terms document.",
+        description: "Used in the governing-law clause of the admin-managed terms base template.",
         placeholder: "the jurisdiction where the store operates"
-      },
-      {
-        key: "termsAdditionalDetails",
-        label: "Additional terms",
-        description: "Optional extra markdown appended to the template for store-specific conditions.",
-        placeholder: "## Additional terms\n\nAdd any store-specific conditions here.",
-        multiline: true
       }
     ],
+    addendumField: {
+      key: "terms_addendum",
+      label: "Store-specific terms addendum",
+      description: "Optional markdown appended after the admin-managed terms base template.",
+      placeholder: "## Store-specific terms\n\nAdd any approved store-specific conditions here."
+    },
     summaryFieldOwner: "storefront-studio",
     formalDocumentOwner: "store-settings-legal"
   }
@@ -138,6 +93,7 @@ export const STORE_LEGAL_INFORMATION_ARCHITECTURE = {
     "formal Privacy Policy document",
     "formal Terms & Conditions document",
     "template variables and merchant addenda",
+    "admin-managed storefront legal base templates",
     "publishing metadata and effective-date state"
   ],
   nonGoals: [

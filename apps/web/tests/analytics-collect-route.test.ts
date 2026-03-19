@@ -69,7 +69,7 @@ describe("analytics collect route", () => {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
               maybeSingle: vi.fn(async () => ({
-                data: { id: "store-1", slug: "demo-store", status: "active" },
+                data: { id: "store-1", slug: "demo-store", status: "live" },
                 error: null
               }))
             }))
@@ -100,7 +100,7 @@ describe("analytics collect route", () => {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
               maybeSingle: vi.fn(async () => ({
-                data: { id: "store-1", slug: "demo-store", status: "active" },
+                data: { id: "store-1", slug: "demo-store", status: "live" },
                 error: null
               }))
             }))
@@ -176,7 +176,7 @@ describe("analytics collect route", () => {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
               maybeSingle: vi.fn(async () => ({
-                data: { id: "store-1", slug: "demo-store", status: "active" },
+                data: { id: "store-1", slug: "demo-store", status: "live" },
                 error: null
               }))
             }))
@@ -259,7 +259,7 @@ describe("analytics collect route", () => {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
               maybeSingle: vi.fn(async () => ({
-                data: { id: "store-1", slug: "demo-store", status: "active" },
+                data: { id: "store-1", slug: "demo-store", status: "live" },
                 error: null
               }))
             }))
@@ -316,7 +316,7 @@ describe("analytics collect route", () => {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
               maybeSingle: vi.fn(async () => ({
-                data: { id: "store-1", slug: "demo-store", status: "active" },
+                data: { id: "store-1", slug: "demo-store", status: "live" },
                 error: null
               }))
             }))
@@ -468,7 +468,7 @@ describe("analytics collect route", () => {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
               maybeSingle: vi.fn(async () => ({
-                data: { id: "store-1", slug: "demo-store", status: "active" },
+                data: { id: "store-1", slug: "demo-store", status: "live" },
                 error: null
               }))
             }))
@@ -518,7 +518,7 @@ describe("analytics collect route", () => {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
               maybeSingle: vi.fn(async () => ({
-                data: { id: "store-1", slug: "demo-store", status: "active" },
+                data: { id: "store-1", slug: "demo-store", status: "live" },
                 error: null
               }))
             }))

@@ -7,7 +7,7 @@ type PendingStoreRow = {
   id: string;
   name: string;
   slug: string;
-  status: "draft" | "pending_review" | "active" | "suspended";
+  status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
   created_at: string;
 };
 
@@ -72,8 +72,8 @@ export async function GET() {
           .from("stores")
           .select("id,name,slug,status")
           .in("id", Array.from(storeIds))
-          .returns<Array<{ id: string; name: string; slug: string; status: "draft" | "pending_review" | "active" | "suspended" }>>()
-      : Promise.resolve({ data: [] as Array<{ id: string; name: string; slug: string; status: "draft" | "pending_review" | "active" | "suspended" }> }),
+          .returns<Array<{ id: string; name: string; slug: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" }>>()
+      : Promise.resolve({ data: [] as Array<{ id: string; name: string; slug: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" }> }),
     actorIds.size
       ? admin
           .from("user_profiles")

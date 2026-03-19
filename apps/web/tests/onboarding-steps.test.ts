@@ -8,6 +8,7 @@ function makeProgress(overrides: Partial<StoreOnboardingProgress> = {}): StoreOn
     name: "At Home Apothecary",
     slug: "at-home-apothecary",
     status: "draft",
+    hasLaunchedOnce: false,
     role: "owner",
     canManageWorkspace: true,
     canLaunch: true,
@@ -46,13 +47,13 @@ describe("onboarding step routes", () => {
     });
   });
 
-  test("routes launch to general settings submit-for-review flow", () => {
+  test("routes launch back to the store overview go-live flow", () => {
     const nextStep = getOnboardingNextStep(makeProgress());
 
     expect(nextStep).toEqual({
       id: "launch",
-      label: "Submit for review",
-      href: "/dashboard/stores/at-home-apothecary/store-settings/general"
+      label: "Apply to go live",
+      href: "/dashboard/stores/at-home-apothecary"
     });
   });
 

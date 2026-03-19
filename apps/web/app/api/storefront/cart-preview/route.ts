@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
+import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 
 const previewSchema = z.object({
   entries: z
@@ -48,9 +49,9 @@ export async function POST(request: NextRequest) {
     .from("stores")
     .select("id,status")
     .eq("slug", storeSlug)
-    .maybeSingle<{ id: string; status: "draft" | "pending_review" | "active" | "suspended" }>();
+    .maybeSingle<{ id: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" }>();
 
-  if (storeError || !store || store.status !== "active") {
+  if (storeError || !store || !isStorePubliclyAccessibleStatus(store.status)) {
     return NextResponse.json({ items: [], subtotalCents: 0 });
   }
 

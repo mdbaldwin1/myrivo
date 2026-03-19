@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { StoreWorkspaceLaunchLink } from "@/components/dashboard/store-workspace-launch-link";
 import { Button } from "@/components/ui/button";
 import type { StoreHubData } from "@/lib/dashboard/store-hub/store-hub-types";
 
@@ -45,7 +46,9 @@ export function StoreHubCommandBar({ filters, activeStore }: StoreHubCommandBarP
       <div className="flex flex-wrap items-center gap-2">
         {activeStore ? (
           <Button size="sm" variant="outline" asChild>
-            <Link href={`/dashboard/stores/${activeStore.slug}`}>Open {activeStore.name}</Link>
+            <StoreWorkspaceLaunchLink href={`/dashboard/stores/${activeStore.slug}`} storeSlug={activeStore.slug}>
+              Open {activeStore.name}
+            </StoreWorkspaceLaunchLink>
           </Button>
         ) : null}
         <Button size="sm" asChild>

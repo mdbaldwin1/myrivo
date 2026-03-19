@@ -11,14 +11,16 @@ It includes:
 - do-not-sell/share link handling
 - browser privacy signal handling, including Global Privacy Control
 - shopper privacy request intake
-- operator review/status handling in `Store Settings > Legal`
+- operator review/status handling in `Store Settings > Privacy`
 
 ## Merchant-facing surfaces
 
-- `Store Settings > Legal`
-  - privacy compliance settings
-  - Privacy Policy / Terms publishing
+- `Store Settings > Privacy`
+  - store privacy contacts and addenda
   - privacy request review panel
+- `Admin > Legal`
+  - platform storefront privacy governance
+  - Privacy Policy / Terms publishing
 - Storefront collection points
   - checkout
   - newsletter signup
@@ -34,7 +36,7 @@ It includes:
 
 ## Configuration model
 
-`store_privacy_profiles` stores the privacy-compliance configuration for each store.
+`platform_storefront_privacy_settings` stores the platform-governed storefront privacy behavior.
 
 Important fields:
 
@@ -44,9 +46,18 @@ Important fields:
 - `review_notice_enabled`
 - `show_california_notice`
 - `show_do_not_sell_link`
+
+`store_privacy_profiles` stores the store-specific privacy configuration for each store.
+
+Important fields:
+
 - `privacy_contact_email`
 - `privacy_rights_email`
 - `privacy_contact_name`
+- `collection_notice_addendum_markdown`
+- `california_notice_markdown`
+- `do_not_sell_markdown`
+- `request_page_intro_markdown`
 
 `store_privacy_requests` stores shopper-submitted privacy requests and workflow status.
 
@@ -65,16 +76,16 @@ Important fields:
 
 Check:
 
-1. `store_privacy_profiles.notice_at_collection_enabled`
-2. the surface-specific toggle (`checkout_notice_enabled`, `newsletter_notice_enabled`, or `review_notice_enabled`)
+1. `platform_storefront_privacy_settings.notice_at_collection_enabled`
+2. the surface-specific platform toggle (`checkout_notice_enabled`, `newsletter_notice_enabled`, or `review_notice_enabled`)
 3. that the storefront page is resolving the expected store slug
 
 ### When a merchant asks why California links are not showing
 
 Check:
 
-1. `show_california_notice`
-2. `show_do_not_sell_link` for the opt-out link specifically
+1. `platform_storefront_privacy_settings.show_california_notice`
+2. `platform_storefront_privacy_settings.show_do_not_sell_link` for the opt-out link specifically
 3. that the shopper is viewing the store-scoped storefront, not the platform-only privacy page
 
 ### When a merchant asks how Global Privacy Control works
@@ -91,7 +102,7 @@ Current workflow:
 
 1. request is stored in `store_privacy_requests`
 2. opt-out requests also create or refresh a `store_privacy_opt_outs` record
-3. owner/admin can review both the request and any current opt-out state in `Store Settings > Legal`
+3. owner/admin can review both the request and any current opt-out state in `Store Settings > Privacy`
 4. owner/admin updates request status manually (`open`, `in_progress`, `completed`, `closed`)
 
 This is an operator handoff flow, not full automated rights fulfillment.
@@ -110,7 +121,7 @@ Answer:
 
 1. the storefront link routes into the privacy request form with opt-out preselected
 2. submitting that request creates a durable opt-out state for the shopper email
-3. owner/admin can revoke or reactivate that state from `Store Settings > Legal`
+3. owner/admin can revoke or reactivate that state from `Store Settings > Privacy`
 
 ## Support boundaries
 
@@ -120,18 +131,18 @@ Platform-owned:
 - platform privacy statement
 - browser-signal handling, including GPC
 - shared request-routing and future suppression automation
+- storefront privacy notice behavior and rights-entry visibility
 
 Store-owned:
 
 - store privacy contact details
-- store privacy policy content
 - California addenda
-- do-not-sell/share visibility on the storefront
+- store-specific request intro and notice addenda
 - response handling for store-level privacy requests
 
 ## Known limitations
 
 - privacy requests do not yet trigger outbound notifications automatically
-- there is not yet a dedicated support/admin inbox outside Store Settings > Legal
+- there is not yet a dedicated support/admin inbox outside Store Settings > Privacy
 - do-not-sell/share now has explicit state tracking, but it is not yet a full downstream suppression engine
 - browser-signal honoring is platform-managed, but downstream fulfillment and operator review still depend on the broader privacy workflow

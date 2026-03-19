@@ -18,7 +18,7 @@ function toneClass(severity: StoreDashboardAlert["severity"]) {
 
 export function PriorityAlertsPanel({ alerts }: PriorityAlertsPanelProps) {
   return (
-    <SectionCard title="Priority Alerts" description="Blockers and high-impact issues that need immediate attention.">
+    <SectionCard title="Priority Alerts" description="Blockers and high-impact issues that need immediate attention." className="h-full">
       <ul className="space-y-2 text-sm">
         {alerts.length === 0 ? (
           <li className="text-muted-foreground">No priority alerts.</li>

@@ -1,5 +1,6 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { normalizeHost } from "@/lib/stores/domain-utils";
+import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 
 type StoreDomainLookupRow = {
   domain: string;
@@ -7,12 +8,16 @@ type StoreDomainLookupRow = {
   stores:
     | {
         slug: string;
-        status: "draft" | "pending_review" | "active" | "suspended";
+        status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
       }
-    | Array<{ slug: string; status: "draft" | "pending_review" | "active" | "suspended" }>;
+    | Array<{ slug: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" }>;
 };
 
-async function lookupStoreSlugForDomain(domain: string): Promise<string | null> {
+type ResolveStoreSlugFromDomainOptions = {
+  includeNonPublic?: boolean;
+};
+
+async function lookupStoreSlugForDomain(domain: string, options?: ResolveStoreSlugFromDomainOptions): Promise<string | null> {
   const admin = createSupabaseAdminClient();
   const { data, error } = await admin
     .from("store_domains")
@@ -26,26 +31,33 @@ async function lookupStoreSlugForDomain(domain: string): Promise<string | null> 
   }
 
   const store = Array.isArray(data.stores) ? data.stores[0] : data.stores;
-  if (!store || store.status !== "active") {
+  if (!store) {
+    return null;
+  }
+
+  if (!options?.includeNonPublic && !isStorePubliclyAccessibleStatus(store.status)) {
     return null;
   }
 
   return store.slug;
 }
 
-export async function resolveStoreSlugFromDomain(host: string | null | undefined): Promise<string | null> {
+export async function resolveStoreSlugFromDomain(
+  host: string | null | undefined,
+  options?: ResolveStoreSlugFromDomainOptions
+): Promise<string | null> {
   const normalizedHost = normalizeHost(host);
   if (!normalizedHost) {
     return null;
   }
 
-  const exactMatch = await lookupStoreSlugForDomain(normalizedHost);
+  const exactMatch = await lookupStoreSlugForDomain(normalizedHost, options);
   if (exactMatch) {
     return exactMatch;
   }
 
   if (normalizedHost.startsWith("www.")) {
-    return lookupStoreSlugForDomain(normalizedHost.slice(4));
+    return lookupStoreSlugForDomain(normalizedHost.slice(4), options);
   }
 
   return null;
@@ -62,9 +74,9 @@ export async function resolvePrimaryDomainForStoreSlug(storeSlug: string): Promi
     .from("stores")
     .select("id,status")
     .eq("slug", normalizedSlug)
-    .maybeSingle<{ id: string; status: "draft" | "pending_review" | "active" | "suspended" }>();
+    .maybeSingle<{ id: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" }>();
 
-  if (storeError || !store || store.status !== "active") {
+  if (storeError || !store || !isStorePubliclyAccessibleStatus(store.status)) {
     return null;
   }
 

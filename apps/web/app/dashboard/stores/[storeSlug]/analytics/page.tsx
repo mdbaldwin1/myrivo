@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { AuditEventsPanel } from "@/components/dashboard/audit-events-panel";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
+import { StorefrontAnalyticsAcquisitionPanel } from "@/components/dashboard/storefront-analytics-acquisition-panel";
 import { StorefrontAnalyticsEmptyState } from "@/components/dashboard/storefront-analytics-empty-state";
 import { StorefrontAnalyticsFilterBar } from "@/components/dashboard/storefront-analytics-filter-bar";
 import { StorefrontAnalyticsFunnelPanel } from "@/components/dashboard/storefront-analytics-funnel-panel";
 import { StorefrontAnalyticsPanel } from "@/components/dashboard/storefront-analytics-panel";
+import { StorefrontAnalyticsTabNav, type StorefrontAnalyticsTab } from "@/components/dashboard/storefront-analytics-tab-nav";
 import { StorefrontAnalyticsTrendPanel } from "@/components/dashboard/storefront-analytics-trend-panel";
 import { StorefrontMerchandisingPanel } from "@/components/dashboard/storefront-merchandising-panel";
 import { AppAlert } from "@/components/ui/app-alert";
@@ -22,11 +24,15 @@ export const dynamic = "force-dynamic";
 
 type PageProps = {
   params: Promise<{ storeSlug: string }>;
-  searchParams?: Promise<{ range?: string; compare?: string }>;
+  searchParams?: Promise<{ range?: string; compare?: string; tab?: string }>;
 };
 
 function resolveRange(range: string | undefined): StorefrontAnalyticsRange {
   return range === "7d" || range === "90d" ? range : "30d";
+}
+
+function resolveTab(tab: string | undefined): StorefrontAnalyticsTab {
+  return tab === "acquisition" ? "acquisition" : "overview";
 }
 
 export default async function StoreWorkspaceAnalyticsPage({ params, searchParams }: PageProps) {
@@ -50,6 +56,7 @@ export default async function StoreWorkspaceAnalyticsPage({ params, searchParams
 
   const range = resolveRange(filters?.range);
   const compare = filters?.compare !== "0";
+  const tab = resolveTab(filters?.tab);
 
   if (!analyticsAccess.dashboardEnabled) {
     return (
@@ -109,21 +116,26 @@ export default async function StoreWorkspaceAnalyticsPage({ params, searchParams
       <DashboardPageHeader
         title="Analytics"
         description="Storefront traffic, funnel, merchandising, and engagement performance."
-        action={<StorefrontAnalyticsFilterBar storeSlug={storeSlug} range={range} compare={compare} />}
+        action={<StorefrontAnalyticsFilterBar storeSlug={storeSlug} range={range} compare={compare} tab={tab} />}
       />
+      <StorefrontAnalyticsTabNav storeSlug={storeSlug} range={range} compare={compare} activeTab={tab} />
       {hasTrafficData ? (
-        <>
-          <StorefrontAnalyticsPanel summary={analyticsSummary} />
-          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-            <StorefrontAnalyticsTrendPanel summary={analyticsSummary} />
-            <StorefrontAnalyticsFunnelPanel summary={analyticsSummary} />
-          </div>
-        </>
+        tab === "acquisition" ? (
+          <StorefrontAnalyticsAcquisitionPanel summary={analyticsSummary} />
+        ) : (
+          <>
+            <StorefrontAnalyticsPanel summary={analyticsSummary} />
+            <div className="grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+              <StorefrontAnalyticsTrendPanel summary={analyticsSummary} />
+              <StorefrontAnalyticsFunnelPanel summary={analyticsSummary} />
+            </div>
+          </>
+        )
       ) : (
         <StorefrontAnalyticsEmptyState storeSlug={storeSlug} />
       )}
-      <StorefrontMerchandisingPanel storeSlug={storeSlug} range={range} summary={merchandisingSummary} />
-      <AuditEventsPanel initialEvents={auditEvents ?? []} />
+      {tab === "overview" ? <StorefrontMerchandisingPanel storeSlug={storeSlug} range={range} summary={merchandisingSummary} /> : null}
+      {tab === "overview" ? <AuditEventsPanel initialEvents={auditEvents ?? []} /> : null}
     </div>
   );
 }

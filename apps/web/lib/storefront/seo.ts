@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { resolvePrimaryDomainForStoreSlug, resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
+import { buildStorefrontHomePath } from "@/lib/storefront/paths";
 
 function normalizeProto(rawProto: string | null): "http" | "https" {
   if (!rawProto) {
@@ -46,7 +47,8 @@ export async function buildStorefrontCanonicalUrl(pathname: string, requestedSto
   }
 
   if (requestedStoreSlug) {
-    return `${origin}${pathname}?store=${encodeURIComponent(requestedStoreSlug)}`;
+    const normalizedPathname = pathname === "/" ? "" : pathname;
+    return `${origin}${buildStorefrontHomePath(requestedStoreSlug)}${normalizedPathname}`;
   }
 
   return `${origin}${pathname}`;

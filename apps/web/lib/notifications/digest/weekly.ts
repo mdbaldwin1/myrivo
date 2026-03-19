@@ -8,7 +8,7 @@ type StoreRow = {
   id: string;
   slug: string;
   name: string;
-  status: "draft" | "pending_review" | "active" | "suspended";
+  status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
 };
 
 type StoreMemberRow = {
@@ -156,7 +156,7 @@ export async function dispatchWeeklyDigests(now = new Date()): Promise<WeeklyDig
   const { data: stores, error: storesError } = await supabase
     .from("stores")
     .select("id,slug,name,status")
-    .eq("status", "active")
+    .eq("status", "live")
     .returns<StoreRow[]>();
 
   if (storesError) {

@@ -1,6 +1,7 @@
 import { getPendingStoreInvitesByEmail } from "@/lib/account/pending-store-invites";
 import { hasGlobalRole } from "@/lib/auth/roles";
 import type { DashboardHomeData, DashboardHomePriorityItem } from "@/lib/dashboard/home/dashboard-home-types";
+import { buildStorefrontCartPath } from "@/lib/storefront/paths";
 import type { GlobalUserRole } from "@/types/database";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -63,7 +64,7 @@ type NotificationRow = {
 type MembershipRow = {
   store_id: string;
   role: "owner" | "admin" | "staff" | "customer";
-  stores: { id: string; slug: string; status: "draft" | "pending_review" | "active" | "suspended" } | null;
+  stores: { id: string; slug: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" } | null;
 };
 
 type ManagedStoreOrderRow = {
@@ -144,7 +145,7 @@ export function buildDashboardHomePriorities(input: BuildDashboardHomePriorities
       id: "active-cart",
       title: "Continue checkout",
       detail: `${firstCart.storeName} cart has ${firstCart.itemCount} item(s).`,
-      href: `/cart?store=${encodeURIComponent(firstCart.storeSlug)}`,
+      href: buildStorefrontCartPath(firstCart.storeSlug),
       severity: "medium"
     });
   }

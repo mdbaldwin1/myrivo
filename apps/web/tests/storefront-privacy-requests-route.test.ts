@@ -16,7 +16,7 @@ const supabaseMock = {
         select: vi.fn(() => chain),
         eq: vi.fn(() => chain),
         maybeSingle: vi.fn(async () => ({
-          data: { id: "store-1", status: "active" },
+          data: { id: "store-1", status: "live" },
           error: null
         }))
       };

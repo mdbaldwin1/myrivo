@@ -1,4 +1,4 @@
-import { MAIN_CONTENT_ID } from "@/lib/accessibility";
+import { StorefrontLoadingShell } from "@/components/storefront/storefront-loading-shell";
 import type { StorefrontLoadingContext } from "@/lib/storefront/loading-theme";
 import { cn } from "@/lib/utils";
 
@@ -7,20 +7,11 @@ type StorefrontHomeLoadingProps = {
 };
 
 export function StorefrontHomeLoading({ context }: StorefrontHomeLoadingProps) {
-  const { themeConfig, themeStyle, pageWidthClass, spacingClass, surfaceClass, contentGapClass, isAiry } = context;
+  const { themeConfig, surfaceClass, contentGapClass, isAiry } = context;
   const isSplitHero = themeConfig.heroLayout === "split";
 
   return (
-    <main
-      id={MAIN_CONTENT_ID}
-      tabIndex={-1}
-      style={themeStyle}
-      className={cn(
-        "mx-auto min-h-screen w-full bg-[color:var(--storefront-bg)] text-[color:var(--storefront-text)] [font-family:var(--storefront-font-body)] focus:outline-none",
-        pageWidthClass,
-        spacingClass
-      )}
-    >
+    <StorefrontLoadingShell context={context}>
       <section className={cn("space-y-4", isAiry && "space-y-6")}>
         <div className="h-8 w-40 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-primary)_22%,transparent)] motion-reduce:animate-none" />
         <div className="flex items-center justify-between gap-4 border-b border-[color:color-mix(in_srgb,var(--storefront-text)_14%,transparent)] pb-4">
@@ -120,6 +111,6 @@ export function StorefrontHomeLoading({ context }: StorefrontHomeLoadingProps) {
           ))}
         </div>
       </footer>
-    </main>
+    </StorefrontLoadingShell>
   );
 }

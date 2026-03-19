@@ -5,7 +5,7 @@ describe("buildAlerts", () => {
   test("returns critical and high alerts for blocking conditions", () => {
     const alerts = buildAlerts({
       storeSlug: "my-store",
-      storeStatus: "active",
+      storeStatus: "live",
       hasStripeAccount: false,
       hasVerifiedPrimaryDomain: false,
       overdueFulfillment: 3,
