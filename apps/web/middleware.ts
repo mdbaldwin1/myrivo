@@ -7,7 +7,6 @@ const STOREFRONT_STORE_COOKIE = "myrivo_storefront_slug";
 export function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
   const dashboardMatch = pathname.match(/^\/dashboard\/stores\/([^/]+)(?:\/|$)/);
-  const pathStorefrontMatch = pathname.match(/^\/s\/([^/]+)(?:\/|$)/);
   const storeQuerySlug = searchParams.get("store")?.trim().toLowerCase() ?? null;
 
   const dashboardStoreSlug = decodeURIComponent(dashboardMatch?.[1] ?? "").trim().toLowerCase();
