@@ -253,7 +253,7 @@ describe("storefront newsletter routes", () => {
     expect(sendWelcomeDiscountEmailMock).toHaveBeenCalledWith(
       expect.objectContaining({
         recipientEmail: "shopper@example.com",
-        store: expect.objectContaining({ slug: "at-home-apothecary" }),
+        store: expect.objectContaining({ slug: "sunset-mercantile" }),
         promotion: expect.objectContaining({ code: "WELCOME10" })
       })
     );

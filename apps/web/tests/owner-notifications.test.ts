@@ -295,7 +295,7 @@ describe("owner notification helpers", () => {
     expect(dispatchNotificationMock).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: "system.setup.warning",
-        actionUrl: "/dashboard/stores/at-home-apothecary/store-settings/general"
+        actionUrl: "/dashboard/stores/sunset-mercantile/store-settings/general"
       })
     );
   });

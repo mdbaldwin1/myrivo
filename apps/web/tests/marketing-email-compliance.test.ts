@@ -29,8 +29,8 @@ describe("resolveMarketingEmailComplianceDefaults", () => {
       fromMode: "platform_sender",
       senderDisplayName: "Sunset Mercantile",
       replyToEmail: "support@athomeapothecary.com",
-      unsubscribeHref: "/unsubscribe?store=at-home-apothecary",
-      privacyPolicyHref: "/s/at-home-apothecary/privacy",
+      unsubscribeHref: "/unsubscribe?store=sunset-mercantile",
+      privacyPolicyHref: "/s/sunset-mercantile/privacy",
       readiness: {
         status: "ready"
       }
