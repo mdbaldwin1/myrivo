@@ -36,16 +36,6 @@ export function StorefrontStudioStorefrontEditorAboutTab() {
           </ul>
         </div>
       </StorefrontStudioStorefrontEditorPanelTabSection>
-
-      <StorefrontStudioStorefrontEditorPanelTabSection
-        title="Why"
-        separated
-        description="Inline editing keeps the About page easier to maintain and avoids duplicating the same content controls in the side panel."
-      >
-        <p className="text-sm text-muted-foreground">
-          The Control Panel stays intentionally light here because the preview is now the primary editing surface for About content.
-        </p>
-      </StorefrontStudioStorefrontEditorPanelTabSection>
     </StorefrontStudioStorefrontEditorPanelTabContainer>
   );
 }

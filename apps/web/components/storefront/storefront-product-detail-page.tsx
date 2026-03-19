@@ -30,6 +30,7 @@ import { getStorefrontButtonRadiusClass, getStorefrontCardStyleClass, getStorefr
 import { getStorefrontPageWidthClass } from "@/lib/storefront/layout";
 import { STOREFRONT_TEXT_LINK_EFFECT_CLASS } from "@/lib/storefront/link-effects";
 import { resolveFooterNavLinks, resolveHeaderNavLinks } from "@/lib/storefront/navigation";
+import { buildStorefrontProductsPath } from "@/lib/storefront/paths";
 import { resolveStorefrontPresentation } from "@/lib/storefront/presentation";
 
 type StorefrontVariant = {
@@ -405,7 +406,7 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
             {studioEnabledWithDocument ? (
               <StorefrontStudioEditableLink
                 label={copy.productDetail.breadcrumbProducts}
-                url={`/products?store=${encodeURIComponent(resolvedStore.slug)}`}
+                url={buildStorefrontProductsPath(resolvedStore.slug)}
                 hideUrlField
                 allowNavigation
                 labelPlaceholder="Products"
@@ -416,7 +417,7 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
                 onChange={(next) => updateProductsField("copy.productDetail.breadcrumbProducts", next.label)}
               />
             ) : (
-              <Link href={`/products?store=${encodeURIComponent(resolvedStore.slug)}`} className={STOREFRONT_TEXT_LINK_EFFECT_CLASS}>
+              <Link href={buildStorefrontProductsPath(resolvedStore.slug)} className={STOREFRONT_TEXT_LINK_EFFECT_CLASS}>
                 {copy.productDetail.breadcrumbProducts}
               </Link>
             )}
@@ -620,7 +621,7 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
             {studioEnabledWithDocument ? (
               <StorefrontStudioEditableLink
                 label={copy.productDetail.backToAllProducts}
-                url={`/products?store=${encodeURIComponent(resolvedStore.slug)}`}
+                url={buildStorefrontProductsPath(resolvedStore.slug)}
                 hideUrlField
                 allowNavigation
                 labelPlaceholder="Back to all products"
@@ -631,7 +632,7 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
                 onChange={(next) => updateProductsField("copy.productDetail.backToAllProducts", next.label)}
               />
             ) : (
-              <Link href={`/products?store=${encodeURIComponent(resolvedStore.slug)}`} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "text-sm font-medium")}>
+              <Link href={buildStorefrontProductsPath(resolvedStore.slug)} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "text-sm font-medium")}>
                 {copy.productDetail.backToAllProducts}
               </Link>
             )}

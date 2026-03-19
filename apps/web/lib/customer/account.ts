@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 
 type SupabaseSingleResult = Promise<{ data: unknown; error: { message: string } | null }>;
 type SupabaseQuery = { eq: (column: string, value: unknown) => SupabaseQuery; maybeSingle: () => SupabaseSingleResult };
@@ -11,7 +12,7 @@ type SupabaseCustomerClient = {
   };
 };
 
-type StoreLookup = { id: string; slug: string; status: "draft" | "pending_review" | "active" | "suspended" };
+type StoreLookup = { id: string; slug: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" };
 type ProductLookup = { id: string; store_id: string; status: "draft" | "active" | "archived"; price_cents: number };
 type VariantLookup = {
   id: string;
@@ -50,7 +51,7 @@ export async function requireStoreById(supabase: unknown, storeId: string) {
   }
 
   const store = data as StoreLookup | null;
-  if (!store || store.status !== "active") {
+  if (!store || !isStorePubliclyAccessibleStatus(store.status)) {
     return { store: null, response: NextResponse.json({ error: "Store not found or inactive." }, { status: 404 }) } as const;
   }
 
@@ -70,7 +71,7 @@ export async function requireStoreBySlug(supabase: unknown, slug: string) {
   }
 
   const store = data as StoreLookup | null;
-  if (!store || store.status !== "active") {
+  if (!store || !isStorePubliclyAccessibleStatus(store.status)) {
     return { store: null, response: NextResponse.json({ error: "Store not found or inactive." }, { status: 404 }) } as const;
   }
 

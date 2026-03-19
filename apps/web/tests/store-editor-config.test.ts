@@ -9,6 +9,7 @@ function buildBundle(overrides?: Partial<OwnedStoreBundle>): OwnedStoreBundle {
       name: "Olive Mercantile",
       slug: "olive-mercantile",
       status: "draft",
+      has_launched_once: false,
       stripe_account_id: null
     },
     role: "owner",

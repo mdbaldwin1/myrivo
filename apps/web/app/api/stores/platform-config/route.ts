@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     supabase.from("stores").select("id").eq("id", auth.context.storeId).single(),
     admin
       .from("store_billing_profiles")
-      .select("store_id,billing_plan_id,test_mode_enabled,metadata_json,billing_plans(key,name,transaction_fee_bps,transaction_fee_fixed_cents)")
+      .select("store_id,billing_plan_id,metadata_json,billing_plans(key,name,transaction_fee_bps,transaction_fee_fixed_cents)")
       .eq("store_id", auth.context.storeId)
       .maybeSingle(),
     admin

@@ -13,6 +13,8 @@ import { normalizePromotionRedemptionEmail, PROMOTION_CUSTOMER_CAP_REACHED_ERROR
 import { checkRateLimit } from "@/lib/security/rate-limit";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
+import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
+import { buildStorefrontCheckoutPath } from "@/lib/storefront/paths";
 import { buildStubCheckoutRpcPayload } from "@/lib/storefront/stub-checkout";
 import { getStripeClient } from "@/lib/stripe/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -138,12 +140,11 @@ export async function POST(request: NextRequest) {
     .from("stores")
     .select("id,name,slug,status,stripe_account_id")
     .eq("slug", storeSlug)
-    .eq("status", "active")
     .maybeSingle<{
       id: string;
       name: string;
       slug: string;
-      status: string;
+      status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
       stripe_account_id: string | null;
     }>();
 
@@ -151,7 +152,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: storeError.message }, { status: 500 });
   }
 
-  if (!store) {
+  if (!store || !isStorePubliclyAccessibleStatus(store.status)) {
     return NextResponse.json({ error: "Store not found or inactive." }, { status: 404 });
   }
 
@@ -178,16 +179,6 @@ export async function POST(request: NextRequest) {
       .maybeSingle<{ id: string }>();
 
     sourceCartId = activeCart?.id ?? null;
-  }
-
-  const { data: billingProfile, error: billingProfileError } = await supabase
-    .from("store_billing_profiles")
-    .select("test_mode_enabled")
-    .eq("store_id", store.id)
-    .maybeSingle<{ test_mode_enabled: boolean }>();
-
-  if (billingProfileError) {
-    return NextResponse.json({ error: billingProfileError.message }, { status: 500 });
   }
 
   const { data: checkoutSettings, error: checkoutSettingsError } = await supabase
@@ -679,7 +670,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Order total must be greater than $0.00." }, { status: 400 });
   }
 
-  const shouldUseStubMode = isStripeStubMode() || Boolean(billingProfile?.test_mode_enabled);
+  const shouldUseStubMode = isStripeStubMode();
 
   if (shouldUseStubMode) {
     const { data, error } = await supabase.rpc(
@@ -879,8 +870,8 @@ export async function POST(request: NextRequest) {
           quantity: 1
         }
       ],
-      success_url: `${appUrl}/checkout?status=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${appUrl}/checkout?status=cancelled`,
+      success_url: `${appUrl}${buildStorefrontCheckoutPath(store.slug)}?status=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${appUrl}${buildStorefrontCheckoutPath(store.slug)}?status=cancelled`,
       metadata: {
         checkout_kind: "storefront_order",
         storefront_checkout_id: pendingCheckout.id,

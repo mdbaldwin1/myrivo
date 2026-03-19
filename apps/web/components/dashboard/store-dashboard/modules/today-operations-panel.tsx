@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { DataStat } from "@/components/ui/data-stat";
 import { SectionCard } from "@/components/ui/section-card";
 import type { StoreDashboardData, StoreDashboardNextTask } from "@/lib/dashboard/store-dashboard/store-dashboard-types";
 
@@ -18,16 +17,55 @@ function priorityClass(priority: StoreDashboardNextTask["priority"]) {
 }
 
 export function TodayOperationsPanel({ operations }: TodayOperationsPanelProps) {
+  const fulfillmentRows = [
+    {
+      id: "pending-fulfillment",
+      label: "Pending fulfillment",
+      value: operations.pendingFulfillment,
+      href: "/orders"
+    },
+    {
+      id: "packing",
+      label: "Packing",
+      value: operations.packing,
+      href: "/orders"
+    },
+    {
+      id: "shipping-exceptions",
+      label: "Shipping exceptions",
+      value: operations.shippingExceptions,
+      href: "/orders"
+    },
+    {
+      id: "pickup-due",
+      label: "Pickup due soon",
+      value: operations.duePickupWindows,
+      href: "/orders"
+    }
+  ];
+
   return (
-    <SectionCard title="Today Operations" description="Current fulfillment workload and immediate action queue.">
+    <SectionCard title="Fulfillment" description="Current order flow and the next actions that need attention." className="h-full">
       <div className="space-y-4">
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-          <DataStat label="Pending Fulfillment" value={String(operations.pendingFulfillment)} className="bg-card" />
-          <DataStat label="Packing" value={String(operations.packing)} className="bg-card" />
-          <DataStat label="Overdue" value={String(operations.overdueFulfillment)} className="bg-card" />
-          <DataStat label="Shipping Exceptions" value={String(operations.shippingExceptions)} className="bg-card" />
-          <DataStat label="Pickup Due (4h)" value={String(operations.duePickupWindows)} className="bg-card" />
-        </div>
+        <ul className="space-y-2 text-sm">
+          {fulfillmentRows.map((row) => (
+            <li key={row.id} className="flex items-center justify-between gap-3 rounded-md border border-border bg-muted/20 px-3 py-2">
+              <span className="min-w-0 truncate">{row.label}</span>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-semibold">{row.value}</span>
+                <Link href={row.href} className="text-xs font-medium text-primary hover:underline">
+                  Open
+                </Link>
+              </div>
+            </li>
+          ))}
+          {operations.overdueFulfillment > 0 ? (
+            <li className="flex items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <span className="min-w-0 truncate">Overdue fulfillment</span>
+              <span className="font-semibold">{operations.overdueFulfillment}</span>
+            </li>
+          ) : null}
+        </ul>
 
         <section className="space-y-2">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Next Tasks</h3>

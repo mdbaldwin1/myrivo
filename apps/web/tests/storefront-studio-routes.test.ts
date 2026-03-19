@@ -21,8 +21,8 @@ describe("storefront studio route metadata", () => {
 
   test("builds preview routes for supported surfaces", () => {
     expect(getStorefrontStudioSurface("about").previewHref("olive-mercantile")).toBe("/s/olive-mercantile/about");
-    expect(getStorefrontStudioSurface("policies").previewHref("olive-mercantile")).toBe("/policies?store=olive-mercantile");
-    expect(getStorefrontStudioSurface("cart").previewHref("olive-mercantile")).toBe("/cart?store=olive-mercantile");
+    expect(getStorefrontStudioSurface("policies").previewHref("olive-mercantile")).toBe("/s/olive-mercantile/policies");
+    expect(getStorefrontStudioSurface("cart").previewHref("olive-mercantile")).toBe("/s/olive-mercantile/cart");
   });
 
   test("builds canonical Studio URLs for surface navigation", () => {
@@ -42,5 +42,6 @@ describe("storefront studio route metadata", () => {
     expect(getStorefrontStudioSurfaceForHref("/products?store=olive-mercantile", "olive-mercantile")).toBe("products");
     expect(getStorefrontStudioSurfaceForHref("/s/olive-mercantile/about", "olive-mercantile")).toBe("about");
     expect(getStorefrontStudioSurfaceForHref("/checkout?store=olive-mercantile", "olive-mercantile")).toBe("orderSummary");
+    expect(getStorefrontStudioSurfaceForHref("/s/olive-mercantile/cart", "olive-mercantile")).toBe("cart");
   });
 });

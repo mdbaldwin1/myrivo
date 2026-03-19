@@ -15,7 +15,8 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { MAIN_CONTENT_ID } from "@/lib/accessibility";
 import { cn } from "@/lib/utils";
 import type { StoreOption } from "@/components/dashboard/store-switcher";
-import type { GlobalUserRole } from "@/types/database";
+import type { GlobalUserRole, StoreStatus } from "@/types/database";
+import type { StoreOnboardingProgress } from "@/lib/stores/onboarding";
 
 const DASHBOARD_SIDEBAR_STORAGE_KEY = "myrivo.dashboard-sidebar-collapsed";
 
@@ -28,11 +29,10 @@ type DashboardShellProps = {
   userEmail?: string | null;
   userAvatarPath?: string | null;
   initialNotificationSoundEnabled: boolean;
-  initialTestModeEnabled: boolean;
-  canManageTestMode: boolean;
   analyticsDashboardEnabled: boolean;
   hasStoreAccess: boolean;
-  storeStatus: string | null;
+  storeStatus: StoreStatus | null;
+  storeOnboardingProgress: StoreOnboardingProgress | null;
 };
 
 export function DashboardShell({
@@ -44,11 +44,10 @@ export function DashboardShell({
   userEmail,
   userAvatarPath,
   initialNotificationSoundEnabled,
-  initialTestModeEnabled,
-  canManageTestMode,
   analyticsDashboardEnabled,
   hasStoreAccess,
-  storeStatus
+  storeStatus,
+  storeOnboardingProgress
 }: DashboardShellProps) {
   const sidebarCollapsed = useLocalStorageFlag(DASHBOARD_SIDEBAR_STORAGE_KEY);
 
@@ -59,7 +58,7 @@ export function DashboardShell({
   return (
     <div data-dashboard-shell="true" className="fixed inset-0 flex w-full flex-col overflow-hidden bg-stone-50">
       <header className="shrink-0 border-b border-border/70 bg-white/95 supports-[backdrop-filter]:bg-white/90 supports-[backdrop-filter]:backdrop-blur">
-        <div className="flex h-16 items-center justify-between gap-3 px-4 lg:px-6">
+        <div className="grid h-16 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-4 lg:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <DashboardHeaderBackButton />
             <Link href="/dashboard" className="flex items-center gap-2">
@@ -67,9 +66,26 @@ export function DashboardShell({
               <p className="hidden text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground sm:block">Myrivo</p>
             </Link>
             <span className="hidden h-4 w-px bg-border sm:block" />
-            <DashboardHeaderStoreSection hasStoreAccess={hasStoreAccess} activeStoreSlug={activeStoreSlug} storeStatus={storeStatus} stores={stores} />
+            <DashboardHeaderStoreSection
+              hasStoreAccess={hasStoreAccess}
+              activeStoreSlug={activeStoreSlug}
+              storeStatus={storeStatus}
+              stores={stores}
+              storeOnboardingProgress={storeOnboardingProgress}
+              mode="identity"
+            />
           </div>
-          <div className="flex items-center gap-2">
+          <div className="hidden min-w-0 items-center justify-center lg:flex">
+            <DashboardHeaderStoreSection
+              hasStoreAccess={hasStoreAccess}
+              activeStoreSlug={activeStoreSlug}
+              storeStatus={storeStatus}
+              stores={stores}
+              storeOnboardingProgress={storeOnboardingProgress}
+              mode="lifecycle"
+            />
+          </div>
+          <div className="flex items-center justify-end gap-2">
             <Link href="/docs" target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", size: "sm" })}>
               Docs
             </Link>
@@ -82,8 +98,6 @@ export function DashboardShell({
               userDisplayName={userDisplayName}
               userEmail={userEmail}
               userAvatarPath={userAvatarPath}
-              initialTestModeEnabled={initialTestModeEnabled}
-              canManageTestMode={canManageTestMode}
               analyticsDashboardEnabled={analyticsDashboardEnabled}
             />
           </div>
@@ -106,8 +120,6 @@ export function DashboardShell({
               userDisplayName={userDisplayName}
               userEmail={userEmail}
               userAvatarPath={userAvatarPath}
-              initialTestModeEnabled={initialTestModeEnabled}
-              canManageTestMode={canManageTestMode}
               analyticsDashboardEnabled={analyticsDashboardEnabled}
               collapsed={sidebarCollapsed}
               className={cn("w-full px-3 py-3", sidebarCollapsed && "px-0")}

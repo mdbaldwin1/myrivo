@@ -33,7 +33,7 @@ describe("resolveStoreSlugFromDomain", () => {
         data: {
           domain: "siftr.app",
           verification_status: "verified",
-          stores: { slug: "at-home-apothecary", status: "active" }
+          stores: { slug: "at-home-apothecary", status: "live" }
         },
         error: null
       });
@@ -58,7 +58,7 @@ describe("resolveStoreSlugFromDomain", () => {
         data: {
           domain: "siftr.app",
           verification_status: "verified",
-          stores: { slug: "at-home-apothecary", status: "active" }
+          stores: { slug: "at-home-apothecary", status: "live" }
         },
         error: null
       });
@@ -66,5 +66,22 @@ describe("resolveStoreSlugFromDomain", () => {
 
     const slug = await resolveStoreSlugFromDomain("www.siftr.app");
     expect(slug).toBe("at-home-apothecary");
+  });
+
+  test("can resolve verified offline domains when includeNonPublic is enabled", async () => {
+    adminFromMock.mockImplementation((table: string) => {
+      if (table !== "store_domains") throw new Error(`Unexpected table ${table}`);
+      return buildStoreDomainsQuery({
+        data: {
+          domain: "siftr.app",
+          verification_status: "verified",
+          stores: { slug: "at-home-apothecary", status: "offline" }
+        },
+        error: null
+      });
+    });
+
+    await expect(resolveStoreSlugFromDomain("siftr.app")).resolves.toBeNull();
+    await expect(resolveStoreSlugFromDomain("siftr.app", { includeNonPublic: true })).resolves.toBe("at-home-apothecary");
   });
 });

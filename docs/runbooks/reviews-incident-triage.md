@@ -4,9 +4,9 @@
 Use this runbook when review submission, moderation, or media upload flows show degraded health.
 
 ## Detection Surfaces
-1. `/dashboard/admin` -> Reviews Pipeline Health panel
-2. `/dashboard/admin/moderation` queue size and stuck items
-3. `/dashboard/admin/audit` for `review_pipeline.upload_error` events
+1. `/dashboard/admin/audit` for `review_pipeline.upload_error` events
+2. Store-level review moderation queues for stuck pending reviews
+3. Any affected storefront/store workspace where symptoms were reported
 
 ## Immediate Checks
 1. Validate current counters in `/api/platform/reviews/health`.

@@ -1,7 +1,10 @@
 import { calculatePlatformFeeCents, resolveStoreFeeProfile, writeOrderFeeBreakdown } from "@/lib/billing/fees";
+import { isStripeStubMode } from "@/lib/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { sendOrderCreatedNotifications } from "@/lib/notifications/order-emails";
 import { buildStubCheckoutRpcPayload } from "@/lib/storefront/stub-checkout";
+import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
+import { getStripeClient } from "@/lib/stripe/server";
 
 type StorefrontCheckoutRecord = {
   id: string;
@@ -84,6 +87,23 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
 
   if (checkout.status === "completed" && checkout.order_id) {
     return { status: "completed" as const, orderId: checkout.order_id };
+  }
+
+  const { data: store, error: storeError } = await supabase
+    .from("stores")
+    .select("status")
+    .eq("id", checkout.store_id)
+    .maybeSingle<{
+      status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
+    }>();
+
+  if (storeError) {
+    throw new Error(storeError.message);
+  }
+
+  if (!store || !isStorePubliclyAccessibleStatus(store.status)) {
+    await markStorefrontCheckoutFailed(checkout.id, "Store is no longer live. Checkout cannot be completed.", paymentIntentId);
+    return { status: "failed" as const, orderId: null, errorMessage: "Store is no longer live. Checkout cannot be completed." };
   }
 
   if (paymentIntentId) {
@@ -284,6 +304,46 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
   await sendOrderCreatedNotifications(orderId);
 
   return { status: "completed" as const, orderId };
+}
+
+export async function expirePendingStorefrontCheckoutSessions(storeId: string) {
+  const supabase = createSupabaseAdminClient();
+  const { data: sessions, error } = await supabase
+    .from("storefront_checkout_sessions")
+    .select("id,stripe_checkout_session_id")
+    .eq("store_id", storeId)
+    .eq("status", "pending")
+    .not("stripe_checkout_session_id", "is", null)
+    .returns<Array<{ id: string; stripe_checkout_session_id: string | null }>>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const validSessions = (sessions ?? []).filter((session) => session.stripe_checkout_session_id);
+  if (validSessions.length === 0) {
+    return;
+  }
+
+  if (!isStripeStubMode()) {
+    const stripe = getStripeClient();
+    await Promise.allSettled(
+      validSessions.map((session) => stripe.checkout.sessions.expire(session.stripe_checkout_session_id!))
+    );
+  }
+
+  await Promise.all(
+    validSessions.map((session) =>
+      supabase
+        .from("storefront_checkout_sessions")
+        .update({
+          status: "failed",
+          error_message: "Checkout session expired because the store is no longer live."
+        })
+        .eq("id", session.id)
+        .eq("status", "pending")
+    )
+  );
 }
 
 export async function getStorefrontCheckoutBySessionId(storeSlug: string, sessionId: string) {

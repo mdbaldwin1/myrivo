@@ -60,8 +60,8 @@ export type StoreHubData = {
     grossRevenueCents: number;
     netPayoutCents: number;
     paidOrderCount: number;
-    grossRevenueDeltaPct: number | null;
-    paidOrderDeltaPct: number | null;
+    grossRevenueDeltaPct: number | "new" | null;
+    paidOrderDeltaPct: number | "new" | null;
   };
   operations: {
     pendingFulfillment: number;

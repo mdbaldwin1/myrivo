@@ -6,8 +6,8 @@ import { DEFAULT_STOREFRONT_THEME_CONFIG } from "@/lib/theme/storefront-theme";
 describe("storefront navigation helpers", () => {
   test("uses the storefront home path when store slug is provided", () => {
     const links = resolveHeaderNavLinks(DEFAULT_STOREFRONT_THEME_CONFIG, DEFAULT_STOREFRONT_COPY, "sister-shop");
-    expect(links.find((link) => link.label === DEFAULT_STOREFRONT_COPY.nav.home)?.href).toBe("/s/sister-shop?store=sister-shop");
-    expect(links.some((link) => link.href.includes("store=sister-shop"))).toBe(true);
+    expect(links.find((link) => link.label === DEFAULT_STOREFRONT_COPY.nav.home)?.href).toBe("/s/sister-shop");
+    expect(links.some((link) => link.href.includes("store=sister-shop"))).toBe(false);
   });
 
   test("keeps plain links when store slug is absent", () => {

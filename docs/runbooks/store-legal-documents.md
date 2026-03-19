@@ -9,17 +9,27 @@ Store-level legal documents give each storefront its own:
 
 These are managed in `Store Settings > Legal`, not in Storefront Studio.
 
+The core legal language is no longer merchant-authored. Myrivo admins manage the base templates in `Admin > Legal Governance`, and store owners configure only approved variables plus an optional store addendum.
+
 ## Ownership model
 
 ### Store Settings > Legal
 
 Owns:
 
-- formal legal text
-- template variables and addenda
+- store-specific variables and addenda
 - draft vs published state
 - effective-date metadata
 - publish summaries
+
+### Admin > Legal Governance
+
+Owns:
+
+- Myrivo platform Privacy Policy and Terms
+- storefront customer-policy base templates
+- legal version publishing
+- legal-consent notifications for platform-policy updates
 
 ### Storefront Studio
 
@@ -34,8 +44,9 @@ Still owns:
 
 1. Open `Store Settings > Legal`
 2. Choose `Privacy Policy` or `Terms & Conditions`
-3. Save changes to the draft
-4. Review the draft preview and current published version
+3. Update the store-specific fields and optional addendum
+4. Save changes to the draft
+5. Review the draft preview and current published version
 5. Enter:
    - publish summary
    - optional effective date
@@ -50,7 +61,11 @@ Customers keep seeing the published version until step 6 happens.
   - there are unsaved draft changes
   - there is no meaningful draft change compared with the published version
   - the publish summary is missing
+  - the admin-managed base template is not published yet
 - Publishing increments the store legal document version and records:
+  - the base-template version used for composition
+  - the store variables and addendum used for composition
+  - the fully composed published markdown snapshot
   - `published_at`
   - `effective_at`
   - `published_change_summary`
@@ -77,7 +92,7 @@ Check:
 Current recovery path:
 
 1. open the document
-2. paste or restore the prior text into the draft
+2. restore the prior variables/addendum state
 3. save the draft
 4. publish a new version with a rollback summary
 
@@ -118,11 +133,12 @@ Primary table:
 
 Published snapshot columns:
 
-- `published_source_mode`
-- `published_template_version`
 - `published_title`
 - `published_body_markdown`
 - `published_variables_json`
+- `published_addendum_markdown`
+- `published_base_document_version_id`
+- `published_base_version_label`
 - `published_version`
 - `published_change_summary`
 - `effective_at`

@@ -57,10 +57,25 @@ describe("platform user role route", () => {
 
     adminFromMock.mockImplementation((table: string) => {
       if (table === "user_profiles") {
+        let callCount = 0;
         return {
-          select: vi.fn((_columns: string, options: { count: "exact"; head: true }) => ({
-            eq: vi.fn(async () => ({ count: 1, error: null, options }))
-          }))
+          select: vi.fn((columns: string, options?: { count: "exact"; head: true }) => {
+            callCount += 1;
+            if (callCount === 1 && !options) {
+              return {
+                eq: vi.fn(() => ({
+                  maybeSingle: vi.fn(async () => ({
+                    data: { id: "u-admin", global_role: "admin" },
+                    error: null
+                  }))
+                }))
+              };
+            }
+
+            return {
+              eq: vi.fn(async () => ({ count: 1, error: null, options, columns }))
+            };
+          })
         };
       }
       throw new Error(`Unexpected table ${table}`);
@@ -77,5 +92,48 @@ describe("platform user role route", () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({ error: "At least one platform admin is required." });
   });
-});
 
+  test("prevents demoting another admin when they are the last admin", async () => {
+    requirePlatformRoleMock.mockResolvedValueOnce({
+      context: { globalRole: "admin", userId: "u-admin-2", storeId: "", storeSlug: "", storeRole: "customer" },
+      response: null
+    });
+
+    let userProfilesCall = 0;
+    adminFromMock.mockImplementation((table: string) => {
+      if (table === "user_profiles") {
+        userProfilesCall += 1;
+        if (userProfilesCall === 1) {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                maybeSingle: vi.fn(async () => ({
+                  data: { id: "u-admin-1", global_role: "admin" },
+                  error: null
+                }))
+              }))
+            }))
+          };
+        }
+
+        return {
+          select: vi.fn((_columns: string, options: { count: "exact"; head: true }) => ({
+            eq: vi.fn(async () => ({ count: 1, error: null, options }))
+          }))
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const route = await import("@/app/api/platform/users/[userId]/role/route");
+    const request = new NextRequest("http://localhost:3000/api/platform/users/u-admin-1/role", {
+      method: "PATCH",
+      body: JSON.stringify({ globalRole: "support" }),
+      headers: { "content-type": "application/json", origin: "http://localhost:3000", host: "localhost:3000" }
+    });
+
+    const response = await route.PATCH(request, { params: Promise.resolve({ userId: "u-admin-1" }) });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ error: "At least one platform admin is required." });
+  });
+});

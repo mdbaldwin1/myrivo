@@ -1,4 +1,6 @@
 import { hasStoreRole } from "@/lib/auth/roles";
+import { hasStoreLaunchedOnce, isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
+import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export type OnboardingStoreRole = "owner" | "admin" | "staff" | "customer";
@@ -7,7 +9,10 @@ export type StoreOnboardingProgress = {
   id: string;
   name: string;
   slug: string;
-  status: "draft" | "pending_review" | "active" | "suspended";
+  status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
+  hasLaunchedOnce: boolean;
+  statusReasonCode?: string | null;
+  statusReasonDetail?: string | null;
   role: OnboardingStoreRole;
   canManageWorkspace: boolean;
   canLaunch: boolean;
@@ -29,7 +34,23 @@ type MembershipStoreRow = {
     id: string;
     name: string;
     slug: string;
-    status: "draft" | "pending_review" | "active" | "suspended";
+    status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
+    has_launched_once: boolean;
+    status_reason_code: string | null;
+    status_reason_detail: string | null;
+    stripe_account_id: string | null;
+  } | null;
+};
+
+type LegacyMembershipStoreRow = {
+  role: OnboardingStoreRole;
+  store: {
+    id: string;
+    name: string;
+    slug: string;
+    status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
+    status_reason_code: string | null;
+    status_reason_detail: string | null;
     stripe_account_id: string | null;
   } | null;
 };
@@ -50,10 +71,53 @@ type ProgressSourceStore = {
   id: string;
   name: string;
   slug: string;
-  status: "draft" | "pending_review" | "active" | "suspended";
+  status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
+  has_launched_once: boolean;
+  status_reason_code: string | null;
+  status_reason_detail: string | null;
   stripe_account_id: string | null;
   role: OnboardingStoreRole;
 };
+
+function withLaunchHistory<T extends { status: ProgressSourceStore["status"] }>(
+  store: T & { has_launched_once?: boolean | null }
+): T & { has_launched_once: boolean } {
+  return {
+    ...store,
+    has_launched_once: hasStoreLaunchedOnce(store.status, store.has_launched_once ?? null)
+  };
+}
+
+async function resolveOwnedProgressStores(
+  userId: string
+): Promise<ProgressSourceStore[]> {
+  const admin = createSupabaseAdminClient();
+  const initialResult = await admin
+    .from("stores")
+    .select("id,name,slug,status,has_launched_once,status_reason_code,status_reason_detail,stripe_account_id")
+    .eq("owner_user_id", userId)
+    .order("name", { ascending: true });
+
+  let stores = initialResult.data ?? [];
+
+  if (initialResult.error && isMissingColumnInSchemaCache(initialResult.error, "has_launched_once")) {
+    const legacyResult = await admin
+      .from("stores")
+      .select("id,name,slug,status,status_reason_code,status_reason_detail,stripe_account_id")
+      .eq("owner_user_id", userId)
+      .order("name", { ascending: true });
+
+    if (legacyResult.error) {
+      throw new Error(legacyResult.error.message);
+    }
+
+    stores = (legacyResult.data ?? []).map((store) => withLaunchHistory(store));
+  } else if (initialResult.error) {
+    throw new Error(initialResult.error.message);
+  }
+
+  return stores.map((store) => ({ ...store, role: "owner" as const }));
+}
 
 function hasProfileBasics(storeName: string, supportEmail: string | null | undefined): boolean {
   return storeName.trim().length >= 2 && Boolean(supportEmail?.includes("@"));
@@ -76,7 +140,7 @@ function buildProgress(
   const brand = hasBrandBasics(branding);
   const firstProduct = hasProduct;
   const payments = Boolean(store.stripe_account_id);
-  const launch = store.status === "active";
+  const launch = isStorePubliclyAccessibleStatus(store.status);
   const launchReady = profile && brand && firstProduct && payments;
   const completedStepCount = [profile, brand, firstProduct, payments, launch].filter(Boolean).length;
 
@@ -85,6 +149,9 @@ function buildProgress(
     name: store.name,
     slug: store.slug,
     status: store.status,
+    hasLaunchedOnce: store.has_launched_once,
+    statusReasonCode: store.status_reason_code,
+    statusReasonDetail: store.status_reason_detail,
     role: store.role,
     canManageWorkspace: hasStoreRole(store.role, "staff"),
     canLaunch: hasStoreRole(store.role, "admin"),
@@ -103,20 +170,51 @@ function buildProgress(
 
 export async function getStoreOnboardingProgressForUser(userId: string): Promise<StoreOnboardingProgress[]> {
   const admin = createSupabaseAdminClient();
-  const { data: memberships } = await admin
+  const initialResult = await admin
     .from("store_memberships")
-    .select("role,store:stores!inner(id,name,slug,status,stripe_account_id)")
+    .select("role,store:stores!inner(id,name,slug,status,has_launched_once,status_reason_code,status_reason_detail,stripe_account_id)")
     .eq("user_id", userId)
     .eq("status", "active")
     .returns<MembershipStoreRow[]>();
 
-  const stores = (memberships ?? [])
+  let memberships = initialResult.data ?? [];
+
+  if (initialResult.error && isMissingColumnInSchemaCache(initialResult.error, "has_launched_once")) {
+    const legacyResult = await admin
+      .from("store_memberships")
+      .select("role,store:stores!inner(id,name,slug,status,status_reason_code,status_reason_detail,stripe_account_id)")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .returns<LegacyMembershipStoreRow[]>();
+
+    if (legacyResult.error) {
+      throw new Error(legacyResult.error.message);
+    }
+
+    memberships = (legacyResult.data ?? []).map((membership) => ({
+      ...membership,
+      store: membership.store ? withLaunchHistory(membership.store) : null
+    }));
+  } else if (initialResult.error) {
+    throw new Error(initialResult.error.message);
+  }
+
+  const membershipStores = (memberships ?? [])
     .filter((membership) => membership.store)
     .map((membership) => ({
       ...membership.store!,
       role: membership.role
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    }));
+
+  const storesById = new Map<string, ProgressSourceStore>();
+  for (const store of membershipStores) {
+    storesById.set(store.id, store);
+  }
+  for (const store of await resolveOwnedProgressStores(userId)) {
+    storesById.set(store.id, store);
+  }
+
+  const stores = Array.from(storesById.values()).sort((a, b) => a.name.localeCompare(b.name));
 
   if (stores.length === 0) {
     return [];
@@ -152,17 +250,48 @@ export async function getStoreOnboardingProgressForStore(userId: string, storeSl
   }
 
   const admin = createSupabaseAdminClient();
-  const { data: memberships } = await admin
+  const initialResult = await admin
     .from("store_memberships")
-    .select("role,store:stores!inner(id,name,slug,status,stripe_account_id)")
+    .select("role,store:stores!inner(id,name,slug,status,has_launched_once,status_reason_code,status_reason_detail,stripe_account_id)")
     .eq("user_id", userId)
     .eq("status", "active")
     .returns<MembershipStoreRow[]>();
 
-  const targetStore = (memberships ?? [])
+  let memberships = initialResult.data ?? [];
+
+  if (initialResult.error && isMissingColumnInSchemaCache(initialResult.error, "has_launched_once")) {
+    const legacyResult = await admin
+      .from("store_memberships")
+      .select("role,store:stores!inner(id,name,slug,status,status_reason_code,status_reason_detail,stripe_account_id)")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .returns<LegacyMembershipStoreRow[]>();
+
+    if (legacyResult.error) {
+      throw new Error(legacyResult.error.message);
+    }
+
+    memberships = (legacyResult.data ?? []).map((membership) => ({
+      ...membership,
+      store: membership.store ? withLaunchHistory(membership.store) : null
+    }));
+  } else if (initialResult.error) {
+    throw new Error(initialResult.error.message);
+  }
+
+  const membershipStores = (memberships ?? [])
     .filter((membership) => membership.store)
-    .map((membership) => ({ ...membership.store!, role: membership.role }))
-    .find((store) => store.slug === normalizedSlug);
+    .map((membership) => ({ ...membership.store!, role: membership.role }));
+
+  const storesBySlug = new Map<string, ProgressSourceStore>();
+  for (const store of membershipStores) {
+    storesBySlug.set(store.slug, store);
+  }
+  for (const store of await resolveOwnedProgressStores(userId)) {
+    storesBySlug.set(store.slug, store);
+  }
+
+  const targetStore = storesBySlug.get(normalizedSlug) ?? null;
 
   if (!targetStore) {
     return null;

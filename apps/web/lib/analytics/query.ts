@@ -5,6 +5,10 @@ export type StorefrontAnalyticsRange = "7d" | "30d" | "90d";
 type AnalyticsSessionRow = {
   id: string;
   first_seen_at: string;
+  first_referrer_host: string | null;
+  first_utm_source: string | null;
+  first_utm_medium: string | null;
+  first_utm_campaign: string | null;
 };
 
 type AnalyticsEventRow = {
@@ -92,6 +96,15 @@ export type StorefrontAnalyticsSummary = {
     paidOrders: number;
     revenueCents: number;
   }>;
+  acquisition: {
+    externalReferrerSessions: number;
+    campaignTaggedSessions: number;
+    directSessions: number;
+    topReferrers: Array<{ label: string; sessions: number; share: number }>;
+    topSources: Array<{ label: string; sessions: number; share: number }>;
+    topMediums: Array<{ label: string; sessions: number; share: number }>;
+    topCampaigns: Array<{ label: string; sessions: number; share: number }>;
+  };
 };
 
 function getWindowDays(range: StorefrontAnalyticsRange) {
@@ -182,6 +195,72 @@ function roundDelta(current: number, previous: number) {
     return current === 0 ? 0 : 1;
   }
   return (current - previous) / previous;
+}
+
+function buildTopBreakdown(
+  counts: Map<string, number>,
+  totalSessions: number
+): Array<{ label: string; sessions: number; share: number }> {
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 6)
+    .map(([label, sessions]) => ({
+      label,
+      sessions,
+      share: totalSessions > 0 ? sessions / totalSessions : 0
+    }));
+}
+
+function buildAcquisitionSummary(sessions: AnalyticsSessionRow[]) {
+  const referrers = new Map<string, number>();
+  const sources = new Map<string, number>();
+  const mediums = new Map<string, number>();
+  const campaigns = new Map<string, number>();
+  let externalReferrerSessions = 0;
+  let campaignTaggedSessions = 0;
+  let directSessions = 0;
+
+  for (const session of sessions) {
+    const referrerHost = session.first_referrer_host?.trim().toLowerCase() || null;
+    const utmSource = session.first_utm_source?.trim() || null;
+    const utmMedium = session.first_utm_medium?.trim() || null;
+    const utmCampaign = session.first_utm_campaign?.trim() || null;
+    const hasCampaignSignal = Boolean(utmSource || utmMedium || utmCampaign);
+
+    if (referrerHost) {
+      externalReferrerSessions += 1;
+      referrers.set(referrerHost, (referrers.get(referrerHost) ?? 0) + 1);
+    }
+
+    if (hasCampaignSignal) {
+      campaignTaggedSessions += 1;
+      if (utmSource) {
+        sources.set(utmSource, (sources.get(utmSource) ?? 0) + 1);
+      }
+      if (utmMedium) {
+        mediums.set(utmMedium, (mediums.get(utmMedium) ?? 0) + 1);
+      }
+      if (utmCampaign) {
+        campaigns.set(utmCampaign, (campaigns.get(utmCampaign) ?? 0) + 1);
+      }
+    }
+
+    if (!referrerHost && !hasCampaignSignal) {
+      directSessions += 1;
+    }
+  }
+
+  const totalSessions = sessions.length;
+
+  return {
+    externalReferrerSessions,
+    campaignTaggedSessions,
+    directSessions,
+    topReferrers: buildTopBreakdown(referrers, totalSessions),
+    topSources: buildTopBreakdown(sources, totalSessions),
+    topMediums: buildTopBreakdown(mediums, totalSessions),
+    topCampaigns: buildTopBreakdown(campaigns, totalSessions)
+  };
 }
 
 export function buildStorefrontAnalyticsSummary(input: {
@@ -297,7 +376,13 @@ export function buildStorefrontAnalyticsSummary(input: {
         checkoutStarted: day.checkoutStarted,
         paidOrders: day.paidOrders,
         revenueCents: day.revenueCents
-      }))
+      })),
+    acquisition: buildAcquisitionSummary(
+      input.sessions.filter((session) => {
+        const timestamp = new Date(session.first_seen_at).getTime();
+        return timestamp >= currentStartMs && timestamp <= endMs;
+      })
+    )
   } satisfies StorefrontAnalyticsSummary;
 }
 
@@ -315,7 +400,7 @@ export async function getStorefrontAnalyticsSummary(input: {
   const [{ data: sessions, error: sessionsError }, { data: events, error: eventsError }, { data: orders, error: ordersError }] = await Promise.all([
     input.supabase
       .from("storefront_sessions")
-      .select("id,first_seen_at")
+      .select("id,first_seen_at,first_referrer_host,first_utm_source,first_utm_medium,first_utm_campaign")
       .eq("store_id", input.storeId)
       .gte("first_seen_at", window.previousStart.toISOString())
       .lte("first_seen_at", window.end.toISOString())

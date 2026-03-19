@@ -13,9 +13,10 @@ reviewBy: 2026-04-15
 ## Daily Support Surfaces
 Use the admin workspace as the primary operational inbox:
 
-- `/dashboard/admin` for high-level health
-- `/dashboard/admin/stores` for approvals and governance
-- `/dashboard/admin/moderation` for trust queue handling
+- `/dashboard/admin` for queue triage
+- `/dashboard/admin/users` for account and role context
+- `/dashboard/admin/stores` for store lookup, workspace access, and approvals
+- `/dashboard/admin/revenue` for fee, refund, dispute, and payout context during escalations
 - `/dashboard/admin/legal` for legal communication and acceptance ops
 - `/dashboard/admin/audit` for evidence gathering
 

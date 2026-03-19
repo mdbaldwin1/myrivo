@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ShoppingCart } from "lucide-react";
 import { readStorefrontCart } from "@/lib/storefront/cart";
+import { buildStorefrontCartPath } from "@/lib/storefront/paths";
 import { cn } from "@/lib/utils";
 
 type StorefrontCartButtonProps = {
@@ -29,7 +30,7 @@ type CartPreviewResponse = {
 };
 
 export function StorefrontCartButton({
-  href = "/cart",
+  href,
   storeSlug,
   buttonRadiusClass = "rounded-md",
   className,
@@ -41,9 +42,7 @@ export function StorefrontCartButton({
   const [previewItems, setPreviewItems] = useState<CartPreviewItem[]>([]);
   const [previewSubtotalCents, setPreviewSubtotalCents] = useState(0);
   const [closeTimeout, setCloseTimeout] = useState<number | null>(null);
-  const hrefWithStore = storeSlug
-    ? `${href}${href.includes("?") ? "&" : "?"}store=${encodeURIComponent(storeSlug)}`
-    : href;
+  const resolvedHref = href ?? (storeSlug ? buildStorefrontCartPath(storeSlug) : "/cart");
 
   function syncCount() {
     const nextCount = readStorefrontCart().reduce((sum, entry) => sum + entry.quantity, 0);
@@ -118,7 +117,7 @@ export function StorefrontCartButton({
   return (
     <div className="relative" onMouseEnter={openPreview} onMouseLeave={scheduleClose}>
       <Link
-        href={hrefWithStore}
+        href={resolvedHref}
         className={cn("relative inline-flex h-9 w-9 items-center justify-center transition-opacity hover:opacity-70", buttonRadiusClass, className)}
         aria-label={ariaLabel}
         onFocus={openPreview}
@@ -167,7 +166,7 @@ export function StorefrontCartButton({
           )}
 
           <Link
-            href={hrefWithStore}
+            href={resolvedHref}
             className={cn(
               "mt-2 inline-flex h-9 w-full items-center justify-center bg-[var(--storefront-primary)] px-3 text-sm font-medium text-[color:var(--storefront-primary-foreground)] hover:opacity-90",
               buttonRadiusClass

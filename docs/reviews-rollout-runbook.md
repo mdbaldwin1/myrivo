@@ -57,7 +57,7 @@
   - `npm run -w @myrivo/web lint`
 - Spot check:
   - `/api/platform/reviews/health`
-  - `/dashboard/admin/moderation`
+  - a store owner's review moderation queue
   - `/dashboard/admin/audit` for `review_pipeline.upload_error`
 
 ## Rollback Strategy

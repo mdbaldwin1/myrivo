@@ -21,6 +21,7 @@ import { useOptionalStorefrontAnalytics } from "@/components/storefront/storefro
 import { useStorefrontPageView } from "@/components/storefront/use-storefront-analytics-events";
 import { markStorefrontCheckoutCompletedTracked } from "@/lib/analytics/storefront-instrumentation";
 import { resolveStorefrontPresentation } from "@/lib/storefront/presentation";
+import { buildStorefrontCartPath, buildStorefrontProductsPath } from "@/lib/storefront/paths";
 import { cn } from "@/lib/utils";
 
 type CheckoutStatusResponse = {
@@ -310,10 +311,10 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
             <AppAlert variant="error" message={previewError} />
           )}
           <div className="flex flex-col gap-3 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
-            <Link href={`/cart?store=${encodeURIComponent(resolvedStore.slug)}`} className={`font-medium ${STOREFRONT_TEXT_LINK_EFFECT_CLASS}`}>
+            <Link href={buildStorefrontCartPath(resolvedStore.slug)} className={`font-medium ${STOREFRONT_TEXT_LINK_EFFECT_CLASS}`}>
               {copy.checkout.backToCart}
             </Link>
-            <Link href={`/products?store=${encodeURIComponent(resolvedStore.slug)}`} className={`font-medium ${STOREFRONT_TEXT_LINK_EFFECT_CLASS}`}>
+            <Link href={buildStorefrontProductsPath(resolvedStore.slug)} className={`font-medium ${STOREFRONT_TEXT_LINK_EFFECT_CLASS}`}>
               {copy.checkout.continueShopping}
             </Link>
           </div>

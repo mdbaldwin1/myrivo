@@ -12,6 +12,7 @@ import { resolveStorefrontCopy } from "@/lib/storefront/copy";
 import { getStorefrontPageWidthClass } from "@/lib/storefront/layout";
 import { resolveFooterNavLinks, resolveHeaderNavLinks } from "@/lib/storefront/navigation";
 import { getStorefrontButtonRadiusClass } from "@/lib/storefront/appearance";
+import { buildStorefrontPrivacyRequestPath } from "@/lib/storefront/paths";
 import { buildStorefrontThemeStyle, resolveStorefrontThemeConfig } from "@/lib/theme/storefront-theme";
 
 type StorefrontLegalPageProps = {
@@ -161,14 +162,14 @@ export function StorefrontLegalPage({
                   ) : null}
                   <div className="flex flex-wrap gap-3">
                     <Link
-                      href={`/privacy/request?store=${encodeURIComponent(resolvedStore.slug)}`}
+                      href={buildStorefrontPrivacyRequestPath(resolvedStore.slug)}
                       className="inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted/30"
                     >
                       Submit privacy request
                     </Link>
                     {resolvedPrivacyProfile.showDoNotSellLink ? (
                       <Link
-                        href={`/privacy/request?store=${encodeURIComponent(resolvedStore.slug)}&type=opt_out_sale_share`}
+                        href={`${buildStorefrontPrivacyRequestPath(resolvedStore.slug)}?type=opt_out_sale_share`}
                         className="inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted/30"
                       >
                         Do Not Sell or Share My Personal Information

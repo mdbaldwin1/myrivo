@@ -149,7 +149,7 @@ export function StorePrivacyRequestsPanel() {
   return (
     <SectionCard
       title="Privacy requests"
-      description="Recent privacy-related requests submitted by shoppers. Use this as the operator handoff until deeper rights-fulfillment tooling exists."
+      description="Recent privacy-related requests submitted by shoppers."
     >
       <div className="space-y-4">
         <AppAlert variant="error" compact message={error} />
@@ -157,18 +157,12 @@ export function StorePrivacyRequestsPanel() {
         {!loading && requests.length === 0 ? (
           <p className="text-sm text-muted-foreground">No privacy requests have been submitted yet.</p>
         ) : null}
-        <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
-          <p className="text-sm font-medium">Support workflow</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Use the request row to confirm the shopper’s ask, then compare it with any active do-not-sell/share state below. Browser signal entries mean the shopper’s device sent a privacy signal in addition to the request form.
-          </p>
-        </div>
         {optOuts.length > 0 ? (
           <div className="space-y-3 rounded-xl border border-border/70 bg-muted/20 p-4">
             <div className="space-y-1">
               <p className="text-sm font-medium">Do Not Sell / Share states</p>
               <p className="text-sm text-muted-foreground">
-                These records represent the current explicit opt-out state for shoppers who submitted a do-not-sell/share request.
+                Current opt-out state for shoppers who submitted a do-not-sell/share request.
               </p>
             </div>
             <div className="space-y-3">

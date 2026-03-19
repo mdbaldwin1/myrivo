@@ -2,9 +2,12 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { LegalMarkdown } from "@/components/legal/legal-markdown";
+import { StorefrontUnavailablePage } from "@/components/storefront/storefront-unavailable-page";
 import { StorefrontLegalPage } from "@/components/storefront/storefront-legal-page";
 import { StorefrontRuntimeProvider } from "@/components/storefront/storefront-runtime-provider";
 import { getPublishedStoreLegalDocumentSnapshot, resolveStoreLegalDocument } from "@/lib/legal/store-documents";
+import { buildSearchSuffix } from "@/lib/storefront/legacy-query";
+import { buildStorefrontTermsPath } from "@/lib/storefront/paths";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getPublishedLegalDocumentByKey } from "@/lib/legal/documents";
@@ -12,6 +15,7 @@ import { loadStorefrontData } from "@/lib/storefront/load-storefront-data";
 import { buildStorefrontCanonicalUrl, resolveStorefrontCanonicalRedirect } from "@/lib/storefront/seo";
 import { createStorefrontRuntime } from "@/lib/storefront/runtime";
 import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
+import { loadStorefrontUnavailableData } from "@/lib/storefront/unavailable";
 import { PageShell } from "@/components/layout/page-shell";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +32,7 @@ async function resolveRequestedStoreSlug(searchParams: Record<string, string | s
 
   const requestHeaders = await headers();
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
-  return resolveStoreSlugFromDomain(host);
+  return resolveStoreSlugFromDomain(host, { includeNonPublic: true });
 }
 
 export async function generateMetadata({ searchParams }: TermsPageProps): Promise<Metadata> {
@@ -42,6 +46,12 @@ export async function generateMetadata({ searchParams }: TermsPageProps): Promis
 
   const data = await loadStorefrontData(requestedStoreSlug);
   if (!data) {
+    const unavailable = await loadStorefrontUnavailableData(requestedStoreSlug);
+    if (unavailable) {
+      return {
+        title: `${unavailable.store.name} | ${unavailable.kind === "offline" ? "Temporarily Offline" : "Coming Soon"}`
+      };
+    }
     return {
       title: "Terms and Conditions | Myrivo"
     };
@@ -50,7 +60,18 @@ export async function generateMetadata({ searchParams }: TermsPageProps): Promis
   const admin = createSupabaseAdminClient();
   const { getStoreLegalDocumentByStoreId } = await import("@/lib/legal/store-documents");
   const record = await getStoreLegalDocumentByStoreId(admin, data.store.id, "terms");
-  const document = resolveStoreLegalDocument("terms", data.store, data.settings, getPublishedStoreLegalDocumentSnapshot(record));
+  const publishedSnapshot = getPublishedStoreLegalDocumentSnapshot(record);
+  const document = resolveStoreLegalDocument("terms", data.store, data.settings, {
+    baseDocumentTitle: publishedSnapshot?.published_title ?? "Terms & Conditions",
+    baseBodyMarkdown: publishedSnapshot?.published_body_markdown ?? "",
+    baseVersionLabel: publishedSnapshot?.published_base_version_label ?? null,
+    variables_json: publishedSnapshot?.variables_json ?? {},
+    addendum_markdown: publishedSnapshot?.addendum_markdown ?? "",
+    publishedVersion: publishedSnapshot?.published_version ?? null,
+    publishedAt: publishedSnapshot?.published_at ?? null,
+    effectiveAt: publishedSnapshot?.effective_at ?? null,
+    changeSummary: publishedSnapshot?.published_change_summary ?? null
+  });
 
   return {
     title: `${document.title} | ${data.store.name}`,
@@ -62,6 +83,13 @@ export async function generateMetadata({ searchParams }: TermsPageProps): Promis
 
 export default async function TermsPage({ searchParams }: TermsPageProps) {
   const resolvedSearchParams = await searchParams;
+  const requestHeaders = await headers();
+  const currentPath = requestHeaders.get("x-pathname") ?? requestHeaders.get("next-url") ?? "";
+  const disableStoreCanonicalRedirect = /^\/s\//.test(currentPath);
+  const explicitStoreSlug = typeof resolvedSearchParams.store === "string" ? resolvedSearchParams.store.trim() : null;
+  if (explicitStoreSlug && !disableStoreCanonicalRedirect) {
+    redirect(`${buildStorefrontTermsPath(explicitStoreSlug)}${buildSearchSuffix(resolvedSearchParams, ["store"])}`);
+  }
   const requestedStoreSlug = await resolveRequestedStoreSlug(resolvedSearchParams);
   if (requestedStoreSlug) {
     const redirectUrl = await resolveStorefrontCanonicalRedirect("/terms", requestedStoreSlug);
@@ -71,13 +99,28 @@ export default async function TermsPage({ searchParams }: TermsPageProps) {
 
     const data = await loadStorefrontData(requestedStoreSlug);
     if (!data) {
+      const unavailable = await loadStorefrontUnavailableData(requestedStoreSlug);
+      if (unavailable) {
+        return <StorefrontUnavailablePage state={unavailable} />;
+      }
       notFound();
     }
 
     const admin = createSupabaseAdminClient();
     const { getStoreLegalDocumentByStoreId } = await import("@/lib/legal/store-documents");
     const record = await getStoreLegalDocumentByStoreId(admin, data.store.id, "terms");
-    const document = resolveStoreLegalDocument("terms", data.store, data.settings, getPublishedStoreLegalDocumentSnapshot(record));
+    const publishedSnapshot = getPublishedStoreLegalDocumentSnapshot(record);
+    const document = resolveStoreLegalDocument("terms", data.store, data.settings, {
+      baseDocumentTitle: publishedSnapshot?.published_title ?? "Terms & Conditions",
+      baseBodyMarkdown: publishedSnapshot?.published_body_markdown ?? "",
+      baseVersionLabel: publishedSnapshot?.published_base_version_label ?? null,
+      variables_json: publishedSnapshot?.variables_json ?? {},
+      addendum_markdown: publishedSnapshot?.addendum_markdown ?? "",
+      publishedVersion: publishedSnapshot?.published_version ?? null,
+      publishedAt: publishedSnapshot?.published_at ?? null,
+      effectiveAt: publishedSnapshot?.effective_at ?? null,
+      changeSummary: publishedSnapshot?.published_change_summary ?? null
+    });
     const runtime = createStorefrontRuntime({
       ...data,
       mode: "live",

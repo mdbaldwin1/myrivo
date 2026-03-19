@@ -1,13 +1,18 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
+import { StorefrontUnavailablePage } from "@/components/storefront/storefront-unavailable-page";
 import { StorefrontProductDetailPage } from "@/components/storefront/storefront-product-detail-page";
 import { StorefrontRuntimeProvider } from "@/components/storefront/storefront-runtime-provider";
 import { isReviewsEnabledForStoreSlug } from "@/lib/reviews/feature-gating";
 import { buildReviewSummary, listPublishedReviews } from "@/lib/reviews/read";
+import { buildSearchSuffix } from "@/lib/storefront/legacy-query";
+import { buildStorefrontProductPath } from "@/lib/storefront/paths";
 import { loadStorefrontData } from "@/lib/storefront/load-storefront-data";
 import { createStorefrontRuntime } from "@/lib/storefront/runtime";
 import { buildAggregateRatingSchema, buildReviewSchemaList, resolveStorefrontReviewSeoConfig } from "@/lib/storefront/reviews-seo";
 import { buildStorefrontCanonicalUrl, resolveStorefrontCanonicalRedirect } from "@/lib/storefront/seo";
+import { loadStorefrontUnavailableData } from "@/lib/storefront/unavailable";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isMissingRelationInSchemaCache } from "@/lib/supabase/error-classifiers";
 
@@ -35,6 +40,12 @@ export async function generateMetadata({ params, searchParams }: Params): Promis
   const resolvedParams = await params;
   const data = await loadStorefrontData(requestedStoreSlug);
   if (!data) {
+    const unavailable = await loadStorefrontUnavailableData(requestedStoreSlug);
+    if (unavailable) {
+      return {
+        title: `${unavailable.store.name} | ${unavailable.kind === "offline" ? "Temporarily Offline" : "Coming Soon"}`
+      };
+    }
     return {
       title: "Product | Myrivo"
     };
@@ -62,14 +73,26 @@ export async function generateMetadata({ params, searchParams }: Params): Promis
 
 export default async function ProductDetailPage({ params, searchParams }: Params) {
   const resolvedSearchParams = await searchParams;
+  const requestHeaders = await headers();
+  const currentPath = requestHeaders.get("x-pathname") ?? requestHeaders.get("next-url") ?? "";
+  const disableStoreCanonicalRedirect = /^\/s\//.test(currentPath);
   const requestedStoreSlug = typeof resolvedSearchParams.store === "string" ? resolvedSearchParams.store : null;
   const resolvedParams = await params;
+  if (requestedStoreSlug && !disableStoreCanonicalRedirect) {
+    redirect(
+      `${buildStorefrontProductPath(requestedStoreSlug, resolvedParams.productId)}${buildSearchSuffix(resolvedSearchParams, ["store"])}`
+    );
+  }
   const redirectUrl = await resolveStorefrontCanonicalRedirect(`/products/${resolvedParams.productId}`, requestedStoreSlug);
   if (redirectUrl) {
     redirect(redirectUrl);
   }
   const data = await loadStorefrontData(requestedStoreSlug);
   if (!data) {
+    const unavailable = await loadStorefrontUnavailableData(requestedStoreSlug);
+    if (unavailable) {
+      return <StorefrontUnavailablePage state={unavailable} />;
+    }
     notFound();
   }
 
@@ -78,8 +101,10 @@ export default async function ProductDetailPage({ params, searchParams }: Params
     notFound();
   }
   if (product.slug && resolvedParams.productId !== product.slug) {
-    const suffix = requestedStoreSlug ? `?store=${encodeURIComponent(requestedStoreSlug)}` : "";
-    redirect(`/products/${product.slug}${suffix}`);
+    if (requestedStoreSlug) {
+      redirect(buildStorefrontProductPath(requestedStoreSlug, product.slug));
+    }
+    redirect(`/products/${product.slug}`);
   }
 
   const canonical = await buildStorefrontCanonicalUrl(`/products/${product.slug || product.id}`, requestedStoreSlug);

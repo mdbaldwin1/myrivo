@@ -13,6 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { notify } from "@/lib/feedback/toast";
 import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
+import { canDeleteStoreFromWorkspace, getStoreLifecycleDescription, getStoreLifecycleLabel } from "@/lib/stores/lifecycle";
 import type { StoreBrandingRecord, StoreRecord } from "@/types/database";
 
 type StoreSettingsFormProps = {
@@ -84,7 +85,7 @@ export function StoreSettingsForm({
   const [name, setName] = useState(initialStore.name);
   const [status, setStatus] = useState<StoreRecord["status"]>(initialStore.status);
   const [savedName, setSavedName] = useState(initialStore.name);
-  const [submittingReview, setSubmittingReview] = useState(false);
+  const [deletingStore, setDeletingStore] = useState(false);
 
   const [logoPath, setLogoPath] = useState(initialLogoPath ?? "");
   const [savedLogoPath, setSavedLogoPath] = useState(initialLogoPath ?? "");
@@ -552,77 +553,73 @@ export function StoreSettingsForm({
     setSaving(false);
   }
 
-  async function handleSubmitForReview() {
-    if (status !== "draft" || submittingReview) {
+  async function handleDeleteStore() {
+    if (!canDeleteStoreFromWorkspace(status) || deletingStore) {
       return;
     }
-    setSubmittingReview(true);
+
+    const confirmed = window.confirm(
+      `Permanently delete ${savedName}? This cannot be undone.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingStore(true);
     setError(null);
 
-    const response = await fetch(buildStoreScopedApiPath("/api/stores/current/submit-review", storeSlug), {
-      method: "POST"
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/current", storeSlug), {
+      method: "DELETE"
     });
-    const payload = (await response.json()) as StoreResponse & { ok?: boolean };
-    if (!response.ok || !payload.store) {
-      setError(payload.error ?? "Unable to submit store for review.");
-      setSubmittingReview(false);
+    const payload = (await response.json()) as { ok?: boolean; error?: string };
+
+    if (!response.ok) {
+      setError(payload.error ?? "Unable to permanently delete store.");
+      setDeletingStore(false);
       return;
     }
 
-    setStatus(payload.store.status);
-    notify.success("Store submitted for review.", {
-      description: "Your storefront will go live once approved."
-    });
-    setSubmittingReview(false);
+    notify.success("Store permanently deleted.");
+    window.location.assign("/dashboard/stores");
   }
-
-  const statusCopy: Record<StoreRecord["status"], string> = {
-    draft: "Not visible publicly. Submit for review when you're ready for approval.",
-    pending_review: "Waiting for platform approval before going live.",
-    active: "Live and visible publicly.",
-    suspended: "Hidden from public view by platform review."
-  };
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {header}
         {supplementalContent}
-        <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-          Use Store Settings for store identity, browser icons, link preview images, SEO, and operational setup. Visual theme, layout, and page presentation live in Storefront Studio.
-        </div>
         <form id={formId} onSubmit={handleSubmit} className="space-y-4">
-          <SectionCard title="Store Identity" description="Core storefront naming shown across your customer experience.">
-            <FormField label="Store Name" description="This appears in your storefront header, email copy, and checkout." inputId="store-settings-store-name">
-              <Input required minLength={2} placeholder="At Home Apothecary" value={name} onChange={(event) => setName(event.target.value)} />
-            </FormField>
-          </SectionCard>
-
-          <SectionCard title="Store Logo" description="Upload or replace the brand logo used throughout storefront and transactional surfaces.">
-            <FormField label="Logo Asset">
-              <BrandingAssetPicker
-                accept=".png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml"
-                previewSrc={logoPreview}
-                previewAlt="Store logo preview"
-                emptyAriaLabel="Upload logo"
-                replaceAriaLabel="Replace logo"
-                removeAriaLabel="Remove logo"
-                helperText="PNG, JPEG, WEBP, or SVG up to 2MB."
-                previewPaddingClassName="p-1.5"
-                onFileSelect={(file) => setLogoFile(file)}
-                onRemove={() => {
-                  setLogoFile(null);
-                  setLogoPath("");
-                }}
-              />
-            </FormField>
-          </SectionCard>
-
           <SectionCard
-            title="Browser & Sharing Assets"
-            description="Set the icons and preview images that represent your storefront in browser tabs, saved shortcuts, and shared links."
+            title="Store Identity"
+            description="Store name and brand assets used across your storefront, browser tabs, and shared links."
           >
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="space-y-5">
+              <FormField label="Store Name" description="This appears in your storefront header, email copy, and checkout." inputId="store-settings-store-name">
+                <Input required minLength={2} placeholder="At Home Apothecary" value={name} onChange={(event) => setName(event.target.value)} />
+              </FormField>
+
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                <FormField
+                  label="Store Logo"
+                  description="Used throughout storefront and transactional surfaces."
+                >
+                  <BrandingAssetPicker
+                    accept=".png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml"
+                    previewSrc={logoPreview}
+                    previewAlt="Store logo preview"
+                    emptyAriaLabel="Upload logo"
+                    replaceAriaLabel="Replace logo"
+                    removeAriaLabel="Remove logo"
+                    helperText="PNG, JPEG, WEBP, or SVG up to 2MB."
+                    previewPaddingClassName="p-1.5"
+                    onFileSelect={(file) => setLogoFile(file)}
+                    onRemove={() => {
+                      setLogoFile(null);
+                      setLogoPath("");
+                    }}
+                  />
+                </FormField>
               <FormField
                 label="Favicon"
                 description="Shown in browser tabs for `/s/slug` storefronts and white-labeled domains."
@@ -704,18 +701,7 @@ export function StoreSettingsForm({
                 />
               </FormField>
             </div>
-          </SectionCard>
-
-          <SectionCard title="Store Visibility" description="Control whether your storefront is publicly accessible.">
-            <FormField label="Store Status" description="Status is managed through platform review workflow." inputId="store-settings-store-status">
-              <div className="rounded-md border border-border/70 bg-muted/15 px-3 py-2 text-sm font-medium capitalize">{status.replace("_", " ")}</div>
-            </FormField>
-            <p className="text-sm text-muted-foreground">{statusCopy[status]}</p>
-            {status === "draft" ? (
-              <Button type="button" variant="outline" onClick={() => void handleSubmitForReview()} disabled={saving || submittingReview}>
-                {submittingReview ? "Submitting..." : "Submit for Review"}
-              </Button>
-            ) : null}
+            </div>
           </SectionCard>
 
           <SectionCard
@@ -831,6 +817,27 @@ export function StoreSettingsForm({
                   </div>
                 ) : null}
               </div>
+            </div>
+          </SectionCard>
+
+          <SectionCard
+            title="Danger Zone"
+            description="Permanently delete this store if you are retiring it completely."
+            className="border-destructive/20"
+          >
+            <div className="space-y-4">
+              <div className="rounded-md border border-border/70 bg-muted/15 px-3 py-3">
+                <p className="text-sm font-medium">{getStoreLifecycleLabel(status)}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{getStoreLifecycleDescription(status)}</p>
+                {!canDeleteStoreFromWorkspace(status) ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Move this store offline or resolve platform review before permanent deletion is available.
+                  </p>
+                ) : null}
+              </div>
+              <Button type="button" variant="destructive" onClick={() => void handleDeleteStore()} disabled={!canDeleteStoreFromWorkspace(status) || deletingStore}>
+                {deletingStore ? "Deleting..." : "Permanently Delete Store"}
+              </Button>
             </div>
           </SectionCard>
         </form>

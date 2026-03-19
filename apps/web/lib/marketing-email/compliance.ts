@@ -1,4 +1,5 @@
 import { resolvePlatformNotificationFromAddress } from "@/lib/notifications/sender";
+import { buildStorefrontPrivacyPath, buildStorefrontPrivacyRequestPath } from "@/lib/storefront/paths";
 import type { StoreSettingsRecord } from "@/types/database";
 
 type MarketingComplianceStore = {
@@ -68,7 +69,7 @@ export function resolveMarketingEmailComplianceDefaults(
   }
 
   if (!footerAddress) {
-    warnings.push("Add a full mailing address in Store Settings so marketing email can include a footer disclosure.");
+    warnings.push("Add a valid mailing address before sending marketing email so the footer can include the required postal address.");
   }
 
   return {
@@ -79,8 +80,8 @@ export function resolveMarketingEmailComplianceDefaults(
     replyToEmail: supportEmail,
     supportEmail,
     unsubscribeHref: `/unsubscribe?store=${encodeURIComponent(store.slug)}`,
-    privacyPolicyHref: `/privacy?store=${encodeURIComponent(store.slug)}`,
-    privacyRequestHref: `/privacy/request?store=${encodeURIComponent(store.slug)}`,
+    privacyPolicyHref: buildStorefrontPrivacyPath(store.slug),
+    privacyRequestHref: buildStorefrontPrivacyRequestPath(store.slug),
     footerAddress,
     readiness: {
       status: warnings.length === 0 ? "ready" : "attention_required",

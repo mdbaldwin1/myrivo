@@ -1,4 +1,5 @@
 import { resolvePrimaryDomainForStoreSlug } from "@/lib/stores/domain-store";
+import { buildStorefrontCartPath, buildStorefrontHomePath } from "@/lib/storefront/paths";
 
 export type CustomerStorefrontLinks = {
   storefrontHref: string;
@@ -30,8 +31,8 @@ export async function resolveCustomerStorefrontLinksBySlug(storeSlugs: string[])
       return [
         slug,
         {
-          storefrontHref: `/s/${encodeURIComponent(slug)}`,
-          cartHref: `/cart?store=${encodeURIComponent(slug)}`
+          storefrontHref: buildStorefrontHomePath(slug),
+          cartHref: buildStorefrontCartPath(slug)
         } satisfies CustomerStorefrontLinks
       ] as const;
     })

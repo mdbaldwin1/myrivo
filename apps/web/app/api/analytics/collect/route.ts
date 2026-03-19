@@ -13,6 +13,7 @@ import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { COOKIE_CONSENT_COOKIE_NAME, hasAnalyticsConsent, resolveCookieConsent } from "@/lib/privacy/cookies";
 import { canEnableAnalyticsWithPrivacySignals, resolveBrowserPrivacySignalsFromHeaders } from "@/lib/privacy/signals";
 import { checkRateLimit } from "@/lib/security/rate-limit";
+import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const SESSION_COOKIE = "myrivo_analytics_sid";
@@ -42,7 +43,7 @@ function buildEventIdempotencyKey(input?: string) {
 type StoreRow = {
   id: string;
   slug: string;
-  status: "draft" | "pending_review" | "active" | "suspended";
+  status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
 };
 
 export async function POST(request: NextRequest) {
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
   if (!store) {
     return fail(404, "Store not found.");
   }
-  if (store.status === "suspended") {
+  if (!isStorePubliclyAccessibleStatus(store.status)) {
     return fail(403, "Store is not accepting analytics events.");
   }
 

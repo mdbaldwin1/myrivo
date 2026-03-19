@@ -1,4 +1,4 @@
-import { MAIN_CONTENT_ID } from "@/lib/accessibility";
+import { StorefrontLoadingShell } from "@/components/storefront/storefront-loading-shell";
 import type { StorefrontLoadingContext } from "@/lib/storefront/loading-theme";
 import { cn } from "@/lib/utils";
 
@@ -7,19 +7,10 @@ type StorefrontProductsLoadingProps = {
 };
 
 export function StorefrontProductsLoading({ context }: StorefrontProductsLoadingProps) {
-  const { themeConfig, themeStyle, pageWidthClass, spacingClass, surfaceClass } = context;
+  const { themeConfig, surfaceClass } = context;
 
   return (
-    <main
-      id={MAIN_CONTENT_ID}
-      tabIndex={-1}
-      style={themeStyle}
-      className={cn(
-        "mx-auto min-h-screen w-full bg-[color:var(--storefront-bg)] text-[color:var(--storefront-text)] [font-family:var(--storefront-font-body)] focus:outline-none",
-        pageWidthClass,
-        spacingClass
-      )}
-    >
+    <StorefrontLoadingShell context={context}>
       <section className="space-y-3 border-b border-[color:color-mix(in_srgb,var(--storefront-text)_14%,transparent)] pb-5">
         <div className="h-4 w-20 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-primary)_22%,transparent)] motion-reduce:animate-none" />
         <div className="h-10 w-56 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_16%,transparent)] motion-reduce:animate-none" />
@@ -63,6 +54,6 @@ export function StorefrontProductsLoading({ context }: StorefrontProductsLoading
           </div>
         </div>
       </section>
-    </main>
+    </StorefrontLoadingShell>
   );
 }

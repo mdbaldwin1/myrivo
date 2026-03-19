@@ -1,4 +1,4 @@
-export type StorefrontSettingsHome = "general" | "domains" | "storefront_studio" | "legal" | "retired";
+export type StorefrontSettingsHome = "general" | "domains" | "storefront_studio" | "legal" | "privacy" | "admin_legal" | "retired";
 
 export type StorefrontSettingsStatus = "active" | "partial" | "stranded" | "legacy" | "intentional";
 
@@ -9,6 +9,7 @@ export type StorefrontSettingsStorageModel =
   | "store_branding"
   | "store_settings"
   | "store_privacy_profile"
+  | "platform_storefront_privacy_settings"
   | "custom_domains"
   | "theme_json"
   | "storefront_copy_json";
@@ -442,50 +443,51 @@ export const STOREFRONT_SETTINGS_INVENTORY = [
   item({
     id: "privacy.noticeAtCollectionEnabled",
     label: "Privacy notice-at-collection master toggle",
-    storageModel: "store_privacy_profile",
+    storageModel: "platform_storefront_privacy_settings",
     storageKey: "notice_at_collection_enabled",
     runtimeUsage: ["Checkout/newsletter/review privacy notice behavior"],
-    currentEditor: ["Store Settings > Legal"],
-    targetHome: "legal",
+    currentEditor: ["Admin > Legal > Privacy governance"],
+    targetHome: "admin_legal",
     status: "active",
     disposition: "editable",
-    notes: "Storefront-facing but intentionally legal/compliance-owned."
+    notes: "Platform-owned compliance behavior for shared storefront collection notices."
   }),
   item({
     id: "privacy.noticeSurfaceToggles",
     label: "Checkout/newsletter/review privacy notice toggles",
-    storageModel: "store_privacy_profile",
+    storageModel: "platform_storefront_privacy_settings",
     storageKey: "checkout_notice_enabled,newsletter_notice_enabled,review_notice_enabled",
     runtimeUsage: ["Notice display on specific storefront collection surfaces"],
-    currentEditor: ["Store Settings > Legal"],
-    targetHome: "legal",
+    currentEditor: ["Admin > Legal > Privacy governance"],
+    targetHome: "admin_legal",
     status: "active",
     disposition: "editable",
-    notes: "Storefront-facing but intentionally legal/compliance-owned."
+    notes: "Platform-owned compliance behavior for shared storefront notice surfaces."
   }),
   item({
     id: "privacy.californiaControls",
     label: "California notice and do-not-sell controls",
-    storageModel: "store_privacy_profile",
-    storageKey: "show_california_notice,show_do_not_sell_link,california_notice_markdown,do_not_sell_markdown",
+    storageModel: "platform_storefront_privacy_settings",
+    storageKey: "show_california_notice,show_do_not_sell_link",
     runtimeUsage: ["Privacy request page and California rights messaging"],
-    currentEditor: ["Store Settings > Legal"],
-    targetHome: "legal",
+    currentEditor: ["Admin > Legal > Privacy governance"],
+    targetHome: "admin_legal",
     status: "active",
     disposition: "editable",
-    notes: "Storefront-facing but intentionally legal/compliance-owned."
+    notes: "Platform controls whether these rights surfaces exist; stores only add optional California or opt-out copy."
   }),
   item({
     id: "privacy.contactInfo",
     label: "Privacy contact info and request intro copy",
     storageModel: "store_privacy_profile",
-    storageKey: "privacy_contact_email,privacy_rights_email,privacy_contact_name,request_page_intro_markdown,collection_notice_addendum_markdown",
+    storageKey:
+      "privacy_contact_email,privacy_rights_email,privacy_contact_name,request_page_intro_markdown,collection_notice_addendum_markdown,california_notice_markdown,do_not_sell_markdown",
     runtimeUsage: ["Privacy request page", "Notice copy", "Rights communication details"],
-    currentEditor: ["Store Settings > Legal"],
-    targetHome: "legal",
+    currentEditor: ["Store Settings > Privacy"],
+    targetHome: "privacy",
     status: "active",
     disposition: "editable",
-    notes: "Storefront-facing but intentionally legal/compliance-owned."
+    notes: "Store-specific privacy contacts and disclosure addenda remain merchant-editable in Privacy settings."
   }),
   item({
     id: "theme.pageWidth",

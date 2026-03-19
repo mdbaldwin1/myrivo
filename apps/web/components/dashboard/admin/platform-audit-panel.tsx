@@ -14,7 +14,7 @@ type PlatformAuditResponse = {
     entityId: string | null;
     metadata: Record<string, unknown>;
     createdAt: string;
-    store: { id: string; name: string; slug: string; status: "draft" | "pending_review" | "active" | "suspended" } | null;
+    store: { id: string; name: string; slug: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" } | null;
     actor: { id: string; email: string | null; display_name: string | null; global_role: "user" | "support" | "admin" } | null;
   }>;
   error?: string;

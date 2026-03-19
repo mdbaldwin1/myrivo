@@ -82,15 +82,23 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (progress.status === "active") {
-    return NextResponse.json({ ok: true, store: { id: progress.id, slug: progress.slug, status: "active" } });
+  if (progress.status === "live") {
+    return NextResponse.json({ ok: true, store: { id: progress.id, slug: progress.slug, status: "live" } });
   }
 
   if (progress.status === "pending_review") {
     return NextResponse.json({ ok: true, store: { id: progress.id, slug: progress.slug, status: "pending_review" } });
   }
 
-  const { error } = await supabase.from("stores").update({ status: "pending_review" }).eq("id", progress.id);
+  if (!["draft", "changes_requested", "rejected"].includes(progress.status)) {
+    return NextResponse.json({ error: "This store cannot be submitted for review right now." }, { status: 409 });
+  }
+
+  const { error } = await supabase
+    .from("stores")
+    .update({ status: "pending_review", status_reason_code: null, status_reason_detail: null })
+    .eq("id", progress.id)
+    .eq("status", progress.status);
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

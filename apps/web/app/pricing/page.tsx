@@ -172,7 +172,7 @@ export default async function PricingPage() {
           <h3 className="[font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-2xl text-foreground">Trust and compliance</h3>
           <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
             <li>• Fee snapshots per order for clear audit trails.</li>
-            <li>• Role controls and test mode reduce production risk.</li>
+            <li>• Store lifecycle controls keep non-live storefronts private until they are ready.</li>
             <li>• Legal acceptance and governance controls before go-live.</li>
           </ul>
         </article>

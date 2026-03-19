@@ -1,29 +1,43 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-const redirectMock = vi.fn();
+const privacyPageMock = vi.fn();
+const termsPageMock = vi.fn();
 
-vi.mock("next/navigation", () => ({
-  redirect: (...args: unknown[]) => redirectMock(...args)
+vi.mock("@/app/privacy/page", () => ({
+  __esModule: true,
+  default: privacyPageMock
+}));
+
+vi.mock("@/app/terms/page", () => ({
+  __esModule: true,
+  default: termsPageMock
 }));
 
 beforeEach(() => {
-  redirectMock.mockReset();
+  privacyPageMock.mockReset();
+  termsPageMock.mockReset();
 });
 
 describe("storefront legal route canonicalization", () => {
-  test("/s/[slug]/privacy redirects into the shared storefront legal route", async () => {
+  test("/s/[slug]/privacy reuses the shared storefront legal page with store search params", async () => {
     const page = await import("@/app/s/[slug]/privacy/page");
 
     await page.default({ params: Promise.resolve({ slug: "at-home-apothecary" }) });
 
-    expect(redirectMock).toHaveBeenCalledWith("/privacy?store=at-home-apothecary");
+    expect(privacyPageMock).toHaveBeenCalledWith({
+      searchParams: expect.any(Promise)
+    });
+    await expect(privacyPageMock.mock.calls[0]?.[0]?.searchParams).resolves.toEqual({ store: "at-home-apothecary" });
   });
 
-  test("/s/[slug]/terms redirects into the shared storefront legal route", async () => {
+  test("/s/[slug]/terms reuses the shared storefront legal page with store search params", async () => {
     const page = await import("@/app/s/[slug]/terms/page");
 
     await page.default({ params: Promise.resolve({ slug: "at-home-apothecary" }) });
 
-    expect(redirectMock).toHaveBeenCalledWith("/terms?store=at-home-apothecary");
+    expect(termsPageMock).toHaveBeenCalledWith({
+      searchParams: expect.any(Promise)
+    });
+    await expect(termsPageMock.mock.calls[0]?.[0]?.searchParams).resolves.toEqual({ store: "at-home-apothecary" });
   });
 });

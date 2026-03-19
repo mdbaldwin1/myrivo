@@ -7,7 +7,7 @@ type PlatformMarketingCtaTableProps = {
 export function PlatformMarketingCtaTable({ summary }: PlatformMarketingCtaTableProps) {
   return (
     <section className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-      <div className="rounded-xl border border-border/70 bg-background p-4">
+      <div className="rounded-xl border border-border/70 bg-card p-4">
         <div className="mb-3">
           <h2 className="text-sm font-semibold text-foreground">CTA Performance</h2>
           <p className="text-xs text-muted-foreground">Track which public-site calls to action actually move visitors toward signup.</p>
@@ -50,7 +50,7 @@ export function PlatformMarketingCtaTable({ summary }: PlatformMarketingCtaTable
         </div>
       </div>
 
-      <div className="rounded-xl border border-border/70 bg-background p-4">
+      <div className="rounded-xl border border-border/70 bg-card p-4">
         <div className="mb-3">
           <h2 className="text-sm font-semibold text-foreground">Experiment Snapshot</h2>
           <p className="text-xs text-muted-foreground">Lightweight experiment assignments and conversion signal by variant.</p>

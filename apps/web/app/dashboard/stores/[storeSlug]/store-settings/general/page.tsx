@@ -1,4 +1,3 @@
-import { BillingPlanSettings } from "@/components/dashboard/billing-plan-settings";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { StoreSettingsForm } from "@/components/dashboard/store-settings-form";
 import { getOwnedStoreBundleForSlug } from "@/lib/stores/owner-store";
@@ -33,8 +32,7 @@ export default async function StoreWorkspaceGeneralSettingsPage({ params }: Page
         initialAppleTouchIconPath={bundle.branding?.apple_touch_icon_path ?? null}
         initialOgImagePath={bundle.branding?.og_image_path ?? null}
         initialTwitterImagePath={bundle.branding?.twitter_image_path ?? null}
-        header={<DashboardPageHeader title="General" description="Store review workflow, billing, and SEO metadata belong in Store Settings." />}
-        supplementalContent={<BillingPlanSettings title="Billing Plan" />}
+        header={<DashboardPageHeader title="General" description="Core store identity and search metadata." />}
       />
     </section>
   );

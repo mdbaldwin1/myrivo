@@ -69,6 +69,12 @@ type OrdersResponse = {
 };
 
 const statusOptions: OrderStatus[] = ["pending", "paid", "failed", "cancelled"];
+const fulfillmentStatusOptions: Array<OrderRecord["fulfillment_status"]> = [
+  "pending_fulfillment",
+  "packing",
+  "shipped",
+  "delivered"
+];
 
 function formatFulfillmentStatus(status: OrderRecord["fulfillment_status"]) {
   if (status === "pending_fulfillment") return "Pending fulfillment";
@@ -110,6 +116,7 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
   const [shippingInitialCarrier, setShippingInitialCarrier] = useState("usps");
   const [shippingInitialTrackingNumber, setShippingInitialTrackingNumber] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | OrderStatus>("all");
+  const [fulfillmentFilter, setFulfillmentFilter] = useState<"all" | OrderRecord["fulfillment_status"]>("all");
   const [pickupOverrideOrderId, setPickupOverrideOrderId] = useState<string | null>(null);
   const [pickupOverrideDirty, setPickupOverrideDirty] = useState(false);
   const [pickupOverrideSaving, setPickupOverrideSaving] = useState(false);
@@ -122,10 +129,13 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
   const [shippingError, setShippingError] = useState<string | null>(null);
   const selectedOrderId = searchParams.get("orderId");
 
-  const visibleOrders = useMemo(
-    () => (statusFilter === "all" ? orders : orders.filter((order) => order.status === statusFilter)),
-    [orders, statusFilter]
-  );
+  const visibleOrders = useMemo(() => {
+    return orders.filter((order) => {
+      const matchesStatus = statusFilter === "all" || order.status === statusFilter;
+      const matchesFulfillment = fulfillmentFilter === "all" || order.fulfillment_status === fulfillmentFilter;
+      return matchesStatus && matchesFulfillment;
+    });
+  }, [fulfillmentFilter, orders, statusFilter]);
   const isShippingFlyoutDirty =
     Boolean(shippingOrderId) &&
     (shippingCarrier !== shippingInitialCarrier || trackingNumber.trim() !== shippingInitialTrackingNumber.trim());
@@ -143,6 +153,10 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
 
   function openOrderDetail(orderId: string) {
     updateOrderDetailUrl(orderId);
+  }
+
+  function stopRowClick(event: { stopPropagation: () => void }) {
+    event.stopPropagation();
   }
 
   function closeOrderDetail() {
@@ -316,20 +330,39 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
     >
       <Card>
         <CardHeader>
-          <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <CardTitle className="text-lg">Order List</CardTitle>
               <CardDescription>Update payment and fulfillment status, then manage shipping details per order.</CardDescription>
             </div>
-            <div className="w-full max-w-52">
-              <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}>
-                <option value="all">All statuses</option>
-                {statusOptions.map((status) => (
-                  <option key={status} value={status}>
-                    {status}
-                  </option>
-                ))}
-              </Select>
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+              <div className="w-full sm:w-44">
+                <FormField label="Order status">
+                  <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}>
+                    <option value="all">All statuses</option>
+                    {statusOptions.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </Select>
+                </FormField>
+              </div>
+              <div className="w-full sm:w-52">
+                <FormField label="Fulfillment status">
+                  <Select
+                    value={fulfillmentFilter}
+                    onChange={(event) => setFulfillmentFilter(event.target.value as "all" | OrderRecord["fulfillment_status"])}
+                  >
+                    <option value="all">All fulfillment</option>
+                    {fulfillmentStatusOptions.map((status) => (
+                      <option key={status} value={status}>
+                        {formatFulfillmentStatus(status)}
+                      </option>
+                    ))}
+                  </Select>
+                </FormField>
+              </div>
             </div>
           </div>
         </CardHeader>
@@ -363,102 +396,113 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
                   visibleOrders.map((order) => {
                     const feeBreakdown = getFeeBreakdown(order);
                     return (
-                      <TableRow key={order.id}>
-                      <TableCell>{new Date(order.created_at).toLocaleString()}</TableCell>
-                      <TableCell>{order.customer_email}</TableCell>
-                      <TableCell>${(order.total_cents / 100).toFixed(2)}</TableCell>
-                      <TableCell>
-                        {order.discount_cents > 0 ? `-$${(order.discount_cents / 100).toFixed(2)}` : "$0.00"}
-                        {order.promo_code ? <p className="text-xs text-muted-foreground">{order.promo_code}</p> : null}
-                      </TableCell>
-                      <TableCell>${((feeBreakdown?.platform_fee_cents ?? 0) / 100).toFixed(2)}</TableCell>
-                      <TableCell>${((feeBreakdown?.net_payout_cents ?? 0) / 100).toFixed(2)}</TableCell>
-                      <TableCell>
-                        <Select value={order.status} onChange={(event) => void updateStatus(order.id, event.target.value as OrderStatus)}>
-                          {statusOptions.map((status) => (
-                            <option key={status} value={status}>
-                              {status}
-                            </option>
-                          ))}
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        <Select
-                          value={order.fulfillment_status}
-                          onChange={(event) => void updateFulfillment(order.id, event.target.value as OrderRecord["fulfillment_status"])}
-                        >
-                          {getFulfillmentOptionsForCurrent(order.fulfillment_status).map((status) => (
-                            <option key={status} value={status}>
-                              {formatFulfillmentStatus(status)}
-                            </option>
-                          ))}
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        {order.tracking_number ? (
-                          <div className="space-y-1">
-                            <p className="text-xs font-medium">{order.tracking_number}</p>
-                            <p className="text-xs text-muted-foreground">{order.shipment_status ?? "unknown"}</p>
-                            {order.tracking_url ? (
-                              <a href={order.tracking_url} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline">
-                                Open tracking
-                              </a>
-                            ) : null}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">Not shipped</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <RowActions>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button type="button" variant="ghost" size="icon" className="h-8 w-8 p-0" aria-label="More order actions">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => openOrderDetail(order.id)}>View</DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              {order.fulfillment_method === "pickup" && order.fulfillment_status !== "delivered" ? (
-                                <>
-                                  <DropdownMenuItem onClick={() => setPickupOverrideOrderId(order.id)}>Reschedule pickup</DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                </>
+                      <TableRow
+                        key={order.id}
+                        tabIndex={0}
+                        className="cursor-pointer transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+                        onClick={() => openOrderDetail(order.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            openOrderDetail(order.id);
+                          }
+                        }}
+                      >
+                        <TableCell>{new Date(order.created_at).toLocaleString()}</TableCell>
+                        <TableCell>{order.customer_email}</TableCell>
+                        <TableCell>${(order.total_cents / 100).toFixed(2)}</TableCell>
+                        <TableCell>
+                          {order.discount_cents > 0 ? `-$${(order.discount_cents / 100).toFixed(2)}` : "$0.00"}
+                          {order.promo_code ? <p className="text-xs text-muted-foreground">{order.promo_code}</p> : null}
+                        </TableCell>
+                        <TableCell>${((feeBreakdown?.platform_fee_cents ?? 0) / 100).toFixed(2)}</TableCell>
+                        <TableCell>${((feeBreakdown?.net_payout_cents ?? 0) / 100).toFixed(2)}</TableCell>
+                        <TableCell onClick={stopRowClick}>
+                          <Select value={order.status} onChange={(event) => void updateStatus(order.id, event.target.value as OrderStatus)}>
+                            {statusOptions.map((status) => (
+                              <option key={status} value={status}>
+                                {status}
+                              </option>
+                            ))}
+                          </Select>
+                        </TableCell>
+                        <TableCell onClick={stopRowClick}>
+                          <Select
+                            value={order.fulfillment_status}
+                            onChange={(event) => void updateFulfillment(order.id, event.target.value as OrderRecord["fulfillment_status"])}
+                          >
+                            {getFulfillmentOptionsForCurrent(order.fulfillment_status).map((status) => (
+                              <option key={status} value={status}>
+                                {formatFulfillmentStatus(status)}
+                              </option>
+                            ))}
+                          </Select>
+                        </TableCell>
+                        <TableCell onClick={stopRowClick}>
+                          {order.tracking_number ? (
+                            <div className="space-y-1">
+                              <p className="text-xs font-medium">{order.tracking_number}</p>
+                              <p className="text-xs text-muted-foreground">{order.shipment_status ?? "unknown"}</p>
+                              {order.tracking_url ? (
+                                <a href={order.tracking_url} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline">
+                                  Open tracking
+                                </a>
                               ) : null}
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  setShippingOrderId(order.id);
-                                  setShippingError(null);
-                                  const initialCarrier = order.carrier ?? "usps";
-                                  const initialTracking = order.tracking_number ?? "";
-                                  setShippingCarrier(initialCarrier);
-                                  setTrackingNumber(initialTracking);
-                                  setShippingInitialCarrier(initialCarrier);
-                                  setShippingInitialTrackingNumber(initialTracking);
-                                }}
-                              >
-                                {order.tracking_number ? "Edit shipment" : "Mark shipped"}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => void refreshTracking(order.id)}
-                                disabled={!order.tracking_number || syncingOrderId === order.id}
-                              >
-                                {syncingOrderId === order.id ? "Syncing tracking..." : "Sync tracking"}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem asChild>
-                                <Link
-                                  href={buildStoreWorkspacePath(activeStoreSlug, `/orders/${order.id}/packing-slip`, "/dashboard/stores")}
-                                  target="_blank"
-                                  rel="noreferrer"
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Not shipped</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right" onClick={stopRowClick}>
+                          <RowActions>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 p-0" aria-label="More order actions">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => openOrderDetail(order.id)}>View</DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                {order.fulfillment_method === "pickup" && order.fulfillment_status !== "delivered" ? (
+                                  <>
+                                    <DropdownMenuItem onClick={() => setPickupOverrideOrderId(order.id)}>Reschedule pickup</DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                  </>
+                                ) : null}
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setShippingOrderId(order.id);
+                                    setShippingError(null);
+                                    const initialCarrier = order.carrier ?? "usps";
+                                    const initialTracking = order.tracking_number ?? "";
+                                    setShippingCarrier(initialCarrier);
+                                    setTrackingNumber(initialTracking);
+                                    setShippingInitialCarrier(initialCarrier);
+                                    setShippingInitialTrackingNumber(initialTracking);
+                                  }}
                                 >
-                                  Open packing slip
-                                </Link>
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </RowActions>
-                      </TableCell>
+                                  {order.tracking_number ? "Edit shipment" : "Mark shipped"}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => void refreshTracking(order.id)}
+                                  disabled={!order.tracking_number || syncingOrderId === order.id}
+                                >
+                                  {syncingOrderId === order.id ? "Syncing tracking..." : "Sync tracking"}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem asChild>
+                                  <Link
+                                    href={buildStoreWorkspacePath(activeStoreSlug, `/orders/${order.id}/packing-slip`, "/dashboard/stores")}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    Open packing slip
+                                  </Link>
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </RowActions>
+                        </TableCell>
                       </TableRow>
                     );
                   })

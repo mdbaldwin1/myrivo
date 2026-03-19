@@ -6,9 +6,12 @@ import { SkipLink } from "@/components/ui/skip-link";
 import { Toaster } from "@/components/ui/toaster";
 import { COOKIE_CONSENT_COOKIE_NAME, resolveCookieConsent } from "@/lib/privacy/cookies";
 import { resolveBrowserPrivacySignalsFromHeaders } from "@/lib/privacy/signals";
+import { mapStoreExperienceContentRow } from "@/lib/store-experience/content";
+import { buildMergedStorefrontThemeJson } from "@/lib/storefront/theme-overrides";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
+import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 import { buildStorefrontThemeStyle, resolveStorefrontThemeConfig } from "@/lib/theme/storefront-theme";
 import "./globals.css";
 
@@ -64,7 +67,7 @@ export async function generateMetadata(): Promise<Metadata> {
     ]
       .map((value) => extractStorefrontSlugFromPath(value))
       .find((value): value is string => Boolean(value)) ?? null;
-  const storeSlug = headerStoreSlug ?? (await resolveStoreSlugFromDomain(host));
+  const storeSlug = headerStoreSlug ?? (await resolveStoreSlugFromDomain(host, { includeNonPublic: true }));
   const isPathBasedStorefront = Boolean(headerStoreSlug);
 
   if (!storeSlug) {
@@ -79,11 +82,11 @@ export async function generateMetadata(): Promise<Metadata> {
     .maybeSingle<{
       id: string;
       name: string;
-      status: "draft" | "pending_review" | "active" | "suspended";
+      status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
       white_label_enabled: boolean;
     }>();
 
-  if (error || !store || store.status !== "active" || (!isPathBasedStorefront && !store.white_label_enabled)) {
+  if (error || !store || !isStorePubliclyAccessibleStatus(store.status) || (!isPathBasedStorefront && !store.white_label_enabled)) {
     return defaultMetadata();
   }
 
@@ -157,7 +160,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     ]
       .map((value) => extractStorefrontSlugFromPath(value))
       .find((value): value is string => Boolean(value)) ?? null;
-  const storeSlug = headerStoreSlug ?? (await resolveStoreSlugFromDomain(host));
+  const storeSlug = headerStoreSlug ?? (await resolveStoreSlugFromDomain(host, { includeNonPublic: true }));
 
   let storefrontBodyStyle: CSSProperties | undefined;
   let storefrontBodyDataset:
@@ -177,20 +180,28 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       .from("stores")
       .select("id,status")
       .eq("slug", storeSlug)
-      .maybeSingle<{ id: string; status: "draft" | "pending_review" | "active" | "suspended" }>();
+      .maybeSingle<{ id: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" }>();
 
     if (store) {
-      const { data: branding } = await admin
-        .from("store_branding")
-        .select("primary_color,accent_color,theme_json")
-        .eq("store_id", store.id)
-        .maybeSingle<{
-          primary_color: string | null;
-          accent_color: string | null;
-          theme_json: Record<string, unknown> | null;
-        }>();
+      const [{ data: branding }, { data: experienceContent }] = await Promise.all([
+        admin
+          .from("store_branding")
+          .select("primary_color,accent_color,theme_json")
+          .eq("store_id", store.id)
+          .maybeSingle<{
+            primary_color: string | null;
+            accent_color: string | null;
+            theme_json: Record<string, unknown> | null;
+          }>(),
+        admin
+          .from("store_experience_content")
+          .select("store_id,home_json,products_page_json,about_page_json,policies_page_json,cart_page_json,order_summary_page_json,emails_json")
+          .eq("store_id", store.id)
+          .maybeSingle()
+      ]);
 
-      const themeConfig = resolveStorefrontThemeConfig(branding?.theme_json ?? {});
+      const mergedThemeJson = buildMergedStorefrontThemeJson(branding?.theme_json ?? {}, mapStoreExperienceContentRow(experienceContent));
+      const themeConfig = resolveStorefrontThemeConfig(mergedThemeJson);
       storefrontBodyStyle = {
         ...buildStorefrontThemeStyle({
           primaryColor: branding?.primary_color,

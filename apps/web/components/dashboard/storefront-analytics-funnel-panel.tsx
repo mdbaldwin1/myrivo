@@ -142,28 +142,30 @@ export function StorefrontAnalyticsFunnelPanel({ summary }: StorefrontAnalyticsF
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-md border border-border/70">
-        <table className="min-w-full divide-y divide-border/70 text-sm">
-          <caption className="sr-only">Shopper funnel summary with shopper counts, conversion rates, and explanatory notes.</caption>
-          <thead className="bg-muted/30 text-left text-xs uppercase tracking-[0.14em] text-muted-foreground">
-            <tr>
-              <th className="px-3 py-2">Step</th>
-              <th className="px-3 py-2">Shoppers</th>
-              <th className="px-3 py-2">Conversion</th>
-              <th className="px-3 py-2">Summary</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/60 bg-card">
-            {steps.map((step) => (
-              <tr key={`${step.id}-row`}>
-                <td className="px-3 py-2 font-medium">{step.label}</td>
-                <td className="px-3 py-2">{step.value}</td>
-                <td className="px-3 py-2">{step.id === "sessions" ? "Baseline" : formatPercent(step.rate)}</td>
-                <td className="px-3 py-2 text-muted-foreground">{step.helper}</td>
+      <div className="px-1 sm:px-2">
+        <div className="overflow-x-auto rounded-md border border-border/70">
+          <table className="min-w-full divide-y divide-border/70 text-sm">
+            <caption className="sr-only">Shopper funnel summary with shopper counts, conversion rates, and explanatory notes.</caption>
+            <thead className="bg-muted/30 text-left text-xs uppercase tracking-[0.14em] text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2">Step</th>
+                <th className="px-3 py-2">Shoppers</th>
+                <th className="px-3 py-2">Conversion</th>
+                <th className="px-3 py-2">Summary</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-border/60 bg-card">
+              {steps.map((step) => (
+                <tr key={`${step.id}-row`}>
+                  <td className="px-3 py-2 font-medium">{step.label}</td>
+                  <td className="px-3 py-2">{step.value}</td>
+                  <td className="px-3 py-2">{step.id === "sessions" ? "Baseline" : formatPercent(step.rate)}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{step.helper}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </SectionCard>
   );

@@ -86,7 +86,7 @@ export function MarketingAnalyticsProvider({ children }: MarketingAnalyticsProvi
   const cookieConsent = useOptionalCookieConsent();
   const analyticsEnabled = cookieConsent?.analyticsEnabled ?? false;
   const pageKey = pathname ? resolveMarketingPageKey(pathname) : null;
-  const [sessionKey] = useState<string | null>(() => readSessionKey() ?? createId());
+  const [sessionKey, setSessionKey] = useState<string | null>(null);
   const lastTrackedPathRef = useRef<string | null>(null);
 
   const experimentAssignments = useMemo(
@@ -99,6 +99,16 @@ export function MarketingAnalyticsProvider({ children }: MarketingAnalyticsProvi
         : {},
     [analyticsEnabled, pageKey, sessionKey]
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    queueMicrotask(() => {
+      setSessionKey(readSessionKey() ?? createId());
+    });
+  }, []);
 
   useEffect(() => {
     if (!analyticsEnabled) {

@@ -1,6 +1,5 @@
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { StoreLegalDocumentsForm } from "@/components/dashboard/store-legal-documents-form";
-import { StorePrivacyRequestsPanel } from "@/components/dashboard/store-privacy-requests-panel";
 import { getOwnedStoreBundleForSlug } from "@/lib/stores/owner-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -31,13 +30,10 @@ export default async function StoreWorkspaceLegalSettingsPage({ params }: PagePr
           header={
             <DashboardPageHeader
               title="Legal"
-              description="Formal Privacy Policy and Terms & Conditions belong in Store Settings, separate from the storefront policy summaries."
+              description="Formal Privacy Policy and Terms & Conditions for your storefront."
             />
           }
         />
-        <div className="border-t border-border/60 bg-muted/10 p-3">
-          <StorePrivacyRequestsPanel />
-        </div>
       </div>
     </section>
   );

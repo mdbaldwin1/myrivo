@@ -1,6 +1,6 @@
 import type { StoreStatus } from "@/types/database";
 
-export type StoreDashboardDateRange = "today" | "7d" | "30d";
+export type StoreDashboardPerformanceView = "month" | "year";
 
 export type StoreDashboardAlert = {
   id: string;
@@ -34,8 +34,9 @@ export type StoreDashboardData = {
     status: StoreStatus;
   };
   filters: {
-    range: StoreDashboardDateRange;
-    compare: boolean;
+    performanceView: StoreDashboardPerformanceView;
+    performanceMonth: string;
+    performanceYear: number;
     generatedAt: string;
   };
   alerts: StoreDashboardAlert[];
@@ -54,12 +55,17 @@ export type StoreDashboardData = {
     paidOrderCount: number;
     avgOrderValueCents: number;
     discountCents: number;
+    view: StoreDashboardPerformanceView;
+    selectedMonth: string;
+    selectedYear: number;
+    periodLabel: string;
+    seriesGranularity: "day" | "month";
     periodDelta?: {
-      grossRevenuePct: number | null;
-      orderCountPct: number | null;
-      avgOrderValuePct: number | null;
+      grossRevenuePct: number | "new" | null;
+      orderCountPct: number | "new" | null;
+      avgOrderValuePct: number | "new" | null;
     };
-    dailySeries: Array<{ date: string; grossRevenueCents: number; orders: number }>;
+    series: Array<{ label: string; grossRevenueCents: number; orders: number }>;
     topProducts: Array<{ productId: string; title: string; revenueCents: number; units: number }>;
   };
   inventory: {
@@ -68,29 +74,13 @@ export type StoreDashboardData = {
     lowStockItems: Array<{ productId: string; title: string; qty: number }>;
     outOfStockItems: Array<{ productId: string; title: string }>;
   };
-  growth: {
-    subscribersTotal: number;
-    subscribersNetNew: number;
-    activePromotions: number;
-    promotionsRedeemed: number;
-  };
   health: {
     score: number;
     checks: StoreDashboardHealthCheck[];
   };
-  timeline: Array<{
-    id: string;
-    at: string;
-    kind: "order" | "inventory" | "billing" | "settings" | "domain";
-    title: string;
-    detail: string;
-    href?: string;
-  }>;
   moduleErrors?: {
     performance?: string;
     inventory?: string;
-    growth?: string;
-    timeline?: string;
     health?: string;
   };
 };

@@ -6,7 +6,7 @@ type PlatformMarketingPageTableProps = {
 
 export function PlatformMarketingPageTable({ summary }: PlatformMarketingPageTableProps) {
   return (
-    <section className="rounded-xl border border-border/70 bg-background p-4">
+    <section className="rounded-xl border border-border/70 bg-card p-4">
       <div className="mb-3">
         <h2 className="text-sm font-semibold text-foreground">Conversion by Page</h2>
         <p className="text-xs text-muted-foreground">Landing-page and page-level performance for public-site conversion paths.</p>

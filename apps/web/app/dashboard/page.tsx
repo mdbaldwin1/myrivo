@@ -63,7 +63,7 @@ export default async function DashboardPage() {
   return (
     <DashboardPageScaffold
       title="Dashboard"
-      description="Your personal home for customer activity, workspace signals, and immediate next actions."
+      description="Your saved storefront activity, carts, and orders."
       className="p-3"
     >
       <DashboardHomeShell

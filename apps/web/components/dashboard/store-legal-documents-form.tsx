@@ -2,21 +2,20 @@
 
 import { usePathname } from "next/navigation";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
+import { StoreLegalDocumentPreviewDialog } from "@/components/dashboard/store-legal-document-preview-dialog";
+import { StoreLegalDocumentPublishDialog } from "@/components/dashboard/store-legal-document-publish-dialog";
+import { StoreLegalDocumentVersionsTable } from "@/components/dashboard/store-legal-document-versions-table";
 import { DashboardFormActionBar } from "@/components/dashboard/dashboard-form-action-bar";
 import { useStoreEditorDocument } from "@/components/dashboard/use-store-editor-document";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
-import { LegalMarkdown } from "@/components/legal/legal-markdown";
 import { SectionCard } from "@/components/ui/section-card";
-import { Select } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { resolveStoreLegalDocument } from "@/lib/legal/store-documents";
+import { resolveStoreLegalDocument, type StoreLegalDocumentVersionRow } from "@/lib/legal/store-documents";
 import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
-import { areEditorValuesEqual } from "@/lib/store-editor/object-path";
-import { storeLegalDocumentsEditorSchema, type StoreLegalDocumentsEditorSnapshot } from "@/lib/store-editor/schemas";
+import { storeLegalDocumentsContentEditorSchema, type StoreLegalDocumentsContentEditorSnapshot } from "@/lib/store-editor/schemas";
 import { getStoreLegalDocument } from "@/lib/storefront/store-legal-documents";
 import { cn } from "@/lib/utils";
 
@@ -26,8 +25,19 @@ type StoreLegalDocumentsFormProps = {
 
 type ActiveDocumentKey = "privacy" | "terms";
 
+type BaseTemplatePayload = {
+  versionId: string;
+  versionLabel: string;
+  title: string;
+  bodyMarkdown: string;
+  publishedAt: string | null;
+  effectiveAt: string | null;
+};
+
 type SettingsResponse = {
-  documents?: StoreLegalDocumentsEditorSnapshot;
+  documents?: StoreLegalDocumentsContentEditorSnapshot;
+  baseTemplates?: Record<ActiveDocumentKey, BaseTemplatePayload | null>;
+  versions?: Record<ActiveDocumentKey, StoreLegalDocumentVersionRow[]>;
   store?: {
     name: string;
     slug: string;
@@ -45,25 +55,35 @@ const DOCUMENT_TABS: Array<{ id: ActiveDocumentKey; label: string; description: 
   {
     id: "privacy",
     label: "Privacy Policy",
-    description: "How customer information is collected, used, and supported."
+    description: "Base policy language comes from Myrivo admin legal governance. You configure store-specific details and addenda here."
   },
   {
     id: "terms",
     label: "Terms & Conditions",
-    description: "Purchase, storefront-use, and order-expectation terms."
+    description: "Base terms language comes from Myrivo admin legal governance. You configure store-specific details and addenda here."
   }
 ];
-
-const DEFAULT_DOCUMENT_META: { id: ActiveDocumentKey; label: string; description: string } = {
-  id: "privacy",
-  label: "Privacy Policy",
-  description: "How customer information is collected, used, and supported."
-};
 
 const DEFAULT_PUBLISH_STATE: Record<ActiveDocumentKey, PublishDraftState> = {
   privacy: { changeSummary: "", effectiveAt: "" },
   terms: { changeSummary: "", effectiveAt: "" }
 };
+
+function buildEmptyEntry(): StoreLegalDocumentsContentEditorSnapshot["privacy"] {
+  return {
+    variables_json: {},
+    addendum_markdown: "",
+    published_title: "",
+    published_body_markdown: "",
+    published_variables_json: {},
+    published_addendum_markdown: "",
+    published_base_version_label: null,
+    published_version: 1,
+    published_change_summary: null,
+    effective_at: null,
+    published_at: null
+  };
+}
 
 export function StoreLegalDocumentsForm({ header }: StoreLegalDocumentsFormProps) {
   const formId = "store-legal-documents-form";
@@ -75,8 +95,16 @@ export function StoreLegalDocumentsForm({ header }: StoreLegalDocumentsFormProps
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [publishNotice, setPublishNotice] = useState<string | null>(null);
+  const [versionHistory, setVersionHistory] = useState<Record<ActiveDocumentKey, StoreLegalDocumentVersionRow[]>>({ privacy: [], terms: [] });
+  const [baseTemplates, setBaseTemplates] = useState<Record<ActiveDocumentKey, BaseTemplatePayload | null>>({
+    privacy: null,
+    terms: null
+  });
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [isPublishedPreviewOpen, setIsPublishedPreviewOpen] = useState(false);
+  const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false);
 
-  const loadDocument = useCallback(async (): Promise<StoreLegalDocumentsEditorSnapshot> => {
+  const loadDocument = useCallback(async (): Promise<StoreLegalDocumentsContentEditorSnapshot> => {
     const response = await fetch(buildStoreScopedApiPath("/api/stores/legal-documents", storeSlug), { cache: "no-store" });
     const payload = (await response.json()) as SettingsResponse;
 
@@ -87,12 +115,18 @@ export function StoreLegalDocumentsForm({ header }: StoreLegalDocumentsFormProps
     if (payload.store) {
       setStoreContext({ name: payload.store.name, slug: payload.store.slug, supportEmail: payload.store.supportEmail });
     }
+    if (payload.versions) {
+      setVersionHistory(payload.versions);
+    }
+    if (payload.baseTemplates) {
+      setBaseTemplates(payload.baseTemplates);
+    }
 
     return payload.documents;
   }, [storeSlug]);
 
   const saveDocument = useCallback(
-    async (draft: StoreLegalDocumentsEditorSnapshot): Promise<StoreLegalDocumentsEditorSnapshot> => {
+    async (draft: StoreLegalDocumentsContentEditorSnapshot): Promise<StoreLegalDocumentsContentEditorSnapshot> => {
       const response = await fetch(buildStoreScopedApiPath("/api/stores/legal-documents", storeSlug), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -110,129 +144,92 @@ export function StoreLegalDocumentsForm({ header }: StoreLegalDocumentsFormProps
   );
 
   const { draft, error, isDirty, loading, save, saving, setFieldValue, discardChanges, replaceDocument } =
-    useStoreEditorDocument<StoreLegalDocumentsEditorSnapshot>({
+    useStoreEditorDocument<StoreLegalDocumentsContentEditorSnapshot>({
       emptyDraft: {
-        privacyCompliance: {
-          notice_at_collection_enabled: true,
-          checkout_notice_enabled: true,
-          newsletter_notice_enabled: true,
-          review_notice_enabled: true,
-          show_california_notice: false,
-          show_do_not_sell_link: false,
-          privacy_contact_email: "",
-          privacy_rights_email: "",
-          privacy_contact_name: "Privacy team",
-          collection_notice_addendum_markdown: "",
-          california_notice_markdown: "",
-          do_not_sell_markdown: "",
-          request_page_intro_markdown: ""
-        },
-        privacy: {
-          source_mode: "template",
-          title_override: "Privacy Policy",
-          body_markdown: "",
-          variables_json: {},
-          published_source_mode: "template",
-          published_template_version: "v1",
-          published_title: "Privacy Policy",
-          published_body_markdown: "",
-          published_variables_json: {},
-          published_version: 1,
-          published_change_summary: null,
-          effective_at: null,
-          published_at: null
-        },
-        terms: {
-          source_mode: "template",
-          title_override: "Terms & Conditions",
-          body_markdown: "",
-          variables_json: {},
-          published_source_mode: "template",
-          published_template_version: "v1",
-          published_title: "Terms & Conditions",
-          published_body_markdown: "",
-          published_variables_json: {},
-          published_version: 1,
-          published_change_summary: null,
-          effective_at: null,
-          published_at: null
-        }
+        privacy: buildEmptyEntry(),
+        terms: buildEmptyEntry()
       },
       loadDocument,
       saveDocument,
-      schema: storeLegalDocumentsEditorSchema,
+      schema: storeLegalDocumentsContentEditorSchema,
       successMessage: "Legal document draft saved."
     });
 
   const activeDocumentDraft = draft[activeDocument];
-  const privacyComplianceDraft = draft.privacyCompliance;
   const activeDocumentMeta = useMemo(
-    () => DOCUMENT_TABS.find((document) => document.id === activeDocument) ?? DEFAULT_DOCUMENT_META,
+    () => DOCUMENT_TABS.find((document) => document.id === activeDocument) ?? DOCUMENT_TABS[0]!,
     [activeDocument]
   );
   const activeTemplateDefinition = useMemo(() => getStoreLegalDocument(activeDocument), [activeDocument]);
-  const activeVariableDefinitions = activeTemplateDefinition.templateVariables;
+  const activeBaseTemplate = baseTemplates[activeDocument];
   const activePublishState = publishState[activeDocument];
-  const publishedComparison = useMemo(
-    () => ({
-      source_mode: activeDocumentDraft.published_source_mode,
-      template_version: activeDocumentDraft.published_template_version,
-      title_override: activeDocumentDraft.published_title,
-      body_markdown: activeDocumentDraft.published_body_markdown,
-      variables_json: activeDocumentDraft.published_variables_json
-    }),
-    [activeDocumentDraft]
-  );
-  const draftComparison = useMemo(
-    () => ({
-      source_mode: activeDocumentDraft.source_mode,
-      template_version: "v1",
-      title_override: activeDocumentDraft.title_override,
-      body_markdown: activeDocumentDraft.body_markdown,
-      variables_json: activeDocumentDraft.variables_json
-    }),
-    [activeDocumentDraft]
-  );
-  const hasUnpublishedChanges = useMemo(
-    () => !areEditorValuesEqual(draftComparison, publishedComparison),
-    [draftComparison, publishedComparison]
-  );
+  const activeVersions = versionHistory[activeDocument] ?? [];
+  const storeName = storeContext?.name ?? "Your Store";
+
+  const hasUnpublishedChanges = useMemo(() => {
+    return (
+      JSON.stringify(activeDocumentDraft.variables_json ?? {}) !== JSON.stringify(activeDocumentDraft.published_variables_json ?? {}) ||
+      activeDocumentDraft.addendum_markdown.trim() !== activeDocumentDraft.published_addendum_markdown.trim()
+    );
+  }, [activeDocumentDraft]);
+
   const activePreview = useMemo(() => {
-    const previewStore = {
-      name: storeContext?.name ?? "Your Store",
-      slug: storeContext?.slug ?? "your-store"
-    };
-    const previewSettings = {
-      support_email: storeContext?.supportEmail ?? "support@example.com"
-    };
-    return resolveStoreLegalDocument(activeDocument, previewStore, previewSettings, {
-      source_mode: activeDocumentDraft.source_mode,
-      template_version: "v1",
-      title_override: activeDocumentDraft.title_override,
-      body_markdown: activeDocumentDraft.body_markdown,
-      variables_json: activeDocumentDraft.variables_json
-    });
-  }, [activeDocument, activeDocumentDraft, storeContext]);
+    return resolveStoreLegalDocument(
+      activeDocument,
+      {
+        name: storeContext?.name ?? "Your Store",
+        slug: storeContext?.slug ?? "your-store"
+      },
+      {
+        support_email: storeContext?.supportEmail ?? "support@example.com"
+      },
+      {
+        baseDocumentTitle: activeTemplateDefinition.title,
+        baseBodyMarkdown: activeBaseTemplate?.bodyMarkdown ?? "",
+        baseVersionLabel: activeBaseTemplate?.versionLabel ?? null,
+        variables_json: activeDocumentDraft.variables_json,
+        addendum_markdown: activeDocumentDraft.addendum_markdown
+      }
+    );
+  }, [activeBaseTemplate, activeDocument, activeDocumentDraft.addendum_markdown, activeDocumentDraft.variables_json, activeTemplateDefinition.title, storeContext]);
+
   const activePublishedPreview = useMemo(() => {
-    const previewStore = {
-      name: storeContext?.name ?? "Your Store",
-      slug: storeContext?.slug ?? "your-store"
-    };
-    const previewSettings = {
-      support_email: storeContext?.supportEmail ?? "support@example.com"
-    };
-    return resolveStoreLegalDocument(activeDocument, previewStore, previewSettings, {
-      source_mode: activeDocumentDraft.published_source_mode,
-      template_version: activeDocumentDraft.published_template_version,
-      title_override: activeDocumentDraft.published_title,
-      body_markdown: activeDocumentDraft.published_body_markdown,
-      variables_json: activeDocumentDraft.published_variables_json,
-      published_version: activeDocumentDraft.published_version,
-      published_at: activeDocumentDraft.published_at,
-      effective_at: activeDocumentDraft.effective_at,
-      published_change_summary: activeDocumentDraft.published_change_summary
-    });
-  }, [activeDocument, activeDocumentDraft, storeContext]);
+    return resolveStoreLegalDocument(
+      activeDocument,
+      {
+        name: storeContext?.name ?? "Your Store",
+        slug: storeContext?.slug ?? "your-store"
+      },
+      {
+        support_email: storeContext?.supportEmail ?? "support@example.com"
+      },
+      {
+        baseDocumentTitle: activeDocumentDraft.published_title || activeTemplateDefinition.title,
+        baseBodyMarkdown: activeDocumentDraft.published_body_markdown || activeBaseTemplate?.bodyMarkdown || "",
+        baseVersionLabel: activeDocumentDraft.published_base_version_label || activeBaseTemplate?.versionLabel || null,
+        variables_json: activeDocumentDraft.published_variables_json,
+        addendum_markdown: activeDocumentDraft.published_addendum_markdown,
+        publishedVersion: activeDocumentDraft.published_version,
+        publishedAt: activeDocumentDraft.published_at,
+        effectiveAt: activeDocumentDraft.effective_at,
+        changeSummary: activeDocumentDraft.published_change_summary
+      }
+    );
+  }, [
+    activeBaseTemplate,
+    activeDocument,
+    activeDocumentDraft.effective_at,
+    activeDocumentDraft.published_addendum_markdown,
+    activeDocumentDraft.published_at,
+    activeDocumentDraft.published_base_version_label,
+    activeDocumentDraft.published_body_markdown,
+    activeDocumentDraft.published_change_summary,
+    activeDocumentDraft.published_title,
+    activeDocumentDraft.published_variables_json,
+    activeDocumentDraft.published_version,
+    activeTemplateDefinition.title,
+    storeContext
+  ]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -272,11 +269,18 @@ export function StoreLegalDocumentsForm({ header }: StoreLegalDocumentsFormProps
       }
 
       replaceDocument(payload.documents);
+      if (payload.versions) {
+        setVersionHistory(payload.versions);
+      }
+      if (payload.baseTemplates) {
+        setBaseTemplates(payload.baseTemplates);
+      }
       setPublishState((current) => ({
         ...current,
         [activeDocument]: { changeSummary: "", effectiveAt: "" }
       }));
       setPublishNotice(`${activeDocumentMeta.label} published.`);
+      setIsPublishDialogOpen(false);
     } catch (publishFailure) {
       setPublishError(publishFailure instanceof Error ? publishFailure.message : "Unable to publish legal document.");
     } finally {
@@ -286,452 +290,144 @@ export function StoreLegalDocumentsForm({ header }: StoreLegalDocumentsFormProps
 
   const actionStatusMessage = publishError ?? error ?? publishNotice;
   const actionStatusVariant = publishError || error ? "error" : publishNotice ? "info" : "error";
-  const publishDisabled =
-    saving ||
-    publishing ||
-    isDirty ||
-    !hasUnpublishedChanges ||
-    activePublishState.changeSummary.trim().length < 8;
+  const publishDisabled = saving || publishing || isDirty || !hasUnpublishedChanges || !activeBaseTemplate;
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {header}
 
-        <AppAlert
-          variant="info"
-          title="Formal legal documents live here"
-          message="Use this page for your store's formal Privacy Policy and Terms & Conditions. Keep shipping, returns, support, and FAQ presentation in Storefront Studio."
-        />
-
-        <AppAlert
-          variant="info"
-          title="Drafts stay private until published"
-          message="Saving here updates your draft only. Customers keep seeing the last published legal document until you publish an update with an effective date and change summary."
-        />
-
-        {storeContext ? (
-          <AppAlert
-            variant="info"
-            title="Template defaults use store context"
-            message={`Template placeholders resolve against ${storeContext.name}${storeContext.supportEmail ? ` and ${storeContext.supportEmail}` : ""}.`}
-          />
-        ) : null}
-
         {loading ? <p className="text-sm text-muted-foreground">Loading legal documents...</p> : null}
 
         {!loading ? (
           <form id={formId} onSubmit={handleSubmit} className="space-y-4">
-            <SectionCard
-              title="Privacy compliance"
-              description="Configure point-of-collection notices, privacy contact details, and California-specific shopper rights surfaces."
-            >
-              <div className="space-y-4">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <FormField
-                    label="Enable notice at collection"
-                    description="Show privacy notice language anywhere shopper information is collected on the storefront."
+            <div className="flex flex-wrap gap-2 border-b border-border/70 pb-3">
+              {DOCUMENT_TABS.map((document) => {
+                const selected = document.id === activeDocument;
+                return (
+                  <Button
+                    key={document.id}
+                    type="button"
+                    variant={selected ? "default" : "outline"}
+                    onClick={() => setActiveDocument(document.id)}
+                    className={cn("min-w-[12rem] justify-start", !selected && "bg-background")}
                   >
-                    <div className="flex min-h-11 items-center justify-between rounded-xl border border-border/70 bg-background px-3">
-                      <p className="text-sm text-muted-foreground">Turns on the shared privacy notice component for supported collection points.</p>
-                      <Switch
-                        checked={privacyComplianceDraft.notice_at_collection_enabled}
-                        onChange={(event) => setFieldValue("privacyCompliance.notice_at_collection_enabled", event.target.checked)}
-                      />
-                    </div>
-                  </FormField>
-
-                  <FormField
-                    label="Show California privacy rights section"
-                    description="Adds California-specific rights language to the storefront privacy experience."
-                  >
-                    <div className="flex min-h-11 items-center justify-between rounded-xl border border-border/70 bg-background px-3">
-                      <p className="text-sm text-muted-foreground">Enable when the store needs California-specific disclosure and rights messaging.</p>
-                      <Switch
-                        checked={privacyComplianceDraft.show_california_notice}
-                        onChange={(event) => setFieldValue("privacyCompliance.show_california_notice", event.target.checked)}
-                      />
-                    </div>
-                  </FormField>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-3">
-                  <FormField label="Checkout notice" description="Show privacy notice text near checkout submission.">
-                    <div className="flex min-h-11 items-center justify-between rounded-xl border border-border/70 bg-background px-3">
-                      <span className="text-sm text-muted-foreground">Checkout</span>
-                      <Switch
-                        checked={privacyComplianceDraft.checkout_notice_enabled}
-                        disabled={!privacyComplianceDraft.notice_at_collection_enabled}
-                        onChange={(event) => setFieldValue("privacyCompliance.checkout_notice_enabled", event.target.checked)}
-                      />
-                    </div>
-                  </FormField>
-
-                  <FormField label="Newsletter notice" description="Show privacy notice text near newsletter signup.">
-                    <div className="flex min-h-11 items-center justify-between rounded-xl border border-border/70 bg-background px-3">
-                      <span className="text-sm text-muted-foreground">Newsletter</span>
-                      <Switch
-                        checked={privacyComplianceDraft.newsletter_notice_enabled}
-                        disabled={!privacyComplianceDraft.notice_at_collection_enabled}
-                        onChange={(event) => setFieldValue("privacyCompliance.newsletter_notice_enabled", event.target.checked)}
-                      />
-                    </div>
-                  </FormField>
-
-                  <FormField label="Review notice" description="Show privacy notice text near review submission.">
-                    <div className="flex min-h-11 items-center justify-between rounded-xl border border-border/70 bg-background px-3">
-                      <span className="text-sm text-muted-foreground">Reviews</span>
-                      <Switch
-                        checked={privacyComplianceDraft.review_notice_enabled}
-                        disabled={!privacyComplianceDraft.notice_at_collection_enabled}
-                        onChange={(event) => setFieldValue("privacyCompliance.review_notice_enabled", event.target.checked)}
-                      />
-                    </div>
-                  </FormField>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  <FormField
-                    label="Privacy contact email"
-                    description="Shown on privacy disclosures and used as the main privacy contact if rights contact is left blank."
-                  >
-                    <Input
-                      type="email"
-                      value={privacyComplianceDraft.privacy_contact_email}
-                      onChange={(event) => setFieldValue("privacyCompliance.privacy_contact_email", event.target.value)}
-                      placeholder={storeContext?.supportEmail ?? "privacy@example.com"}
-                    />
-                  </FormField>
-
-                  <FormField
-                    label="Privacy rights contact email"
-                    description="Shown on rights-request surfaces and used for California/privacy requests."
-                  >
-                    <Input
-                      type="email"
-                      value={privacyComplianceDraft.privacy_rights_email}
-                      onChange={(event) => setFieldValue("privacyCompliance.privacy_rights_email", event.target.value)}
-                      placeholder={privacyComplianceDraft.privacy_contact_email || storeContext?.supportEmail || "privacy@example.com"}
-                    />
-                  </FormField>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  <FormField
-                    label="Privacy contact name"
-                    description="Friendly label shown on privacy request pages and California rights sections."
-                  >
-                    <Input
-                      value={privacyComplianceDraft.privacy_contact_name}
-                      onChange={(event) => setFieldValue("privacyCompliance.privacy_contact_name", event.target.value)}
-                      placeholder="Privacy team"
-                    />
-                  </FormField>
-
-                  <FormField
-                    label="Show Do Not Sell / Share link"
-                    description="Expose a direct shopper path for opt-out requests when California rights are enabled."
-                  >
-                    <div className="flex min-h-11 items-center justify-between rounded-xl border border-border/70 bg-background px-3">
-                      <p className="text-sm text-muted-foreground">Link to the privacy request form with the opt-out request preselected.</p>
-                      <Switch
-                        checked={privacyComplianceDraft.show_do_not_sell_link}
-                        disabled={!privacyComplianceDraft.show_california_notice}
-                        onChange={(event) => setFieldValue("privacyCompliance.show_do_not_sell_link", event.target.checked)}
-                      />
-                    </div>
-                  </FormField>
-                </div>
-
-                <FormField
-                  label="Collection notice addendum"
-                  description="Optional extra markdown appended below the shared notice at checkout, newsletter signup, and reviews."
-                >
-                  <Textarea
-                    rows={5}
-                    value={privacyComplianceDraft.collection_notice_addendum_markdown}
-                    onChange={(event) => setFieldValue("privacyCompliance.collection_notice_addendum_markdown", event.target.value)}
-                    placeholder="Optional extra collection notice details for this storefront."
-                  />
-                </FormField>
-
-                {privacyComplianceDraft.show_california_notice ? (
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <FormField
-                      label="California notice addendum"
-                      description="Optional extra markdown for California-specific rights language on the storefront privacy page."
-                    >
-                      <Textarea
-                        rows={6}
-                        value={privacyComplianceDraft.california_notice_markdown}
-                        onChange={(event) => setFieldValue("privacyCompliance.california_notice_markdown", event.target.value)}
-                        placeholder="Optional California-specific rights details."
-                      />
-                    </FormField>
-
-                    <FormField
-                      label="Privacy request page intro"
-                      description="Optional introduction shown above the shopper privacy request form."
-                    >
-                      <Textarea
-                        rows={6}
-                        value={privacyComplianceDraft.request_page_intro_markdown}
-                        onChange={(event) => setFieldValue("privacyCompliance.request_page_intro_markdown", event.target.value)}
-                        placeholder="Explain how privacy requests are handled and when customers should use this form."
-                      />
-                    </FormField>
-                  </div>
-                ) : null}
-
-                {privacyComplianceDraft.show_do_not_sell_link ? (
-                  <FormField
-                    label="Do Not Sell / Share addendum"
-                    description="Optional extra markdown shown anywhere the do-not-sell/share link or rights surfaces appear."
-                  >
-                    <Textarea
-                      rows={5}
-                      value={privacyComplianceDraft.do_not_sell_markdown}
-                      onChange={(event) => setFieldValue("privacyCompliance.do_not_sell_markdown", event.target.value)}
-                      placeholder="Optional opt-out language for California rights surfaces."
-                    />
-                  </FormField>
-                ) : null}
-              </div>
-            </SectionCard>
-
-            <SectionCard title="Documents" description="Choose which formal store document you are editing.">
-              <div className="flex flex-wrap gap-2">
-                {DOCUMENT_TABS.map((document) => {
-                  const selected = document.id === activeDocument;
-                  return (
-                    <Button
-                      key={document.id}
-                      type="button"
-                      variant={selected ? "default" : "outline"}
-                      onClick={() => setActiveDocument(document.id)}
-                      className={cn("min-w-[11rem] justify-start", !selected && "bg-background")}
-                    >
-                      {document.label}
-                    </Button>
-                  );
-                })}
-              </div>
-            </SectionCard>
+                    {document.label}
+                  </Button>
+                );
+              })}
+            </div>
 
             <SectionCard title={activeDocumentMeta.label} description={activeDocumentMeta.description}>
               <div className="space-y-4">
                 <SectionCard
-                  title="Publication status"
-                  description="Legal updates are explicit. Save your draft first, then publish it when you are ready for customers to see the new version."
+                  title="Base template"
+                  description="Myrivo controls the core legal language. Your store adds only approved variables and an optional addendum."
                 >
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-xl border border-border/70 bg-muted/20 px-4 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Current base version</p>
+                      <p className="mt-2 text-sm font-medium">{activeBaseTemplate?.versionLabel ?? "Not published yet"}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {activeBaseTemplate?.publishedAt
+                          ? `Published ${new Date(activeBaseTemplate.publishedAt).toLocaleString("en-US")}`
+                          : "Ask a platform admin to publish the base template first."}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-border/70 bg-muted/20 px-4 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Published store version</p>
+                      <p className="mt-2 text-sm font-medium">v{activeDocumentDraft.published_version}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {activeDocumentDraft.published_at
+                          ? `Published ${new Date(activeDocumentDraft.published_at).toLocaleString("en-US")}`
+                          : "Not published yet"}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Base snapshot: {activeDocumentDraft.published_base_version_label ?? "None"}
+                      </p>
+                    </div>
+                  </div>
+                  {!activeBaseTemplate ? (
+                    <AppAlert
+                      variant="error"
+                      className="mt-4"
+                      message="The admin-managed base template has not been published yet, so this document cannot be previewed or published."
+                    />
+                  ) : null}
+                </SectionCard>
+
+                <SectionCard title="Publication status" description="Save your changes first, then publish a new composed version for customers.">
                   <div className="space-y-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button type="button" variant="outline" size="sm" onClick={() => setIsPreviewOpen(true)} disabled={!activeBaseTemplate}>
+                        Preview draft
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => setIsPublishedPreviewOpen(true)}>
+                        View published
+                      </Button>
+                      <Button type="button" size="sm" onClick={() => setIsPublishDialogOpen(true)} disabled={publishDisabled}>
+                        Publish {activeDocumentMeta.label}
+                      </Button>
+                    </div>
                     <div className="grid gap-3 md:grid-cols-2">
                       <div className="rounded-xl border border-border/70 bg-muted/20 px-4 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Published version</p>
-                        <p className="mt-2 text-sm font-medium">v{activeDocumentDraft.published_version}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {activeDocumentDraft.published_at
-                            ? `Published ${new Date(activeDocumentDraft.published_at).toLocaleString("en-US")}`
-                            : "Not published yet"}
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Effective</p>
+                        <p className="mt-2 text-sm text-muted-foreground">
                           {activeDocumentDraft.effective_at
-                            ? `Effective ${new Date(activeDocumentDraft.effective_at).toLocaleString("en-US")}`
-                            : "Effective immediately when published"}
+                            ? new Date(activeDocumentDraft.effective_at).toLocaleString("en-US")
+                            : "Immediate when published"}
                         </p>
                       </div>
-
                       <div className="rounded-xl border border-border/70 bg-muted/20 px-4 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Change summary</p>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Last publish summary</p>
                         <p className="mt-2 text-sm text-muted-foreground">
                           {activeDocumentDraft.published_change_summary?.trim() || "No publish summary has been recorded yet."}
                         </p>
                       </div>
                     </div>
-
-                    <AppAlert
-                      variant={isDirty ? "warning" : hasUnpublishedChanges ? "info" : "success"}
-                      title={
-                        isDirty
-                          ? "Unsaved draft changes"
-                          : hasUnpublishedChanges
-                            ? "Saved draft changes are ready to publish"
-                            : "Published storefront matches the current draft"
-                      }
-                      message={
-                        isDirty
-                          ? "Save your current draft before publishing. Publish actions only use the latest saved draft."
-                          : hasUnpublishedChanges
-                            ? "Customers are still seeing the previous published version until you publish this update."
-                            : "There are no unpublished legal changes right now."
-                      }
-                    />
-
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <FormField
-                        label="Effective at"
-                        description="Optional. Leave blank to make the published update effective immediately."
-                      >
-                        <Input
-                          type="datetime-local"
-                          value={activePublishState.effectiveAt}
-                          onChange={(event) =>
-                            setPublishState((current) => ({
-                              ...current,
-                              [activeDocument]: {
-                                ...current[activeDocument],
-                                effectiveAt: event.target.value
-                              }
-                            }))
-                          }
-                        />
-                      </FormField>
-
-                      <FormField
-                        label="Publish summary"
-                        description="Required. Record what changed so legal updates remain explainable later."
-                      >
-                        <Textarea
-                          rows={4}
-                          value={activePublishState.changeSummary}
-                          onChange={(event) =>
-                            setPublishState((current) => ({
-                              ...current,
-                              [activeDocument]: {
-                                ...current[activeDocument],
-                                changeSummary: event.target.value
-                              }
-                            }))
-                          }
-                          placeholder="Example: Added pickup-specific privacy contact details and clarified refund language."
-                        />
-                      </FormField>
-                    </div>
                   </div>
                 </SectionCard>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <FormField label="Document mode" description="Template mode starts from Myrivo's default legal structure.">
-                    <Select
-                      value={activeDocumentDraft.source_mode}
-                      onChange={(event) =>
-                        setFieldValue(
-                          `${activeDocument}.source_mode`,
-                          event.target.value === "custom" ? "custom" : "template"
-                        )
-                      }
-                    >
-                      <option value="template">Template-backed</option>
-                      <option value="custom">Fully custom</option>
-                    </Select>
-                  </FormField>
-
-                  <FormField label="Document title" description="Shown on the public storefront legal page.">
-                    <Input
-                      value={activeDocumentDraft.title_override}
-                      onChange={(event) => setFieldValue(`${activeDocument}.title_override`, event.target.value)}
-                      placeholder={activeDocumentMeta.label}
-                    />
-                  </FormField>
-                </div>
-
-                <FormField
-                  label="Document body"
-                  description={
-                    activeDocumentDraft.source_mode === "template"
-                      ? "Template mode keeps the default legal structure. Use variables first, then adjust the template text here only if you need an advanced override."
-                      : "Custom mode gives you full control of the legal text. Placeholders like {storeName} and {supportEmail} still resolve automatically."
-                  }
-                >
-                  <Textarea
-                    rows={20}
-                    value={activeDocumentDraft.body_markdown}
-                    onChange={(event) => setFieldValue(`${activeDocument}.body_markdown`, event.target.value)}
-                    placeholder={`Write your ${activeDocumentMeta.label.toLowerCase()} here...`}
-                    className="font-mono text-sm"
-                  />
-                </FormField>
-
-                {activeDocumentDraft.source_mode === "template" ? (
-                  <SectionCard
-                    title="Template variables"
-                    description="These fields personalize the built-in legal template without forcing you to rewrite every clause."
-                  >
-                    <div className="grid gap-3">
-                      {activeVariableDefinitions.map((variable) => (
-                        <FormField
-                          key={variable.key}
-                          label={variable.label}
-                          description={variable.description}
-                        >
-                          {variable.multiline ? (
-                            <Textarea
-                              rows={6}
-                              value={activeDocumentDraft.variables_json[variable.key] ?? ""}
-                              onChange={(event) =>
-                                setFieldValue(`${activeDocument}.variables_json`, {
+                <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+                  <SectionCard title="Store-specific fields" description="These values are injected into the admin-managed base template.">
+                    <div className="space-y-4">
+                      {activeTemplateDefinition.templateVariables.map((field) => (
+                        <FormField key={field.key} label={field.label} description={field.description}>
+                          <Input
+                            value={activeDocumentDraft.variables_json[field.key] ?? ""}
+                            onChange={(event) =>
+                              setFieldValue(
+                                `${activeDocument}.variables_json`,
+                                {
                                   ...activeDocumentDraft.variables_json,
-                                  [variable.key]: event.target.value
-                                })
-                              }
-                              placeholder={variable.placeholder}
-                            />
-                          ) : (
-                            <Input
-                              value={activeDocumentDraft.variables_json[variable.key] ?? ""}
-                              onChange={(event) =>
-                                setFieldValue(`${activeDocument}.variables_json`, {
-                                  ...activeDocumentDraft.variables_json,
-                                  [variable.key]: event.target.value
-                                })
-                              }
-                              placeholder={variable.placeholder}
-                            />
-                          )}
+                                  [field.key]: event.target.value
+                                }
+                              )
+                            }
+                            placeholder={field.placeholder}
+                          />
                         </FormField>
                       ))}
                     </div>
                   </SectionCard>
-                ) : null}
 
-                <SectionCard
-                  title="Preview"
-                  description="This is how the resolved legal document will appear on the storefront."
-                >
-                  <div className="space-y-4">
-                    <div className="space-y-1 border-b border-border/40 pb-4">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                        {storeContext?.name ?? "Your Store"}
-                      </p>
-                      <h3 className="text-2xl font-semibold [font-family:var(--storefront-font-heading)]">
-                        {activePreview.title}
-                      </h3>
-                    </div>
-                    <LegalMarkdown content={activePreview.bodyMarkdown} />
-                  </div>
-                </SectionCard>
+                  <SectionCard title="Store addendum" description={activeTemplateDefinition.addendumField.description}>
+                    <FormField
+                      label={activeTemplateDefinition.addendumField.label}
+                      description="Optional markdown appended after the published base template."
+                    >
+                      <Textarea
+                        rows={14}
+                        value={activeDocumentDraft.addendum_markdown}
+                        onChange={(event) => setFieldValue(`${activeDocument}.addendum_markdown`, event.target.value)}
+                        placeholder={activeTemplateDefinition.addendumField.placeholder}
+                      />
+                    </FormField>
+                  </SectionCard>
+                </div>
 
-                <SectionCard
-                  title="Currently published"
-                  description="This is the version customers can read right now."
-                >
-                  <div className="space-y-4">
-                    <div className="space-y-1 border-b border-border/40 pb-4">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                        {storeContext?.name ?? "Your Store"}
-                      </p>
-                      <h3 className="text-2xl font-semibold [font-family:var(--storefront-font-heading)]">
-                        {activePublishedPreview.title}
-                      </h3>
-                      <p className="text-sm text-muted-foreground">
-                        Version {activePublishedPreview.publishedVersion ?? 1}
-                        {activePublishedPreview.effectiveAt
-                          ? ` • Effective ${new Date(activePublishedPreview.effectiveAt).toLocaleDateString("en-US")}`
-                          : ""}
-                      </p>
-                    </div>
-                    <LegalMarkdown content={activePublishedPreview.bodyMarkdown} />
-                  </div>
+                <SectionCard title="Version history" description="Published store versions preserve the exact composed policy customers saw.">
+                  <StoreLegalDocumentVersionsTable versions={activeVersions} />
                 </SectionCard>
               </div>
             </SectionCard>
@@ -739,28 +435,57 @@ export function StoreLegalDocumentsForm({ header }: StoreLegalDocumentsFormProps
         ) : null}
       </div>
 
-      {!loading ? (
-        <DashboardFormActionBar
-          formId={formId}
-          saveLabel="Save legal documents"
-          savePendingLabel="Saving..."
-          savePending={saving}
-          saveDisabled={!isDirty || saving}
-          discardDisabled={!isDirty || saving}
-          statusMessage={actionStatusMessage}
-          statusVariant={actionStatusVariant}
-          actions={
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => void handlePublish()}
-              disabled={publishDisabled}
-            >
-              {publishing ? "Publishing..." : `Publish ${activeDocumentMeta.label}`}
-            </Button>
-          }
-        />
-      ) : null}
+      <DashboardFormActionBar
+        formId={formId}
+        saveLabel="Save legal settings"
+        savePendingLabel="Saving legal settings..."
+        savePending={saving}
+        saveDisabled={!isDirty}
+        discardDisabled={!isDirty}
+        statusMessage={actionStatusMessage}
+        statusVariant={actionStatusVariant}
+      />
+
+      <StoreLegalDocumentPreviewDialog
+        open={isPreviewOpen}
+        onOpenChange={setIsPreviewOpen}
+        title={`Preview ${activeDocumentMeta.label}`}
+        description={`${activeDocumentMeta.label} draft preview`}
+        storeName={storeName}
+        document={activePreview}
+      />
+
+      <StoreLegalDocumentPreviewDialog
+        open={isPublishedPreviewOpen}
+        onOpenChange={setIsPublishedPreviewOpen}
+        title={`Published ${activeDocumentMeta.label}`}
+        description={`Currently published ${activeDocumentMeta.label}`}
+        storeName={storeName}
+        document={activePublishedPreview}
+      />
+
+      <StoreLegalDocumentPublishDialog
+        open={isPublishDialogOpen}
+        onOpenChange={setIsPublishDialogOpen}
+        documentLabel={activeDocumentMeta.label}
+        effectiveAt={activePublishState.effectiveAt}
+        changeSummary={activePublishState.changeSummary}
+        publishPending={publishing}
+        error={publishError}
+        onEffectiveAtChange={(value) =>
+          setPublishState((current) => ({
+            ...current,
+            [activeDocument]: { ...current[activeDocument], effectiveAt: value }
+          }))
+        }
+        onChangeSummaryChange={(value) =>
+          setPublishState((current) => ({
+            ...current,
+            [activeDocument]: { ...current[activeDocument], changeSummary: value }
+          }))
+        }
+        onConfirm={handlePublish}
+      />
     </section>
   );
 }

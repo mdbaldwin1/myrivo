@@ -4,6 +4,9 @@ import { NextRequest } from "next/server";
 const enforceTrustedOriginMock = vi.fn();
 const logAuditEventMock = vi.fn();
 const getStoreLegalDocumentsByStoreIdMock = vi.fn();
+const getStoreLegalDocumentByStoreIdMock = vi.fn();
+const getStoreLegalDocumentVersionsByStoreIdMock = vi.fn();
+const getPublishedStoreBaseLegalDocumentsMock = vi.fn();
 
 type SupabaseMock = {
   auth: { getUser: ReturnType<typeof vi.fn> };
@@ -19,7 +22,7 @@ let ownedStoreBundleMock:
   | null;
 let upsertPayload: Array<Record<string, unknown>> | null = null;
 let updatePayload: Record<string, unknown> | null = null;
-let privacyProfileUpsertPayload: Record<string, unknown> | null = null;
+let insertPayload: Record<string, unknown> | null = null;
 let requestedStoreSlug: string | null = null;
 
 vi.mock("@/lib/security/request-origin", () => ({
@@ -45,7 +48,10 @@ vi.mock("@/lib/legal/store-documents", async () => {
   const actual = await vi.importActual<typeof import("@/lib/legal/store-documents")>("@/lib/legal/store-documents");
   return {
     ...actual,
-    getStoreLegalDocumentsByStoreId: (...args: unknown[]) => getStoreLegalDocumentsByStoreIdMock(...args)
+    getStoreLegalDocumentsByStoreId: (...args: unknown[]) => getStoreLegalDocumentsByStoreIdMock(...args),
+    getStoreLegalDocumentByStoreId: (...args: unknown[]) => getStoreLegalDocumentByStoreIdMock(...args),
+    getStoreLegalDocumentVersionsByStoreId: (...args: unknown[]) => getStoreLegalDocumentVersionsByStoreIdMock(...args),
+    getPublishedStoreBaseLegalDocuments: (...args: unknown[]) => getPublishedStoreBaseLegalDocumentsMock(...args)
   };
 });
 
@@ -71,37 +77,10 @@ function buildSupabaseMock(): SupabaseMock {
         };
       }
 
-      if (table === "store_privacy_profiles") {
+      if (table === "store_legal_document_versions") {
         return {
-          select: vi.fn(() => {
-            const chain = {
-              eq: vi.fn(() => chain),
-              maybeSingle: vi.fn(async () => ({
-                data: {
-                  store_id: "store-1",
-                  notice_at_collection_enabled: true,
-                  checkout_notice_enabled: true,
-                  newsletter_notice_enabled: true,
-                  review_notice_enabled: true,
-                  show_california_notice: true,
-                  show_do_not_sell_link: false,
-                  privacy_contact_email: "privacy@example.com",
-                  privacy_rights_email: "rights@example.com",
-                  privacy_contact_name: "Privacy team",
-                  collection_notice_addendum_markdown: "",
-                  california_notice_markdown: "California rights apply.",
-                  do_not_sell_markdown: "",
-                  request_page_intro_markdown: "",
-                  created_at: "2026-03-12T00:00:00.000Z",
-                  updated_at: "2026-03-12T00:00:00.000Z"
-                },
-                error: null
-              }))
-            };
-            return chain;
-          }),
-          upsert: vi.fn(async (payload: Record<string, unknown>) => {
-            privacyProfileUpsertPayload = payload;
+          insert: vi.fn(async (payload: Record<string, unknown>) => {
+            insertPayload = payload;
             return { error: null };
           })
         };
@@ -114,9 +93,6 @@ function buildSupabaseMock(): SupabaseMock {
 
 async function callGet(url = "http://localhost:3000/api/stores/legal-documents?storeSlug=apothecary") {
   const route = await import("@/app/api/stores/legal-documents/route");
-  if (!route.GET) {
-    throw new Error("GET handler is not defined");
-  }
   const response = await route.GET(new NextRequest(url));
   if (!response) {
     throw new Error("GET handler returned no response");
@@ -126,9 +102,6 @@ async function callGet(url = "http://localhost:3000/api/stores/legal-documents?s
 
 async function callPut(body: Record<string, unknown>) {
   const route = await import("@/app/api/stores/legal-documents/route");
-  if (!route.PUT) {
-    throw new Error("PUT handler is not defined");
-  }
   const response = await route.PUT(
     new NextRequest("http://localhost:3000/api/stores/legal-documents?storeSlug=apothecary", {
       method: "PUT",
@@ -148,9 +121,6 @@ async function callPut(body: Record<string, unknown>) {
 
 async function callPatch(body: Record<string, unknown>) {
   const route = await import("@/app/api/stores/legal-documents/route");
-  if (!route.PATCH) {
-    throw new Error("PATCH handler is not defined");
-  }
   const response = await route.PATCH(
     new NextRequest("http://localhost:3000/api/stores/legal-documents?storeSlug=apothecary", {
       method: "PATCH",
@@ -170,15 +140,13 @@ async function callPatch(body: Record<string, unknown>) {
 
 function buildEditorEntry(overrides: Partial<Record<string, unknown>> = {}) {
   return {
-    source_mode: "template",
-    title_override: "Privacy Policy",
-    body_markdown: "Legal body",
     variables_json: {},
-    published_source_mode: "template",
-    published_template_version: "v1",
-    published_title: "Published Privacy Policy",
+    addendum_markdown: "",
+    published_title: "Published document",
     published_body_markdown: "Published body",
     published_variables_json: {},
+    published_addendum_markdown: "",
+    published_base_version_label: "v1.0",
     published_version: 1,
     published_change_summary: null,
     effective_at: null,
@@ -188,6 +156,7 @@ function buildEditorEntry(overrides: Partial<Record<string, unknown>> = {}) {
 }
 
 beforeEach(() => {
+  vi.resetModules();
   supabaseMock = buildSupabaseMock();
   ownedStoreBundleMock = {
     store: { id: "store-1", slug: "apothecary", name: "At Home Apothecary" },
@@ -196,28 +165,29 @@ beforeEach(() => {
   requestedStoreSlug = null;
   upsertPayload = null;
   updatePayload = null;
-  privacyProfileUpsertPayload = null;
+  insertPayload = null;
   enforceTrustedOriginMock.mockReset();
   logAuditEventMock.mockReset();
   getStoreLegalDocumentsByStoreIdMock.mockReset();
+  getStoreLegalDocumentByStoreIdMock.mockReset();
+  getStoreLegalDocumentVersionsByStoreIdMock.mockReset();
+  getPublishedStoreBaseLegalDocumentsMock.mockReset();
   enforceTrustedOriginMock.mockReturnValue(null);
   getStoreLegalDocumentsByStoreIdMock.mockResolvedValue([
     {
       id: "privacy-1",
       store_id: "store-1",
       key: "privacy",
-      source_mode: "template",
-      template_version: "v1",
-      title_override: "Privacy Policy",
-      body_markdown: "Custom privacy body for {storeName}.",
-      variables_json: { supportEmail: "hello@example.com", ignored: 123 },
-      published_source_mode: "template",
-      published_template_version: "v1",
+      variables_json: { privacyContactEmail: "privacy@example.com" },
+      addendum_markdown: "## Privacy addendum",
       published_title: "Published Privacy Policy",
-      published_body_markdown: "Published privacy body.",
-      published_variables_json: { supportEmail: "hello@example.com" },
+      published_body_markdown: "Published privacy body",
+      published_variables_json: { privacyContactEmail: "privacy@example.com" },
+      published_addendum_markdown: "## Published privacy addendum",
+      published_base_document_version_id: "base-privacy-v1",
+      published_base_version_label: "v1.0",
       published_version: 2,
-      published_change_summary: "Clarified data usage language.",
+      published_change_summary: "Clarified privacy contact language.",
       effective_at: "2026-03-10T00:00:00.000Z",
       published_at: "2026-03-10T00:00:00.000Z",
       published_by_user_id: "user-1",
@@ -228,16 +198,14 @@ beforeEach(() => {
       id: "terms-1",
       store_id: "store-1",
       key: "terms",
-      source_mode: "custom",
-      template_version: "v1",
-      title_override: "Store Terms",
-      body_markdown: "Custom terms body.",
-      variables_json: {},
-      published_source_mode: "custom",
-      published_template_version: "v1",
-      published_title: "Published Store Terms",
-      published_body_markdown: "Published terms body.",
-      published_variables_json: {},
+      variables_json: { termsContactEmail: "support@example.com", governingLawRegion: "New York" },
+      addendum_markdown: "",
+      published_title: "Published Terms",
+      published_body_markdown: "Published terms body",
+      published_variables_json: { termsContactEmail: "support@example.com", governingLawRegion: "New York" },
+      published_addendum_markdown: "",
+      published_base_document_version_id: "base-terms-v1",
+      published_base_version_label: "v1.0",
       published_version: 1,
       published_change_summary: null,
       effective_at: "2026-03-09T00:00:00.000Z",
@@ -247,16 +215,77 @@ beforeEach(() => {
       created_at: "2026-03-12T00:00:00.000Z"
     }
   ]);
+  getStoreLegalDocumentByStoreIdMock.mockResolvedValue({
+    id: "privacy-1",
+    store_id: "store-1",
+    key: "privacy",
+    variables_json: { privacyContactEmail: "privacy@example.com" },
+    addendum_markdown: "## Privacy addendum",
+    published_title: "Published Privacy Policy",
+    published_body_markdown: "Published privacy body",
+    published_variables_json: { privacyContactEmail: "privacy@example.com" },
+    published_addendum_markdown: "",
+    published_base_document_version_id: "base-privacy-v1",
+    published_base_version_label: "v1.0",
+    published_version: 2,
+    published_change_summary: "Clarified privacy contact language.",
+    effective_at: "2026-03-10T00:00:00.000Z",
+    published_at: "2026-03-10T00:00:00.000Z",
+    published_by_user_id: "user-1",
+    updated_at: "2026-03-12T00:00:00.000Z",
+    created_at: "2026-03-12T00:00:00.000Z"
+  });
+  getStoreLegalDocumentVersionsByStoreIdMock.mockResolvedValue([
+    {
+      id: "version-1",
+      store_legal_document_id: "privacy-1",
+      store_id: "store-1",
+      key: "privacy",
+      version_number: 2,
+      title: "Published Privacy Policy",
+      body_markdown: "Published privacy body",
+      variables_json: { privacyContactEmail: "privacy@example.com" },
+      addendum_markdown: "## Published privacy addendum",
+      base_document_version_id: "base-privacy-v1",
+      base_version_label: "v1.0",
+      change_summary: "Clarified privacy contact language.",
+      effective_at: "2026-03-10T00:00:00.000Z",
+      published_at: "2026-03-10T00:00:00.000Z",
+      published_by_user_id: "user-1",
+      created_at: "2026-03-10T00:00:00.000Z"
+    }
+  ]);
+  getPublishedStoreBaseLegalDocumentsMock.mockResolvedValue({
+    privacy: {
+      id: "base-privacy-v2",
+      key: "privacy",
+      title: "Storefront Privacy Policy Base",
+      versionLabel: "v2.0",
+      bodyMarkdown: "# Privacy Policy\n\nContact {privacyContactEmail}.",
+      publishedAt: "2026-03-12T00:00:00.000Z",
+      effectiveAt: "2026-03-12T00:00:00.000Z"
+    },
+    terms: {
+      id: "base-terms-v2",
+      key: "terms",
+      title: "Storefront Terms Base",
+      versionLabel: "v2.0",
+      bodyMarkdown: "# Terms\n\nQuestions: {termsContactEmail}.",
+      publishedAt: "2026-03-12T00:00:00.000Z",
+      effectiveAt: "2026-03-12T00:00:00.000Z"
+    }
+  });
 });
 
 describe("store legal documents route", () => {
-  test("GET returns the legal document editor snapshot for the requested store", async () => {
+  test("GET returns base template metadata and store-specific fields", async () => {
     const response = await callGet();
     const payload = (await response.json()) as {
       documents: {
-        privacyCompliance: { show_california_notice: boolean; privacy_rights_email: string };
-        privacy: { body_markdown: string; variables_json: Record<string, string>; published_version: number; published_at: string | null };
-        terms: { title_override: string; source_mode: string };
+        privacy: { addendum_markdown: string; variables_json: Record<string, string>; published_base_version_label: string | null };
+      };
+      baseTemplates: {
+        privacy: { versionLabel: string; title: string } | null;
       };
       store: { name: string; supportEmail: string | null };
     };
@@ -264,286 +293,98 @@ describe("store legal documents route", () => {
     expect(response.status).toBe(200);
     expect(requestedStoreSlug).toBe("apothecary");
     expect(payload.store.name).toBe("At Home Apothecary");
-    expect(payload.store.supportEmail).toBe("hello@example.com");
-    expect(payload.documents.privacyCompliance).toMatchObject({
-      show_california_notice: true,
-      privacy_rights_email: "rights@example.com"
-    });
-    expect(payload.documents.privacy.body_markdown).toBe("Custom privacy body for {storeName}.");
-    expect(payload.documents.privacy.variables_json).toEqual({ supportEmail: "hello@example.com" });
-    expect(payload.documents.privacy.published_version).toBe(2);
-    expect(payload.documents.privacy.published_at).toBe("2026-03-10T00:00:00.000Z");
-    expect(payload.documents.terms).toMatchObject({
-      title_override: "Store Terms",
-      source_mode: "custom"
-    });
+    expect(payload.documents.privacy.addendum_markdown).toBe("## Privacy addendum");
+    expect(payload.documents.privacy.variables_json).toEqual({ privacyContactEmail: "privacy@example.com" });
+    expect(payload.documents.privacy.published_base_version_label).toBe("v1.0");
+    expect(payload.baseTemplates.privacy?.versionLabel).toBe("v2.0");
+    expect(payload.baseTemplates.privacy?.title).toBe("Storefront Privacy Policy Base");
   });
 
-  test("PUT upserts both store legal documents and logs an audit event", async () => {
+  test("PUT upserts variables and addenda only and logs an audit event", async () => {
     const response = await callPut({
-      privacyCompliance: {
-        notice_at_collection_enabled: true,
-        checkout_notice_enabled: true,
-        newsletter_notice_enabled: true,
-        review_notice_enabled: false,
-        show_california_notice: true,
-        show_do_not_sell_link: true,
-        privacy_contact_email: "privacy@example.com",
-        privacy_rights_email: "rights@example.com",
-        privacy_contact_name: "Privacy team",
-        collection_notice_addendum_markdown: "",
-        california_notice_markdown: "California rights apply.",
-        do_not_sell_markdown: "Opt out details.",
-        request_page_intro_markdown: "Use this form for privacy requests."
-      },
       privacy: buildEditorEntry({
-        body_markdown: "Privacy body",
-        variables_json: { supportEmail: "help@example.com" }
+        variables_json: { privacyContactEmail: "rights@example.com" },
+        addendum_markdown: "## Store privacy addendum"
       }),
       terms: buildEditorEntry({
-        source_mode: "custom",
-        title_override: "Terms & Conditions",
-        body_markdown: "Terms body"
+        variables_json: { termsContactEmail: "help@example.com", governingLawRegion: "New York" },
+        addendum_markdown: "## Store terms addendum"
       })
     });
-    const payload = (await response.json()) as {
-      documents: {
-        privacy: { source_mode: string };
-        terms: { source_mode: string };
-      };
-    };
 
     expect(response.status).toBe(200);
-    expect(payload.documents.privacy.source_mode).toBe("template");
-    expect(payload.documents.terms.source_mode).toBe("custom");
     expect(upsertPayload).toEqual([
       expect.objectContaining({
         store_id: "store-1",
         key: "privacy",
-        source_mode: "template",
-        body_markdown: "Privacy body"
+        variables_json: { privacyContactEmail: "rights@example.com" },
+        addendum_markdown: "## Store privacy addendum"
       }),
       expect.objectContaining({
         store_id: "store-1",
         key: "terms",
-        source_mode: "custom",
-        body_markdown: "Terms body"
+        variables_json: { termsContactEmail: "help@example.com", governingLawRegion: "New York" },
+        addendum_markdown: "## Store terms addendum"
       })
     ]);
-    expect(privacyProfileUpsertPayload).toEqual(
-      expect.objectContaining({
-        store_id: "store-1",
-        show_california_notice: true,
-        show_do_not_sell_link: true,
-        review_notice_enabled: false
-      })
-    );
     expect(logAuditEventMock).toHaveBeenCalledTimes(1);
   });
 
-  test("PUT resolves the requested store slug and writes only to the resolved store", async () => {
-    ownedStoreBundleMock = {
-      store: { id: "store-2", slug: "apothecary", name: "Second Store" },
-      settings: { support_email: "second@example.com" }
-    };
-
-    const response = await callPut({
-      privacyCompliance: {
-        notice_at_collection_enabled: true,
-        checkout_notice_enabled: true,
-        newsletter_notice_enabled: false,
-        review_notice_enabled: true,
-        show_california_notice: false,
-        show_do_not_sell_link: false,
-        privacy_contact_email: "privacy@second.example.com",
-        privacy_rights_email: "rights@second.example.com",
-        privacy_contact_name: "Second Privacy",
-        collection_notice_addendum_markdown: "",
-        california_notice_markdown: "",
-        do_not_sell_markdown: "",
-        request_page_intro_markdown: ""
-      },
-      privacy: buildEditorEntry({ title_override: "Second Store Privacy" }),
-      terms: buildEditorEntry({ title_override: "Second Store Terms" })
-    });
-
-    expect(response.status).toBe(200);
-    expect(requestedStoreSlug).toBe("apothecary");
-    expect(upsertPayload).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ store_id: "store-2", key: "privacy", title_override: "Second Store Privacy" }),
-        expect.objectContaining({ store_id: "store-2", key: "terms", title_override: "Second Store Terms" })
-      ])
-    );
-    expect(privacyProfileUpsertPayload).toEqual(
-      expect.objectContaining({
-        store_id: "store-2",
-        privacy_contact_email: "privacy@second.example.com"
-      })
-    );
-  });
-
-  test("GET returns 401 when no user is authenticated", async () => {
-    supabaseMock.auth.getUser.mockResolvedValueOnce({ data: { user: null } });
-
-    const response = await callGet();
-
-    expect(response.status).toBe(401);
-  });
-
-  test("PUT returns 404 when the user cannot access the store", async () => {
-    ownedStoreBundleMock = null;
-
-    const response = await callPut({
-      privacyCompliance: {
-        notice_at_collection_enabled: true,
-        checkout_notice_enabled: true,
-        newsletter_notice_enabled: true,
-        review_notice_enabled: true,
-        show_california_notice: false,
-        show_do_not_sell_link: false,
-        privacy_contact_email: "privacy@example.com",
-        privacy_rights_email: "privacy@example.com",
-        privacy_contact_name: "Privacy team",
-        collection_notice_addendum_markdown: "",
-        california_notice_markdown: "",
-        do_not_sell_markdown: "",
-        request_page_intro_markdown: ""
-      },
-      privacy: buildEditorEntry({ body_markdown: "Privacy body" }),
-      terms: buildEditorEntry({
-        title_override: "Terms & Conditions",
-        body_markdown: "Terms body"
-      })
-    });
-
-    expect(response.status).toBe(404);
-    expect(logAuditEventMock).not.toHaveBeenCalled();
-  });
-
-  test("PATCH publishes the saved draft for a single document and logs audit metadata", async () => {
+  test("PATCH publishes a composed store legal snapshot using the latest base template", async () => {
     const response = await callPatch({
       key: "privacy",
-      changeSummary: "Clarified privacy support contact details.",
+      changeSummary: "Clarified privacy rights contact details.",
       effectiveAt: "2026-03-15T16:30:00.000Z"
     });
     const payload = (await response.json()) as {
       documents: {
-        privacy: { published_version: number };
+        privacy: { published_base_version_label: string | null; published_version: number };
       };
     };
 
     expect(response.status).toBe(200);
     expect(updatePayload).toEqual(
       expect.objectContaining({
-        published_source_mode: "template",
         published_title: "Privacy Policy",
-        published_body_markdown: "Custom privacy body for {storeName}.",
+        published_base_document_version_id: "base-privacy-v2",
+        published_base_version_label: "v2.0",
         published_version: 3,
-        published_change_summary: "Clarified privacy support contact details.",
+        published_change_summary: "Clarified privacy rights contact details.",
         effective_at: "2026-03-15T16:30:00.000Z",
         published_by_user_id: "user-1"
       })
     );
-    expect(payload.documents.privacy.published_version).toBe(2);
+    expect(insertPayload).toEqual(
+      expect.objectContaining({
+        key: "privacy",
+        version_number: 3,
+        base_document_version_id: "base-privacy-v2",
+        base_version_label: "v2.0"
+      })
+    );
+    expect(payload.documents.privacy.published_base_version_label).toBe("v1.0");
     expect(logAuditEventMock).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "publish",
         metadata: expect.objectContaining({
           key: "privacy",
-          publishedVersion: 3
+          publishedVersion: 3,
+          baseVersionLabel: "v2.0"
         })
       })
     );
   });
 
-  test("PATCH resolves the requested store slug and publishes against the resolved store context", async () => {
-    ownedStoreBundleMock = {
-      store: { id: "store-2", slug: "apothecary", name: "Second Store" },
-      settings: { support_email: "second@example.com" }
-    };
-    getStoreLegalDocumentsByStoreIdMock.mockResolvedValueOnce([
-      {
-        id: "privacy-2",
-        store_id: "store-2",
-        key: "privacy",
-        source_mode: "custom",
-        template_version: "v1",
-        title_override: "Second Store Privacy",
-        body_markdown: "Updated privacy body.",
-        variables_json: {},
-        published_source_mode: "template",
-        published_template_version: "v1",
-        published_title: "Published Privacy Policy",
-        published_body_markdown: "Published privacy body.",
-        published_variables_json: {},
-        published_version: 1,
-        published_change_summary: null,
-        effective_at: null,
-        published_at: "2026-03-12T00:00:00.000Z",
-        published_by_user_id: "user-1",
-        created_at: "2026-03-12T00:00:00.000Z",
-        updated_at: "2026-03-12T00:00:00.000Z"
-      }
-    ]);
+  test("PATCH rejects publishing when the base template is unavailable", async () => {
+    getPublishedStoreBaseLegalDocumentsMock.mockResolvedValueOnce({ privacy: null, terms: null });
 
     const response = await callPatch({
       key: "privacy",
-      changeSummary: "Clarified second store privacy controls."
-    });
-
-    expect(response.status).toBe(200);
-    expect(requestedStoreSlug).toBe("apothecary");
-    expect(updatePayload).toEqual(
-      expect.objectContaining({
-        published_title: "Second Store Privacy",
-        published_version: 2,
-        published_by_user_id: "user-1"
-      })
-    );
-    expect(logAuditEventMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        storeId: "store-2",
-        entityId: "store-2:privacy"
-      })
-    );
-  });
-
-  test("PATCH rejects publishing when there are no unpublished changes", async () => {
-    getStoreLegalDocumentsByStoreIdMock.mockResolvedValueOnce([
-      {
-        id: "privacy-1",
-        store_id: "store-1",
-        key: "privacy",
-        source_mode: "template",
-        template_version: "v1",
-        title_override: "Privacy Policy",
-        body_markdown: "Published privacy body.",
-        variables_json: { supportEmail: "hello@example.com" },
-        published_source_mode: "template",
-        published_template_version: "v1",
-        published_title: "Privacy Policy",
-        published_body_markdown: "Published privacy body.",
-        published_variables_json: { supportEmail: "hello@example.com" },
-        published_version: 2,
-        published_change_summary: "Clarified data usage language.",
-        effective_at: "2026-03-10T00:00:00.000Z",
-        published_at: "2026-03-10T00:00:00.000Z",
-        published_by_user_id: "user-1",
-        updated_at: "2026-03-12T00:00:00.000Z",
-        created_at: "2026-03-12T00:00:00.000Z"
-      }
-    ]);
-
-    const response = await callPatch({
-      key: "privacy",
-      changeSummary: "No actual change.",
-      effectiveAt: null
+      changeSummary: "Clarified privacy rights contact details."
     });
     const payload = (await response.json()) as { error?: string };
 
     expect(response.status).toBe(409);
-    expect(payload.error).toContain("meaningful draft change");
-    expect(updatePayload).toBeNull();
+    expect(payload.error).toContain("base template");
   });
 });

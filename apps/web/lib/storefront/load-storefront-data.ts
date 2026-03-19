@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { getPlatformStorefrontPrivacySettings } from "@/lib/privacy/platform-storefront-privacy";
 import { resolveStoreAnalyticsAccessByStoreId } from "@/lib/analytics/access";
 import { resolveStorePrivacyProfile } from "@/lib/privacy/store-privacy";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -7,8 +8,10 @@ import { isMissingColumnInSchemaCache, isMissingRelationInSchemaCache } from "@/
 import { mapStoreExperienceContentRow } from "@/lib/store-experience/content";
 import { isRecord, mergeStorefrontCopy } from "@/lib/store-experience/merge";
 import type { StorefrontData } from "@/lib/storefront/runtime";
+import { buildMergedStorefrontThemeJson } from "@/lib/storefront/theme-overrides";
 import { resolveStoreSlugForServerRender } from "@/lib/stores/active-store";
 import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
+import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 
 function getValueAtPath(record: Record<string, unknown>, key: string): unknown {
   return key.split(".").reduce<unknown>((current, part) => {
@@ -83,7 +86,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
     }
   }
 
-  if (store.status !== "active" && !isOwnerPreview) {
+  if (!isStorePubliclyAccessibleStatus(store.status) && !isOwnerPreview) {
     return null;
   }
 
@@ -92,6 +95,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
     { data: branding, error: brandingError },
     { data: settings, error: settingsError },
     { data: privacyProfile, error: privacyProfileError },
+    platformPrivacySettings,
     { data: contentBlocks, error: contentBlocksError },
     { data: experienceContent, error: experienceContentError },
     { data: products, error: productsError }
@@ -110,6 +114,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
       .eq("store_id", store.id)
       .maybeSingle(),
     admin.from("store_privacy_profiles").select("*").eq("store_id", store.id).maybeSingle(),
+    getPlatformStorefrontPrivacySettings(admin),
     admin
       .from("store_content_blocks")
       .select("id,sort_order,eyebrow,title,body,cta_label,cta_url,is_active")
@@ -243,148 +248,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
   const emailsSection = sectionedContent.emails;
   const brandingThemeJson = isRecord(branding?.theme_json) ? branding.theme_json : {};
 
-  const homeHero = isRecord(homeSection.hero) ? homeSection.hero : {};
-  const homeVisibility = isRecord(homeSection.visibility) ? homeSection.visibility : {};
-  const productsVisibility = isRecord(productsSection.visibility) ? productsSection.visibility : {};
-  const productsLayout = isRecord(productsSection.layout) ? productsSection.layout : {};
-  const productsCards = isRecord(productsSection.productCards) ? productsSection.productCards : {};
-
-  const resolvedHomeShowContentBlocks = getBoolean(
-    homeVisibility,
-    "showContentBlocks",
-    getBoolean(brandingThemeJson, "homeShowContentBlocks", getBoolean(brandingThemeJson, "showContentBlocks", true))
-  );
-
-  const sectionedThemeOverrides: Record<string, unknown> = {
-    heroEyebrow: getString(homeHero, "eyebrow", getString(homeHero, "heroEyebrow", "")) ?? "",
-    heroHeadline: getString(homeHero, "headline", getString(homeHero, "heroHeadline", "")) ?? "",
-    heroSubcopy: getString(homeHero, "subcopy", getString(homeHero, "heroSubcopy", "")) ?? "",
-    heroBadgeOne: getString(homeHero, "badgeOne", getString(homeHero, "heroBadgeOne", "")) ?? "",
-    heroBadgeTwo: getString(homeHero, "badgeTwo", getString(homeHero, "heroBadgeTwo", "")) ?? "",
-    heroBadgeThree: getString(homeHero, "badgeThree", getString(homeHero, "heroBadgeThree", "")) ?? "",
-    heroBrandDisplay: getString(homeHero, "brandDisplay", getString(homeHero, "heroBrandDisplay", "title")) ?? "title",
-    heroShowLogo: getBoolean(
-      homeHero,
-      "showLogo",
-      getString(homeHero, "brandDisplay", getString(homeHero, "heroBrandDisplay", "title")) === "logo" ||
-        getString(homeHero, "brandDisplay", getString(homeHero, "heroBrandDisplay", "title")) === "logo_and_title"
-    ),
-    heroShowTitle: getBoolean(
-      homeHero,
-      "showTitle",
-      getString(homeHero, "brandDisplay", getString(homeHero, "heroBrandDisplay", "title")) === "title" ||
-        getString(homeHero, "brandDisplay", getString(homeHero, "heroBrandDisplay", "title")) === "logo_and_title"
-    ),
-    showPolicyStrip: getBoolean(homeVisibility, "showPolicyStrip", getBoolean(brandingThemeJson, "showPolicyStrip", true)),
-    showContentBlocks: resolvedHomeShowContentBlocks,
-    homeShowHero: getBoolean(homeVisibility, "showHero", getBoolean(brandingThemeJson, "homeShowHero", true)),
-    homeShowContentBlocks: resolvedHomeShowContentBlocks,
-    homeShowFeaturedProducts: getBoolean(
-      homeVisibility,
-      "showFeaturedProducts",
-      getBoolean(brandingThemeJson, "homeShowFeaturedProducts", true)
-    ),
-    homeFeaturedProductsLimit: getNumber(
-      homeVisibility,
-      "featuredProductsLimit",
-      getNumber(brandingThemeJson, "homeFeaturedProductsLimit", 6)
-    ),
-    productsShowSearch: getBoolean(productsVisibility, "showSearch", getBoolean(brandingThemeJson, "productsShowSearch", true)),
-    productsShowSort: getBoolean(productsVisibility, "showSort", getBoolean(brandingThemeJson, "productsShowSort", true)),
-    productsShowAvailability: getBoolean(
-      productsVisibility,
-      "showAvailability",
-      getBoolean(brandingThemeJson, "productsShowAvailability", true)
-    ),
-    productsShowOptionFilters: getBoolean(
-      productsVisibility,
-      "showOptionFilters",
-      getBoolean(brandingThemeJson, "productsShowOptionFilters", true)
-    ),
-    productsFilterLayout: getString(
-      productsLayout,
-      "filterLayout",
-      getString(brandingThemeJson, "productsFilterLayout", "sidebar")
-    ) ?? "sidebar",
-    productsFiltersDefaultOpen: getBoolean(
-      productsLayout,
-      "filtersDefaultOpen",
-      getBoolean(brandingThemeJson, "productsFiltersDefaultOpen", false)
-    ),
-    productGridColumns: getNumber(productsLayout, "gridColumns", getNumber(brandingThemeJson, "productGridColumns", 3)),
-    productCardShowDescription: getBoolean(
-      productsCards,
-      "showDescription",
-      getBoolean(brandingThemeJson, "productCardShowDescription", true)
-    ),
-    productCardDescriptionLines: getNumber(
-      productsCards,
-      "descriptionLines",
-      getNumber(brandingThemeJson, "productCardDescriptionLines", 2)
-    ),
-    productCardShowFeaturedBadge: getBoolean(
-      productsCards,
-      "showFeaturedBadge",
-      getBoolean(brandingThemeJson, "productCardShowFeaturedBadge", true)
-    ),
-    productCardShowAvailability: getBoolean(
-      productsCards,
-      "showAvailability",
-      getBoolean(brandingThemeJson, "productCardShowAvailability", true)
-    ),
-    productCardShowQuickAdd: getBoolean(
-      productsCards,
-      "showQuickAdd",
-      getBoolean(brandingThemeJson, "productCardShowQuickAdd", true)
-    ),
-    productCardImageHoverZoom: getBoolean(
-      productsCards,
-      "imageHoverZoom",
-      getBoolean(brandingThemeJson, "productCardImageHoverZoom", true)
-    ),
-    productCardShowCarouselArrows: getBoolean(
-      productsCards,
-      "showCarouselArrows",
-      getBoolean(brandingThemeJson, "productCardShowCarouselArrows", true)
-    ),
-    productCardShowCarouselDots: getBoolean(
-      productsCards,
-      "showCarouselDots",
-      getBoolean(brandingThemeJson, "productCardShowCarouselDots", true)
-    ),
-    productCardImageFit: getString(productsCards, "imageFit", getString(brandingThemeJson, "productCardImageFit", "cover")) ?? "cover",
-    reviewsEnabled: getBoolean(productsSection, "reviews.enabled", getBoolean(brandingThemeJson, "reviewsEnabled", true)),
-    reviewsShowOnHome: getBoolean(productsSection, "reviews.showOnHome", getBoolean(brandingThemeJson, "reviewsShowOnHome", true)),
-    reviewsShowOnProductDetail: getBoolean(
-      productsSection,
-      "reviews.showOnProductDetail",
-      getBoolean(brandingThemeJson, "reviewsShowOnProductDetail", true)
-    ),
-    reviewsFormEnabled: getBoolean(productsSection, "reviews.formEnabled", getBoolean(brandingThemeJson, "reviewsFormEnabled", true)),
-    reviewsDefaultSort:
-      getString(productsSection, "reviews.defaultSort", getString(brandingThemeJson, "reviewsDefaultSort", "newest")) ?? "newest",
-    reviewsItemsPerPage: getNumber(
-      productsSection,
-      "reviews.itemsPerPage",
-      getNumber(brandingThemeJson, "reviewsItemsPerPage", 10)
-    ),
-    reviewsShowVerifiedBadge: getBoolean(
-      productsSection,
-      "reviews.showVerifiedBadge",
-      getBoolean(brandingThemeJson, "reviewsShowVerifiedBadge", true)
-    ),
-    reviewsShowMediaGallery: getBoolean(
-      productsSection,
-      "reviews.showMediaGallery",
-      getBoolean(brandingThemeJson, "reviewsShowMediaGallery", true)
-    ),
-    reviewsShowSummary: getBoolean(productsSection, "reviews.showSummary", getBoolean(brandingThemeJson, "reviewsShowSummary", true))
-  };
-
-  const mergedTheme = {
-    ...((branding?.theme_json ?? {}) as Record<string, unknown>),
-    ...sectionedThemeOverrides
-  };
+  const mergedTheme = buildMergedStorefrontThemeJson(brandingThemeJson, sectionedContent);
 
   const mergedCopy = mergeStorefrontCopy((resolvedSettings?.storefront_copy_json ?? {}) as Record<string, unknown>, [
     isRecord(homeSection.copy) ? homeSection.copy : {},
@@ -495,7 +359,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
       canManageStore
     },
     analytics,
-    privacyProfile: resolveStorePrivacyProfile(privacyProfileError ? null : privacyProfile, finalSettings),
+    privacyProfile: resolveStorePrivacyProfile(privacyProfileError ? null : privacyProfile, platformPrivacySettings, finalSettings),
     experienceContent: sectionedContent,
     branding: branding
       ? {

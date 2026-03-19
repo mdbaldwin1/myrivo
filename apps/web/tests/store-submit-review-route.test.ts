@@ -87,7 +87,7 @@ describe("store submit-review route", () => {
 
   test("returns conflict when store is not draft", async () => {
     getOwnedStoreBundleForOptionalSlugMock.mockResolvedValue({
-      store: { id: "store-1", slug: "demo-store", name: "Demo Store", status: "active" }
+      store: { id: "store-1", slug: "demo-store", name: "Demo Store", status: "live" }
     });
 
     const route = await import("@/app/api/stores/current/submit-review/route");
@@ -98,5 +98,28 @@ describe("store submit-review route", () => {
 
     const response = await route.POST(request);
     expect(response.status).toBe(409);
+  });
+
+  test("allows resubmitting a store with changes requested", async () => {
+    getOwnedStoreBundleForOptionalSlugMock.mockResolvedValue({
+      store: { id: "store-1", slug: "demo-store", name: "Demo Store", status: "changes_requested" }
+    });
+    storesMaybeSingleMock.mockResolvedValue({
+      data: { id: "store-1", name: "Demo Store", slug: "demo-store", status: "pending_review" },
+      error: null
+    });
+
+    const route = await import("@/app/api/stores/current/submit-review/route");
+    const request = new NextRequest("http://localhost:3000/api/stores/current/submit-review", {
+      method: "POST",
+      headers: { origin: "http://localhost:3000", host: "localhost:3000" }
+    });
+
+    const response = await route.POST(request);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      store: { id: "store-1", status: "pending_review" }
+    });
   });
 });

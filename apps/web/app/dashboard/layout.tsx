@@ -2,10 +2,10 @@ import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { resolveStoreAnalyticsAccessByStoreId } from "@/lib/analytics/access";
-import { hasStorePermission } from "@/lib/auth/roles";
 import { getMissingRequiredLegalVersions } from "@/lib/legal/consent";
 import { resolveAccountNotificationPreferences } from "@/lib/notifications/preferences";
 import { resolveStoreSlugFromCurrentDashboardRoute } from "@/lib/stores/active-store";
+import { getStoreOnboardingProgressForStore } from "@/lib/stores/onboarding";
 import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -50,19 +50,10 @@ export default async function DashboardLayout({ children }: { children: ReactNod
 
   const storeStatus = bundle?.store.status ?? null;
   const storeSlug = bundle?.store.slug ?? null;
+  const storeOnboardingProgress = storeSlug ? await getStoreOnboardingProgressForStore(user.id, storeSlug) : null;
   const availableStores = bundle?.availableStores ?? [];
   const hasStoreAccess = availableStores.length > 0 && Boolean(storeSlug);
-  const canManageTestMode = bundle ? hasStorePermission(bundle.role, bundle.permissionsJson, "store.manage_billing") : false;
   const analyticsAccess = bundle ? await resolveStoreAnalyticsAccessByStoreId(admin, bundle.store.id) : null;
-
-  const { data: billingProfile } = bundle
-    ? await supabase
-        .from("store_billing_profiles")
-        .select("test_mode_enabled")
-        .eq("store_id", bundle.store.id)
-        .maybeSingle<{ test_mode_enabled: boolean }>()
-    : { data: null as { test_mode_enabled: boolean } | null };
-  const initialTestModeEnabled = Boolean(billingProfile?.test_mode_enabled);
 
   return (
     <DashboardShell
@@ -73,11 +64,10 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       userEmail={userEmail}
       userAvatarPath={userAvatarPath}
       initialNotificationSoundEnabled={notificationSoundEnabled}
-      initialTestModeEnabled={initialTestModeEnabled}
-      canManageTestMode={canManageTestMode}
       analyticsDashboardEnabled={analyticsAccess?.dashboardEnabled ?? false}
       hasStoreAccess={hasStoreAccess}
       storeStatus={storeStatus}
+      storeOnboardingProgress={storeOnboardingProgress}
     >
       {children}
     </DashboardShell>

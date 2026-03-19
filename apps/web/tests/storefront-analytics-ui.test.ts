@@ -1,7 +1,9 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
+import { StorefrontAnalyticsAcquisitionPanel } from "@/components/dashboard/storefront-analytics-acquisition-panel";
 import { StorefrontAnalyticsFilterBar } from "@/components/dashboard/storefront-analytics-filter-bar";
 import { StorefrontAnalyticsFunnelPanel } from "@/components/dashboard/storefront-analytics-funnel-panel";
+import { StorefrontAnalyticsTabNav } from "@/components/dashboard/storefront-analytics-tab-nav";
 import { StorefrontAnalyticsTrendPanel } from "@/components/dashboard/storefront-analytics-trend-panel";
 import { StorefrontMerchandisingPanel } from "@/components/dashboard/storefront-merchandising-panel";
 import { getStorefrontMerchandisingSummary } from "@/lib/analytics/merchandising";
@@ -14,8 +16,22 @@ const summary = buildStorefrontAnalyticsSummary({
   previousStart: "2026-01-12T00:00:00.000Z",
   end: "2026-03-12T23:59:59.000Z",
   sessions: [
-    { id: "sess-1", first_seen_at: "2026-03-10T10:00:00.000Z" },
-    { id: "sess-2", first_seen_at: "2026-03-11T10:00:00.000Z" }
+    {
+      id: "sess-1",
+      first_seen_at: "2026-03-10T10:00:00.000Z",
+      first_referrer_host: "instagram.com",
+      first_utm_source: "instagram",
+      first_utm_medium: "social",
+      first_utm_campaign: "spring-launch"
+    },
+    {
+      id: "sess-2",
+      first_seen_at: "2026-03-11T10:00:00.000Z",
+      first_referrer_host: null,
+      first_utm_source: null,
+      first_utm_medium: null,
+      first_utm_campaign: null
+    }
   ],
   events: [
     { session_id: "sess-1", event_type: "page_view", occurred_at: "2026-03-10T10:01:00.000Z" },
@@ -38,11 +54,13 @@ const merchandising = {
 
 describe("storefront analytics dashboard ui", () => {
   test("builds canonical filter links for the analytics route", () => {
-    const markup = renderToStaticMarkup(StorefrontAnalyticsFilterBar({ storeSlug: "at-home-apothecary", range: "30d", compare: true }));
+    const markup = renderToStaticMarkup(
+      StorefrontAnalyticsFilterBar({ storeSlug: "at-home-apothecary", range: "30d", compare: true, tab: "acquisition" })
+    );
 
-    expect(markup).toContain('href="/dashboard/stores/at-home-apothecary/analytics?range=7d"');
-    expect(markup).toContain('href="/dashboard/stores/at-home-apothecary/analytics?range=90d"');
-    expect(markup).toContain('href="/dashboard/stores/at-home-apothecary/analytics?compare=0"');
+    expect(markup).toContain('href="/dashboard/stores/at-home-apothecary/analytics?range=7d&amp;tab=acquisition"');
+    expect(markup).toContain('href="/dashboard/stores/at-home-apothecary/analytics?range=90d&amp;tab=acquisition"');
+    expect(markup).toContain('href="/dashboard/stores/at-home-apothecary/analytics?compare=0&amp;tab=acquisition"');
   });
 
   test("renders funnel and trend sections with analytics context", () => {
@@ -56,6 +74,20 @@ describe("storefront analytics dashboard ui", () => {
     expect(trendMarkup).toContain("Revenue");
     expect(trendMarkup).toContain("Mar 10");
     expect(trendMarkup).toContain("Daily storefront traffic and revenue summary");
+  });
+
+  test("renders acquisition reporting and tab links", () => {
+    const panelMarkup = renderToStaticMarkup(StorefrontAnalyticsAcquisitionPanel({ summary }));
+    const tabMarkup = renderToStaticMarkup(
+      StorefrontAnalyticsTabNav({ storeSlug: "at-home-apothecary", range: "30d", compare: true, activeTab: "acquisition" })
+    );
+
+    expect(panelMarkup).toContain("Acquisition");
+    expect(panelMarkup).toContain("Top Referrers");
+    expect(panelMarkup).toContain("instagram.com");
+    expect(panelMarkup).toContain("spring-launch");
+    expect(tabMarkup).toContain('href="/dashboard/stores/at-home-apothecary/analytics"');
+    expect(tabMarkup).toContain('href="/dashboard/stores/at-home-apothecary/analytics?tab=acquisition"');
   });
 
   test("renders merchandising actions back into owner workflows", () => {

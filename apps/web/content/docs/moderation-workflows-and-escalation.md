@@ -1,9 +1,9 @@
 ---
 slug: moderation-workflows-and-escalation
 title: Moderation Workflows and Escalation
-summary: Review user-generated content, apply consistent moderation actions, and escalate edge cases.
+summary: Review customer-submitted store reviews, apply policy-based decisions, and escalate edge cases.
 category: Operations
-audience: Support and trust operators
+audience: Store owners and operators moderating customer reviews
 lastUpdated: March 2026
 owner: Trust & Safety
 reviewCadence: Monthly
@@ -11,7 +11,7 @@ reviewBy: 2026-04-15
 ---
 
 ## Moderation Queue Triage
-Open `/dashboard/admin/moderation` and sort pending content by age and severity.
+Open your store review moderation queue and sort pending customer reviews by age and severity.
 
 Resolve clear-cut policy violations first, then move to ambiguous cases requiring escalation.
 

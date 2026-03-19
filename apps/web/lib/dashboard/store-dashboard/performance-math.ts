@@ -4,9 +4,9 @@ type PeriodSummary = {
   avgOrderValueCents: number;
 };
 
-function toPctDelta(current: number, previous: number): number | null {
+function toPctDelta(current: number, previous: number): number | "new" | null {
   if (previous === 0) {
-    return current === 0 ? 0 : null;
+    return current === 0 ? 0 : "new";
   }
   return Number((((current - previous) / previous) * 100).toFixed(1));
 }

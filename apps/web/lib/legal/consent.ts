@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { getPlatformLegalDocumentKey } from "@/lib/legal/document-keys";
 
 export type MissingRequiredLegalVersion = {
   versionId: string;
@@ -90,6 +91,7 @@ export async function getMissingRequiredLegalVersions(supabase: SupabaseClient, 
     .select("id,legal_document_id,version_label,legal_documents!inner(key,title)")
     .eq("status", "published")
     .eq("is_required", true)
+    .in("legal_documents.key", [getPlatformLegalDocumentKey("terms"), getPlatformLegalDocumentKey("privacy")])
     .returns<RequiredVersionRow[]>();
 
   if (requiredError) {
@@ -118,7 +120,7 @@ export async function getMissingRequiredLegalVersions(supabase: SupabaseClient, 
     .map((version) => ({
       versionId: version.id,
       documentId: version.legal_document_id,
-      documentKey: version.legal_documents?.key ?? "terms",
+      documentKey: version.legal_documents?.key === "platform_privacy" ? "privacy" : "terms",
       documentTitle: version.legal_documents?.title ?? "Legal document",
       versionLabel: version.version_label
     }));

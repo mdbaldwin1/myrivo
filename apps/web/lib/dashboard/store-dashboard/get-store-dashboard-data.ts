@@ -1,7 +1,10 @@
 import { buildAlerts } from "@/lib/dashboard/store-dashboard/build-alerts";
 import { buildHealthScore } from "@/lib/dashboard/store-dashboard/build-health-score";
 import { buildPeriodDelta } from "@/lib/dashboard/store-dashboard/performance-math";
-import type { StoreDashboardData, StoreDashboardDateRange } from "@/lib/dashboard/store-dashboard/store-dashboard-types";
+import type {
+  StoreDashboardData,
+  StoreDashboardPerformanceView
+} from "@/lib/dashboard/store-dashboard/store-dashboard-types";
 import type { StoreRecord } from "@/types/database";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -10,8 +13,9 @@ type StoreDashboardStore = Pick<StoreRecord, "id" | "slug" | "name" | "status" |
 type GetStoreDashboardDataInput = {
   supabase: SupabaseClient;
   store: StoreDashboardStore;
-  range?: StoreDashboardDateRange;
-  compare?: boolean;
+  performanceView?: StoreDashboardPerformanceView;
+  performanceMonth?: string;
+  performanceYear?: number;
 };
 
 type DashboardOrderRow = {
@@ -34,28 +38,123 @@ type DashboardOrderItemRow = {
   products?: { title: string } | null;
 };
 
-function getRangeStartIso(range: StoreDashboardDateRange) {
-  const now = new Date();
-  const start = new Date(now);
+type PerformanceWindow = {
+  view: StoreDashboardPerformanceView;
+  selectedMonth: string;
+  selectedYear: number;
+  periodLabel: string;
+  seriesGranularity: "day" | "month";
+  isCurrentPeriod: boolean;
+  currentStartIso: string;
+  currentEndIso: string;
+  previousStartIso: string;
+  previousEndIso: string;
+};
 
-  if (range === "today") {
-    start.setHours(0, 0, 0, 0);
-  } else if (range === "7d") {
-    start.setDate(start.getDate() - 6);
-    start.setHours(0, 0, 0, 0);
-  } else {
-    start.setDate(start.getDate() - 29);
-    start.setHours(0, 0, 0, 0);
+function normalizeMonth(rawMonth: string | undefined, fallbackDate: Date) {
+  const fallbackMonth = `${fallbackDate.getUTCFullYear()}-${String(fallbackDate.getUTCMonth() + 1).padStart(2, "0")}`;
+
+  if (rawMonth && /^\d{4}-\d{2}$/.test(rawMonth) && rawMonth <= fallbackMonth) {
+    return rawMonth;
   }
-
-  return start.toISOString();
+  return fallbackMonth;
 }
 
-function getPreviousRangeStartIso(currentRangeStartIso: string, nowIso: string) {
-  const currentStartMs = new Date(currentRangeStartIso).getTime();
-  const nowMs = new Date(nowIso).getTime();
-  const windowMs = nowMs - currentStartMs;
-  return new Date(currentStartMs - windowMs).toISOString();
+function normalizeYear(rawYear: number | undefined, fallbackDate: Date) {
+  if (
+    typeof rawYear === "number" &&
+    Number.isFinite(rawYear) &&
+    rawYear >= 2000 &&
+    rawYear <= fallbackDate.getUTCFullYear()
+  ) {
+    return rawYear;
+  }
+  return fallbackDate.getUTCFullYear();
+}
+
+function parseMonthParts(value: string) {
+  const [rawYear, rawMonth] = value.split("-");
+  const year = Number(rawYear);
+  const month = Number(rawMonth);
+
+  return {
+    year: Number.isFinite(year) ? year : new Date().getUTCFullYear(),
+    month: Number.isFinite(month) ? month : new Date().getUTCMonth() + 1
+  };
+}
+
+function buildAlignedUtcDate(
+  year: number,
+  monthIndex: number,
+  reference: Date
+) {
+  const lastDayOfMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+  const safeDay = Math.min(reference.getUTCDate(), lastDayOfMonth);
+
+  return new Date(
+    Date.UTC(
+      year,
+      monthIndex,
+      safeDay,
+      reference.getUTCHours(),
+      reference.getUTCMinutes(),
+      reference.getUTCSeconds(),
+      reference.getUTCMilliseconds()
+    )
+  );
+}
+
+function buildPerformanceWindow(
+  view: StoreDashboardPerformanceView,
+  rawMonth: string | undefined,
+  rawYear: number | undefined
+): PerformanceWindow {
+  const now = new Date();
+  const selectedMonth = normalizeMonth(rawMonth, now);
+  const selectedYear = normalizeYear(rawYear, now);
+  const currentYear = now.getUTCFullYear();
+  const currentMonth = `${currentYear}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+
+  if (view === "year") {
+    const currentStart = new Date(Date.UTC(selectedYear, 0, 1, 0, 0, 0, 0));
+    const isCurrentPeriod = selectedYear === currentYear;
+    const currentEnd = isCurrentPeriod ? now : new Date(Date.UTC(selectedYear + 1, 0, 1, 0, 0, 0, 0));
+    const previousStart = new Date(Date.UTC(selectedYear - 1, 0, 1, 0, 0, 0, 0));
+    const previousEnd = isCurrentPeriod ? buildAlignedUtcDate(selectedYear - 1, now.getUTCMonth(), now) : new Date(Date.UTC(selectedYear, 0, 1, 0, 0, 0, 0));
+
+    return {
+      view,
+      selectedMonth,
+      selectedYear,
+      periodLabel: isCurrentPeriod ? `${selectedYear} YTD` : String(selectedYear),
+      seriesGranularity: "month",
+      isCurrentPeriod,
+      currentStartIso: currentStart.toISOString(),
+      currentEndIso: currentEnd.toISOString(),
+      previousStartIso: previousStart.toISOString(),
+      previousEndIso: previousEnd.toISOString()
+    };
+  }
+
+  const { year: yearPart, month: monthPart } = parseMonthParts(selectedMonth);
+  const currentStart = new Date(Date.UTC(yearPart, monthPart - 1, 1, 0, 0, 0, 0));
+  const isCurrentPeriod = selectedMonth === currentMonth;
+  const currentEnd = isCurrentPeriod ? now : new Date(Date.UTC(yearPart, monthPart, 1, 0, 0, 0, 0));
+  const previousStart = new Date(Date.UTC(yearPart, monthPart - 2, 1, 0, 0, 0, 0));
+  const previousEnd = isCurrentPeriod ? buildAlignedUtcDate(yearPart, monthPart - 2, now) : new Date(Date.UTC(yearPart, monthPart - 1, 1, 0, 0, 0, 0));
+
+  return {
+    view,
+    selectedMonth,
+    selectedYear,
+    periodLabel: `${currentStart.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })}${isCurrentPeriod ? " MTD" : ""}`,
+    seriesGranularity: "day",
+    isCurrentPeriod,
+    currentStartIso: currentStart.toISOString(),
+    currentEndIso: currentEnd.toISOString(),
+    previousStartIso: previousStart.toISOString(),
+    previousEndIso: previousEnd.toISOString()
+  };
 }
 
 function getFeeBreakdown(order: DashboardOrderRow) {
@@ -65,26 +164,119 @@ function getFeeBreakdown(order: DashboardOrderRow) {
   return Array.isArray(order.order_fee_breakdowns) ? (order.order_fee_breakdowns[0] ?? null) : order.order_fee_breakdowns;
 }
 
+function summarizeOrders(orders: Array<Pick<DashboardOrderRow, "total_cents" | "status">>) {
+  const paidOrders = orders.filter((order) => order.status === "paid");
+  const grossRevenueCents = paidOrders.reduce((sum, order) => sum + order.total_cents, 0);
+  const avgOrderValueCents = paidOrders.length > 0 ? Math.round(grossRevenueCents / paidOrders.length) : 0;
+
+  return {
+    paidOrders,
+    grossRevenueCents,
+    avgOrderValueCents
+  };
+}
+
+function buildSeries(
+  orders: DashboardOrderRow[],
+  window: PerformanceWindow
+): Array<{ label: string; grossRevenueCents: number; orders: number }> {
+  const paidOrders = orders.filter((order) => order.status === "paid");
+  const seriesMap = new Map<string, { label: string; grossRevenueCents: number; orders: number }>();
+
+  if (window.seriesGranularity === "month") {
+    const lastMonthIndex = window.isCurrentPeriod ? new Date(window.currentEndIso).getUTCMonth() : 11;
+    for (let monthIndex = 0; monthIndex <= lastMonthIndex; monthIndex += 1) {
+      const date = new Date(Date.UTC(window.selectedYear, monthIndex, 1));
+      const key = `${window.selectedYear}-${String(monthIndex + 1).padStart(2, "0")}`;
+      seriesMap.set(key, {
+        label: date.toLocaleString("en-US", { month: "short", timeZone: "UTC" }),
+        grossRevenueCents: 0,
+        orders: 0
+      });
+    }
+
+    for (const order of paidOrders) {
+      const orderDate = new Date(order.created_at);
+      const key = `${orderDate.getUTCFullYear()}-${String(orderDate.getUTCMonth() + 1).padStart(2, "0")}`;
+      const current = seriesMap.get(key);
+      if (current) {
+        current.grossRevenueCents += order.total_cents;
+        current.orders += 1;
+      }
+    }
+
+    return Array.from(seriesMap.values());
+  }
+
+  const { year: yearPart, month: monthPart } = parseMonthParts(window.selectedMonth);
+  const daysInMonth = window.isCurrentPeriod
+    ? new Date(window.currentEndIso).getUTCDate()
+    : new Date(Date.UTC(yearPart, monthPart, 0)).getUTCDate();
+
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const key = `${window.selectedMonth}-${String(day).padStart(2, "0")}`;
+    seriesMap.set(key, {
+      label: String(day),
+      grossRevenueCents: 0,
+      orders: 0
+    });
+  }
+
+  for (const order of paidOrders) {
+    const key = new Date(order.created_at).toISOString().slice(0, 10);
+    const current = seriesMap.get(key);
+    if (current) {
+      current.grossRevenueCents += order.total_cents;
+      current.orders += 1;
+    }
+  }
+
+  return Array.from(seriesMap.values());
+}
+
 export async function getStoreDashboardData(input: GetStoreDashboardDataInput): Promise<StoreDashboardData> {
-  const { supabase, store, compare = false } = input;
-  const range = input.range ?? "7d";
-  const rangeStartIso = getRangeStartIso(range);
+  const { supabase, store } = input;
+  const performanceView = input.performanceView ?? "month";
+  const performanceWindow = buildPerformanceWindow(performanceView, input.performanceMonth, input.performanceYear);
+  const operationsLookbackStartIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const now = new Date();
   const nowMs = now.getTime();
-  const nowIso = now.toISOString();
-  const previousRangeStartIso = getPreviousRangeStartIso(rangeStartIso, nowIso);
 
-  const [{ data: orders, error: ordersError }, { data: products, error: productsError }, { data: settings, error: settingsError }] = await Promise.all([
+  const [
+    { data: recentOrders, error: recentOrdersError },
+    { data: performanceOrders, error: performanceOrdersError },
+    { data: previousPerformanceOrders, error: previousPerformanceOrdersError },
+    { data: products, error: productsError },
+    { data: settings, error: settingsError }
+  ] = await Promise.all([
     supabase
       .from("orders")
       .select(
         "id,total_cents,status,fulfillment_status,shipment_status,discount_cents,fulfillment_method,pickup_window_start_at,created_at,order_fee_breakdowns(platform_fee_cents,net_payout_cents)"
       )
       .eq("store_id", store.id)
-      .gte("created_at", rangeStartIso)
+      .gte("created_at", operationsLookbackStartIso)
       .order("created_at", { ascending: false })
       .limit(300)
       .returns<DashboardOrderRow[]>(),
+    supabase
+      .from("orders")
+      .select(
+        "id,total_cents,status,fulfillment_status,shipment_status,discount_cents,fulfillment_method,pickup_window_start_at,created_at,order_fee_breakdowns(platform_fee_cents,net_payout_cents)"
+      )
+      .eq("store_id", store.id)
+      .gte("created_at", performanceWindow.currentStartIso)
+      .lt("created_at", performanceWindow.currentEndIso)
+      .order("created_at", { ascending: false })
+      .limit(1000)
+      .returns<DashboardOrderRow[]>(),
+    supabase
+      .from("orders")
+      .select("id,total_cents,status")
+      .eq("store_id", store.id)
+      .gte("created_at", performanceWindow.previousStartIso)
+      .lt("created_at", performanceWindow.previousEndIso)
+      .returns<Array<{ id: string; total_cents: number; status: "pending" | "paid" | "failed" | "cancelled" }>>(),
     supabase
       .from("products")
       .select("id,title,inventory_qty,status")
@@ -104,8 +296,8 @@ export async function getStoreDashboardData(input: GetStoreDashboardDataInput): 
       }>()
   ]);
 
-  if (ordersError) {
-    throw new Error(ordersError.message);
+  if (recentOrdersError) {
+    throw new Error(recentOrdersError.message);
   }
   if (productsError) {
     throw new Error(productsError.message);
@@ -114,99 +306,47 @@ export async function getStoreDashboardData(input: GetStoreDashboardDataInput): 
     throw new Error(settingsError.message);
   }
 
-  const [
-    { data: domains, error: domainsError },
-    { data: promotions, error: promotionsError },
-    { data: subscribers, error: subscribersError },
-    { data: auditEvents, error: auditEventsError },
-    { data: billingEvents, error: billingEventsError },
-    { data: previousOrders, error: previousOrdersError },
-    { data: orderItems, error: orderItemsError },
-    { data: inventoryMovements, error: inventoryMovementsError },
-    { data: domainEvents, error: domainEventsError }
-  ] = await Promise.all([
+  const [{ data: domains, error: domainsError }, { data: performanceOrderItems, error: performanceOrderItemsError }] = await Promise.all([
     supabase
       .from("store_domains")
       .select("id,is_primary,verification_status")
       .eq("store_id", store.id)
       .returns<Array<{ id: string; is_primary: boolean; verification_status: "pending" | "verified" | "failed" }>>(),
     supabase
-      .from("promotions")
-      .select("id,is_active,times_redeemed")
-      .eq("store_id", store.id)
-      .returns<Array<{ id: string; is_active: boolean; times_redeemed: number }>>(),
-    supabase
-      .from("store_email_subscribers")
-      .select("id,status,created_at")
-      .eq("store_id", store.id)
-      .returns<Array<{ id: string; status: "subscribed" | "unsubscribed"; created_at: string }>>(),
-    supabase
-      .from("audit_events")
-      .select("id,action,entity,created_at")
-      .eq("store_id", store.id)
-      .order("created_at", { ascending: false })
-      .limit(20)
-      .returns<Array<{ id: string; action: string; entity: string; created_at: string }>>(),
-    supabase
-      .from("billing_events")
-      .select("id,event_type,occurred_at")
-      .eq("store_id", store.id)
-      .order("occurred_at", { ascending: false })
-      .limit(20)
-      .returns<Array<{ id: string; event_type: string; occurred_at: string }>>(),
-    supabase
-      .from("orders")
-      .select("id,total_cents,status")
-      .eq("store_id", store.id)
-      .gte("created_at", previousRangeStartIso)
-      .lt("created_at", rangeStartIso)
-      .returns<Array<{ id: string; total_cents: number; status: "pending" | "paid" | "failed" | "cancelled" }>>(),
-    supabase
       .from("order_items")
       .select("product_id,quantity,unit_price_cents,products(title),orders!inner(store_id,status,created_at)")
       .eq("orders.store_id", store.id)
       .eq("orders.status", "paid")
-      .gte("orders.created_at", rangeStartIso)
-      .lt("orders.created_at", nowIso)
-      .returns<DashboardOrderItemRow[]>(),
-    supabase
-      .from("inventory_movements")
-      .select("id,delta_qty,reason,created_at,products(title)")
-      .eq("store_id", store.id)
-      .order("created_at", { ascending: false })
-      .limit(20)
-      .returns<Array<{ id: string; delta_qty: number; reason: string; created_at: string; products?: { title: string } | null }>>(),
-    supabase
-      .from("store_domains")
-      .select("id,domain,verification_status,hosting_status,updated_at")
-      .eq("store_id", store.id)
-      .order("updated_at", { ascending: false })
-      .limit(10)
-      .returns<Array<{ id: string; domain: string; verification_status: string; hosting_status: string; updated_at: string }>>()
+      .gte("orders.created_at", performanceWindow.currentStartIso)
+      .lt("orders.created_at", performanceWindow.currentEndIso)
+      .returns<DashboardOrderItemRow[]>()
   ]);
 
   const moduleErrors: NonNullable<StoreDashboardData["moduleErrors"]> = {};
 
-  const orderRows = orders ?? [];
+  const recentOrderRows = recentOrders ?? [];
+  const performanceOrderRows = performanceOrders ?? [];
   const productRows = products ?? [];
-  const paidOrders = orderRows.filter((order) => order.status === "paid");
-  const grossRevenueCents = paidOrders.reduce((sum, order) => sum + order.total_cents, 0);
-  const discountCents = paidOrders.reduce((sum, order) => sum + order.discount_cents, 0);
-  const netPayoutCents = paidOrders.reduce((sum, order) => {
+  const performanceSummary = summarizeOrders(performanceOrderRows);
+  const performancePaidOrders = performanceOrderRows.filter((order) => order.status === "paid");
+  const grossRevenueCents = performanceSummary.grossRevenueCents;
+  const discountCents = performancePaidOrders.reduce((sum, order) => sum + order.discount_cents, 0);
+  const netPayoutCents = performancePaidOrders.reduce((sum, order) => {
     const fee = getFeeBreakdown(order);
     return sum + (fee?.net_payout_cents ?? order.total_cents);
   }, 0);
-  const pendingFulfillment = orderRows.filter((order) => order.fulfillment_status === "pending_fulfillment").length;
-  const packing = orderRows.filter((order) => order.fulfillment_status === "packing").length;
-  const shippingExceptions = orderRows.filter((order) => order.shipment_status?.toLowerCase() === "exception").length;
-  const overdueFulfillment = orderRows.filter((order) => {
+
+  const pendingFulfillment = recentOrderRows.filter((order) => order.fulfillment_status === "pending_fulfillment").length;
+  const packing = recentOrderRows.filter((order) => order.fulfillment_status === "packing").length;
+  const shippingExceptions = recentOrderRows.filter((order) => order.shipment_status?.toLowerCase() === "exception").length;
+  const overdueFulfillment = recentOrderRows.filter((order) => {
     if (order.fulfillment_status !== "pending_fulfillment") {
       return false;
     }
     const createdMs = new Date(order.created_at).getTime();
     return nowMs - createdMs > 8 * 60 * 60 * 1000;
   }).length;
-  const duePickupWindows = orderRows.filter((order) => {
+  const duePickupWindows = recentOrderRows.filter((order) => {
     if (order.fulfillment_method !== "pickup" || !order.pickup_window_start_at) {
       return false;
     }
@@ -214,21 +354,8 @@ export async function getStoreDashboardData(input: GetStoreDashboardDataInput): 
     return startMs >= nowMs && startMs <= nowMs + 4 * 60 * 60 * 1000;
   }).length;
 
-  const dailyRevenueMap = new Map<string, { date: string; grossRevenueCents: number; orders: number }>();
-  for (const order of paidOrders) {
-    const date = new Date(order.created_at).toISOString().slice(0, 10);
-    const current = dailyRevenueMap.get(date);
-    if (current) {
-      current.grossRevenueCents += order.total_cents;
-      current.orders += 1;
-    } else {
-      dailyRevenueMap.set(date, { date, grossRevenueCents: order.total_cents, orders: 1 });
-    }
-  }
-  const dailySeries = Array.from(dailyRevenueMap.values()).sort((a, b) => a.date.localeCompare(b.date));
-
   const topProductsMap = new Map<string, { productId: string; title: string; revenueCents: number; units: number }>();
-  for (const item of (orderItemsError ? [] : orderItems) ?? []) {
+  for (const item of (performanceOrderItemsError ? [] : performanceOrderItems) ?? []) {
     const existing = topProductsMap.get(item.product_id);
     const itemRevenue = item.quantity * item.unit_price_cents;
     if (existing) {
@@ -243,26 +370,14 @@ export async function getStoreDashboardData(input: GetStoreDashboardDataInput): 
       units: item.quantity
     });
   }
+
   const topProducts = Array.from(topProductsMap.values())
     .sort((a, b) => b.revenueCents - a.revenueCents)
     .slice(0, 5);
 
   const activeProducts = productRows.filter((product) => product.status === "active");
   const lowStockAll = activeProducts.filter((product) => product.inventory_qty > 0 && product.inventory_qty < 10);
-  const lowStockItems = lowStockAll
-    .slice(0, 8)
-    .map((product) => ({ productId: product.id, title: product.title, qty: product.inventory_qty }));
   const outOfStockAll = activeProducts.filter((product) => product.inventory_qty <= 0);
-  const outOfStockCount = outOfStockAll.length;
-  const outOfStockItems = outOfStockAll.slice(0, 8).map((product) => ({ productId: product.id, title: product.title }));
-
-  const subscribersRows = (subscribersError ? [] : subscribers) ?? [];
-  const subscribersTotal = subscribersRows.filter((entry) => entry.status === "subscribed").length;
-  const subscribersRangeTotal = subscribersRows.filter((entry) => {
-    const created = new Date(entry.created_at).getTime();
-    return entry.status === "subscribed" && created >= new Date(rangeStartIso).getTime();
-  }).length;
-  const promotionsRows = (promotionsError ? [] : promotions) ?? [];
 
   const hasVerifiedPrimaryDomain = Boolean(((domainsError ? [] : domains) ?? []).some((domain) => domain.is_primary && domain.verification_status === "verified"));
   const hasCheckoutConfigured = Boolean(settings?.checkout_enable_local_pickup || settings?.checkout_enable_flat_rate_shipping);
@@ -284,7 +399,7 @@ export async function getStoreDashboardData(input: GetStoreDashboardDataInput): 
     hasStripeAccount: Boolean(store.stripe_account_id),
     hasVerifiedPrimaryDomain,
     overdueFulfillment,
-    outOfStockCount,
+    outOfStockCount: outOfStockAll.length,
     shippingExceptions
   });
 
@@ -294,6 +409,7 @@ export async function getStoreDashboardData(input: GetStoreDashboardDataInput): 
     href: alert.actionHref,
     priority: alert.severity
   }));
+
   if (nextTasks.length === 0 && pendingFulfillment > 0) {
     nextTasks.push({
       id: "pack-queue",
@@ -302,6 +418,7 @@ export async function getStoreDashboardData(input: GetStoreDashboardDataInput): 
       priority: "medium"
     });
   }
+
   if (nextTasks.length === 0 && health.score < 100) {
     nextTasks.push({
       id: "improve-readiness",
@@ -311,82 +428,25 @@ export async function getStoreDashboardData(input: GetStoreDashboardDataInput): 
     });
   }
 
-  const previousPaidOrders = ((previousOrdersError ? [] : previousOrders) ?? []).filter((order) => order.status === "paid");
-  const previousGrossRevenueCents = previousPaidOrders.reduce((sum, order) => sum + order.total_cents, 0);
-  const previousAvgOrderValueCents =
-    previousPaidOrders.length > 0 ? Math.round(previousGrossRevenueCents / previousPaidOrders.length) : 0;
-  const periodDelta = compare
-    ? buildPeriodDelta(
-        {
-          grossRevenueCents,
-          orderCount: paidOrders.length,
-          avgOrderValueCents: paidOrders.length > 0 ? Math.round(grossRevenueCents / paidOrders.length) : 0
-        },
-        {
-          grossRevenueCents: previousGrossRevenueCents,
-          orderCount: previousPaidOrders.length,
-          avgOrderValueCents: previousAvgOrderValueCents
-        }
-      )
-    : undefined;
-
-  const timeline: StoreDashboardData["timeline"] = [
-    ...(orderRows.slice(0, 8).map((order) => ({
-      id: `order:${order.id}`,
-      at: order.created_at,
-      kind: "order" as const,
-      title: `Order ${order.id.slice(0, 8)}`,
-      detail: `${order.status} • ${order.fulfillment_status}`,
-      href: `/dashboard/stores/${store.slug}/orders`
-    })) ?? []),
-    ...(((auditEventsError ? [] : auditEvents) ?? []).map((event) => ({
-      id: `audit:${event.id}`,
-      at: event.created_at,
-      kind: "settings" as const,
-      title: event.action,
-      detail: event.entity
-    })) ?? []),
-    ...(((billingEventsError ? [] : billingEvents) ?? []).map((event) => ({
-      id: `billing:${event.id}`,
-      at: event.occurred_at,
-      kind: "billing" as const,
-      title: event.event_type,
-      detail: "Billing event"
-    })) ?? []),
-    ...(((inventoryMovementsError ? [] : inventoryMovements) ?? []).map((movement) => ({
-      id: `inventory:${movement.id}`,
-      at: movement.created_at,
-      kind: "inventory" as const,
-      title: movement.products?.title ?? "Inventory movement",
-      detail: `${movement.reason} • ${movement.delta_qty > 0 ? `+${movement.delta_qty}` : movement.delta_qty}`,
-      href: `/dashboard/stores/${store.slug}/reports/inventory`
-    })) ?? []),
-    ...(((domainEventsError ? [] : domainEvents) ?? []).map((domain) => ({
-      id: `domain:${domain.id}`,
-      at: domain.updated_at,
-      kind: "domain" as const,
-      title: domain.domain,
-      detail: `verification: ${domain.verification_status} • hosting: ${domain.hosting_status}`,
-      href: `/dashboard/stores/${store.slug}/store-settings/domains`
-    })) ?? [])
-  ]
-    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
-    .slice(0, 30);
+  const previousSummary = summarizeOrders((previousPerformanceOrdersError ? [] : previousPerformanceOrders) ?? []);
+  const periodDelta = buildPeriodDelta(
+    {
+      grossRevenueCents,
+      orderCount: performanceSummary.paidOrders.length,
+      avgOrderValueCents: performanceSummary.avgOrderValueCents
+    },
+    {
+      grossRevenueCents: previousSummary.grossRevenueCents,
+      orderCount: previousSummary.paidOrders.length,
+      avgOrderValueCents: previousSummary.avgOrderValueCents
+    }
+  );
 
   if (domainsError) {
     moduleErrors.health = "Some domain health signals are unavailable. Retry to refresh.";
   }
-  if (previousOrdersError || orderItemsError) {
+  if (performanceOrdersError || previousPerformanceOrdersError || performanceOrderItemsError) {
     moduleErrors.performance = "Some performance metrics are unavailable. Retry to refresh.";
-  }
-  if (promotionsError || subscribersError) {
-    moduleErrors.growth = "Growth metrics are temporarily unavailable. Retry to refresh.";
-  }
-  if (inventoryMovementsError) {
-    moduleErrors.inventory = "Inventory movement data is temporarily unavailable. Retry to refresh.";
-  }
-  if (auditEventsError || billingEventsError || inventoryMovementsError || domainEventsError) {
-    moduleErrors.timeline = "Some activity events are unavailable. Retry to refresh.";
   }
 
   return {
@@ -397,8 +457,9 @@ export async function getStoreDashboardData(input: GetStoreDashboardDataInput): 
       status: store.status
     },
     filters: {
-      range,
-      compare,
+      performanceView: performanceWindow.view,
+      performanceMonth: performanceWindow.selectedMonth,
+      performanceYear: performanceWindow.selectedYear,
       generatedAt: new Date().toISOString()
     },
     alerts,
@@ -413,31 +474,29 @@ export async function getStoreDashboardData(input: GetStoreDashboardDataInput): 
     performance: {
       grossRevenueCents,
       netPayoutCents,
-      orderCount: orderRows.length,
-      paidOrderCount: paidOrders.length,
-      avgOrderValueCents: paidOrders.length > 0 ? Math.round(grossRevenueCents / paidOrders.length) : 0,
+      orderCount: performanceOrderRows.length,
+      paidOrderCount: performanceSummary.paidOrders.length,
+      avgOrderValueCents: performanceSummary.avgOrderValueCents,
       discountCents,
+      view: performanceWindow.view,
+      selectedMonth: performanceWindow.selectedMonth,
+      selectedYear: performanceWindow.selectedYear,
+      periodLabel: performanceWindow.periodLabel,
+      seriesGranularity: performanceWindow.seriesGranularity,
       periodDelta,
-      dailySeries,
+      series: buildSeries(performanceOrderRows, performanceWindow),
       topProducts
     },
     inventory: {
       lowStockCount: lowStockAll.length,
-      outOfStockCount,
-      lowStockItems,
-      outOfStockItems
-    },
-    growth: {
-      subscribersTotal,
-      subscribersNetNew: subscribersRangeTotal,
-      activePromotions: promotionsRows.filter((promo) => promo.is_active).length,
-      promotionsRedeemed: promotionsRows.reduce((sum, promo) => sum + promo.times_redeemed, 0)
+      outOfStockCount: outOfStockAll.length,
+      lowStockItems: lowStockAll.slice(0, 8).map((product) => ({ productId: product.id, title: product.title, qty: product.inventory_qty })),
+      outOfStockItems: outOfStockAll.slice(0, 8).map((product) => ({ productId: product.id, title: product.title }))
     },
     health: {
       score: health.score,
       checks: health.checks
     },
-    timeline,
     moduleErrors
   };
 }

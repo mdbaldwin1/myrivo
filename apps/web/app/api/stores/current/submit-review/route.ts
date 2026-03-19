@@ -25,17 +25,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Store not found or insufficient permissions." }, { status: 403 });
   }
 
-  if (bundle.store.status !== "draft") {
-    return NextResponse.json({ error: "Only draft stores can be submitted for review." }, { status: 409 });
+  if (!["draft", "changes_requested", "rejected"].includes(bundle.store.status)) {
+    return NextResponse.json({ error: "Only draft stores or stores awaiting revisions can be submitted for review." }, { status: 409 });
   }
 
   const { data, error } = await supabase
     .from("stores")
-    .update({ status: "pending_review" })
+    .update({ status: "pending_review", status_reason_code: null, status_reason_detail: null })
     .eq("id", bundle.store.id)
-    .eq("status", "draft")
+    .eq("status", bundle.store.status)
     .select("id,name,slug,status")
-    .maybeSingle<{ id: string; name: string; slug: string; status: "draft" | "pending_review" | "active" | "suspended" }>();
+    .maybeSingle<{ id: string; name: string; slug: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" }>();
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

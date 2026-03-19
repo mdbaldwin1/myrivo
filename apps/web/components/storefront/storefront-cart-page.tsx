@@ -26,6 +26,7 @@ import { resolveStorefrontCopy } from "@/lib/storefront/copy";
 import { getStorefrontPageWidthClass } from "@/lib/storefront/layout";
 import { STOREFRONT_TEXT_LINK_EFFECT_CLASS } from "@/lib/storefront/link-effects";
 import { resolveFooterNavLinks, resolveHeaderNavLinks } from "@/lib/storefront/navigation";
+import { buildStorefrontCheckoutPath, buildStorefrontProductPath, buildStorefrontProductsPath } from "@/lib/storefront/paths";
 import { resolveStorefrontPresentation } from "@/lib/storefront/presentation";
 
 type StorefrontVariant = {
@@ -527,9 +528,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
         analyticsSessionId: analytics?.getSessionId() ?? null,
         attribution: analytics?.getAttributionSnapshot() ?? null
       });
-      window.location.assign(
-        `/checkout?status=success&orderId=${encodeURIComponent(payload.orderId)}&store=${encodeURIComponent(resolvedStore.slug)}`
-      );
+      window.location.assign(`${buildStorefrontCheckoutPath(resolvedStore.slug)}?status=success&orderId=${encodeURIComponent(payload.orderId)}`);
       return;
     }
 
@@ -609,7 +608,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
             ) : (
               <p className="text-sm text-muted-foreground">{copy.cart.empty}</p>
             )}
-            <Link href={`/products?store=${encodeURIComponent(resolvedStore.slug)}`} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "text-sm font-medium")}>
+            <Link href={buildStorefrontProductsPath(resolvedStore.slug)} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "text-sm font-medium")}>
               {copy.cart.browseProducts}
             </Link>
           </div>
@@ -624,7 +623,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                   >
                     <div className="flex items-start gap-4">
                       <Link
-                        href={`/products/${item.product.slug}?store=${encodeURIComponent(resolvedStore.slug)}`}
+                        href={buildStorefrontProductPath(resolvedStore.slug, item.product.slug)}
                         className={cn("relative block h-20 w-20 shrink-0 overflow-hidden border border-border/50 bg-muted/10 sm:h-24 sm:w-24", radiusClass)}
                       >
                         {item.product.image_urls?.[0] ? (
@@ -644,7 +643,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0 space-y-1">
                             <Link
-                              href={`/products/${item.product.slug}?store=${encodeURIComponent(resolvedStore.slug)}`}
+                              href={buildStorefrontProductPath(resolvedStore.slug, item.product.slug)}
                               className="block text-base font-medium underline-offset-4 hover:underline"
                             >
                               {item.product.title}
@@ -927,7 +926,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                 </div>
                 <AppAlert variant="error" compact message={error} />
               </form>
-              <Link href={`/products?store=${encodeURIComponent(resolvedStore.slug)}`} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "mx-auto text-sm font-medium")}>
+              <Link href={buildStorefrontProductsPath(resolvedStore.slug)} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "mx-auto text-sm font-medium")}>
                 {copy.cart.continueShopping}
               </Link>
             </aside>

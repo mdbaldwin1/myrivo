@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/page-shell";
+import { StorefrontUnavailablePage } from "@/components/storefront/storefront-unavailable-page";
 import { StorefrontPrivacyRequestPage } from "@/components/storefront/storefront-privacy-request-page";
+import { buildSearchSuffix } from "@/lib/storefront/legacy-query";
+import { buildStorefrontPrivacyRequestPath } from "@/lib/storefront/paths";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { loadStorefrontData } from "@/lib/storefront/load-storefront-data";
 import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
+import { loadStorefrontUnavailableData } from "@/lib/storefront/unavailable";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +25,7 @@ async function resolveRequestedStoreSlug(searchParams: Record<string, string | s
 
   const requestHeaders = await headers();
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
-  return resolveStoreSlugFromDomain(host);
+  return resolveStoreSlugFromDomain(host, { includeNonPublic: true });
 }
 
 export async function generateMetadata({ searchParams }: PrivacyRequestPageProps): Promise<Metadata> {
@@ -36,6 +40,12 @@ export async function generateMetadata({ searchParams }: PrivacyRequestPageProps
 
   const data = await loadStorefrontData(requestedStoreSlug);
   if (!data) {
+    const unavailable = await loadStorefrontUnavailableData(requestedStoreSlug);
+    if (unavailable) {
+      return {
+        title: `${unavailable.store.name} | ${unavailable.kind === "offline" ? "Temporarily Offline" : "Coming Soon"}`
+      };
+    }
     return {
       title: "Privacy request | Myrivo"
     };
@@ -48,6 +58,13 @@ export async function generateMetadata({ searchParams }: PrivacyRequestPageProps
 
 export default async function PrivacyRequestPage({ searchParams }: PrivacyRequestPageProps) {
   const resolvedSearchParams = await searchParams;
+  const requestHeaders = await headers();
+  const currentPath = requestHeaders.get("x-pathname") ?? requestHeaders.get("next-url") ?? "";
+  const disableStoreCanonicalRedirect = /^\/s\//.test(currentPath);
+  const explicitStoreSlug = typeof resolvedSearchParams.store === "string" ? resolvedSearchParams.store.trim() : null;
+  if (explicitStoreSlug && !disableStoreCanonicalRedirect) {
+    redirect(`${buildStorefrontPrivacyRequestPath(explicitStoreSlug)}${buildSearchSuffix(resolvedSearchParams, ["store"])}`);
+  }
   const requestedStoreSlug = await resolveRequestedStoreSlug(resolvedSearchParams);
 
   if (!requestedStoreSlug) {
@@ -75,6 +92,10 @@ export default async function PrivacyRequestPage({ searchParams }: PrivacyReques
 
   const data = await loadStorefrontData(requestedStoreSlug);
   if (!data) {
+    const unavailable = await loadStorefrontUnavailableData(requestedStoreSlug);
+    if (unavailable) {
+      return <StorefrontUnavailablePage state={unavailable} />;
+    }
     notFound();
   }
 

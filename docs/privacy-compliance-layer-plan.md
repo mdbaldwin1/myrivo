@@ -17,14 +17,14 @@ Add a real privacy compliance layer for shopper data collection without turning 
 
 - Store Privacy Policy document and store-specific privacy addenda
 - Store privacy contact details and rights contact information
-- Whether California-specific rights disclosures are shown for the storefront
-- Whether a do-not-sell/share link is shown
+- Store-specific California and do-not-sell/share addenda
 - Operational handling of privacy requests submitted against the store
 
 ## UX Direction
 
 - Keep formal legal documents in `Store Settings > Legal`
-- Extend that same Legal surface with a structured privacy compliance section
+- Use `Store Settings > Privacy` for store privacy contacts, addenda, and privacy request handling
+- Use `Admin > Legal` for shared storefront privacy behavior
 - Avoid a standalone “Legal Studio” or “Privacy Studio”
 - Use strong defaults plus a few merchant-editable fields instead of freeform configuration everywhere
 
@@ -59,9 +59,9 @@ These should appear anywhere store-level personal information is collected:
 
 ## Operator UX Direction
 
-- Keep configuration in `Store Settings > Legal`, not a new privacy workspace.
-- Put incoming privacy requests in the existing Legal review panel until a broader support inbox exists.
-- Surface do-not-sell/share enablement near California notice controls so merchants understand they are part of the same rights model.
+- Keep store-specific privacy configuration in `Store Settings > Privacy`.
+- Put incoming privacy requests in the Privacy review panel until a broader support inbox exists.
+- Keep do-not-sell/share and California visibility in shared admin governance rather than store-owned toggles.
 - Keep browser-signal behavior platform-owned and documented rather than merchant-customizable.
 
 ## Non-goals

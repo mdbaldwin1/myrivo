@@ -68,7 +68,16 @@ beforeEach(() => {
       checkoutConversionRate: 0
     },
     daily: [],
-    deltas: null
+    deltas: null,
+    acquisition: {
+      externalReferrerSessions: 0,
+      campaignTaggedSessions: 0,
+      directSessions: 0,
+      topReferrers: [],
+      topSources: [],
+      topMediums: [],
+      topCampaigns: []
+    }
   });
   getStorefrontMerchandisingSummaryMock.mockResolvedValue({
     topPages: [],
