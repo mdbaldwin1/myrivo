@@ -55,8 +55,8 @@ describe("store privacy profile helpers", () => {
 
     const notice = getStorePrivacyCollectionNotice("newsletter", { name: "At Home Apothecary", slug: "at-home-apothecary" }, profile);
 
-    expect(notice.policyHref).toBe("/privacy?store=at-home-apothecary");
-    expect(notice.requestHref).toBe("/privacy/request?store=at-home-apothecary");
+    expect(notice.policyHref).toBe("/s/at-home-apothecary/privacy");
+    expect(notice.requestHref).toBe("/s/at-home-apothecary/privacy/request");
     expect(notice.doNotSellHref).toContain("opt_out_sale_share");
     expect(notice.addendumMarkdown).toBe("Additional notice details.");
   });

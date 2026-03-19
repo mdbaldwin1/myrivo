@@ -1,43 +1,47 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-const privacyPageMock = vi.fn();
-const termsPageMock = vi.fn();
+const generatePrivacyMetadataMock = vi.fn();
+const generateTermsMetadataMock = vi.fn();
 
 vi.mock("@/app/privacy/page", () => ({
   __esModule: true,
-  default: privacyPageMock
+  generateMetadata: generatePrivacyMetadataMock
 }));
 
 vi.mock("@/app/terms/page", () => ({
   __esModule: true,
-  default: termsPageMock
+  generateMetadata: generateTermsMetadataMock
 }));
 
 beforeEach(() => {
-  privacyPageMock.mockReset();
-  termsPageMock.mockReset();
+  generatePrivacyMetadataMock.mockReset();
+  generateTermsMetadataMock.mockReset();
+  generatePrivacyMetadataMock.mockResolvedValue({ title: "Privacy" });
+  generateTermsMetadataMock.mockResolvedValue({ title: "Terms" });
 });
 
 describe("storefront legal route canonicalization", () => {
-  test("/s/[slug]/privacy reuses the shared storefront legal page with store search params", async () => {
+  test("/s/[slug]/privacy delegates metadata generation with store search params", async () => {
     const page = await import("@/app/s/[slug]/privacy/page");
 
-    await page.default({ params: Promise.resolve({ slug: "at-home-apothecary" }) });
+    const result = await page.generateMetadata({ params: Promise.resolve({ slug: "at-home-apothecary" }) });
 
-    expect(privacyPageMock).toHaveBeenCalledWith({
+    expect(result).toEqual({ title: "Privacy" });
+    expect(generatePrivacyMetadataMock).toHaveBeenCalledWith({
       searchParams: expect.any(Promise)
     });
-    await expect(privacyPageMock.mock.calls[0]?.[0]?.searchParams).resolves.toEqual({ store: "at-home-apothecary" });
+    await expect(generatePrivacyMetadataMock.mock.calls[0]?.[0]?.searchParams).resolves.toEqual({ store: "at-home-apothecary" });
   });
 
-  test("/s/[slug]/terms reuses the shared storefront legal page with store search params", async () => {
+  test("/s/[slug]/terms delegates metadata generation with store search params", async () => {
     const page = await import("@/app/s/[slug]/terms/page");
 
-    await page.default({ params: Promise.resolve({ slug: "at-home-apothecary" }) });
+    const result = await page.generateMetadata({ params: Promise.resolve({ slug: "at-home-apothecary" }) });
 
-    expect(termsPageMock).toHaveBeenCalledWith({
+    expect(result).toEqual({ title: "Terms" });
+    expect(generateTermsMetadataMock).toHaveBeenCalledWith({
       searchParams: expect.any(Promise)
     });
-    await expect(termsPageMock.mock.calls[0]?.[0]?.searchParams).resolves.toEqual({ store: "at-home-apothecary" });
+    await expect(generateTermsMetadataMock.mock.calls[0]?.[0]?.searchParams).resolves.toEqual({ store: "at-home-apothecary" });
   });
 });

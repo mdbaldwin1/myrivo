@@ -63,7 +63,7 @@ describe("platform overview route", () => {
       response: null
     });
 
-    const storesCounts = [1, 1, 0, 0, 0];
+    const storesCounts = [1, 1, 0, 0, 0, 0];
     const userCounts = [2, 1, 1, 0];
     let storesCalls = 0;
     let userCalls = 0;
@@ -73,7 +73,7 @@ describe("platform overview route", () => {
         storesCalls += 1;
         if (storesCalls === 1) {
           return buildTableQuery([
-            { id: "s1", name: "Store One", slug: "store-one", status: "active", mode: "live", created_at: "2026-01-01T00:00:00Z" }
+            { id: "s1", name: "Store One", slug: "store-one", status: "live", mode: "live", created_at: "2026-01-01T00:00:00Z" }
           ]);
         }
         if (storesCounts.length > 0) {
