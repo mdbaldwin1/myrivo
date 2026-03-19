@@ -42,8 +42,10 @@ This checklist is for the final release cut from `develop` to `main`.
 - [ ] Confirm storefront checkout webhook finalization works: `checkout.session.completed` creates exactly one order and updates inventory. (Owner: Backend, Target: 2026-03-11)
 - [ ] Validate failed/cancelled payment paths do not create paid orders. (Owner: QA, Target: 2026-03-11)
 - [ ] Confirm support runbook for payout/account-disabled incidents. (Owner: Ops, Target: 2026-03-13)
-- [ ] Stripe Tax enabled in Stripe Dashboard and tested in live-mode-compatible staging checkout. (Owner: Finance/Ops, Target: 2026-03-13)
-- [ ] Stripe business address and tax registrations configured for all nexus jurisdictions. (Owner: Finance/Ops, Target: 2026-03-13)
+- [ ] Checkout uses connected-account tax liability (`automatic_tax.liability.account=<CONNECTED_ACCOUNT_ID>`) instead of defaulting to the platform account. (Owner: Engineering, Target: 2026-03-14)
+- [ ] Stripe Tax enabled and configured on each seller-connected account used for live checkout. (Owner: Finance/Ops, Target: 2026-03-14)
+- [ ] Seller-connected account business address, tax defaults, and registrations configured for all required jurisdictions. (Owner: Finance/Ops, Target: 2026-03-14)
+- [ ] Merchant-facing tax readiness/status checks block live launch when connected-account tax setup is incomplete. (Owner: Engineering, Target: 2026-03-14)
 
 ## Shipping + fulfillment readiness
 
