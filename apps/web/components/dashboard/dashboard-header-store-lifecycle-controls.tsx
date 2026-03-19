@@ -6,6 +6,7 @@ import { CheckCircle2, ChevronDown, Circle, EyeOff, Rocket } from "lucide-react"
 import { useState } from "react";
 import { useHasMounted } from "@/components/use-has-mounted";
 import type { StoreOnboardingProgress } from "@/lib/stores/onboarding";
+import { getLaunchReadinessChecklistItems, getOnboardingNextStep } from "@/lib/stores/onboarding-steps";
 import { getMerchantPrimaryLifecycleAction, getStoreLifecycleDescription } from "@/lib/stores/lifecycle";
 import { buildStoreScopedApiPath } from "@/lib/routes/store-workspace";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -35,26 +36,17 @@ type StoreLifecycleActionResponse = {
   };
 };
 
-const CHECKLIST_ITEMS: Array<{
-  key: keyof StoreOnboardingProgress["steps"];
-  label: string;
-  href: (slug: string) => string;
-}> = [
-  { key: "profile", label: "Finish general settings", href: (slug) => `/dashboard/stores/${slug}/store-settings/general` },
-  { key: "branding", label: "Set storefront branding", href: (slug) => `/dashboard/stores/${slug}/storefront-studio?editor=brand` },
-  { key: "firstProduct", label: "Add your first product", href: (slug) => `/dashboard/stores/${slug}/catalog` },
-  { key: "payments", label: "Connect payments", href: (slug) => `/dashboard/stores/${slug}/store-settings/integrations` },
-  { key: "launch", label: "Go live", href: (slug) => `/dashboard/stores/${slug}` }
-];
-
 export function DashboardHeaderStoreLifecycleControls({ progress, mode = "action" }: DashboardHeaderStoreLifecycleControlsProps) {
   const router = useRouter();
   const hasMounted = useHasMounted();
   const [submitting, setSubmitting] = useState(false);
   const primaryAction = getMerchantPrimaryLifecycleAction(progress.status, progress.launchReady);
-  const summaryLabel = `${progress.completedStepCount}/${progress.totalStepCount} onboarding complete`;
   const statusDescription = getStoreLifecycleDescription(progress.status);
-  const shouldShowChecklist = !progress.hasLaunchedOnce && progress.completedStepCount < progress.totalStepCount;
+  const nextStep = getOnboardingNextStep(progress);
+  const shouldShowChecklist = !progress.hasLaunchedOnce && progress.completedStepCount < progress.totalStepCount && Boolean(nextStep);
+  const checklistItems = getLaunchReadinessChecklistItems(progress);
+  const remainingCount = checklistItems.filter((item) => !item.completed).length;
+  const summaryLabel = remainingCount === 0 ? "Launch ready" : `${remainingCount} step${remainingCount === 1 ? "" : "s"} to launch`;
 
   async function handlePrimaryAction() {
     if (!primaryAction.action || primaryAction.disabled || submitting) {
@@ -106,18 +98,20 @@ export function DashboardHeaderStoreLifecycleControls({ progress, mode = "action
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-[min(90vw,24rem)]">
             <DropdownMenuLabel className="space-y-1">
-              <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Store launch</p>
+              <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Launch readiness</p>
               <p className="text-xs font-normal text-muted-foreground">{statusDescription}</p>
               {progress.statusReasonDetail ? <p className="text-xs font-normal text-foreground">{progress.statusReasonDetail}</p> : null}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            {CHECKLIST_ITEMS.map((item) => {
-              const complete = progress.steps[item.key];
+            {checklistItems.map((item) => {
               return (
-                <DropdownMenuItem key={item.key} asChild>
-                  <Link href={item.href(progress.slug)} className="flex items-center gap-2">
-                    {complete ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <Circle className="h-4 w-4 text-muted-foreground" />}
-                    <span>{item.label}</span>
+                <DropdownMenuItem key={item.id} asChild>
+                  <Link href={item.href} className="flex items-start gap-2">
+                    {item.completed ? <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" /> : <Circle className="mt-0.5 h-4 w-4 text-muted-foreground" />}
+                    <span className="space-y-0.5">
+                      <span className="block">{item.label}</span>
+                      <span className="block text-xs font-normal text-muted-foreground">{item.description}</span>
+                    </span>
                   </Link>
                 </DropdownMenuItem>
               );

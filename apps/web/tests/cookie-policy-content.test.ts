@@ -5,12 +5,12 @@ import { CookiePolicyContent } from "@/components/privacy/cookie-policy-content"
 
 describe("cookie policy content", () => {
   test("renders the cookie categories and current inventory", () => {
-    const markup = renderToStaticMarkup(createElement(CookiePolicyContent, { scopeLabel: "At Home Apothecary" }));
+    const markup = renderToStaticMarkup(createElement(CookiePolicyContent, { scopeLabel: "Sunset Mercantile" }));
 
     expect(markup).toContain("Cookie Policy");
     expect(markup).toContain("Essential cookies");
     expect(markup).toContain("Analytics cookies");
     expect(markup).toContain("Storefront analytics session");
-    expect(markup).toContain("At Home Apothecary");
+    expect(markup).toContain("Sunset Mercantile");
   });
 });

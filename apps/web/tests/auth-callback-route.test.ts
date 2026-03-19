@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 
 const exchangeCodeForSessionMock = vi.fn();
 const authGetUserMock = vi.fn();
-const recordLegalAcceptancesMock = vi.fn();
+const recordPendingSignupLegalAcceptancesMock = vi.fn();
 
 vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient: vi.fn(async () => ({
@@ -15,14 +15,15 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 vi.mock("@/lib/legal/consent", () => ({
-  recordLegalAcceptances: (...args: unknown[]) => recordLegalAcceptancesMock(...args)
+  recordPendingSignupLegalAcceptances: (...args: unknown[]) => recordPendingSignupLegalAcceptancesMock(...args)
 }));
 
 beforeEach(() => {
   vi.resetModules();
   exchangeCodeForSessionMock.mockReset();
   authGetUserMock.mockReset();
-  recordLegalAcceptancesMock.mockReset();
+  recordPendingSignupLegalAcceptancesMock.mockReset();
+  recordPendingSignupLegalAcceptancesMock.mockResolvedValue({ inserted: 0 });
   exchangeCodeForSessionMock.mockResolvedValue(undefined);
 });
 
@@ -49,15 +50,16 @@ describe("auth callback route", () => {
 
     expect(response.status).toBe(307);
     expect(exchangeCodeForSessionMock).toHaveBeenCalledWith("abc123");
-    expect(recordLegalAcceptancesMock).toHaveBeenCalledWith(
+    expect(recordPendingSignupLegalAcceptancesMock).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         userId: "user-1",
-        versionIds: [
-          "f9b1d55f-0f0a-4e4f-b7c4-c9f04fbf17cf",
-          "1041778f-3a39-4fe4-bdb7-7ec28a1b3308"
-        ],
-        acceptanceSurface: "signup"
+        userMetadata: {
+          signup_legal_version_ids: [
+            "f9b1d55f-0f0a-4e4f-b7c4-c9f04fbf17cf",
+            "1041778f-3a39-4fe4-bdb7-7ec28a1b3308"
+          ]
+        }
       })
     );
   });
@@ -75,7 +77,13 @@ describe("auth callback route", () => {
     const route = await import("@/app/auth/callback/route");
     await route.GET(new NextRequest("http://localhost:3000/auth/callback?code=abc123&next=%2Fdashboard"));
 
-    expect(recordLegalAcceptancesMock).not.toHaveBeenCalled();
+    expect(recordPendingSignupLegalAcceptancesMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        userId: "user-1",
+        userMetadata: {}
+      })
+    );
   });
 
   test("redirects pending invited signups back to the invite when next falls back to dashboard", async () => {

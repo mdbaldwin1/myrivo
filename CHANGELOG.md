@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Added a preview-first store onboarding system with resumable setup sessions, onboarding-first first-product creation, AI/deterministic storefront generation, reveal-to-workspace handoff, launch-readiness guidance, and platform onboarding analytics.
 - Added configurable per-customer promotion redemption caps with race-safe checkout enforcement, redemption ledger tracking, and merchant promotion controls for unlimited, one-per-customer, or custom customer limits.
 - Added governance metadata to the Myrivo docs library, including documented ownership, review cadence, next-review dates, and an overdue-doc review process.
 - Added a shared refunds/disputes contract module and new operational docs describing the intended financial statuses, refund reasons, dispute lifecycle, and merchant UX model.

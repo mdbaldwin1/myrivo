@@ -16,6 +16,65 @@ export type StoreRecord = {
   updated_at: string;
 };
 
+export type StoreOnboardingSessionStatus =
+  | "in_progress"
+  | "generation_pending"
+  | "generation_running"
+  | "generation_failed"
+  | "reveal_ready"
+  | "completed"
+  | "abandoned";
+
+export type StoreOnboardingSessionRecord = {
+  id: string;
+  store_id: string;
+  owner_user_id: string;
+  status: StoreOnboardingSessionStatus;
+  current_step: string | null;
+  last_completed_step: string | null;
+  first_product_id: string | null;
+  started_at: string;
+  completed_at: string | null;
+  last_seen_at: string | null;
+  generation_requested_at: string | null;
+  generation_completed_at: string | null;
+  generation_failed_at: string | null;
+  generation_error_code: string | null;
+  generation_error_message: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StoreOnboardingAnswersRecord = {
+  store_id: string;
+  session_id: string;
+  answers_json: Record<string, unknown>;
+  normalized_answers_json: Record<string, unknown>;
+  step_progress_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StoreOnboardingGenerationRunStatus = "pending" | "running" | "succeeded" | "failed" | "partially_applied";
+
+export type StoreOnboardingGenerationRunRecord = {
+  id: string;
+  store_id: string;
+  session_id: string;
+  status: StoreOnboardingGenerationRunStatus;
+  provider: string | null;
+  model: string | null;
+  input_json: Record<string, unknown>;
+  output_json: Record<string, unknown>;
+  applied_snapshot_json: Record<string, unknown>;
+  error_code: string | null;
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type StoreMembershipRecord = {
   id: string;
   store_id: string;

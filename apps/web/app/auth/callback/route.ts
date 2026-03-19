@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolvePostAuthReturnTo } from "@/lib/auth/pending-store-invite";
-import { recordLegalAcceptances } from "@/lib/legal/consent";
+import { recordPendingSignupLegalAcceptances } from "@/lib/legal/consent";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
@@ -17,15 +17,10 @@ export async function GET(request: NextRequest) {
       data: { user }
     } = await supabase.auth.getUser();
 
-    const pendingVersionIds = Array.isArray(user?.user_metadata?.signup_legal_version_ids)
-      ? user.user_metadata.signup_legal_version_ids.filter((value): value is string => typeof value === "string")
-      : [];
-
-    if (user && pendingVersionIds.length > 0) {
-      await recordLegalAcceptances(supabase, {
+    if (user) {
+      await recordPendingSignupLegalAcceptances(supabase, {
         userId: user.id,
-        versionIds: pendingVersionIds,
-        acceptanceSurface: "signup"
+        userMetadata: user.user_metadata
       });
     }
 

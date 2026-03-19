@@ -18,7 +18,7 @@ function getSingleParam(params: Record<string, string | string[] | undefined>, k
 export default async function SignupPage({ searchParams }: SignupPageProps) {
   const resolvedSearchParams = await searchParams;
   const requestedReturnTo = typeof resolvedSearchParams.returnTo === "string" ? resolvedSearchParams.returnTo : null;
-  const returnTo = sanitizeReturnTo(requestedReturnTo, "/onboarding");
+  const returnTo = sanitizeReturnTo(requestedReturnTo, "/dashboard/welcome");
   const supabase = await createSupabaseServerClient();
   const {
     data: { user }

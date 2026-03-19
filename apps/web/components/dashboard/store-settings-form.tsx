@@ -596,7 +596,7 @@ export function StoreSettingsForm({
           >
             <div className="space-y-5">
               <FormField label="Store Name" description="This appears in your storefront header, email copy, and checkout." inputId="store-settings-store-name">
-                <Input required minLength={2} placeholder="At Home Apothecary" value={name} onChange={(event) => setName(event.target.value)} />
+                <Input required minLength={2} placeholder="Sunset Mercantile" value={name} onChange={(event) => setName(event.target.value)} />
               </FormField>
 
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
@@ -733,7 +733,7 @@ export function StoreSettingsForm({
                 <FormField label="SEO Title" description="Recommended max length: 60 characters." inputId="store-settings-seo-title">
                   <Input
                     maxLength={120}
-                    placeholder="At Home Apothecary | Small-batch wellness products"
+                    placeholder="Sunset Mercantile | Thoughtful goods for everyday living"
                     value={seoTitle}
                     onChange={(event) => setSeoTitle(event.target.value)}
                   />

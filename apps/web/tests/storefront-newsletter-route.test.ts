@@ -20,7 +20,7 @@ const supabaseMock = {
         select: vi.fn(() => chain),
         eq: vi.fn(() => chain),
         maybeSingle: vi.fn(async () => ({
-          data: { id: "store-1", name: "At Home Apothecary", slug: "at-home-apothecary", status: "live" },
+          data: { id: "store-1", name: "Sunset Mercantile", slug: "sunset-mercantile", status: "live" },
           error: null
         }))
       };
@@ -253,7 +253,7 @@ describe("storefront newsletter routes", () => {
     expect(sendWelcomeDiscountEmailMock).toHaveBeenCalledWith(
       expect.objectContaining({
         recipientEmail: "shopper@example.com",
-        store: expect.objectContaining({ slug: "at-home-apothecary" }),
+        store: expect.objectContaining({ slug: "sunset-mercantile" }),
         promotion: expect.objectContaining({ code: "WELCOME10" })
       })
     );

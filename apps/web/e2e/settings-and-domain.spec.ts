@@ -5,7 +5,7 @@ test("merchant can update profile, branding, and checkout rules", async ({ page 
   await signupAndOnboard(page);
   await page.goto("/dashboard/store-settings/profile");
 
-  await page.getByPlaceholder("At Home Apothecary").fill("At Home Apothecary");
+  await page.getByPlaceholder("Sunset Mercantile").fill("Sunset Mercantile");
   await page.getByRole("button", { name: /^save$/i }).click();
   await expect(page.getByText(/store profile saved/i)).toBeVisible();
 

@@ -69,7 +69,7 @@ function buildSupabaseMock(): SupabaseMock {
 beforeEach(() => {
   supabaseMock = buildSupabaseMock();
   ownedStoreBundleMock = {
-    store: { id: "store-1", slug: "apothecary", name: "At Home Apothecary" },
+    store: { id: "store-1", slug: "sunset-mercantile", name: "Sunset Mercantile" },
     settings: { support_email: "hello@example.com" }
   };
   updatePayload = null;

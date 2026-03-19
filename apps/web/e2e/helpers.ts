@@ -12,8 +12,8 @@ export function buildMerchantIdentity() {
     suffix,
     email: `myrivo+${suffix}@example.com`,
     password: `Myrivo!${suffix.slice(-6)}`,
-    storeName: `Tallow Studio ${suffix.slice(-4)}`,
-    storeSlug: `tallow-${suffix.slice(-8).replace(/[^a-z0-9]/gi, "").toLowerCase()}`
+    storeName: `Sunset Studio ${suffix.slice(-4)}`,
+    storeSlug: `sunset-${suffix.slice(-8).replace(/[^a-z0-9]/gi, "").toLowerCase()}`
   };
 }
 
@@ -218,7 +218,7 @@ export async function signupAndOnboard(page: Page) {
   }
 
   await expect(page).toHaveURL(/\/onboarding/);
-  await page.getByPlaceholder("At Home Apothecary").fill(identity.storeName);
+  await page.getByPlaceholder("Sunset Mercantile").fill(identity.storeName);
   await page.getByRole("button", { name: /create store/i }).click();
 
   await expect(page).toHaveURL(/\/dashboard/);

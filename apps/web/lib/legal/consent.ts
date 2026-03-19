@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getPlatformLegalDocumentKey } from "@/lib/legal/document-keys";
+import { resolveLatestRequiredPlatformLegalVersions } from "@/lib/legal/required-versions";
 
 export type MissingRequiredLegalVersion = {
   versionId: string;
@@ -13,10 +14,39 @@ type RequiredVersionRow = {
   id: string;
   legal_document_id: string;
   version_label: string;
+  published_at: string | null;
   legal_documents: { key: string; title: string } | null;
 };
 
 export type LegalAcceptanceSurface = "login_gate" | "signup";
+
+export function getPendingSignupLegalVersionIds(userMetadata: unknown): string[] {
+  const rawValue =
+    userMetadata && typeof userMetadata === "object"
+      ? Reflect.get(userMetadata as Record<string, unknown>, "signup_legal_version_ids")
+      : null;
+
+  return Array.isArray(rawValue) ? rawValue.filter((value): value is string => typeof value === "string") : [];
+}
+
+export async function recordPendingSignupLegalAcceptances(
+  supabase: SupabaseClient,
+  input: {
+    userId: string;
+    userMetadata: unknown;
+  }
+) {
+  const pendingVersionIds = getPendingSignupLegalVersionIds(input.userMetadata);
+  if (pendingVersionIds.length === 0) {
+    return { inserted: 0 };
+  }
+
+  return recordLegalAcceptances(supabase, {
+    userId: input.userId,
+    versionIds: pendingVersionIds,
+    acceptanceSurface: "signup"
+  });
+}
 
 export async function recordLegalAcceptances(
   supabase: SupabaseClient,
@@ -88,7 +118,7 @@ export async function recordLegalAcceptances(
 export async function getMissingRequiredLegalVersions(supabase: SupabaseClient, userId: string): Promise<MissingRequiredLegalVersion[]> {
   const { data: requiredVersions, error: requiredError } = await supabase
     .from("legal_document_versions")
-    .select("id,legal_document_id,version_label,legal_documents!inner(key,title)")
+    .select("id,legal_document_id,version_label,published_at,legal_documents!inner(key,title)")
     .eq("status", "published")
     .eq("is_required", true)
     .in("legal_documents.key", [getPlatformLegalDocumentKey("terms"), getPlatformLegalDocumentKey("privacy")])
@@ -98,7 +128,8 @@ export async function getMissingRequiredLegalVersions(supabase: SupabaseClient, 
     throw new Error(requiredError.message);
   }
 
-  const requiredIds = (requiredVersions ?? []).map((version) => version.id);
+  const latestRequiredVersions = Object.values(resolveLatestRequiredPlatformLegalVersions(requiredVersions ?? []));
+  const requiredIds = latestRequiredVersions.map((version) => version.id);
   if (requiredIds.length === 0) {
     return [];
   }
@@ -115,7 +146,7 @@ export async function getMissingRequiredLegalVersions(supabase: SupabaseClient, 
   }
 
   const acceptedIds = new Set((accepted ?? []).map((row) => row.legal_document_version_id));
-  return (requiredVersions ?? [])
+  return latestRequiredVersions
     .filter((version) => !acceptedIds.has(version.id))
     .map((version) => ({
       versionId: version.id,

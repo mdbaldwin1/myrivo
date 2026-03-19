@@ -2,8 +2,8 @@ import { describe, expect, test } from "vitest";
 import { getPublishedStoreLegalDocumentSnapshot, resolveStoreLegalDocument } from "@/lib/legal/store-documents";
 
 describe("store legal document resolution", () => {
-  const store = { name: "At Home Apothecary", slug: "at-home-apothecary" };
-  const settings = { support_email: "support@athomeapothecary.com" };
+  const store = { name: "Sunset Mercantile", slug: "sunset-mercantile" };
+  const settings = { support_email: "support@sunsetmercantile.com" };
 
   test("resolves admin-managed base content with store variables and addenda", () => {
     const document = resolveStoreLegalDocument("privacy", store, settings, {
@@ -11,13 +11,13 @@ describe("store legal document resolution", () => {
       baseBodyMarkdown: "# Privacy Policy\n\n{storeName} contact: {privacyContactEmail}.",
       baseVersionLabel: "v2.1",
       variables_json: {
-        privacyContactEmail: "privacy@athomeapothecary.com"
+        privacyContactEmail: "privacy@sunsetmercantile.com"
       },
       addendum_markdown: "## Store-specific privacy disclosures\n\nNo SMS marketing is enabled."
     });
 
     expect(document.title).toBe("Privacy Policy");
-    expect(document.bodyMarkdown).toContain("At Home Apothecary contact: privacy@athomeapothecary.com.");
+    expect(document.bodyMarkdown).toContain("Sunset Mercantile contact: privacy@sunsetmercantile.com.");
     expect(document.bodyMarkdown).toContain("No SMS marketing is enabled.");
     expect(document.baseVersionLabel).toBe("v2.1");
     expect(document.publishedVersion).toBeNull();
@@ -31,8 +31,8 @@ describe("store legal document resolution", () => {
       variables_json: { privacyContactEmail: "draft@example.com" },
       addendum_markdown: "Draft only",
       published_title: "Published Privacy Policy",
-      published_body_markdown: "Published body for At Home Apothecary. Contact privacy@athomeapothecary.com.",
-      published_variables_json: { privacyContactEmail: "privacy@athomeapothecary.com" },
+      published_body_markdown: "Published body for Sunset Mercantile. Contact privacy@sunsetmercantile.com.",
+      published_variables_json: { privacyContactEmail: "privacy@sunsetmercantile.com" },
       published_addendum_markdown: "## Published addendum\n\nCalifornia residents can email us directly.",
       published_base_document_version_id: "base-privacy-v2",
       published_base_version_label: "v2.0",
@@ -58,7 +58,7 @@ describe("store legal document resolution", () => {
     });
 
     expect(document.title).toBe("Published Privacy Policy");
-    expect(document.bodyMarkdown).toContain("Published body for At Home Apothecary.");
+    expect(document.bodyMarkdown).toContain("Published body for Sunset Mercantile.");
     expect(document.bodyMarkdown).toContain("California residents can email us directly.");
     expect(document.baseVersionLabel).toBe("v2.0");
     expect(document.publishedVersion).toBe(3);

@@ -2,7 +2,7 @@
   "name": "myrivo",
   "private": true,
   "version": "0.1.0",
-  "description": "Single-store commerce app for At Home Apothecary",
+  "description": "Single-store commerce app for independent merchants",
   "packageManager": "npm@10.8.2",
   "workspaces": [
     "apps/*",

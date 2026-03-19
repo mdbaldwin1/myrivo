@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getPlatformLegalDocumentKey } from "@/lib/legal/document-keys";
+import { resolveLatestRequiredPlatformLegalVersions } from "@/lib/legal/required-versions";
 
 export type LegalRequirement = {
   documentId: string;
@@ -11,6 +12,7 @@ export type LegalRequirement = {
 type LegalVersionRow = {
   id: string;
   legal_document_id: string;
+  published_at: string | null;
   legal_documents: { key: string; title: string } | null;
 };
 
@@ -20,37 +22,36 @@ export async function getSignupLegalRequirements(supabase: SupabaseClient): Prom
 }> {
   const { data, error } = await supabase
     .from("legal_document_versions")
-    .select("id,legal_document_id,legal_documents!inner(key,title)")
+    .select("id,legal_document_id,published_at,legal_documents!inner(key,title)")
     .eq("status", "published")
     .eq("is_required", true)
     .in("legal_documents.key", [getPlatformLegalDocumentKey("terms"), getPlatformLegalDocumentKey("privacy")])
-    .order("published_at", { ascending: false })
     .returns<LegalVersionRow[]>();
 
   if (error) {
     throw new Error(error.message);
   }
 
-  const resolved = (data ?? []).reduce<{ terms: LegalRequirement | null; privacy: LegalRequirement | null }>(
-    (acc, row) => {
-      const key = row.legal_documents?.key;
-      if (key !== "platform_terms" && key !== "platform_privacy") {
-        return acc;
-      }
-      const normalizedKey = key === "platform_terms" ? "terms" : "privacy";
-      if (acc[normalizedKey]) {
-        return acc;
-      }
-      acc[normalizedKey] = {
-        documentId: row.legal_document_id,
-        versionId: row.id,
-        key: normalizedKey,
-        title: row.legal_documents?.title ?? normalizedKey
-      };
-      return acc;
-    },
-    { terms: null, privacy: null }
-  );
+  const latestByKey = resolveLatestRequiredPlatformLegalVersions(data ?? []);
+
+  const resolved = {
+    terms: latestByKey.platform_terms
+      ? {
+          documentId: latestByKey.platform_terms.legal_document_id,
+          versionId: latestByKey.platform_terms.id,
+          key: "terms" as const,
+          title: latestByKey.platform_terms.legal_documents?.title ?? "terms"
+        }
+      : null,
+    privacy: latestByKey.platform_privacy
+      ? {
+          documentId: latestByKey.platform_privacy.legal_document_id,
+          versionId: latestByKey.platform_privacy.id,
+          key: "privacy" as const,
+          title: latestByKey.platform_privacy.legal_documents?.title ?? "privacy"
+        }
+      : null
+  };
 
   return resolved;
 }

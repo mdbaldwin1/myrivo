@@ -6,12 +6,12 @@ test("full merchant journey from onboarding to fulfillment and reporting", async
   await expect(page).toHaveURL(/\/login/);
 
   const identity = await signupAndOnboard(page);
-  const productTitle = `Whipped Tallow Balm ${identity.suffix.slice(-6)}`;
+  const productTitle = `Everyday Hand Cream ${identity.suffix.slice(-6)}`;
 
   await page.goto("/dashboard/catalog");
   await page.getByRole("button", { name: /create product/i }).click();
   const createProductDialog = page.getByRole("dialog", { name: /create product/i });
-  await createProductDialog.getByPlaceholder("Whipped Tallow Balm").fill(productTitle);
+  await createProductDialog.getByPlaceholder("Everyday Hand Cream").fill(productTitle);
   await createProductDialog.getByPlaceholder("0.00").fill("18.00");
   await createProductDialog.locator('input[placeholder="0"]').first().fill("25");
   await createProductDialog.getByRole("checkbox", { name: /featured product/i }).check();

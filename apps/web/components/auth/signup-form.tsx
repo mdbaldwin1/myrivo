@@ -57,14 +57,12 @@ export function SignupForm({ returnTo, legalRequirements, legalUnavailable, mark
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    setSuccess(null);
     setLoading(true);
 
     if (legalUnavailable || !legalRequirements) {
@@ -102,7 +100,7 @@ export function SignupForm({ returnTo, legalRequirements, legalUnavailable, mark
 
     if (!signupData.session) {
       setLoading(false);
-      setSuccess("Account created. Check your email to confirm your address and finish signing in.");
+      router.push(`/signup/confirm?email=${encodeURIComponent(email)}&returnTo=${encodeURIComponent(returnTo)}`);
       return;
     }
 
@@ -204,7 +202,6 @@ export function SignupForm({ returnTo, legalRequirements, legalUnavailable, mark
             </label>
           </div>
           <FeedbackMessage type="error" message={error} />
-          <FeedbackMessage type="success" message={success} />
           <Button type="submit" disabled={loading || legalUnavailable || !termsAccepted || !privacyAccepted} className="w-full">
             {loading ? "Creating account..." : "Create account"}
           </Button>

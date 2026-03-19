@@ -1,7 +1,7 @@
 -- Seed intentionally minimal; run after creating a real auth user.
 -- Example:
 -- insert into public.stores (owner_user_id, name, slug, status)
--- values ('<auth-user-uuid>', 'At Home Apothecary', 'athomeapothacary', 'active');
+-- values ('<auth-user-uuid>', 'Sunset Mercantile', 'sunset-mercantile', 'active');
 
 -- Seed default policy FAQs for all stores if store_settings rows exist.
 update public.store_settings

@@ -5,6 +5,9 @@ This checklist is for the final release cut from `develop` to `main`.
 ## Product readiness
 
 - [ ] Merchant flow tested end-to-end: signup -> onboarding -> dashboard setup -> storefront checkout. (Owner: QA, Target: 2026-03-12)
+- [ ] Preview-first onboarding flow tested end-to-end: create store -> guided setup -> generation -> reveal -> launch-readiness handoff. (Owner: QA/Product, Target: 2026-03-19)
+- [ ] AI-provider failure path validated: onboarding still reaches reveal through deterministic fallback without stranding the merchant. (Owner: Engineering/QA, Target: 2026-03-19)
+- [ ] Post-preview launch-readiness surfaces reviewed for tone and accuracy: header chip, workspace banner, onboarding resume cards, reveal CTAs. (Owner: Product/Design, Target: 2026-03-19)
 - [ ] Inventory movement ledger updates correctly for each completed order. (Owner: Backend, Target: 2026-03-11)
 - [ ] Promo code flow validated (valid, expired, inactive, redemption cap, min subtotal). (Owner: QA, Target: 2026-03-12)
 - [ ] Fulfillment status transitions verified from dashboard for operational workflows. (Owner: Ops, Target: 2026-03-12)
@@ -21,12 +24,14 @@ This checklist is for the final release cut from `develop` to `main`.
 - [ ] `npm run typecheck` (Owner: Engineering, Target: 2026-03-10)
 - [ ] `npm run test` (Owner: Engineering, Target: 2026-03-10)
 - [ ] `npm run build` (Owner: Engineering, Target: 2026-03-10)
+- [ ] `/api/platform/onboarding/overview` returns expected funnel data after a fresh onboarding run in the target environment. (Owner: Engineering/Analytics, Target: 2026-03-19)
 - [ ] `npm run e2e -- e2e/accessibility-audits.spec.ts` completed for the release candidate. (Owner: QA/Engineering, Target: 2026-03-14)
 - [ ] Accessibility spot check completed for changed flows: keyboard access, visible focus, form semantics, and reduced-motion behavior. (Owner: QA/Engineering, Target: 2026-03-14)
 - [ ] Accessibility evidence matrix reviewed for any changed target flow and support routing remains current. (Owner: Product/Engineering, Target: 2026-03-14)
 - [ ] Any changed chart or dashboard module has a readable fallback or is confirmed decorative. (Owner: Engineering/Design, Target: 2026-03-14)
 - [ ] `/docs` reviewed for overdue documentation and stale workflow guidance before release cut. (Owner: Documentation, Target: 2026-03-13)
 - [ ] Latest Supabase migrations applied in target environment. (Owner: Engineering, Target: 2026-03-10)
+- [ ] Onboarding milestone migration applied in target environment (`20260319123000_store_onboarding_session_milestones.sql`). (Owner: Engineering, Target: 2026-03-19)
 - [ ] `npm run verify:platform-rollout` passes in target environment. (Owner: Engineering, Target: 2026-03-10)
 - [ ] Reviews rollout gate configured (`REVIEWS_FEATURE_ENABLED`, `REVIEWS_ROLLOUT_STORE_SLUGS`) per launch phase. (Owner: Engineering, Target: 2026-03-12)
 - [ ] Reviews aggregate snapshot backfill completed using `scripts/reviews-backfill-aggregate-snapshots.mjs`. (Owner: Engineering, Target: 2026-03-12)
@@ -66,7 +71,7 @@ This checklist is for the final release cut from `develop` to `main`.
 
 ## Governance and trust readiness
 
-- [ ] Refund/dispute SOP defined and tested for At Home Apothecary operations. (Owner: Ops, Target: 2026-03-14)
+- [ ] Refund/dispute SOP defined and tested for pilot store operations. (Owner: Ops, Target: 2026-03-14)
 - [ ] Buyer/seller post-purchase communication process documented. (Owner: Ops, Target: 2026-03-14)
 - [ ] Fulfillment workflow configured for current offline operations. (Owner: Ops, Target: 2026-03-12)
 - [ ] Email notification roadmap approved before enabling automated post-purchase messaging. (Owner: Product, Target: 2026-03-12)
