@@ -48,9 +48,6 @@ export const stripeEnvSchema = z.object({
 });
 
 export const shippingEnvSchema = z.object({
-  SHIPPING_PROVIDER: z.enum(["none", "easypost"]).optional(),
-  EASYPOST_API_KEY: z.string().min(1).optional(),
-  SHIPPING_WEBHOOK_SECRET: z.string().min(1).optional(),
   SHIPPING_ALLOW_QUERY_TOKEN: z.string().optional(),
   SHIPPING_WEBHOOK_SIGNING_SECRET: z.string().min(1).optional(),
   SHIPPING_WEBHOOK_REQUIRE_SIGNATURE: z.string().optional(),
@@ -129,9 +126,6 @@ export function getStripeEnv() {
 export function getShippingEnv() {
   if (!cachedShippingEnv) {
     cachedShippingEnv = shippingEnvSchema.parse({
-      SHIPPING_PROVIDER: process.env.SHIPPING_PROVIDER,
-      EASYPOST_API_KEY: process.env.EASYPOST_API_KEY,
-      SHIPPING_WEBHOOK_SECRET: process.env.SHIPPING_WEBHOOK_SECRET,
       SHIPPING_ALLOW_QUERY_TOKEN: process.env.SHIPPING_ALLOW_QUERY_TOKEN,
       SHIPPING_WEBHOOK_SIGNING_SECRET: process.env.SHIPPING_WEBHOOK_SIGNING_SECRET,
       SHIPPING_WEBHOOK_REQUIRE_SIGNATURE: process.env.SHIPPING_WEBHOOK_REQUIRE_SIGNATURE,

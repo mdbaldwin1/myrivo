@@ -35,11 +35,11 @@ Last updated: 2026-02-26
 2. Sign in as your sister and connect Stripe in `Dashboard > Account Settings`.
 3. Add products and set them to `active`.
 4. Configure branding, support email, shipping/returns text.
-5. Configure shipping tracking provider + webhook:
-   - `SHIPPING_PROVIDER=easypost`
-   - `EASYPOST_API_KEY=...`
-   - `SHIPPING_WEBHOOK_SECRET=...`
-   - webhook URL: `/api/shipping/webhook?token=<SHIPPING_WEBHOOK_SECRET>`
+5. Configure the store's shipping tracking provider + webhook in Store Settings:
+   - shipping provider: `easypost`
+   - store API key: `...`
+   - store webhook secret: `...`
+   - webhook URL: `/api/shipping/webhook?token=<store webhook secret>`
 6. Run one real checkout test in Stripe test mode, then one low-value live transaction.
 7. Run one shipped-order test and verify webhook-driven `delivered` transition.
 

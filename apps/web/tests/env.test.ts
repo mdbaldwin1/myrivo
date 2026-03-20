@@ -28,11 +28,12 @@ describe("env schema", () => {
     expect(parsed.success).toBe(true);
   });
 
-  test("shipping env validates provider keys", () => {
+  test("shipping env validates webhook security keys", () => {
     const parsed = shippingEnvSchema.safeParse({
-      SHIPPING_PROVIDER: "easypost",
-      EASYPOST_API_KEY: "EZAK_test",
-      SHIPPING_WEBHOOK_SECRET: "webhook_secret"
+      SHIPPING_ALLOW_QUERY_TOKEN: "true",
+      SHIPPING_WEBHOOK_SIGNING_SECRET: "signing_secret",
+      SHIPPING_WEBHOOK_REQUIRE_SIGNATURE: "true",
+      SHIPPING_WEBHOOK_SIGNATURE_TOLERANCE_SECONDS: "300"
     });
 
     expect(parsed.success).toBe(true);
@@ -54,9 +55,7 @@ describe("env schema", () => {
       STRIPE_STUB_MODE: "false",
       STRIPE_SECRET_KEY: "sk_test_123",
       STRIPE_WEBHOOK_SECRET: "whsec_123",
-      SHIPPING_PROVIDER: "easypost",
-      EASYPOST_API_KEY: "EZAK_test",
-      SHIPPING_WEBHOOK_SECRET: "webhook_secret",
+      SHIPPING_WEBHOOK_SIGNING_SECRET: "signing_secret",
       VERCEL_PROJECT_PRODUCTION_URL: "myrivo.vercel.app"
     });
 

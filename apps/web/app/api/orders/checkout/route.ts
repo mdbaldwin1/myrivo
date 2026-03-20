@@ -850,7 +850,11 @@ export async function POST(request: NextRequest) {
       mode: "payment",
       customer_email: email,
       automatic_tax: {
-        enabled: true
+        enabled: true,
+        liability: {
+          type: "account",
+          account: store.stripe_account_id
+        }
       },
       billing_address_collection: "auto",
       ...(selectedFulfillment.method === "shipping"

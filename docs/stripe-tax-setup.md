@@ -25,13 +25,14 @@ Today Myrivo:
 - creates Checkout Sessions from the **platform Stripe account**
 - uses **destination charges** to transfer funds to connected stores
 - sets `automatic_tax.enabled=true`
-- does **not** set `automatic_tax.liability`
+- sets `automatic_tax.liability.account = store.stripe_account_id`
 
-That means Stripe Tax currently uses the **requesting platform account's** tax configuration, not the connected account's configuration.
+That means Stripe Tax is configured to use the connected seller account's tax liability rather than the platform account's configuration.
 
-In other words:
-- the current code path behaves like a **platform-liable tax model**
-- this does **not** match the intended merchant-owned tax responsibility model
+What is still incomplete:
+- merchant tax readiness is not fully surfaced/enforced yet
+- connected-account tax setup still needs stronger go-live checks
+- checkout still uses one aggregated line item, which is workable for now but not ideal long term
 
 ## Chosen direction
 
@@ -92,18 +93,17 @@ Myrivo should also:
 - block live launch or live payments when merchant tax setup is incomplete
 - document clearly that merchants are responsible for registrations, tax compliance, and filings
 
-## Required migration work
+## Remaining implementation work
 
-The following work is required before Myrivo can honestly claim that sellers handle tax on their own end:
+The following work still needs to land before Myrivo can fully claim merchant-owned tax readiness end to end:
 
-1. Update checkout code to set connected-account tax liability.
-2. Add merchant tax readiness checks to onboarding / go-live.
-3. Add merchant-facing tax setup surfaces:
+1. Add merchant tax readiness checks to onboarding / go-live.
+2. Add merchant-facing tax setup surfaces:
    - tax settings status
    - registration status
    - clear setup CTAs
-4. Update merchant-facing docs/copy to state the responsibility model clearly.
-5. Verify test-mode and live-mode flows against connected-account tax configuration.
+3. Update merchant-facing docs/copy to state the responsibility model clearly.
+4. Verify test-mode and live-mode flows against connected-account tax configuration.
 
 ## Test-mode note
 
@@ -112,8 +112,8 @@ The current local Stripe environment may still point at a test platform account 
 - no default tax code configured
 - no tax registrations configured
 
-That is expected while the migration is still in progress, but it also means:
-- neither platform-liable nor merchant-liable tax is fully ready yet
+That is expected while the readiness work is still in progress, but it also means:
+- merchant-liable tax is not fully launch-ready until connected-account setup is verified and enforced
 
 ## Line item caveat
 
@@ -128,9 +128,9 @@ This is a follow-up improvement, not the first blocker for moving to merchant-ow
 
 ## Operational guidance
 
-Until the code and Stripe setup are migrated:
-- do **not** treat the system as merchant-owned tax-ready
-- do **not** assume registrations on the connected account are being used at checkout
+Until the readiness and setup enforcement work is complete:
+- do **not** treat the system as merchant-owned tax-ready for live launch
+- do **not** assume every connected account has the required registrations and defaults configured
 
 Once the migration is complete, the operating guidance should be:
 

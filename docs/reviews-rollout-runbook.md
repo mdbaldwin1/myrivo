@@ -6,18 +6,15 @@
 - Verify moderation, storefront, SEO schema, and notification behavior.
 
 ## Feature Gate Strategy
-- `REVIEWS_FEATURE_ENABLED` (`true|false`, default `true`)
-  - Global kill switch for review APIs and storefront review surfaces.
 - `REVIEWS_ROLLOUT_STORE_SLUGS` (comma-separated store slugs, optional)
   - If set, reviews are enabled only for listed stores.
-  - If empty, all stores are eligible when `REVIEWS_FEATURE_ENABLED=true`.
+  - If empty, all stores are eligible.
 
 ## Rollout Phases
 1. Phase 0 (dark launch):
-   - Set `REVIEWS_FEATURE_ENABLED=false`.
+   - Set `REVIEWS_ROLLOUT_STORE_SLUGS` to a tightly controlled pilot list or keep rollout isolated from public traffic by environment.
    - Deploy code and run backfill in dry-run mode.
 2. Phase 1 (internal pilot):
-   - Set `REVIEWS_FEATURE_ENABLED=true`.
    - Set `REVIEWS_ROLLOUT_STORE_SLUGS=pilot-store-slug`.
    - Execute smoke checklist below.
 3. Phase 2 (expanded allowlist):
@@ -25,7 +22,7 @@
    - Monitor moderation queue and upload errors.
 4. Phase 3 (general availability):
    - Clear `REVIEWS_ROLLOUT_STORE_SLUGS`.
-   - Keep kill switch available for incident response.
+   - Reviews are available everywhere.
 
 ## Backfill Procedure
 1. Dry run:
@@ -62,7 +59,7 @@
 
 ## Rollback Strategy
 1. Immediate containment:
-   - Set `REVIEWS_FEATURE_ENABLED=false` and redeploy.
+   - Set `REVIEWS_ROLLOUT_STORE_SLUGS` to a safe allowlist and redeploy.
 2. App rollback:
    - Re-deploy previous stable `main` commit if issue is code-level.
 3. Data rollback:
