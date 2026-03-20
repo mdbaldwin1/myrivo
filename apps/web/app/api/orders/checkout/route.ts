@@ -16,6 +16,7 @@ import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
 import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 import { buildStorefrontCheckoutPath } from "@/lib/storefront/paths";
 import { buildStubCheckoutRpcPayload } from "@/lib/storefront/stub-checkout";
+import { getStoreStripePaymentsReadiness } from "@/lib/stripe/store-payments-readiness";
 import { getStripeClient } from "@/lib/stripe/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -764,20 +765,17 @@ export async function POST(request: NextRequest) {
   }
 
   const applicationFeeAmount = platformFeeCents;
+  const stripeReadiness = await getStoreStripePaymentsReadiness(store.stripe_account_id);
+
+  if (!stripeReadiness.readyForLiveCheckout) {
+    if (stripeReadiness.taxSettingsStatus && stripeReadiness.taxSettingsStatus !== "active") {
+      return NextResponse.json({ error: "This store's Stripe tax setup is not complete yet." }, { status: 409 });
+    }
+
+    return NextResponse.json({ error: "This store's Stripe account is not ready to accept live payments yet." }, { status: 409 });
+  }
 
   const stripe = getStripeClient();
-
-  try {
-    const account = await stripe.accounts.retrieve(store.stripe_account_id);
-    if (!account.charges_enabled || !account.payouts_enabled) {
-      return NextResponse.json({ error: "This store's Stripe account is not ready to accept live payments yet." }, { status: 409 });
-    }
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to verify Stripe account readiness." },
-      { status: 502 }
-    );
-  }
 
   const { data: pendingCheckout, error: pendingCheckoutError } = await supabase
     .from("storefront_checkout_sessions")

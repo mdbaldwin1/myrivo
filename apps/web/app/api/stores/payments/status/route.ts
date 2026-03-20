@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
+import { getStoreStripePaymentsReadiness } from "@/lib/stripe/store-payments-readiness";
 import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
-import { getStripeClient } from "@/lib/stripe/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET(request: Request) {
@@ -20,29 +20,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "No store found for account" }, { status: 404 });
   }
 
-  if (!bundle.store.stripe_account_id) {
-    return NextResponse.json({
-      connected: false,
-      readyForLiveCheckout: false
-    });
-  }
-
   try {
-    const account = await getStripeClient().accounts.retrieve(bundle.store.stripe_account_id);
-    const readyForLiveCheckout = Boolean(account.charges_enabled && account.payouts_enabled);
-
-    return NextResponse.json({
-      connected: true,
-      accountId: account.id,
-      chargesEnabled: account.charges_enabled,
-      payoutsEnabled: account.payouts_enabled,
-      detailsSubmitted: account.details_submitted,
-      readyForLiveCheckout
-    });
+    return NextResponse.json(await getStoreStripePaymentsReadiness(bundle.store.stripe_account_id));
   } catch {
     return NextResponse.json({
       connected: true,
       accountId: bundle.store.stripe_account_id,
+      taxSettingsStatus: "unavailable",
+      taxMissingFields: [],
+      taxReady: false,
       readyForLiveCheckout: false
     });
   }

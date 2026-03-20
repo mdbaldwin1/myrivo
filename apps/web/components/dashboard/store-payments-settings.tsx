@@ -13,6 +13,9 @@ type PaymentsStatus = {
   chargesEnabled?: boolean;
   payoutsEnabled?: boolean;
   detailsSubmitted?: boolean;
+  taxSettingsStatus?: "active" | "pending" | "unavailable";
+  taxMissingFields?: string[];
+  taxReady?: boolean;
   readyForLiveCheckout?: boolean;
   error?: string;
 };
@@ -109,6 +112,14 @@ export function StorePaymentsSettings() {
         : "Continue Stripe setup"
       : "Connect Stripe";
 
+  const taxStatusLabel = status?.taxSettingsStatus === "active"
+    ? "Active"
+    : status?.taxSettingsStatus === "pending"
+      ? "Pending setup"
+      : status?.taxSettingsStatus === "unavailable"
+        ? "Unavailable"
+        : "Not connected";
+
   return (
     <SectionCard
       title="Store Payments (Stripe Connect)"
@@ -130,7 +141,7 @@ export function StorePaymentsSettings() {
           <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
             <p className="text-sm font-medium">Connection Status</p>
             <p className="mt-1 text-xs text-muted-foreground">Review Stripe onboarding state and readiness to accept payments.</p>
-            <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+            <div className="mt-3 space-y-2 text-sm">
               <p>
                 Connection: <span className="font-medium">{status.connected ? "Connected" : "Not connected"}</span>
               </p>
@@ -140,6 +151,23 @@ export function StorePaymentsSettings() {
                   <p className="text-xs text-muted-foreground">Charges enabled: {status.chargesEnabled ? "Yes" : "No"}</p>
                   <p className="text-xs text-muted-foreground">Payouts enabled: {status.payoutsEnabled ? "Yes" : "No"}</p>
                   <p className="text-xs text-muted-foreground">Details submitted: {status.detailsSubmitted ? "Yes" : "No"}</p>
+                  <p className="text-xs text-muted-foreground">Stripe Tax status: {taxStatusLabel}</p>
+                  {status.taxSettingsStatus === "pending" && status.taxMissingFields?.length ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-3 text-xs text-amber-950">
+                      <p className="font-medium">Stripe Tax setup still needs attention.</p>
+                      <p className="mt-1 text-amber-900/80">Complete these fields in Stripe before live checkout can start:</p>
+                      <ul className="mt-2 space-y-1">
+                        {status.taxMissingFields.map((field) => (
+                          <li key={field}>• {field}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {status.taxSettingsStatus === "unavailable" ? (
+                    <p className="text-xs text-amber-700">
+                      We could not confirm Stripe Tax readiness right now. Open Stripe and verify tax settings before going live.
+                    </p>
+                  ) : null}
                   <p className="text-xs text-muted-foreground">Live checkout ready: {status.readyForLiveCheckout ? "Yes" : "No"}</p>
                 </>
               ) : null}

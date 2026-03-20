@@ -11,10 +11,10 @@ const writeOrderFeeBreakdownMock = vi.fn();
 const sendOrderCreatedNotificationsMock = vi.fn();
 const isStripeStubModeMock = vi.fn();
 const getAppUrlMock = vi.fn();
+const getStoreStripePaymentsReadinessMock = vi.fn();
 const getStripeClientMock = vi.fn();
 const adminFromMock = vi.fn();
 const serverFromMock = vi.fn();
-const stripeAccountsRetrieveMock = vi.fn();
 const stripeCheckoutCreateMock = vi.fn();
 
 vi.mock("@/lib/security/request-origin", () => ({
@@ -46,6 +46,10 @@ vi.mock("@/lib/notifications/order-emails", () => ({
 vi.mock("@/lib/env", () => ({
   getAppUrl: (...args: unknown[]) => getAppUrlMock(...args),
   isStripeStubMode: (...args: unknown[]) => isStripeStubModeMock(...args)
+}));
+
+vi.mock("@/lib/stripe/store-payments-readiness", () => ({
+  getStoreStripePaymentsReadiness: (...args: unknown[]) => getStoreStripePaymentsReadinessMock(...args)
 }));
 
 vi.mock("@/lib/stripe/server", () => ({
@@ -93,10 +97,10 @@ describe("checkout Stripe tax liability", () => {
     sendOrderCreatedNotificationsMock.mockReset();
     isStripeStubModeMock.mockReset();
     getAppUrlMock.mockReset();
+    getStoreStripePaymentsReadinessMock.mockReset();
     getStripeClientMock.mockReset();
     adminFromMock.mockReset();
     serverFromMock.mockReset();
-    stripeAccountsRetrieveMock.mockReset();
     stripeCheckoutCreateMock.mockReset();
 
     enforceTrustedOriginMock.mockReturnValue(null);
@@ -113,19 +117,22 @@ describe("checkout Stripe tax liability", () => {
     sendOrderCreatedNotificationsMock.mockResolvedValue(undefined);
     isStripeStubModeMock.mockReturnValue(false);
     getAppUrlMock.mockReturnValue("https://www.myrivo.app");
-    stripeAccountsRetrieveMock.mockResolvedValue({
-      id: "acct_123",
-      charges_enabled: true,
-      payouts_enabled: true
+    getStoreStripePaymentsReadinessMock.mockResolvedValue({
+      connected: true,
+      accountId: "acct_123",
+      chargesEnabled: true,
+      payoutsEnabled: true,
+      detailsSubmitted: true,
+      taxSettingsStatus: "active",
+      taxMissingFields: [],
+      taxReady: true,
+      readyForLiveCheckout: true
     });
     stripeCheckoutCreateMock.mockResolvedValue({
       id: "cs_test_123",
       url: "https://checkout.stripe.com/pay/cs_test_123"
     });
     getStripeClientMock.mockReturnValue({
-      accounts: {
-        retrieve: stripeAccountsRetrieveMock
-      },
       checkout: {
         sessions: {
           create: stripeCheckoutCreateMock
@@ -287,7 +294,7 @@ describe("checkout Stripe tax liability", () => {
     expect(response.status).toBe(200);
     expect(payload.paymentMode).toBe("stripe");
     expect(payload.sessionId).toBe("cs_test_123");
-    expect(stripeAccountsRetrieveMock).toHaveBeenCalledWith("acct_123");
+    expect(getStoreStripePaymentsReadinessMock).toHaveBeenCalledWith("acct_123");
     expect(stripeCheckoutCreateMock).toHaveBeenCalledWith(
       expect.objectContaining({
         automatic_tax: {
@@ -305,5 +312,34 @@ describe("checkout Stripe tax liability", () => {
         })
       })
     );
+  });
+
+  test("blocks checkout when Stripe tax setup is still pending", async () => {
+    getStoreStripePaymentsReadinessMock.mockResolvedValue({
+      connected: true,
+      accountId: "acct_123",
+      chargesEnabled: true,
+      payoutsEnabled: true,
+      detailsSubmitted: true,
+      taxSettingsStatus: "pending",
+      taxMissingFields: ["head_office.address.country"],
+      taxReady: false,
+      readyForLiveCheckout: false
+    });
+
+    const route = await import("@/app/api/orders/checkout/route");
+    const response = await route.POST(
+      buildRequest({
+        firstName: "Alice",
+        lastName: "Buyer",
+        email: "alice@example.com",
+        items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
+      })
+    );
+    const payload = (await response.json()) as { error: string };
+
+    expect(response.status).toBe(409);
+    expect(payload.error).toBe("This store's Stripe tax setup is not complete yet.");
+    expect(stripeCheckoutCreateMock).not.toHaveBeenCalled();
   });
 });
