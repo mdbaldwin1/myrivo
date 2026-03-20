@@ -10,6 +10,28 @@ type RefundSyncResult = {
   orderId: string | null;
 };
 
+function resolveRefundStatusForSync(
+  existingStatus: OrderRefundRecord["status"],
+  incomingStatus: OrderRefundRecord["status"]
+) {
+  if (isTerminalRefundStatus(existingStatus) && !isTerminalRefundStatus(incomingStatus)) {
+    return existingStatus;
+  }
+
+  return incomingStatus;
+}
+
+function resolveDisputeStatusForSync(
+  existingStatus: OrderDisputeRecord["status"] | null,
+  incomingStatus: OrderDisputeRecord["status"]
+) {
+  if (existingStatus && isClosedDisputeStatus(existingStatus) && !isClosedDisputeStatus(incomingStatus)) {
+    return existingStatus;
+  }
+
+  return incomingStatus;
+}
+
 function toIsoOrNull(value: number | null | undefined) {
   if (!value) {
     return null;
@@ -33,23 +55,30 @@ export async function syncStripeRefundRecord(
   const admin = createSupabaseAdminClient();
   const refundRequestId = options?.refundRequestId ?? refund.metadata?.refund_request_id ?? null;
 
-  let existingRefund: Pick<OrderRefundRecord, "id" | "order_id" | "store_id" | "status" | "metadata_json"> | null = null;
+  let existingRefund: Pick<
+    OrderRefundRecord,
+    "id" | "order_id" | "store_id" | "status" | "metadata_json" | "processed_by_user_id" | "processed_at"
+  > | null = null;
 
   if (refundRequestId) {
     const { data } = await admin
       .from("order_refunds")
-      .select("id,order_id,store_id,status,metadata_json")
+      .select("id,order_id,store_id,status,metadata_json,processed_by_user_id,processed_at")
       .eq("id", refundRequestId)
-      .maybeSingle<Pick<OrderRefundRecord, "id" | "order_id" | "store_id" | "status" | "metadata_json">>();
+      .maybeSingle<
+        Pick<OrderRefundRecord, "id" | "order_id" | "store_id" | "status" | "metadata_json" | "processed_by_user_id" | "processed_at">
+      >();
     existingRefund = data ?? null;
   }
 
   if (!existingRefund) {
     const { data } = await admin
       .from("order_refunds")
-      .select("id,order_id,store_id,status,metadata_json")
+      .select("id,order_id,store_id,status,metadata_json,processed_by_user_id,processed_at")
       .eq("stripe_refund_id", refund.id)
-      .maybeSingle<Pick<OrderRefundRecord, "id" | "order_id" | "store_id" | "status" | "metadata_json">>();
+      .maybeSingle<
+        Pick<OrderRefundRecord, "id" | "order_id" | "store_id" | "status" | "metadata_json" | "processed_by_user_id" | "processed_at">
+      >();
     existingRefund = data ?? null;
   }
 
@@ -57,7 +86,7 @@ export async function syncStripeRefundRecord(
     return { refund: null, orderId: null };
   }
 
-  const nextStatus = mapStripeRefundStatus(refund.status);
+  const nextStatus = resolveRefundStatusForSync(existingRefund.status, mapStripeRefundStatus(refund.status));
   const metadataJson = {
     ...(existingRefund.metadata_json ?? {}),
     stripeStatus: refund.status ?? null,
@@ -70,8 +99,8 @@ export async function syncStripeRefundRecord(
     .update({
       status: nextStatus,
       stripe_refund_id: refund.id,
-      processed_by_user_id: options?.processedByUserId ?? null,
-      processed_at: isTerminalRefundStatus(nextStatus) ? new Date().toISOString() : null,
+      processed_by_user_id: options?.processedByUserId ?? existingRefund.processed_by_user_id ?? null,
+      processed_at: existingRefund.processed_at ?? (isTerminalRefundStatus(nextStatus) ? new Date().toISOString() : null),
       metadata_json: metadataJson
     })
     .eq("id", existingRefund.id)
@@ -142,12 +171,11 @@ export async function syncStripeDisputeRecord(dispute: Stripe.Dispute) {
     return null;
   }
 
-  const nextStatus = mapStripeDisputeStatus(dispute.status);
   const previousResult = await admin
     .from("order_disputes")
-    .select("id,status")
+    .select("id,status,closed_at")
     .eq("stripe_dispute_id", dispute.id)
-    .maybeSingle<Pick<OrderDisputeRecord, "id" | "status">>();
+    .maybeSingle<Pick<OrderDisputeRecord, "id" | "status" | "closed_at">>();
 
   if (previousResult.error) {
     throw new Error(previousResult.error.message);
@@ -156,6 +184,7 @@ export async function syncStripeDisputeRecord(dispute: Stripe.Dispute) {
   const previous = previousResult.data ?? null;
   const responseDueBy = toIsoOrNull(dispute.evidence_details?.due_by ?? null);
   const stripeChargeId = typeof dispute.charge === "string" ? dispute.charge : dispute.charge?.id ?? null;
+  const nextStatus = resolveDisputeStatusForSync(previous?.status ?? null, mapStripeDisputeStatus(dispute.status));
 
   const { data: syncedDispute, error } = await admin
     .from("order_disputes")
@@ -178,7 +207,7 @@ export async function syncStripeDisputeRecord(dispute: Stripe.Dispute) {
           hasEvidence: dispute.evidence_details?.has_evidence ?? false,
           pastDue: dispute.evidence_details?.past_due ?? false
         },
-        closed_at: isClosedDisputeStatus(nextStatus) ? new Date().toISOString() : null
+        closed_at: previous?.closed_at ?? (isClosedDisputeStatus(nextStatus) ? new Date().toISOString() : null)
       },
       { onConflict: "stripe_dispute_id" }
     )
