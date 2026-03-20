@@ -30,8 +30,9 @@ Today Myrivo:
 That means Stripe Tax is configured to use the connected seller account's tax liability rather than the platform account's configuration.
 
 What is still incomplete:
-- merchant tax readiness is not fully surfaced/enforced yet
-- connected-account tax setup still needs stronger go-live checks
+- live checkout now blocks when connected-account Stripe Tax setup is not ready
+- merchant settings now surface Stripe Tax readiness and missing setup fields
+- connected-account tax setup still needs explicit go-live activation gating, not just checkout gating
 - checkout still uses one aggregated line item, which is workable for now but not ideal long term
 
 ## Chosen direction
@@ -97,12 +98,11 @@ Myrivo should also:
 
 The following work still needs to land before Myrivo can fully claim merchant-owned tax readiness end to end:
 
-1. Add merchant tax readiness checks to onboarding / go-live.
-2. Add merchant-facing tax setup surfaces:
-   - tax settings status
+1. Add merchant tax readiness checks to onboarding / go-live activation, not just checkout.
+2. Expand merchant-facing tax setup surfaces where useful:
    - registration status
-   - clear setup CTAs
-3. Update merchant-facing docs/copy to state the responsibility model clearly.
+   - clearer setup CTAs into Stripe
+3. Keep merchant-facing docs/copy aligned with the responsibility model.
 4. Verify test-mode and live-mode flows against connected-account tax configuration.
 
 ## Test-mode note
@@ -113,7 +113,7 @@ The current local Stripe environment may still point at a test platform account 
 - no tax registrations configured
 
 That is expected while the readiness work is still in progress, but it also means:
-- merchant-liable tax is not fully launch-ready until connected-account setup is verified and enforced
+- merchant-liable tax is not fully launch-ready until connected-account setup is also enforced at go-live
 
 ## Line item caveat
 
@@ -129,8 +129,8 @@ This is a follow-up improvement, not the first blocker for moving to merchant-ow
 ## Operational guidance
 
 Until the readiness and setup enforcement work is complete:
-- do **not** treat the system as merchant-owned tax-ready for live launch
-- do **not** assume every connected account has the required registrations and defaults configured
+- do **not** assume every connected account has the required registrations and defaults configured at go-live
+- rely on checkout gating plus merchant settings visibility, but treat live-launch gating as a remaining follow-up
 
 Once the migration is complete, the operating guidance should be:
 

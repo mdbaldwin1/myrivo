@@ -6,7 +6,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 const faqItems = [
   {
     question: "Do I need a monthly subscription to start?",
-    answer: "No. Starter is usage-based with a transaction fee profile and no monthly platform charge."
+    answer: "No. Myrivo can run stores on transaction-fee-only pricing, and any paid plan changes are assigned by the Myrivo team rather than self-served in the product."
   },
   {
     question: "How do platform fees work?",
@@ -15,11 +15,11 @@ const faqItems = [
   },
   {
     question: "Can I start small and upgrade later?",
-    answer: "Yes. You can move between active plans and keep operating history, order data, and content settings."
+    answer: "Yes. We can reassign your store to a different plan without affecting operating history, order data, or storefront content."
   },
   {
     question: "Is tax handled by Myrivo or Stripe?",
-    answer: "Stripe Tax should handle tax calculation and collection. Myrivo remains the commerce workflow layer while Stripe handles tax logic."
+    answer: "Stripe Tax handles calculation at checkout, but sellers are still responsible for their own tax setup, registrations, and filings on their connected Stripe accounts."
   }
 ] as const;
 
@@ -49,13 +49,13 @@ export default async function PricingPage() {
         <div className="mt-6 flex flex-wrap gap-3">
           <MarketingTrackedButtonLink
             href={isAuthenticated ? "/dashboard/billing?entry=pricing" : "/signup?source=pricing"}
-            ctaKey={isAuthenticated ? "pricing_hero_open_billing" : "pricing_hero_start_free"}
-            ctaLabel={isAuthenticated ? "Open billing" : "Start free"}
+            ctaKey={isAuthenticated ? "pricing_hero_view_billing" : "pricing_hero_start_free"}
+            ctaLabel={isAuthenticated ? "View billing" : "Start free"}
             sectionKey="hero"
             conversionIntent={isAuthenticated ? undefined : "signup"}
             className="h-11 rounded-full bg-primary px-6 text-primary-foreground hover:bg-primary"
           >
-            {isAuthenticated ? "Open billing" : "Start free"}
+            {isAuthenticated ? "View billing" : "Start free"}
           </MarketingTrackedButtonLink>
           <MarketingTrackedButtonLink
             href="/compare"
@@ -110,12 +110,12 @@ export default async function PricingPage() {
               <MarketingTrackedButtonLink
                 href={isAuthenticated ? "/dashboard/billing?entry=pricing-plan" : "/signup?source=pricing-plan"}
                 ctaKey={`pricing_plan_${plan.key}`}
-                ctaLabel={isAuthenticated ? `Manage ${plan.name}` : `Choose ${plan.name}`}
+                ctaLabel={isAuthenticated ? `View ${plan.name}` : `Get started with ${plan.name}`}
                 sectionKey="plan_cards"
                 conversionIntent={isAuthenticated ? undefined : "signup"}
                 className="h-10 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary"
               >
-                {isAuthenticated ? "Manage plan" : "Choose plan"}
+                {isAuthenticated ? "View plan details" : "Get started"}
               </MarketingTrackedButtonLink>
             </div>
           </article>

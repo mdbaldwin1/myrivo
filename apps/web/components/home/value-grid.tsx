@@ -1,7 +1,7 @@
 const valueCards = [
   {
     title: "Maker-first economics",
-    description: "Simple transaction-based platform fees with no required monthly subscription for standard stores."
+    description: "Simple platform-fee pricing with no required monthly subscription for standard stores."
   },
   {
     title: "Inventory you can trust",

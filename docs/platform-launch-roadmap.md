@@ -26,7 +26,7 @@ This roadmap covers the remaining work for production launch and post-launch har
 
 ### A) Admin portal and operations controls
 - Build admin-only area with role-gated access.
-- Add platform-wide views: stores, domains, subscriptions, orders, payouts, incidents.
+- Add platform-wide views: stores, domains, billing plans, orders, payouts, incidents.
 - Add admin actions: suspend/reactivate store, force domain re-verify, retry webhook finalization, inspect audit trail.
 - Add immutable admin audit log entries for all elevated actions.
 
@@ -111,7 +111,7 @@ This roadmap covers the remaining work for production launch and post-launch har
 ## Exit criteria for launch
 
 - All P0 items complete and tested in staging
-- Stripe platform billing and Stripe Connect flows validated in live mode
+- Stripe Connect flows, platform fee snapshots, and admin-managed billing-plan assignment validated in live mode
 - Connected-account tax liability and merchant tax readiness flow validated in staging/live-prep
 - Refund/dispute and review escalation runbooks approved
 - On-call alerts for checkout and webhook failures enabled

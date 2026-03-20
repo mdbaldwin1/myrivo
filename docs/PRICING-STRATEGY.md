@@ -1,11 +1,13 @@
-# Pricing Strategy (Hybrid)
+# Pricing Strategy (Current Admin-Managed Model)
 
 ## Model
 
-Myrivo uses a hybrid model:
+Myrivo currently uses admin-managed billing plans:
 
-- Free plan: no monthly subscription, higher platform fee on each transaction.
-- Paid plans: monthly subscription with reduced or zero platform fee.
+- Plans are assigned by platform admins, not self-served by merchants.
+- Stores can run on transaction-fee-only pricing.
+- Some plans may include a monthly base price commercially, but there is no in-product Stripe Billing subscription flow today.
+- Platform fee math is still captured per order for auditability.
 
 Stripe card processing fees are separate and always visible to merchants.
 
@@ -26,8 +28,8 @@ Stripe card processing fees are separate and always visible to merchants.
 
 ## Stripe implementation notes
 
-- Use Stripe Connect for merchant payouts.
-- Persist `platform_fee_bps` on `subscriptions`.
+- Use Stripe Connect Express for merchant payouts.
+- Persist fee snapshots on each order and checkout session, not on Stripe subscriptions.
 - On order payment, calculate and store:
   - `orders.platform_fee_bps`
   - `orders.platform_fee_cents`
@@ -35,6 +37,7 @@ Stripe card processing fees are separate and always visible to merchants.
 
 ## Upgrade behavior
 
-- Plan changes affect future transactions only by default.
+- Plan reassignments affect future transactions only by default.
 - Historical orders preserve original fee metadata.
-- Optional future enhancement: immediate fee changes with prorated subscription billing.
+- There is no self-serve upgrade, downgrade, billing portal, or subscription billing flow in the current product.
+- Optional future enhancement: add a true subscription-billing layer only if Myrivo decides to sell monthly plans directly through Stripe.
