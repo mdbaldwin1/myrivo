@@ -1,9 +1,11 @@
 import { hasStoreRole } from "@/lib/auth/roles";
+import { getStoreStripePaymentsReadiness } from "@/lib/stripe/store-payments-readiness";
 import { hasStoreLaunchedOnce, isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export type OnboardingStoreRole = "owner" | "admin" | "staff" | "customer";
+export type OnboardingPaymentsStatus = "not_connected" | "setup_required" | "ready";
 
 export type StoreOnboardingProgress = {
   id: string;
@@ -16,6 +18,7 @@ export type StoreOnboardingProgress = {
   role: OnboardingStoreRole;
   canManageWorkspace: boolean;
   canLaunch: boolean;
+  paymentStatus: OnboardingPaymentsStatus;
   steps: {
     profile: boolean;
     branding: boolean;
@@ -130,16 +133,26 @@ function hasBrandBasics(branding: BrandingRow | undefined): boolean {
   return Boolean(branding.primary_color || branding.accent_color);
 }
 
+async function resolvePaymentsStatusForStore(store: ProgressSourceStore): Promise<OnboardingPaymentsStatus> {
+  if (!store.stripe_account_id) {
+    return "not_connected";
+  }
+
+  const readiness = await getStoreStripePaymentsReadiness(store.stripe_account_id);
+  return readiness.readyForLiveCheckout ? "ready" : "setup_required";
+}
+
 function buildProgress(
   store: ProgressSourceStore,
   settings: SettingsRow | undefined,
   branding: BrandingRow | undefined,
-  hasProduct: boolean
+  hasProduct: boolean,
+  paymentStatus: OnboardingPaymentsStatus
 ): StoreOnboardingProgress {
   const profile = hasProfileBasics(store.name, settings?.support_email);
   const brand = hasBrandBasics(branding);
   const firstProduct = hasProduct;
-  const payments = Boolean(store.stripe_account_id);
+  const payments = paymentStatus === "ready";
   const launch = isStorePubliclyAccessibleStatus(store.status);
   const launchReady = profile && brand && firstProduct && payments;
   const completedStepCount = [profile, brand, firstProduct, payments, launch].filter(Boolean).length;
@@ -155,6 +168,7 @@ function buildProgress(
     role: store.role,
     canManageWorkspace: hasStoreRole(store.role, "staff"),
     canLaunch: hasStoreRole(store.role, "admin"),
+    paymentStatus,
     steps: {
       profile,
       branding: brand,
@@ -237,9 +251,18 @@ export async function getStoreOnboardingProgressForUser(userId: string): Promise
 
   const settingsByStoreId = new Map((settingsRows ?? []).map((row) => [row.store_id, row]));
   const brandingByStoreId = new Map((brandingRows ?? []).map((row) => [row.store_id, row]));
+  const paymentsByStoreId = new Map(
+    await Promise.all(stores.map(async (store) => [store.id, await resolvePaymentsStatusForStore(store)] as const))
+  );
 
   return stores.map((store) =>
-    buildProgress(store, settingsByStoreId.get(store.id), brandingByStoreId.get(store.id), hasProductByStoreId.get(store.id) ?? false)
+    buildProgress(
+      store,
+      settingsByStoreId.get(store.id),
+      brandingByStoreId.get(store.id),
+      hasProductByStoreId.get(store.id) ?? false,
+      paymentsByStoreId.get(store.id) ?? "not_connected"
+    )
   );
 }
 
@@ -303,5 +326,7 @@ export async function getStoreOnboardingProgressForStore(userId: string, storeSl
     admin.from("products").select("id").eq("store_id", targetStore.id).limit(1)
   ]);
 
-  return buildProgress(targetStore, settings ?? undefined, branding ?? undefined, Boolean((products ?? []).length));
+  const paymentStatus = await resolvePaymentsStatusForStore(targetStore);
+
+  return buildProgress(targetStore, settings ?? undefined, branding ?? undefined, Boolean((products ?? []).length), paymentStatus);
 }

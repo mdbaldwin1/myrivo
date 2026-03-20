@@ -188,7 +188,15 @@ export function StoreBootstrapForm({ existingStores }: StoreBootstrapFormProps) 
                         { label: "General", completed: store.steps.profile },
                         { label: "Branding", completed: store.steps.branding },
                         { label: "First product", completed: store.steps.firstProduct },
-                        { label: "Payments", completed: store.steps.payments },
+                        {
+                          label:
+                            store.paymentStatus === "ready"
+                              ? "Payments ready"
+                              : store.paymentStatus === "setup_required"
+                                ? "Finish Stripe setup"
+                                : "Connect payments",
+                          completed: store.steps.payments
+                        },
                         { label: "Launch", completed: store.steps.launch }
                       ].map((step) => (
                         <li key={step.label} className="flex items-center gap-2 text-xs text-muted-foreground">

@@ -12,6 +12,7 @@ function makeProgress(overrides: Partial<StoreOnboardingProgress> = {}): StoreOn
     role: "owner",
     canManageWorkspace: true,
     canLaunch: true,
+    paymentStatus: "ready",
     steps: {
       profile: true,
       branding: true,
@@ -60,6 +61,7 @@ describe("onboarding step routes", () => {
   test("builds launch-readiness checklist items with merchant-facing labels", () => {
     const items = getLaunchReadinessChecklistItems(
       makeProgress({
+        paymentStatus: "not_connected",
         steps: {
           profile: false,
           branding: true,
@@ -107,5 +109,49 @@ describe("onboarding step routes", () => {
     );
 
     expect(nextStep).toBeNull();
+  });
+
+  test("uses Stripe setup language when payments are connected but not ready", () => {
+    const nextStep = getOnboardingNextStep(
+      makeProgress({
+        paymentStatus: "setup_required",
+        steps: {
+          profile: true,
+          branding: true,
+          firstProduct: true,
+          payments: false,
+          launch: false
+        },
+        launchReady: false
+      })
+    );
+
+    expect(nextStep).toEqual({
+      id: "payments",
+      label: "Finish Stripe setup",
+      href: "/dashboard/stores/sunset-mercantile/store-settings/integrations"
+    });
+
+    const items = getLaunchReadinessChecklistItems(
+      makeProgress({
+        paymentStatus: "setup_required",
+        steps: {
+          profile: true,
+          branding: true,
+          firstProduct: true,
+          payments: false,
+          launch: false
+        },
+        launchReady: false
+      })
+    );
+
+    expect(items[2]).toEqual(
+      expect.objectContaining({
+        id: "payments",
+        label: "Finish Stripe setup",
+        completed: false
+      })
+    );
   });
 });
