@@ -3,12 +3,20 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 const getUserMock = vi.fn();
 const getOwnedStoreBundleForOptionalSlugMock = vi.fn();
 const getStoreStripePaymentsReadinessMock = vi.fn();
+const storesMaybeSingleMock = vi.fn();
 
 vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient: vi.fn(async () => ({
     auth: {
       getUser: (...args: unknown[]) => getUserMock(...args)
-    }
+    },
+    from: vi.fn(() => ({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          maybeSingle: (...args: unknown[]) => storesMaybeSingleMock(...args)
+        }))
+      }))
+    }))
   }))
 }));
 
@@ -26,6 +34,7 @@ describe("store payments status route", () => {
     getUserMock.mockReset();
     getOwnedStoreBundleForOptionalSlugMock.mockReset();
     getStoreStripePaymentsReadinessMock.mockReset();
+    storesMaybeSingleMock.mockReset();
 
     getUserMock.mockResolvedValue({
       data: {
@@ -38,6 +47,14 @@ describe("store payments status route", () => {
         id: "store-1",
         stripe_account_id: "acct_123"
       }
+    });
+    storesMaybeSingleMock.mockResolvedValue({
+      data: {
+        tax_collection_mode: "unconfigured",
+        tax_compliance_acknowledged_at: null,
+        tax_compliance_note: null
+      },
+      error: null
     });
   });
 
@@ -68,7 +85,10 @@ describe("store payments status route", () => {
     expect(payload).toMatchObject({
       taxSettingsStatus: "pending",
       taxMissingFields: ["head_office.address.country"],
-      readyForLiveCheckout: false
+      readyForLiveCheckout: false,
+      taxCollectionMode: "unconfigured",
+      taxComplianceAcknowledgedAt: null,
+      taxComplianceNote: null
     });
   });
 

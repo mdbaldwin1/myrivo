@@ -63,6 +63,8 @@ Recommended local defaults:
 
 - `STRIPE_SECRET_KEY`
   - Required for live payment and connect flows
+- `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
+  - Required for Stripe Connect embedded components like seller tax setup
 - `STRIPE_WEBHOOK_SECRET`
   - Required for Stripe webhook verification
 - `STRIPE_STUB_MODE`

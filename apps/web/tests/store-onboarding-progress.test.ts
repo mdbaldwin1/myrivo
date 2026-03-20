@@ -20,7 +20,7 @@ describe("store onboarding progress", () => {
     getStoreStripePaymentsReadinessMock.mockReset();
   });
 
-  test("marks payments incomplete when Stripe account exists but still needs setup", async () => {
+  test("marks payments incomplete when Stripe account exists but tax handling is still unconfigured", async () => {
     adminFromMock.mockImplementation((table: string) => {
       if (table === "store_memberships") {
         return {
@@ -39,7 +39,8 @@ describe("store onboarding progress", () => {
                         has_launched_once: false,
                         status_reason_code: null,
                         status_reason_detail: null,
-                        stripe_account_id: "acct_123"
+                        stripe_account_id: "acct_123",
+                        tax_collection_mode: "unconfigured"
                       }
                     }
                   ],
@@ -119,7 +120,8 @@ describe("store onboarding progress", () => {
     const progress = await getStoreOnboardingProgressForStore("user-1", "demo-store");
 
     expect(progress).toMatchObject({
-      paymentStatus: "setup_required",
+      paymentStatus: "tax_decision_required",
+      taxCollectionMode: "unconfigured",
       steps: {
         payments: false
       },

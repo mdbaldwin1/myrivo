@@ -19,6 +19,7 @@ Add these when the corresponding production features are enabled:
 
 - Payments
   - `STRIPE_SECRET_KEY`
+  - `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
   - `STRIPE_WEBHOOK_SECRET`
 - Email delivery
   - `MYRIVO_EMAIL_PROVIDER`

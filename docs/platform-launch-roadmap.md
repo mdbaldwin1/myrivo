@@ -44,11 +44,16 @@ This roadmap covers the remaining work for production launch and post-launch har
 ### B.1) Merchant-owned tax readiness
 - Move Stripe Tax liability from the platform account to the connected seller account in checkout.
 - Add merchant-facing tax readiness/status in the store workspace.
-- Require connected-account tax setup before live store activation:
-  - head office configured
-  - tax defaults configured
-  - registrations configured where required
+- Require an explicit tax decision before live store activation:
+  - `Stripe Tax` path:
+    - head office configured
+    - tax defaults configured
+    - registrations configured where required
+  - `Seller-attested no-tax` path:
+    - seller acknowledgement captured
+    - warning remains visible in merchant workspace
 - Document clearly that sellers are responsible for their own tax compliance and filings.
+- Decide whether the no-tax path should require extra admin review before approval.
 
 ### C) Refunds, cancellations, disputes baseline
 - Add merchant-side refund actions from order detail.

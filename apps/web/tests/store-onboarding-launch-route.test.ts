@@ -89,6 +89,7 @@ describe("store onboarding launch route", () => {
       role: "owner",
       canManageWorkspace: true,
       canLaunch: true,
+      taxCollectionMode: "stripe_tax",
       steps: {
         profile: true,
         branding: true,
@@ -128,7 +129,7 @@ describe("store onboarding launch route", () => {
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
-      error: "Complete profile, branding, first product, and Stripe payments setup before launching this store."
+      error: "Complete profile, branding, first product, your tax decision, and Stripe payments setup before launching this store."
     });
     expect(notifyOwnersSystemSetupWarningMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -173,5 +174,121 @@ describe("store onboarding launch route", () => {
     expect(logAuditEventMock).toHaveBeenCalledTimes(1);
     expect(notifyOwnersStoreSubmittedForReviewMock).toHaveBeenCalledTimes(1);
     expect(notifyPlatformAdminsStoreSubmittedForReviewMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("blocks launch submission when the seller has not chosen a tax path yet", async () => {
+    getStoreOnboardingProgressForStoreMock.mockResolvedValue({
+      id: "store-1",
+      name: "Demo Store",
+      slug: "demo-store",
+      status: "draft",
+      hasLaunchedOnce: false,
+      role: "owner",
+      canManageWorkspace: true,
+      canLaunch: true,
+      paymentStatus: "tax_decision_required",
+      taxCollectionMode: "unconfigured",
+      steps: {
+        profile: true,
+        branding: true,
+        firstProduct: true,
+        payments: false,
+        launch: false
+      },
+      completedStepCount: 3,
+      totalStepCount: 5,
+      launchReady: false
+    });
+
+    getStoreStripePaymentsReadinessMock.mockResolvedValue({
+      connected: true,
+      readyForLiveCheckout: false,
+      chargesEnabled: true,
+      payoutsEnabled: true,
+      detailsSubmitted: true,
+      taxReady: false,
+      taxSettingsStatus: "pending"
+    });
+
+    const route = await import("@/app/api/stores/onboarding/launch/route");
+    const response = await route.POST(
+      new NextRequest("http://localhost:3000/api/stores/onboarding/launch", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "http://localhost:3000",
+          host: "localhost:3000"
+        },
+        body: JSON.stringify({ slug: "demo-store" })
+      })
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: "Complete profile, branding, first product, your tax decision, and Stripe payments setup before launching this store."
+    });
+    expect(notifyOwnersSystemSetupWarningMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        missingSteps: ["Tax decision", "Payments"]
+      })
+    );
+  });
+
+  test("allows launch when seller attested no-tax and Stripe payments are operationally ready", async () => {
+    getStoreOnboardingProgressForStoreMock.mockResolvedValue({
+      id: "store-1",
+      name: "Demo Store",
+      slug: "demo-store",
+      status: "draft",
+      hasLaunchedOnce: false,
+      role: "owner",
+      canManageWorkspace: true,
+      canLaunch: true,
+      paymentStatus: "ready",
+      taxCollectionMode: "seller_attested_no_tax",
+      steps: {
+        profile: true,
+        branding: true,
+        firstProduct: true,
+        payments: true,
+        launch: false
+      },
+      completedStepCount: 4,
+      totalStepCount: 5,
+      launchReady: true
+    });
+
+    getStoreStripePaymentsReadinessMock.mockResolvedValue({
+      connected: true,
+      readyForLiveCheckout: false,
+      chargesEnabled: true,
+      payoutsEnabled: true,
+      detailsSubmitted: true,
+      taxReady: false,
+      taxSettingsStatus: "pending"
+    });
+
+    const route = await import("@/app/api/stores/onboarding/launch/route");
+    const response = await route.POST(
+      new NextRequest("http://localhost:3000/api/stores/onboarding/launch", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "http://localhost:3000",
+          host: "localhost:3000"
+        },
+        body: JSON.stringify({ slug: "demo-store" })
+      })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      store: {
+        id: "store-1",
+        slug: "demo-store",
+        status: "pending_review"
+      }
+    });
   });
 });

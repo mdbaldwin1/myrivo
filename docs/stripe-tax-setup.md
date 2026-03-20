@@ -29,10 +29,14 @@ Today Myrivo:
 
 That means Stripe Tax is configured to use the connected seller account's tax liability rather than the platform account's configuration.
 
-What is still incomplete:
-- live checkout now blocks when connected-account Stripe Tax setup is not ready
-- merchant settings now surface Stripe Tax readiness and missing setup fields
-- connected-account tax setup still needs explicit go-live activation gating, not just checkout gating
+What is implemented today:
+- live checkout blocks when a store chooses `Stripe Tax` and the connected-account Stripe Tax setup is not ready
+- merchant settings surface Stripe Tax readiness and missing setup fields
+- merchant settings include embedded Stripe Tax settings and tax registrations components for connected accounts
+- stores must make an explicit tax decision before launch:
+  - `Stripe Tax`
+  - `Seller-attested no-tax`
+- seller-attested no-tax is warning-backed and auditable, but it does **not** mean Myrivo determined the seller has no tax obligation
 - checkout still uses one aggregated line item, which is workable for now but not ideal long term
 
 ## Chosen direction
@@ -91,19 +95,36 @@ payment_intent_data: {
 
 Myrivo should also:
 - expose connected-account tax readiness in merchant settings
-- block live launch or live payments when merchant tax setup is incomplete
+- require an explicit tax decision before launch
+- block live launch or live payments when a store chooses Stripe Tax and merchant tax setup is incomplete
 - document clearly that merchants are responsible for registrations, tax compliance, and filings
+
+## Tax decision policy
+
+Myrivo now supports two launch paths:
+
+1. `Stripe Tax`
+- Seller configures tax settings and registrations on their connected Stripe account.
+- Myrivo uses the connected account's Stripe Tax setup at checkout.
+- This is the preferred and safer default path.
+
+2. `Seller-attested no-tax`
+- Seller explicitly acknowledges that Myrivo does not provide tax advice.
+- Seller confirms they are responsible for determining whether they must register, collect, remit, and file taxes.
+- Myrivo records the acknowledgement timestamp, actor, and note on the store record.
+
+Important boundaries:
+- Myrivo does **not** determine that a seller is exempt from tax obligations.
+- Myrivo does **not** recommend the no-tax path as generally compliant.
+- The no-tax path exists to avoid forcing immediate Stripe Tax setup for sellers who are making their own compliance decision.
 
 ## Remaining implementation work
 
 The following work still needs to land before Myrivo can fully claim merchant-owned tax readiness end to end:
 
-1. Add merchant tax readiness checks to onboarding / go-live activation, not just checkout.
-2. Expand merchant-facing tax setup surfaces where useful:
-   - registration status
-   - clearer setup CTAs into Stripe
-3. Keep merchant-facing docs/copy aligned with the responsibility model.
-4. Verify test-mode and live-mode flows against connected-account tax configuration.
+1. Verify test-mode and live-mode flows against connected-account tax configuration.
+2. Decide whether seller-attested no-tax stores should trigger extra admin review/flagging before launch.
+3. Consider future follow-up improvements like itemized Stripe line items and richer tax-code controls.
 
 ## Test-mode note
 
@@ -128,11 +149,7 @@ This is a follow-up improvement, not the first blocker for moving to merchant-ow
 
 ## Operational guidance
 
-Until the readiness and setup enforcement work is complete:
-- do **not** assume every connected account has the required registrations and defaults configured at go-live
-- rely on checkout gating plus merchant settings visibility, but treat live-launch gating as a remaining follow-up
-
-Once the migration is complete, the operating guidance should be:
+Current operating guidance:
 
 > Sellers own tax setup, registrations, and filings.
-> Myrivo provides the storefront, checkout, and Stripe Tax integration, but does not take on merchant tax filing responsibility.
+> Myrivo provides the storefront, checkout, Stripe Tax integration, and an auditable no-tax attestation path, but does not take on merchant tax filing responsibility or make compliance determinations for sellers.

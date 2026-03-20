@@ -30,8 +30,12 @@ function getPaymentsStepLabel(store: StoreOnboardingProgress) {
     return "Payments ready";
   }
 
+  if (store.paymentStatus === "tax_decision_required") {
+    return "Choose tax handling";
+  }
+
   if (store.paymentStatus === "setup_required") {
-    return "Finish Stripe setup";
+    return store.taxCollectionMode === "seller_attested_no_tax" ? "Finish Stripe payments setup" : "Finish Stripe tax setup";
   }
 
   return "Connect payments";
@@ -39,11 +43,19 @@ function getPaymentsStepLabel(store: StoreOnboardingProgress) {
 
 function getPaymentsStepDescription(store: StoreOnboardingProgress) {
   if (store.paymentStatus === "ready") {
-    return "Stripe, payouts, and tax setup are ready for launch.";
+    return store.taxCollectionMode === "seller_attested_no_tax"
+      ? "Stripe payments are ready, and you recorded a no-tax selling decision."
+      : "Stripe, payouts, and tax setup are ready for launch.";
+  }
+
+  if (store.paymentStatus === "tax_decision_required") {
+    return "Choose whether to set up Stripe Tax or acknowledge selling without tax collection before launch.";
   }
 
   if (store.paymentStatus === "setup_required") {
-    return "Stripe is connected, but live checkout still needs payouts or tax setup completed.";
+    return store.taxCollectionMode === "seller_attested_no_tax"
+      ? "Stripe is connected, but payouts or account setup still need attention before launch."
+      : "Stripe is connected, but live checkout still needs payouts or tax setup completed.";
   }
 
   return "Connect Stripe before you apply to launch.";

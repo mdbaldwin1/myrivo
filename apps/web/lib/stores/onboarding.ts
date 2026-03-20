@@ -1,11 +1,12 @@
 import { hasStoreRole } from "@/lib/auth/roles";
 import { getStoreStripePaymentsReadiness } from "@/lib/stripe/store-payments-readiness";
 import { hasStoreLaunchedOnce, isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
+import { isStorePaymentsReadyForLaunch, type StoreTaxCollectionMode } from "@/lib/stores/tax-compliance";
 import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export type OnboardingStoreRole = "owner" | "admin" | "staff" | "customer";
-export type OnboardingPaymentsStatus = "not_connected" | "setup_required" | "ready";
+export type OnboardingPaymentsStatus = "not_connected" | "tax_decision_required" | "setup_required" | "ready";
 
 export type StoreOnboardingProgress = {
   id: string;
@@ -19,6 +20,7 @@ export type StoreOnboardingProgress = {
   canManageWorkspace: boolean;
   canLaunch: boolean;
   paymentStatus: OnboardingPaymentsStatus;
+  taxCollectionMode: StoreTaxCollectionMode;
   steps: {
     profile: boolean;
     branding: boolean;
@@ -42,6 +44,7 @@ type MembershipStoreRow = {
     status_reason_code: string | null;
     status_reason_detail: string | null;
     stripe_account_id: string | null;
+    tax_collection_mode: StoreTaxCollectionMode;
   } | null;
 };
 
@@ -55,6 +58,7 @@ type LegacyMembershipStoreRow = {
     status_reason_code: string | null;
     status_reason_detail: string | null;
     stripe_account_id: string | null;
+    tax_collection_mode?: StoreTaxCollectionMode;
   } | null;
 };
 
@@ -79,6 +83,7 @@ type ProgressSourceStore = {
   status_reason_code: string | null;
   status_reason_detail: string | null;
   stripe_account_id: string | null;
+  tax_collection_mode: StoreTaxCollectionMode;
   role: OnboardingStoreRole;
 };
 
@@ -97,13 +102,17 @@ async function resolveOwnedProgressStores(
   const admin = createSupabaseAdminClient();
   const initialResult = await admin
     .from("stores")
-    .select("id,name,slug,status,has_launched_once,status_reason_code,status_reason_detail,stripe_account_id")
+    .select("id,name,slug,status,has_launched_once,status_reason_code,status_reason_detail,stripe_account_id,tax_collection_mode")
     .eq("owner_user_id", userId)
     .order("name", { ascending: true });
 
   let stores = initialResult.data ?? [];
 
-  if (initialResult.error && isMissingColumnInSchemaCache(initialResult.error, "has_launched_once")) {
+  if (
+    initialResult.error &&
+    (isMissingColumnInSchemaCache(initialResult.error, "has_launched_once") ||
+      isMissingColumnInSchemaCache(initialResult.error, "tax_collection_mode"))
+  ) {
     const legacyResult = await admin
       .from("stores")
       .select("id,name,slug,status,status_reason_code,status_reason_detail,stripe_account_id")
@@ -114,7 +123,12 @@ async function resolveOwnedProgressStores(
       throw new Error(legacyResult.error.message);
     }
 
-    stores = (legacyResult.data ?? []).map((store) => withLaunchHistory(store));
+    stores = (legacyResult.data ?? []).map((store) =>
+      withLaunchHistory({
+        ...store,
+        tax_collection_mode: "unconfigured" as const
+      })
+    );
   } else if (initialResult.error) {
     throw new Error(initialResult.error.message);
   }
@@ -139,7 +153,11 @@ async function resolvePaymentsStatusForStore(store: ProgressSourceStore): Promis
   }
 
   const readiness = await getStoreStripePaymentsReadiness(store.stripe_account_id);
-  return readiness.readyForLiveCheckout ? "ready" : "setup_required";
+  if (store.tax_collection_mode === "unconfigured") {
+    return "tax_decision_required";
+  }
+
+  return isStorePaymentsReadyForLaunch(store.tax_collection_mode, readiness) ? "ready" : "setup_required";
 }
 
 function buildProgress(
@@ -169,6 +187,7 @@ function buildProgress(
     canManageWorkspace: hasStoreRole(store.role, "staff"),
     canLaunch: hasStoreRole(store.role, "admin"),
     paymentStatus,
+    taxCollectionMode: store.tax_collection_mode,
     steps: {
       profile,
       branding: brand,
@@ -186,14 +205,18 @@ export async function getStoreOnboardingProgressForUser(userId: string): Promise
   const admin = createSupabaseAdminClient();
   const initialResult = await admin
     .from("store_memberships")
-    .select("role,store:stores!inner(id,name,slug,status,has_launched_once,status_reason_code,status_reason_detail,stripe_account_id)")
+    .select("role,store:stores!inner(id,name,slug,status,has_launched_once,status_reason_code,status_reason_detail,stripe_account_id,tax_collection_mode)")
     .eq("user_id", userId)
     .eq("status", "active")
     .returns<MembershipStoreRow[]>();
 
   let memberships = initialResult.data ?? [];
 
-  if (initialResult.error && isMissingColumnInSchemaCache(initialResult.error, "has_launched_once")) {
+  if (
+    initialResult.error &&
+    (isMissingColumnInSchemaCache(initialResult.error, "has_launched_once") ||
+      isMissingColumnInSchemaCache(initialResult.error, "tax_collection_mode"))
+  ) {
     const legacyResult = await admin
       .from("store_memberships")
       .select("role,store:stores!inner(id,name,slug,status,status_reason_code,status_reason_detail,stripe_account_id)")
@@ -207,7 +230,12 @@ export async function getStoreOnboardingProgressForUser(userId: string): Promise
 
     memberships = (legacyResult.data ?? []).map((membership) => ({
       ...membership,
-      store: membership.store ? withLaunchHistory(membership.store) : null
+      store: membership.store
+        ? withLaunchHistory({
+            ...membership.store,
+            tax_collection_mode: "unconfigured" as const
+          })
+        : null
     }));
   } else if (initialResult.error) {
     throw new Error(initialResult.error.message);
@@ -217,6 +245,7 @@ export async function getStoreOnboardingProgressForUser(userId: string): Promise
     .filter((membership) => membership.store)
     .map((membership) => ({
       ...membership.store!,
+      tax_collection_mode: membership.store?.tax_collection_mode ?? "unconfigured",
       role: membership.role
     }));
 
@@ -275,14 +304,18 @@ export async function getStoreOnboardingProgressForStore(userId: string, storeSl
   const admin = createSupabaseAdminClient();
   const initialResult = await admin
     .from("store_memberships")
-    .select("role,store:stores!inner(id,name,slug,status,has_launched_once,status_reason_code,status_reason_detail,stripe_account_id)")
+    .select("role,store:stores!inner(id,name,slug,status,has_launched_once,status_reason_code,status_reason_detail,stripe_account_id,tax_collection_mode)")
     .eq("user_id", userId)
     .eq("status", "active")
     .returns<MembershipStoreRow[]>();
 
   let memberships = initialResult.data ?? [];
 
-  if (initialResult.error && isMissingColumnInSchemaCache(initialResult.error, "has_launched_once")) {
+  if (
+    initialResult.error &&
+    (isMissingColumnInSchemaCache(initialResult.error, "has_launched_once") ||
+      isMissingColumnInSchemaCache(initialResult.error, "tax_collection_mode"))
+  ) {
     const legacyResult = await admin
       .from("store_memberships")
       .select("role,store:stores!inner(id,name,slug,status,status_reason_code,status_reason_detail,stripe_account_id)")
@@ -296,7 +329,12 @@ export async function getStoreOnboardingProgressForStore(userId: string, storeSl
 
     memberships = (legacyResult.data ?? []).map((membership) => ({
       ...membership,
-      store: membership.store ? withLaunchHistory(membership.store) : null
+      store: membership.store
+        ? withLaunchHistory({
+            ...membership.store,
+            tax_collection_mode: "unconfigured" as const
+          })
+        : null
     }));
   } else if (initialResult.error) {
     throw new Error(initialResult.error.message);
@@ -304,7 +342,11 @@ export async function getStoreOnboardingProgressForStore(userId: string, storeSl
 
   const membershipStores = (memberships ?? [])
     .filter((membership) => membership.store)
-    .map((membership) => ({ ...membership.store!, role: membership.role }));
+    .map((membership) => ({
+      ...membership.store!,
+      tax_collection_mode: membership.store?.tax_collection_mode ?? "unconfigured",
+      role: membership.role
+    }));
 
   const storesBySlug = new Map<string, ProgressSourceStore>();
   for (const store of membershipStores) {
