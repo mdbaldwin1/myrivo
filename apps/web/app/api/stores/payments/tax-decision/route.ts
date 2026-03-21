@@ -4,6 +4,7 @@ import { logAuditEvent } from "@/lib/audit/log";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
+import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const updateTaxDecisionSchema = z.discriminatedUnion("mode", [
@@ -70,6 +71,13 @@ export async function PATCH(request: NextRequest) {
       tax_compliance_note: string | null;
     }>();
 
+  if (error && isMissingColumnInSchemaCache(error, "tax_collection_mode")) {
+    return NextResponse.json(
+      { error: "Store tax decision fields are not available yet. Apply the latest database migrations and try again." },
+      { status: 409 }
+    );
+  }
+
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -85,6 +93,74 @@ export async function PATCH(request: NextRequest) {
       tax_collection_mode: data.tax_collection_mode,
       tax_compliance_acknowledged_at: data.tax_compliance_acknowledged_at,
       tax_compliance_note: data.tax_compliance_note
+    }
+  });
+
+  return NextResponse.json({
+    taxCollectionMode: data.tax_collection_mode,
+    taxComplianceAcknowledgedAt: data.tax_compliance_acknowledged_at,
+    taxComplianceNote: data.tax_compliance_note
+  });
+}
+
+export async function DELETE(request: NextRequest) {
+  const trustedOriginResponse = enforceTrustedOrigin(request);
+  if (trustedOriginResponse) {
+    return trustedOriginResponse;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, request.nextUrl.searchParams.get("storeSlug"), "admin");
+
+  if (!bundle) {
+    return NextResponse.json({ error: "No store found for account" }, { status: 404 });
+  }
+
+  const { data, error } = await supabase
+    .from("stores")
+    .update({
+      tax_collection_mode: "unconfigured" as const,
+      tax_compliance_acknowledged_at: null,
+      tax_compliance_acknowledged_by_user_id: null,
+      tax_compliance_note: null
+    })
+    .eq("id", bundle.store.id)
+    .select("id,tax_collection_mode,tax_compliance_acknowledged_at,tax_compliance_note")
+    .single<{
+      id: string;
+      tax_collection_mode: "unconfigured" | "stripe_tax" | "seller_attested_no_tax";
+      tax_compliance_acknowledged_at: string | null;
+      tax_compliance_note: string | null;
+    }>();
+
+  if (error && isMissingColumnInSchemaCache(error, "tax_collection_mode")) {
+    return NextResponse.json(
+      { error: "Store tax decision fields are not available yet. Apply the latest database migrations and try again." },
+      { status: 409 }
+    );
+  }
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  await logAuditEvent({
+    storeId: bundle.store.id,
+    actorUserId: user.id,
+    action: "update",
+    entity: "store",
+    entityId: bundle.store.id,
+    metadata: {
+      source: "store_payments_tax_decision_clear",
+      tax_collection_mode: data.tax_collection_mode
     }
   });
 

@@ -5,22 +5,22 @@ describe("pricing config", () => {
   it("returns live active plans in monthly price order", () => {
     const rows: BillingPlanRow[] = [
       {
-        key: "scale",
-        name: "Scale",
-        monthly_price_cents: 14900,
-        transaction_fee_bps: 100,
-        transaction_fee_fixed_cents: 0,
+        key: "family_friends",
+        name: "Family & Friends",
+        monthly_price_cents: 0,
+        transaction_fee_bps: 290,
+        transaction_fee_fixed_cents: 30,
         active: true,
-        feature_flags_json: { prioritySupport: true, customDomain: true, whiteLabel: true }
+        feature_flags_json: { prioritySupport: false, customDomain: true, whiteLabel: false, internalOnly: true }
       },
       {
-        key: "starter",
-        name: "Starter",
+        key: "standard",
+        name: "Standard",
         monthly_price_cents: 0,
-        transaction_fee_bps: 350,
-        transaction_fee_fixed_cents: 0,
+        transaction_fee_bps: 600,
+        transaction_fee_fixed_cents: 30,
         active: true,
-        feature_flags_json: { prioritySupport: false, customDomain: false, whiteLabel: false }
+        feature_flags_json: { prioritySupport: false, customDomain: true, whiteLabel: false }
       },
       {
         key: "legacy",
@@ -35,19 +35,19 @@ describe("pricing config", () => {
 
     const plans = resolvePricingPlans(rows);
 
-    expect(plans).toHaveLength(2);
-    expect(plans.map((plan) => plan.key)).toEqual(["starter", "scale"]);
-    expect(plans.at(1)?.featureFlags.whiteLabel).toBe(true);
+    expect(plans).toHaveLength(1);
+    expect(plans.map((plan) => plan.key)).toEqual(["standard"]);
+    expect(plans.at(0)?.featureFlags.customDomain).toBe(true);
   });
 
   it("falls back to default plans when none are provided", () => {
     const plans = resolvePricingPlans(null);
-    expect(plans.map((plan) => plan.key)).toEqual(["starter", "growth", "scale"]);
+    expect(plans.map((plan) => plan.key)).toEqual(["standard"]);
   });
 
   it("formats money and fee labels consistently", () => {
     expect(formatMoney(14900)).toBe("$149");
     expect(formatMoney(0)).toBe("$0");
-    expect(formatPlatformFeePercent(350)).toBe("3.50%");
+    expect(formatPlatformFeePercent(600)).toBe("6.00%");
   });
 });

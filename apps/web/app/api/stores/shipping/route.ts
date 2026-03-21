@@ -105,3 +105,41 @@ export async function PUT(request: NextRequest) {
     source: "store"
   });
 }
+
+export async function DELETE(request: NextRequest) {
+  const trustedOriginResponse = enforceTrustedOrigin(request);
+
+  if (trustedOriginResponse) {
+    return trustedOriginResponse;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, request.nextUrl.searchParams.get("storeSlug"), "staff");
+
+  if (!bundle) {
+    return NextResponse.json({ error: "No store found for account" }, { status: 404 });
+  }
+
+  const { error } = await supabase.from("store_integrations").delete().eq("store_id", bundle.store.id);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    shippingProvider: "none",
+    hasApiKey: false,
+    hasWebhookSecret: false,
+    webhookSecret: null,
+    webhookUrl: `${getAppUrl()}/api/shipping/webhook`,
+    source: "default"
+  });
+}

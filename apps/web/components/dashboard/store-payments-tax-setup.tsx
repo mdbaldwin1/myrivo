@@ -2,10 +2,11 @@
 
 import { loadConnectAndInitialize } from "@stripe/connect-js/pure";
 import { ConnectComponentsProvider, ConnectTaxRegistrations, ConnectTaxSettings } from "@stripe/react-connect-js";
+import { RefreshCw, Settings2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FeedbackMessage } from "@/components/ui/feedback-message";
-import { SectionCard } from "@/components/ui/section-card";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { buildStoreScopedApiPath } from "@/lib/routes/store-workspace";
 
 type StripeTaxStatus = "active" | "pending" | "unavailable" | undefined;
@@ -106,31 +107,71 @@ export function StorePaymentsTaxSetup({
       ? "Manage Stripe Tax setup"
       : "Complete Stripe Tax setup";
 
-  return (
-    <SectionCard
-      title="Stripe Tax setup"
-      description="Complete head office and tax registrations for the connected seller account without leaving Myrivo."
-      action={
-        <Button type="button" variant="outline" size="sm" onClick={() => void openTaxSetup()} disabled={!connected || pending}>
-          {launchButtonLabel}
-        </Button>
-      }
-    >
-      <div className="space-y-3">
-        {!connected ? (
-          <p className="text-sm text-muted-foreground">Connect Stripe first, then come back here to complete seller tax setup.</p>
-        ) : null}
+  const statusLabel = taxSettingsStatus === "active"
+    ? "Tax setup looks healthy"
+    : taxSettingsStatus === "pending"
+      ? "Tax setup still needs work"
+      : "Tax readiness is still unknown";
 
-        {connected && !expanded ? (
-          <p className="text-sm text-muted-foreground">
+  return (
+    <div className="space-y-3">
+      {!connected ? (
+        <p className="text-sm text-muted-foreground">Connect Stripe first, then come back here to complete seller tax setup.</p>
+      ) : null}
+
+      {connected && !expanded ? (
+        <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 p-4">
+          <p className="text-sm font-medium">Stripe Tax setup is ready when you are</p>
+          <p className="mt-1 text-xs text-muted-foreground">
             Use this to set the seller account&apos;s head office and tax registrations that Stripe Tax needs for live checkout.
           </p>
-        ) : null}
+          <p className="mt-2 text-xs text-muted-foreground">
+            Current status: <span className="font-medium text-foreground">{statusLabel}</span>
+          </p>
+          <div className="mt-3">
+            <Button type="button" variant="outline" size="sm" onClick={() => void openTaxSetup()} disabled={pending}>
+              {launchButtonLabel}
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
-        {connected && expanded && connectInstance ? (
-          <ConnectComponentsProvider connectInstance={connectInstance}>
-            <div className="space-y-3">
-              <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
+      {connected && expanded && connectInstance ? (
+        <ConnectComponentsProvider connectInstance={connectInstance}>
+          <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">Stripe Tax setup</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Complete the seller&apos;s tax settings and registrations here without leaving Myrivo.
+                </p>
+              </div>
+              <TooltipProvider delayDuration={120}>
+                <div className="flex items-center gap-1">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => void onStatusRefresh()} disabled={pending}>
+                        <RefreshCw className="h-4 w-4" />
+                        <span className="sr-only">Refresh Stripe Tax status</span>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">Refresh</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => void openTaxSetup()} disabled={pending}>
+                        <Settings2 className="h-4 w-4" />
+                        <span className="sr-only">Manage Stripe Tax setup</span>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">Manage Setup</TooltipContent>
+                  </Tooltip>
+                </div>
+              </TooltipProvider>
+            </div>
+
+            <div className="mt-4 space-y-5">
+              <div>
                 <p className="text-sm font-medium">Tax settings</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Set the seller&apos;s head office and product tax defaults for Stripe Tax.
@@ -145,7 +186,7 @@ export function StorePaymentsTaxSetup({
                 </div>
               </div>
 
-              <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
+              <div className="border-t border-border/60 pt-5">
                 <p className="text-sm font-medium">Tax registrations</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Add the jurisdictions where this seller is registered to collect tax.
@@ -163,11 +204,11 @@ export function StorePaymentsTaxSetup({
                 </div>
               </div>
             </div>
-          </ConnectComponentsProvider>
-        ) : null}
+          </div>
+        </ConnectComponentsProvider>
+      ) : null}
 
-        <FeedbackMessage type="error" message={error} />
-      </div>
-    </SectionCard>
+      <FeedbackMessage type="error" message={error} />
+    </div>
   );
 }

@@ -5,7 +5,6 @@ import {
   Globe,
   Paintbrush,
   Plug,
-  Store,
   Truck,
   Users,
   type LucideIcon
@@ -18,8 +17,7 @@ export type StoreSettingsSectionId =
   | "privacy"
   | "billing"
   | "team"
-  | "shipping"
-  | "pickup"
+  | "fulfillment"
   | "domains"
   | "integrations";
 
@@ -101,21 +99,13 @@ export const storeSettingsWorkspaceGroups: readonly StoreSettingsWorkspaceGroup[
     description: "Checkout, delivery, and pickup controls that affect live order flow.",
     sections: [
       {
-        id: "shipping",
-        href: "/store-settings/shipping",
-        label: "Shipping",
-        description: "Delivery offer settings, shipping rules, and fulfillment expectations.",
+        id: "fulfillment",
+        href: "/store-settings/fulfillment",
+        label: "Fulfillment",
+        description: "Shipping methods, pickup availability, locations, schedules, and checkout fulfillment controls.",
         icon: Truck,
         ownership: "operations"
-      },
-      {
-        id: "pickup",
-        href: "/store-settings/pickup",
-        label: "Pickup",
-        description: "Pickup availability, scheduling windows, and location rules.",
-        icon: Store,
-        ownership: "operations"
-      },
+      }
     ]
   },
   {
@@ -151,14 +141,13 @@ export const storefrontStudioOwnedStoreSettingsSectionIds = [
 
 export const storeSettingsWorkspaceNavigationSectionIds = [
   "general",
-  "legal",
-  "privacy",
-  "billing",
-  "shipping",
-  "pickup",
   "domains",
+  "fulfillment",
+  "integrations",
+  "billing",
   "team",
-  "integrations"
+  "legal",
+  "privacy"
 ] as const satisfies readonly StoreSettingsSectionId[];
 
 export type StoreSettingsWorkspaceStatusInput = {
@@ -181,8 +170,14 @@ export function buildStoreSettingsWorkspaceStatuses(input: StoreSettingsWorkspac
     privacy: input.storeStatus === "live" ? "Privacy controls active" : "Complete privacy controls before launch",
     billing: "Billing plan and fee settings",
     team: `${input.activeMemberCount} active ${input.activeMemberCount === 1 ? "member" : "members"}`,
-    shipping: input.shippingEnabled ? "Shipping enabled" : "Shipping not configured",
-    pickup: input.pickupEnabled ? `${input.pickupLocationCount} active pickup ${input.pickupLocationCount === 1 ? "location" : "locations"}` : "Pickup disabled",
+    fulfillment:
+      input.shippingEnabled && input.pickupEnabled
+        ? `${input.pickupLocationCount} pickup ${input.pickupLocationCount === 1 ? "location" : "locations"} + shipping enabled`
+        : input.shippingEnabled
+          ? "Shipping enabled"
+          : input.pickupEnabled
+            ? `${input.pickupLocationCount} active pickup ${input.pickupLocationCount === 1 ? "location" : "locations"}`
+            : "Fulfillment methods not configured",
     domains: input.hasVerifiedPrimaryDomain ? "Primary domain verified" : "Using default storefront domain",
     integrations: input.paymentsConnected ? "Payments connected" : "Payments setup needed"
   };

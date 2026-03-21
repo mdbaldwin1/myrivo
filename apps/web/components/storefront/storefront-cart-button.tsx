@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ShoppingCart } from "lucide-react";
-import { readStorefrontCart } from "@/lib/storefront/cart";
+import { Minus, Plus, ShoppingCart, Trash2 } from "lucide-react";
+import { readStorefrontCart, STOREFRONT_CART_UPDATED_EVENT, syncStorefrontCart, writeStorefrontCart, type StorefrontCartEntry } from "@/lib/storefront/cart";
+import { Button } from "@/components/ui/button";
 import { buildStorefrontCartPath } from "@/lib/storefront/paths";
 import { cn } from "@/lib/utils";
 
@@ -42,6 +43,7 @@ export function StorefrontCartButton({
   const [previewItems, setPreviewItems] = useState<CartPreviewItem[]>([]);
   const [previewSubtotalCents, setPreviewSubtotalCents] = useState(0);
   const [closeTimeout, setCloseTimeout] = useState<number | null>(null);
+  const [isUpdatingPreview, setIsUpdatingPreview] = useState(false);
   const resolvedHref = href ?? (storeSlug ? buildStorefrontCartPath(storeSlug) : "/cart");
 
   function syncCount() {
@@ -58,9 +60,15 @@ export function StorefrontCartButton({
       syncCount();
     }
 
+    function onCartUpdated() {
+      syncCount();
+    }
+
     window.addEventListener("storage", onStorage);
+    window.addEventListener(STOREFRONT_CART_UPDATED_EVENT, onCartUpdated);
     return () => {
       window.removeEventListener("storage", onStorage);
+      window.removeEventListener(STOREFRONT_CART_UPDATED_EVENT, onCartUpdated);
     };
   }, []);
 
@@ -93,6 +101,77 @@ export function StorefrontCartButton({
 
     setPreviewItems(payload.items ?? []);
     setPreviewSubtotalCents(payload.subtotalCents ?? 0);
+  }
+
+  async function updatePreviewCart(updater: (current: StorefrontCartEntry[]) => StorefrontCartEntry[]) {
+    const next = updater(readStorefrontCart())
+      .map((entry) => ({
+        ...entry,
+        quantity: Math.min(99, Math.max(1, entry.quantity))
+      }))
+      .filter((entry) => entry.quantity > 0);
+
+    writeStorefrontCart(next);
+    setCount(next.reduce((sum, entry) => sum + entry.quantity, 0));
+
+    if (next.length === 0) {
+      setPreviewItems([]);
+      setPreviewSubtotalCents(0);
+    } else {
+      setPreviewItems((current) =>
+        current
+          .map((item) => {
+            const match = next.find((entry) => item.key === `${entry.productId}:${entry.variantId}`);
+            if (!match) {
+              return null;
+            }
+
+            return {
+              ...item,
+              quantity: match.quantity,
+              lineTotalCents: item.unitPriceCents * match.quantity
+            };
+          })
+          .filter((item): item is CartPreviewItem => item !== null)
+      );
+      setPreviewSubtotalCents(next.reduce((sum, entry) => {
+        const matchingPreview = previewItems.find((item) => item.key === `${entry.productId}:${entry.variantId}`);
+        return sum + (matchingPreview ? matchingPreview.unitPriceCents * entry.quantity : 0);
+      }, 0));
+    }
+
+    setIsUpdatingPreview(true);
+    try {
+      if (storeSlug) {
+        await syncStorefrontCart(next, storeSlug);
+      }
+      await loadPreview();
+    } finally {
+      setIsUpdatingPreview(false);
+    }
+  }
+
+  function updatePreviewQuantity(itemKey: string, nextQuantity: number) {
+    const [productId, variantId] = itemKey.split(":");
+    if (!productId || !variantId) {
+      return;
+    }
+
+    void updatePreviewCart((current) => {
+      if (nextQuantity <= 0) {
+        return current.filter((entry) => !(entry.productId === productId && entry.variantId === variantId));
+      }
+
+      return current.map((entry) =>
+        entry.productId === productId && entry.variantId === variantId
+          ? { ...entry, quantity: nextQuantity }
+          : entry
+      );
+    });
+  }
+
+  function removePreviewItem(itemKey: string) {
+    updatePreviewQuantity(itemKey, 0);
   }
 
   function openPreview() {
@@ -145,14 +224,52 @@ export function StorefrontCartButton({
           ) : (
             <div className="space-y-2 py-2">
               {previewItems.slice(0, 4).map((item) => (
-                <div key={item.key} className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="text-xs font-medium">{item.productTitle}</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {item.variantLabel} · Qty {item.quantity}
-                    </p>
+                <div key={item.key} className="space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-medium">{item.productTitle}</p>
+                      <p className="text-[11px] text-muted-foreground">{item.variantLabel}</p>
+                    </div>
+                    <p className="text-xs font-medium">${(item.lineTotalCents / 100).toFixed(2)}</p>
                   </div>
-                  <p className="text-xs font-medium">${(item.lineTotalCents / 100).toFixed(2)}</p>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        disabled={isUpdatingPreview}
+                        onClick={() => updatePreviewQuantity(item.key, item.quantity - 1)}
+                      >
+                        <Minus className="h-3 w-3" />
+                        <span className="sr-only">Decrease quantity</span>
+                      </Button>
+                      <span className="min-w-6 text-center text-[11px] font-medium">{item.quantity}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        disabled={isUpdatingPreview || item.quantity >= 99}
+                        onClick={() => updatePreviewQuantity(item.key, item.quantity + 1)}
+                      >
+                        <Plus className="h-3 w-3" />
+                        <span className="sr-only">Increase quantity</span>
+                      </Button>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                      disabled={isUpdatingPreview}
+                      onClick={() => removePreviewItem(item.key)}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      <span className="sr-only">Remove item</span>
+                    </Button>
+                  </div>
                 </div>
               ))}
               {previewItems.length > 4 ? (

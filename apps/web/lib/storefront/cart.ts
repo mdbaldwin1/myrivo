@@ -1,6 +1,7 @@
 import type { StorefrontAttributionSnapshot } from "@/lib/analytics/attribution";
 
 export const STOREFRONT_CART_STORAGE_KEY = "aha-cart:single-store";
+export const STOREFRONT_CART_UPDATED_EVENT = "myrivo:storefront-cart-updated";
 
 export type StorefrontCartEntry = {
   productId: string;
@@ -44,6 +45,11 @@ export function writeStorefrontCart(entries: StorefrontCartEntry[]) {
     return;
   }
   window.localStorage.setItem(STOREFRONT_CART_STORAGE_KEY, JSON.stringify(entries));
+  window.dispatchEvent(
+    new CustomEvent<StorefrontCartEntry[]>(STOREFRONT_CART_UPDATED_EVENT, {
+      detail: entries
+    })
+  );
 }
 
 export async function syncStorefrontCart(

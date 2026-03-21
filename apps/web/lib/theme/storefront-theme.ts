@@ -333,17 +333,9 @@ function getRelativeLuminance(hex: string) {
   );
 }
 
-function getContrastRatio(foregroundHex: string, backgroundHex: string) {
-  const foregroundLuminance = getRelativeLuminance(foregroundHex);
-  const backgroundLuminance = getRelativeLuminance(backgroundHex);
-  const lighter = Math.max(foregroundLuminance, backgroundLuminance);
-  const darker = Math.min(foregroundLuminance, backgroundLuminance);
-  return (lighter + 0.05) / (darker + 0.05);
-}
-
 function resolveAccessibleForeground(backgroundHex: string, preferredForegroundHex: string | null | undefined) {
   const preferred = normalizeHex(preferredForegroundHex ?? null);
-  if (preferred && getContrastRatio(preferred, backgroundHex) >= 4.5) {
+  if (preferred) {
     return preferred;
   }
 

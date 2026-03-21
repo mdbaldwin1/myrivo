@@ -165,7 +165,8 @@ describe("checkout Stripe tax liability", () => {
                   name: "Stripe Shop",
                   slug: "stripe-shop",
                   status: "live",
-                  stripe_account_id: "acct_123"
+                  stripe_account_id: "acct_123",
+                  tax_collection_mode: "stripe_tax"
                 },
                 error: null
               }))
@@ -297,6 +298,28 @@ describe("checkout Stripe tax liability", () => {
     expect(getStoreStripePaymentsReadinessMock).toHaveBeenCalledWith("acct_123");
     expect(stripeCheckoutCreateMock).toHaveBeenCalledWith(
       expect.objectContaining({
+        line_items: [
+          expect.objectContaining({
+            price_data: expect.objectContaining({
+              product_data: expect.objectContaining({
+                name: "Starter Kit"
+              }),
+              unit_amount: 2500
+            }),
+            quantity: 1
+          })
+        ],
+        shipping_options: [
+          expect.objectContaining({
+            shipping_rate_data: expect.objectContaining({
+              display_name: "Shipping",
+              fixed_amount: expect.objectContaining({
+                amount: 0,
+                currency: "usd"
+              })
+            })
+          })
+        ],
         automatic_tax: {
           enabled: true,
           liability: {
@@ -341,5 +364,182 @@ describe("checkout Stripe tax liability", () => {
     expect(response.status).toBe(409);
     expect(payload.error).toBe("This store's Stripe tax setup is not complete yet.");
     expect(stripeCheckoutCreateMock).not.toHaveBeenCalled();
+  });
+
+  test("allows checkout for seller-attested no-tax stores when Stripe is operationally ready", async () => {
+    getStoreStripePaymentsReadinessMock.mockResolvedValue({
+      connected: true,
+      accountId: "acct_123",
+      chargesEnabled: true,
+      payoutsEnabled: true,
+      detailsSubmitted: true,
+      taxSettingsStatus: "pending",
+      taxMissingFields: ["head_office.address.country"],
+      taxReady: false,
+      readyForLiveCheckout: false
+    });
+
+    adminFromMock.mockImplementation((table: string) => {
+      if (table === "stores") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({
+                data: {
+                  id: "store-1",
+                  name: "Stripe Shop",
+                  slug: "stripe-shop",
+                  status: "live",
+                  stripe_account_id: "acct_123",
+                  tax_collection_mode: "seller_attested_no_tax"
+                },
+                error: null
+              }))
+            }))
+          }))
+        };
+      }
+
+      if (table === "store_settings") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({
+                data: {
+                  checkout_enable_local_pickup: false,
+                  checkout_local_pickup_label: "Local pickup",
+                  checkout_local_pickup_fee_cents: 0,
+                  checkout_enable_flat_rate_shipping: true,
+                  checkout_flat_rate_shipping_label: "Shipping",
+                  checkout_flat_rate_shipping_fee_cents: 0,
+                  checkout_allow_order_note: true
+                },
+                error: null
+              }))
+            }))
+          }))
+        };
+      }
+
+      if (table === "store_pickup_settings") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({
+                data: {
+                  pickup_enabled: false,
+                  selection_mode: "buyer_select",
+                  geolocation_fallback_mode: "allow_without_distance",
+                  out_of_radius_behavior: "disable_pickup",
+                  eligibility_radius_miles: 10,
+                  lead_time_hours: 24,
+                  slot_interval_minutes: 60,
+                  show_pickup_times: false,
+                  timezone: "America/New_York"
+                },
+                error: null
+              }))
+            }))
+          }))
+        };
+      }
+
+      if (table === "pickup_locations") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                returns: vi.fn(async () => ({ data: [], error: null }))
+              }))
+            }))
+          }))
+        };
+      }
+
+      if (table === "product_variants") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              in: vi.fn(() => ({
+                returns: vi.fn(async () => ({
+                  data: [
+                    {
+                      id: "33333333-3333-4333-8333-333333333333",
+                      product_id: "11111111-1111-4111-8111-111111111111",
+                      title: "Standard",
+                      price_cents: 2500,
+                      inventory_qty: 8,
+                      is_made_to_order: false,
+                      status: "active",
+                      option_values: null,
+                      products: {
+                        id: "11111111-1111-4111-8111-111111111111",
+                        title: "Starter Kit",
+                        status: "active",
+                        store_id: "store-1"
+                      }
+                    }
+                  ],
+                  error: null
+                }))
+              }))
+            }))
+          }))
+        };
+      }
+
+      if (table === "storefront_checkout_sessions") {
+        return {
+          insert: vi.fn(() => ({
+            select: vi.fn(() => ({
+              single: vi.fn(async () => ({ data: { id: "checkout-1" }, error: null }))
+            }))
+          })),
+          update: vi.fn(() => ({
+            eq: vi.fn(async () => ({ error: null }))
+          }))
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const route = await import("@/app/api/orders/checkout/route");
+    const response = await route.POST(
+      buildRequest({
+        firstName: "Alice",
+        lastName: "Buyer",
+        email: "alice@example.com",
+        items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
+      })
+    );
+    const payload = (await response.json()) as { paymentMode: string; sessionId: string };
+
+    expect(response.status).toBe(200);
+    expect(payload.paymentMode).toBe("stripe");
+    expect(payload.sessionId).toBe("cs_test_123");
+    expect(stripeCheckoutCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        line_items: [
+          expect.objectContaining({
+            price_data: expect.objectContaining({
+              product_data: expect.objectContaining({
+                name: "Starter Kit"
+              }),
+              unit_amount: 2500
+            }),
+            quantity: 1
+          })
+        ],
+        shipping_options: [
+          expect.objectContaining({
+            shipping_rate_data: expect.objectContaining({
+              display_name: "Shipping"
+            })
+          })
+        ]
+      })
+    );
+    expect(stripeCheckoutCreateMock.mock.calls[0]?.[0]).not.toHaveProperty("automatic_tax");
   });
 });

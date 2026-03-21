@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getStoreStripePaymentsReadiness } from "@/lib/stripe/store-payments-readiness";
 import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
+import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET(request: Request) {
@@ -30,17 +31,25 @@ export async function GET(request: Request) {
       tax_compliance_note: string | null;
     }>();
 
-  if (taxDecisionError) {
+  if (taxDecisionError && !isMissingColumnInSchemaCache(taxDecisionError, "tax_collection_mode")) {
     return NextResponse.json({ error: taxDecisionError.message }, { status: 500 });
   }
+
+  const resolvedTaxDecision = isMissingColumnInSchemaCache(taxDecisionError, "tax_collection_mode")
+    ? {
+        tax_collection_mode: "unconfigured" as const,
+        tax_compliance_acknowledged_at: null,
+        tax_compliance_note: null
+      }
+    : taxDecision;
 
   try {
     const readiness = await getStoreStripePaymentsReadiness(bundle.store.stripe_account_id);
     return NextResponse.json({
       ...readiness,
-      taxCollectionMode: taxDecision?.tax_collection_mode ?? "unconfigured",
-      taxComplianceAcknowledgedAt: taxDecision?.tax_compliance_acknowledged_at ?? null,
-      taxComplianceNote: taxDecision?.tax_compliance_note ?? null
+      taxCollectionMode: resolvedTaxDecision?.tax_collection_mode ?? "unconfigured",
+      taxComplianceAcknowledgedAt: resolvedTaxDecision?.tax_compliance_acknowledged_at ?? null,
+      taxComplianceNote: resolvedTaxDecision?.tax_compliance_note ?? null
     });
   } catch {
     return NextResponse.json({
@@ -50,9 +59,9 @@ export async function GET(request: Request) {
       taxMissingFields: [],
       taxReady: false,
       readyForLiveCheckout: false,
-      taxCollectionMode: taxDecision?.tax_collection_mode ?? "unconfigured",
-      taxComplianceAcknowledgedAt: taxDecision?.tax_compliance_acknowledged_at ?? null,
-      taxComplianceNote: taxDecision?.tax_compliance_note ?? null
+      taxCollectionMode: resolvedTaxDecision?.tax_collection_mode ?? "unconfigured",
+      taxComplianceAcknowledgedAt: resolvedTaxDecision?.tax_compliance_acknowledged_at ?? null,
+      taxComplianceNote: resolvedTaxDecision?.tax_compliance_note ?? null
     });
   }
 }

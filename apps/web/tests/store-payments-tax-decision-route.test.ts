@@ -135,4 +135,71 @@ describe("store payments tax decision route", () => {
       taxComplianceNote: null
     });
   });
+
+  test("clears the saved tax decision back to unconfigured", async () => {
+    storesUpdateEqMock.mockReturnValue({
+      select: vi.fn(() => ({
+        single: vi.fn(async () => ({
+          data: {
+            id: "store-1",
+            tax_collection_mode: "unconfigured",
+            tax_compliance_acknowledged_at: null,
+            tax_compliance_note: null
+          },
+          error: null
+        }))
+      }))
+    });
+
+    const route = await import("@/app/api/stores/payments/tax-decision/route");
+    const response = await route.DELETE(
+      new NextRequest("http://localhost:3000/api/stores/payments/tax-decision?storeSlug=test-store", {
+        method: "DELETE",
+        headers: {
+          origin: "http://localhost:3000",
+          host: "localhost:3000"
+        }
+      })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      taxCollectionMode: "unconfigured",
+      taxComplianceAcknowledgedAt: null,
+      taxComplianceNote: null
+    });
+  });
+
+  test("returns a migration hint when tax decision columns are unavailable", async () => {
+    storesUpdateEqMock.mockReturnValue({
+      select: vi.fn(() => ({
+        single: vi.fn(async () => ({
+          data: null,
+          error: {
+            message: "column stores.tax_collection_mode does not exist"
+          }
+        }))
+      }))
+    });
+
+    const route = await import("@/app/api/stores/payments/tax-decision/route");
+    const response = await route.PATCH(
+      new NextRequest("http://localhost:3000/api/stores/payments/tax-decision?storeSlug=test-store", {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          origin: "http://localhost:3000",
+          host: "localhost:3000"
+        },
+        body: JSON.stringify({
+          mode: "stripe_tax"
+        })
+      })
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: "Store tax decision fields are not available yet. Apply the latest database migrations and try again."
+    });
+  });
 });

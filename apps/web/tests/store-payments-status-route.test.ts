@@ -103,4 +103,36 @@ describe("store payments status route", () => {
     expect(payload.error).toBe("No store found for account");
     expect(getStoreStripePaymentsReadinessMock).not.toHaveBeenCalled();
   });
+
+  test("falls back to an unconfigured tax decision when the schema is missing the tax columns", async () => {
+    storesMaybeSingleMock.mockResolvedValue({
+      data: null,
+      error: {
+        message: "column stores.tax_collection_mode does not exist"
+      }
+    });
+    getStoreStripePaymentsReadinessMock.mockResolvedValue({
+      connected: true,
+      accountId: "acct_123",
+      readyForLiveCheckout: false,
+      taxSettingsStatus: "unavailable",
+      taxMissingFields: [],
+      taxReady: false
+    });
+
+    const route = await import("@/app/api/stores/payments/status/route");
+    const response = await route.GET(new Request("http://localhost:3000/api/stores/payments/status?storeSlug=test-store"));
+    const payload = (await response.json()) as {
+      taxCollectionMode: string;
+      taxComplianceAcknowledgedAt: string | null;
+      taxComplianceNote: string | null;
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload).toMatchObject({
+      taxCollectionMode: "unconfigured",
+      taxComplianceAcknowledgedAt: null,
+      taxComplianceNote: null
+    });
+  });
 });

@@ -186,7 +186,9 @@ export function DashboardNav({
     ...link,
     href: `${storeWorkspaceBaseHref}${link.href}`
   }));
-  const flattenedStoreSettingsLinks = storeSettingsLinkGroups.flatMap((group) => group.sections);
+  const flattenedStoreSettingsLinks = storeSettingsWorkspaceNavigationSectionIds
+    .map((sectionId) => storeSettingsLinkGroups.flatMap((group) => group.sections).find((section) => section.id === sectionId))
+    .filter((section): section is (typeof storeSettingsLinkGroups)[number]["sections"][number] => Boolean(section));
 
   function renderNavLink(link: DashboardNavLink, options?: { trailingChevron?: boolean }) {
     const isActive = isLinkActive(link.href);
@@ -248,14 +250,7 @@ export function DashboardNav({
               {isStoreSettingsMode ? (
                 <div className="space-y-1">
                   {showLabels ? <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Settings Workspace</p> : null}
-                  {showLabels
-                    ? storeSettingsLinkGroups.map((group) => (
-                        <div key={group.id} className="space-y-1">
-                          <p className="px-2 pt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/80">{group.title}</p>
-                          {group.sections.map((link) => renderNavLink(link))}
-                        </div>
-                      ))
-                    : flattenedStoreSettingsLinks.map((link) => renderNavLink(link))}
+                  {flattenedStoreSettingsLinks.map((link) => renderNavLink(link))}
                 </div>
               ) : isReportsMode ? (
                 <div className="space-y-1">

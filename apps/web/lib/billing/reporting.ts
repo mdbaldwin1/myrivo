@@ -77,12 +77,12 @@ export function buildBillingReport(orders: BillingReportOrder[]): BillingReport 
       summary.platformFeeCents += Math.max(0, feeBreakdown.platform_fee_cents ?? 0);
       summary.netPayoutCents += Math.max(0, feeBreakdown.net_payout_cents ?? 0);
 
-      if (feeBreakdown.subtotal_cents !== order.subtotal_cents) {
+      if (feeBreakdown.subtotal_cents !== order.total_cents) {
         issues.push({
           orderId: order.id,
           createdAt: order.created_at,
           severity: "warning",
-          issue: `Breakdown subtotal (${feeBreakdown.subtotal_cents}) does not match order subtotal (${order.subtotal_cents}).`
+          issue: `Fee basis amount (${feeBreakdown.subtotal_cents}) does not match order total (${order.total_cents}).`
         });
       }
 
@@ -92,7 +92,7 @@ export function buildBillingReport(orders: BillingReportOrder[]): BillingReport 
           orderId: order.id,
           createdAt: order.created_at,
           severity: "critical",
-          issue: `Platform fee + net payout (${recomposedSubtotal}) does not match fee subtotal (${feeBreakdown.subtotal_cents}).`
+          issue: `Platform fee + net payout (${recomposedSubtotal}) does not match fee basis amount (${feeBreakdown.subtotal_cents}).`
         });
       }
     } else if (order.status === "paid") {
