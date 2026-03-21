@@ -5,7 +5,7 @@ const solutions = [
   {
     href: "/for/handmade-products",
     title: "Store builder for handmade products",
-    description: "Launch a branded store for handcrafted goods with inventory, orders, and customer communication in one place."
+    description: "Launch a branded shop for handmade goods, skincare, pottery, woodwork, apparel, and other small-batch products."
   },
   {
     href: "/for/local-pickup-orders",
@@ -25,10 +25,10 @@ export default function SolutionsIndexPage() {
       <section className="marketing-rise rounded-3xl border border-border bg-card p-8 sm:p-10">
         <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Solutions</p>
         <h1 className="mt-4 [font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-4xl leading-tight text-foreground sm:text-5xl">
-          Choose the operating model that matches your commerce business.
+          Find the setup that fits the way you sell.
         </h1>
         <p className="mt-4 max-w-3xl text-base leading-relaxed text-muted-foreground">
-          Choose the path that matches your business model and review how Myrivo supports storefront launch, fulfillment reliability, and growth workflows.
+          Whether you sell handmade products, offer local pickup, or run multiple stores, Myrivo gives you a branded storefront and the core workflows you need to start selling quickly.
         </p>
       </section>
 

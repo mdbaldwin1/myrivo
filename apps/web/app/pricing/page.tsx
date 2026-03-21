@@ -6,12 +6,12 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 const faqItems = [
   {
     question: "Do I need a monthly subscription to start?",
-    answer: "No. Myrivo can run stores on transaction-fee-only pricing, and any paid plan changes are assigned by the Myrivo team rather than self-served in the product."
+    answer: "No. You can start with transaction-fee-only pricing, so you do not need a monthly subscription before you begin selling."
   },
   {
     question: "How do platform fees work?",
     answer:
-      "Each successful order is charged one Myrivo platform fee on the full processed order amount. Myrivo covers Stripe processing costs inside that fee, and every order records a fee snapshot for auditable payout reporting."
+      "Each successful order is charged one Myrivo platform fee on the full processed order amount. Myrivo covers Stripe processing costs inside that fee, so sellers have one clearer fee model to understand."
   },
   {
     question: "Can I start small and upgrade later?",
@@ -41,10 +41,10 @@ export default async function PricingPage() {
       <section className="marketing-rise rounded-3xl border border-border bg-card p-8 sm:p-10">
         <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Pricing</p>
         <h1 className="mt-4 [font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-4xl leading-tight text-foreground sm:text-5xl">
-          Start lean. Scale with control.
+          Start selling without a monthly subscription.
         </h1>
         <p className="mt-4 max-w-3xl text-base leading-relaxed text-muted-foreground">
-          Plan pricing comes from live billing config, applies to the full processed order amount, and snapshots fee math on every paid order for audit-grade payout reporting.
+          Myrivo is built for small product sellers who want a custom storefront first and a simpler fee model second. You only pay when orders come through.
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <MarketingTrackedButtonLink
@@ -100,7 +100,7 @@ export default async function PricingPage() {
             <div className="mt-4 rounded-xl border border-border bg-background p-3 text-sm text-foreground">
               <p>Platform fee: {formatPlatformFeePercent(plan.feeBps)}</p>
               <p>Fixed fee: {formatMoney(plan.feeFixedCents)}</p>
-              <p className="text-muted-foreground">Applied to the full processed order amount. Myrivo covers Stripe processing costs.</p>
+              <p className="text-muted-foreground">Applied to the full processed order amount. Myrivo covers Stripe processing costs inside this fee.</p>
             </div>
             <ul className="mt-4 space-y-2 text-sm text-muted-foreground">
               {plan.highlights.map((item) => (
@@ -170,11 +170,11 @@ export default async function PricingPage() {
 
       <section className="mt-6 grid gap-4 md:grid-cols-2">
         <article className="rounded-2xl border border-border bg-white p-6">
-          <h3 className="[font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-2xl text-foreground">Trust and compliance</h3>
+          <h3 className="[font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-2xl text-foreground">What pricing is built for</h3>
           <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-            <li>• Fee snapshots per order for clear audit trails.</li>
-            <li>• Store lifecycle controls keep non-live storefronts private until they are ready.</li>
-            <li>• Legal acceptance and governance controls before go-live.</li>
+            <li>• Small product brands that want to start selling without a monthly subscription.</li>
+            <li>• Handmade and boutique sellers who want one storefront, checkout, and fulfillment workflow.</li>
+            <li>• Clearer all-in platform fees instead of separate platform and Stripe charges.</li>
           </ul>
         </article>
         <article className="rounded-2xl border border-border bg-white p-6">

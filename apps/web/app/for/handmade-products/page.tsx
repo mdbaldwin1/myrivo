@@ -4,13 +4,13 @@ import { MarketingTrackedButtonLink } from "@/components/marketing/marketing-tra
 
 export const metadata: Metadata = {
   title: "Store builder for handmade products | Myrivo",
-  description: "Build a branded commerce experience for handmade products with order, inventory, and content workflows in Myrivo."
+  description: "Launch a branded storefront for handmade products with checkout, fulfillment, and customer communication built in."
 };
 
 const highlights = [
-  "Variant-aware catalog and inventory with media-rich product storytelling.",
-  "Content workspace controls for home, products, about, policies, cart, and email flows.",
-  "Customer communication with reviews, in-app notifications, and transactional email templates."
+  "A premium storefront for small-batch goods like tallow skincare, pottery, woodwork, apparel, and gifts.",
+  "Built-in product pages, checkout, promos, reviews, and order workflows in one place.",
+  "Start without a monthly subscription and only pay when orders come through."
 ];
 
 export default function HandmadeProductsPage() {
@@ -19,16 +19,16 @@ export default function HandmadeProductsPage() {
       <section className="marketing-rise rounded-3xl border border-border bg-card p-8 sm:p-10">
         <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">For Handmade Brands</p>
         <h1 className="mt-4 [font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-4xl leading-tight text-foreground sm:text-5xl">
-          Build a premium storefront for handcrafted products.
+          Build a beautiful online shop for handmade and small-batch products.
         </h1>
         <p className="mt-4 max-w-3xl text-base leading-relaxed text-muted-foreground">
-          Myrivo helps independent makers look high-end online while keeping operations simple behind the scenes.
+          Myrivo is built for independent makers who want their own branded storefront without the usual pile of themes, plugins, and disconnected tools.
         </p>
       </section>
 
       <section className="marketing-rise marketing-delay-1 mt-6 grid gap-4 md:grid-cols-2">
         <article className="rounded-2xl border border-border bg-white p-6">
-          <h2 className="[font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-2xl text-foreground">Why makers choose Myrivo</h2>
+          <h2 className="[font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-2xl text-foreground">Why handmade sellers choose Myrivo</h2>
           <ul className="mt-4 space-y-2 text-sm text-muted-foreground">
             {highlights.map((item) => (
               <li key={item}>• {item}</li>
@@ -37,8 +37,8 @@ export default function HandmadeProductsPage() {
         </article>
 
         <article className="rounded-2xl border border-border bg-primary p-6 text-primary-foreground">
-          <h2 className="[font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-2xl">Launch your first store</h2>
-          <p className="mt-3 text-sm text-[hsl(var(--primary-foreground))]">Create your account, configure catalog + fulfillment, and publish with confidence.</p>
+          <h2 className="[font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-2xl">Launch your first storefront</h2>
+          <p className="mt-3 text-sm text-[hsl(var(--primary-foreground))]">Create your account, add products, set up fulfillment, and start selling from a shop that feels like your brand.</p>
           <div className="mt-5 flex flex-wrap gap-3">
             <MarketingTrackedButtonLink
               href="/signup"

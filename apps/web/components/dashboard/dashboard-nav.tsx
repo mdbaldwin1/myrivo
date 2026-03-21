@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { withReturnTo } from "@/lib/auth/return-to";
+import { isStoreWorkspacePath, resolveCurrentStoreWorkspaceSlug } from "@/lib/routes/store-workspace";
 import { storeSettingsWorkspaceGroups, storeSettingsWorkspaceNavigationSectionIds } from "@/lib/store-editor/store-settings-workspace";
 import { cn } from "@/lib/utils";
 import type { GlobalUserRole } from "@/types/database";
@@ -111,11 +112,9 @@ export function DashboardNav({
   const pathname = usePathname();
   const normalizedPath = pathname?.replace(/\/$/, "") ?? "";
   const hasAnyStoreAccess = stores.length > 0;
-  const hasActiveStore = Boolean(activeStoreSlug);
-  const isStoreWorkspaceRoute = Boolean(
-    activeStoreSlug &&
-      (normalizedPath === `/dashboard/stores/${activeStoreSlug}` || normalizedPath.startsWith(`/dashboard/stores/${activeStoreSlug}/`))
-  );
+  const routeStoreSlug = resolveCurrentStoreWorkspaceSlug(normalizedPath, activeStoreSlug);
+  const hasActiveStore = Boolean(routeStoreSlug);
+  const isStoreWorkspaceRoute = isStoreWorkspacePath(normalizedPath, routeStoreSlug);
   const canAccessPlatform = globalRole === "support" || globalRole === "admin";
   const initials = getInitials(userDisplayName, userEmail);
   const accountName = userDisplayName?.trim() || "My Account";
@@ -136,7 +135,7 @@ export function DashboardNav({
     window.location.href = "/login";
   }
 
-  const storeWorkspaceBaseHref = activeStoreSlug ? `/dashboard/stores/${activeStoreSlug}` : "/dashboard/stores";
+  const storeWorkspaceBaseHref = routeStoreSlug ? `/dashboard/stores/${routeStoreSlug}` : "/dashboard/stores";
   const accountLevelLinks = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/dashboard/stores", label: "Store Hub", icon: Store }

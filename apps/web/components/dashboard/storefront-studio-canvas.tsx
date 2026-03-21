@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Card, CardContent } from "@/components/ui/card";
 import { StorefrontAboutPage } from "@/components/storefront/storefront-about-page";
@@ -205,6 +205,7 @@ export function StorefrontStudioCanvas({
   onNavigateSurface,
   onProductDetailChange
 }: StorefrontStudioCanvasProps) {
+  const scrollRootRef = useRef<HTMLDivElement | null>(null);
   const studioDocument = useOptionalStorefrontStudioDocument();
   const activeDetailProductHandle = surface === "products" ? activeProductDetailHandle : null;
   const runtime = useMemo(() => {
@@ -238,14 +239,16 @@ export function StorefrontStudioCanvas({
       return;
     }
 
-    if (typeof document === "undefined") {
+    const scrollRoot = scrollRootRef.current;
+    const ownerDocument = scrollRoot?.ownerDocument;
+
+    if (!scrollRoot || !ownerDocument) {
       return;
     }
 
-    const scrollRoot = document.querySelector<HTMLElement>("[data-storefront-scroll-root='true']");
-    const target = document.querySelector<HTMLElement>(`[data-storefront-preview-section='${scrollTarget.section}']`);
+    const target = ownerDocument.querySelector<HTMLElement>(`[data-storefront-preview-section='${scrollTarget.section}']`);
 
-    if (!scrollRoot || !target) {
+    if (!target) {
       return;
     }
 
@@ -312,7 +315,7 @@ export function StorefrontStudioCanvas({
 
   function handleCanvasPointerDownCapture(event: React.PointerEvent<HTMLDivElement>) {
     const target = event.target;
-    if (!(target instanceof Element) || typeof document === "undefined" || !document.getSelection) {
+    if (!(target instanceof Element)) {
       return;
     }
 
@@ -324,12 +327,13 @@ export function StorefrontStudioCanvas({
       return;
     }
 
-    document.getSelection()?.removeAllRanges();
+    target.ownerDocument.getSelection?.()?.removeAllRanges();
   }
 
   return (
     <StorefrontRuntimeProvider runtime={runtime}>
       <div
+        ref={scrollRootRef}
         data-storefront-scroll-root="true"
         onPointerDownCapture={handleCanvasPointerDownCapture}
         onClickCapture={handleCanvasClickCapture}

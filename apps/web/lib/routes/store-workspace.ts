@@ -7,6 +7,21 @@ export function getStoreSlugFromDashboardPathname(pathname: string | null | unde
   return match?.[1] ?? null;
 }
 
+export function resolveCurrentStoreWorkspaceSlug(
+  pathname: string | null | undefined,
+  fallbackStoreSlug: string | null | undefined
+): string | null {
+  return getStoreSlugFromDashboardPathname(pathname) ?? fallbackStoreSlug ?? null;
+}
+
+export function isStoreWorkspacePath(pathname: string | null | undefined, storeSlug: string | null | undefined): boolean {
+  if (!pathname || !storeSlug) {
+    return false;
+  }
+
+  return pathname === `/dashboard/stores/${storeSlug}` || pathname.startsWith(`/dashboard/stores/${storeSlug}/`);
+}
+
 export function buildStoreWorkspacePath(
   storeSlug: string | null | undefined,
   childPath: string,

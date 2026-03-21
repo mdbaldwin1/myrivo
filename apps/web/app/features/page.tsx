@@ -5,35 +5,35 @@ import { Button } from "@/components/ui/button";
 
 const featureGroups = [
   {
-    title: "Storefront and Brand",
+    title: "Your Storefront and Brand",
     points: [
-      "Branded storefront themes with tokenized color/type controls and page-by-page content workspace.",
-      "Product catalogs with variants, inventory, media galleries, reviews, and SEO schema output.",
-      "Custom domain support with preview-safe routing and multi-environment launch controls."
+      "Branded storefront themes with flexible color and typography controls.",
+      "Product catalogs with variants, inventory, images, reviews, and product storytelling.",
+      "Custom domain support so your shop feels like your brand from day one."
     ]
   },
   {
-    title: "Operations and Fulfillment Engine",
+    title: "Products, Orders, and Fulfillment",
     points: [
-      "Order lifecycle workflows with pick lists, packing slips, shipment states, and delivery updates.",
-      "Pickup scheduling controls: locations, blackout dates, lead windows, and checkout gating.",
-      "Inventory movement ledger, low-stock notifications, and variant-level stock control."
+      "Order workflows with pick lists, packing slips, shipment states, and delivery updates.",
+      "Pickup scheduling controls with locations, blackout dates, lead windows, and checkout gating.",
+      "Inventory tracking with low-stock visibility and variant-level stock control."
     ]
   },
   {
-    title: "Growth and Customer Retention",
+    title: "Sell and Bring Customers Back",
     points: [
-      "Promotions manager with previewable discount behavior and redemption controls.",
-      "Subscriber capture and configurable transactional email templates by store.",
-      "In-app + email notification routing with per-user preferences."
+      "Promotions and discount tools that are easy to preview before you publish them.",
+      "Subscriber capture and transactional email templates tied to your store.",
+      "Customer communication through reviews, order emails, and store notifications."
     ]
   },
   {
-    title: "Platform Controls and Governance",
+    title: "Built To Be Easier To Run",
     points: [
-      "Store and platform workspaces with explicit role boundaries and scoped navigation.",
-      "Admin controls for moderation, approvals, audit timeline, and incident response.",
-      "Legal version acceptance tracking, rollout gates, and release readiness checks."
+      "One connected workflow instead of stitching together a site builder, checkout plugins, and fulfillment tools.",
+      "Clear setup flows for payments, tax handling, pickup, and shipping.",
+      "Role-based controls for stores that need owners, staff, or platform oversight."
     ]
   }
 ];
@@ -42,13 +42,13 @@ export default function FeaturesPage() {
   return (
     <MarketingSiteChrome activePath="/features">
       <section className="marketing-rise rounded-3xl border border-border bg-card p-8 sm:p-10">
-        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Product Surface</p>
+        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Features</p>
         <h1 className="mt-4 [font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-4xl leading-tight text-foreground sm:text-5xl">
-          Every critical workflow from storefront launch to platform governance.
+          Everything you need to launch and run a product shop in one place.
         </h1>
         <p className="mt-4 max-w-3xl text-base leading-relaxed text-muted-foreground">
-          Myrivo removes tool sprawl. You get one connected operating system that handles merchandising, checkout operations,
-          customer communications, and compliance.
+          Myrivo gives handmade sellers and small product brands a branded storefront, built-in checkout, fulfillment workflows,
+          and customer communication without the usual patchwork of extra tools.
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <MarketingTrackedButtonLink
@@ -88,19 +88,19 @@ export default function FeaturesPage() {
       </section>
 
       <section className="marketing-rise marketing-delay-2 mt-6 rounded-3xl border border-border bg-primary p-8 text-primary-foreground">
-        <h2 className="[font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-3xl">Need a workflow walkthrough?</h2>
+        <h2 className="[font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-3xl">Want to see how it fits your kind of shop?</h2>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[hsl(var(--primary-foreground))]">
-          Explore architecture, migration shape, and operator workflows before launch. Start with the compare page or dive into docs.
+          Start with the handmade-products page or compare Myrivo to the usual mix of marketplaces, store builders, and stitched-together tools.
         </p>
         <div className="mt-5 flex flex-wrap gap-3">
-          <Link href="/compare">
+          <Link href="/for/handmade-products">
             <Button variant="outline" className="h-10 rounded-full border-[hsl(var(--primary-foreground))]/50 bg-transparent px-5 text-primary-foreground hover:bg-white/10">
-              Compare options
+              Explore handmade selling
             </Button>
           </Link>
-          <Link href="/docs">
+          <Link href="/compare">
             <Button variant="outline" className="h-10 rounded-full border-[hsl(var(--primary-foreground))]/50 bg-transparent px-5 text-primary-foreground hover:bg-white/10">
-              Read docs
+              Compare approaches
             </Button>
           </Link>
         </div>
