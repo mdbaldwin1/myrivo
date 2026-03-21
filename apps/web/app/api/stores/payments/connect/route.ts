@@ -3,6 +3,7 @@ import { getAppUrl, isStripeStubMode, stripeEnvSchema } from "@/lib/env";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
 import { getStripeClient } from "@/lib/stripe/server";
+import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 function resolveAppUrlForRequest(request: NextRequest): string {
@@ -101,5 +102,67 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ accountId, onboardingUrl: accountLink.url });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to start Stripe onboarding." }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const trustedOriginResponse = enforceTrustedOrigin(request);
+
+    if (trustedOriginResponse) {
+      return trustedOriginResponse;
+    }
+
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, request.nextUrl.searchParams.get("storeSlug"), "admin");
+
+    if (!bundle) {
+      return NextResponse.json({ error: "No store found for account" }, { status: 404 });
+    }
+
+    const resetWithTaxColumns = await supabase
+      .from("stores")
+      .update({
+        stripe_account_id: null,
+        tax_collection_mode: "unconfigured" as const,
+        tax_compliance_acknowledged_at: null,
+        tax_compliance_acknowledged_by_user_id: null,
+        tax_compliance_note: null
+      })
+      .eq("id", bundle.store.id)
+      .eq("owner_user_id", user.id);
+
+    if (resetWithTaxColumns.error && isMissingColumnInSchemaCache(resetWithTaxColumns.error, "tax_collection_mode")) {
+      const legacyReset = await supabase
+        .from("stores")
+        .update({ stripe_account_id: null })
+        .eq("id", bundle.store.id)
+        .eq("owner_user_id", user.id);
+
+      if (legacyReset.error) {
+        return NextResponse.json({ error: legacyReset.error.message }, { status: 500 });
+      }
+    } else if (resetWithTaxColumns.error) {
+      return NextResponse.json({ error: resetWithTaxColumns.error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      connected: false,
+      accountId: null,
+      taxCollectionMode: "unconfigured",
+      taxComplianceAcknowledgedAt: null,
+      taxComplianceNote: null,
+      disconnected: true
+    });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to clear Stripe setup." }, { status: 500 });
   }
 }

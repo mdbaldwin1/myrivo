@@ -227,4 +227,179 @@ describe("refund/dispute sync", () => {
       })
     );
   });
+
+  test("syncStripeRefundRecord preserves terminal refund state and staff attribution on out-of-order updates", async () => {
+    adminFromMock.mockImplementation((table: string) => {
+      if (table === "order_refunds") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn((column: string, value: string) => {
+              if (column === "id" && value === "refund-request-2") {
+                return {
+                  maybeSingle: vi.fn(async () => ({
+                    data: {
+                      id: "refund-request-2",
+                      order_id: "order-2",
+                      store_id: "store-1",
+                      status: "succeeded",
+                      metadata_json: {},
+                      processed_by_user_id: "staff-1",
+                      processed_at: "2026-03-14T12:00:00.000Z"
+                    },
+                    error: null
+                  }))
+                };
+              }
+
+              return {
+                maybeSingle: vi.fn(async () => ({
+                  data: null,
+                  error: null
+                }))
+              };
+            })
+          })),
+          update: vi.fn((payload: Record<string, unknown>) => ({
+            eq: vi.fn(() => ({
+              select: vi.fn(() => ({
+                single: vi.fn(async () => ({
+                  data: {
+                    id: "refund-request-2",
+                    order_id: "order-2",
+                    store_id: "store-1",
+                    requested_by_user_id: "user-1",
+                    processed_by_user_id: payload.processed_by_user_id,
+                    amount_cents: 1200,
+                    reason_key: "customer_request",
+                    reason_note: null,
+                    customer_message: null,
+                    status: payload.status,
+                    stripe_refund_id: "re_456",
+                    metadata_json: payload.metadata_json,
+                    processed_at: payload.processed_at,
+                    created_at: "2026-03-13T13:00:00.000Z",
+                    updated_at: "2026-03-14T12:30:00.000Z"
+                  },
+                  error: null
+                }))
+              }))
+            }))
+          }))
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const { syncStripeRefundRecord } = await import("@/lib/orders/refund-dispute-sync");
+    const result = await syncStripeRefundRecord({
+      id: "re_456",
+      object: "refund",
+      amount: 1200,
+      balance_transaction: null,
+      charge: "ch_456",
+      created: 1_741_878_400,
+      currency: "usd",
+      metadata: { refund_request_id: "refund-request-2" },
+      payment_intent: "pi_456",
+      reason: "requested_by_customer",
+      receipt_number: null,
+      source_transfer_reversal: null,
+      status: "pending",
+      transfer_reversal: null
+    } as never);
+
+    expect(result.refund?.status).toBe("succeeded");
+    expect(result.refund?.processed_by_user_id).toBe("staff-1");
+    expect(result.refund?.processed_at).toBe("2026-03-14T12:00:00.000Z");
+    expect(logAuditEventMock).not.toHaveBeenCalled();
+    expect(sendOrderRefundNotificationMock).not.toHaveBeenCalled();
+  });
+
+  test("syncStripeDisputeRecord does not reopen a closed dispute on stale updates", async () => {
+    adminFromMock.mockImplementation((table: string) => {
+      if (table === "orders") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({
+                data: { id: "order-3", store_id: "store-1" },
+                error: null
+              }))
+            }))
+          }))
+        };
+      }
+
+      if (table === "order_disputes") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({
+                data: {
+                  id: "dispute-2",
+                  status: "won",
+                  closed_at: "2026-03-15T10:00:00.000Z"
+                },
+                error: null
+              }))
+            }))
+          })),
+          upsert: vi.fn((payload: Record<string, unknown>) => ({
+            select: vi.fn(() => ({
+              single: vi.fn(async () => ({
+                data: {
+                  id: "dispute-2",
+                  order_id: "order-3",
+                  store_id: "store-1",
+                  stripe_dispute_id: "dp_456",
+                  stripe_charge_id: "ch_456",
+                  stripe_payment_intent_id: "pi_456",
+                  amount_cents: 2200,
+                  currency: "usd",
+                  reason: "fraudulent",
+                  status: payload.status,
+                  is_charge_refundable: true,
+                  response_due_by: "2026-03-20T12:00:00.000Z",
+                  metadata_json: payload.metadata_json,
+                  closed_at: payload.closed_at,
+                  created_at: "2026-03-13T14:00:00.000Z",
+                  updated_at: "2026-03-15T10:30:00.000Z"
+                },
+                error: null
+              }))
+            }))
+          }))
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const { syncStripeDisputeRecord } = await import("@/lib/orders/refund-dispute-sync");
+    const result = await syncStripeDisputeRecord({
+      id: "dp_456",
+      object: "dispute",
+      amount: 2200,
+      charge: "ch_456",
+      created: 1_741_878_400,
+      currency: "usd",
+      evidence: {},
+      evidence_details: {
+        due_by: 1_742_483_200,
+        has_evidence: true,
+        past_due: false,
+        submission_count: 1
+      },
+      is_charge_refundable: true,
+      payment_intent: "pi_456",
+      reason: "fraudulent",
+      status: "under_review"
+    } as never);
+
+    expect(result?.status).toBe("won");
+    expect(result?.closed_at).toBe("2026-03-15T10:00:00.000Z");
+    expect(logAuditEventMock).not.toHaveBeenCalled();
+    expect(sendOrderDisputeNotificationMock).not.toHaveBeenCalled();
+  });
 });

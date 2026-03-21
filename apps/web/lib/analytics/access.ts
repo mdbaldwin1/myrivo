@@ -20,17 +20,10 @@ export type StoreAnalyticsAccess = {
   dashboardEnabled: boolean;
 };
 
-function normalizeBooleanEnv(value: string | undefined, fallback: boolean) {
-  if (value === undefined) {
-    return fallback;
-  }
-  return value !== "0" && value.toLowerCase() !== "false";
-}
-
 export function getStorefrontAnalyticsRolloutConfig() {
   return {
-    collectionEnabled: normalizeBooleanEnv(process.env.NEXT_PUBLIC_MYRIVO_STOREFRONT_ANALYTICS_ENABLED, true),
-    dashboardEnabled: normalizeBooleanEnv(process.env.MYRIVO_ANALYTICS_DASHBOARD_ENABLED, true)
+    collectionEnabled: true,
+    dashboardEnabled: true
   };
 }
 

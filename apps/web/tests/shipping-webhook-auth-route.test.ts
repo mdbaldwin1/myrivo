@@ -24,9 +24,6 @@ beforeEach(() => {
   sendOrderShippingNotificationMock.mockReset();
 
   getShippingEnvMock.mockReturnValue({
-    SHIPPING_PROVIDER: "easypost",
-    EASYPOST_API_KEY: "ep_key",
-    SHIPPING_WEBHOOK_SECRET: "env-secret",
     SHIPPING_ALLOW_QUERY_TOKEN: undefined,
     SHIPPING_WEBHOOK_SIGNING_SECRET: undefined,
     SHIPPING_WEBHOOK_REQUIRE_SIGNATURE: undefined,
@@ -57,9 +54,6 @@ describe("shipping webhook auth", () => {
 
   test("rejects when signature is required and missing", async () => {
     getShippingEnvMock.mockReturnValue({
-      SHIPPING_PROVIDER: "easypost",
-      EASYPOST_API_KEY: "ep_key",
-      SHIPPING_WEBHOOK_SECRET: "env-secret",
       SHIPPING_ALLOW_QUERY_TOKEN: undefined,
       SHIPPING_WEBHOOK_SIGNING_SECRET: "signing-secret",
       SHIPPING_WEBHOOK_REQUIRE_SIGNATURE: "true",
@@ -70,7 +64,7 @@ describe("shipping webhook auth", () => {
       from: vi.fn(() => ({
         select: vi.fn(() => ({
           eq: vi.fn(() => ({
-            returns: vi.fn(async () => ({ data: [], error: null }))
+            returns: vi.fn(async () => ({ data: [{ store_id: "store-1" }], error: null }))
           }))
         }))
       }))
@@ -80,7 +74,7 @@ describe("shipping webhook auth", () => {
     const request = new NextRequest("http://localhost:3000/api/shipping/webhook", {
       method: "POST",
       headers: {
-        "x-shipping-webhook-secret": "env-secret",
+        "x-shipping-webhook-secret": "store-secret",
         "content-type": "application/json"
       },
       body: JSON.stringify({})
@@ -91,9 +85,6 @@ describe("shipping webhook auth", () => {
 
   test("accepts valid signature and timestamp when configured", async () => {
     getShippingEnvMock.mockReturnValue({
-      SHIPPING_PROVIDER: "easypost",
-      EASYPOST_API_KEY: "ep_key",
-      SHIPPING_WEBHOOK_SECRET: "env-secret",
       SHIPPING_ALLOW_QUERY_TOKEN: undefined,
       SHIPPING_WEBHOOK_SIGNING_SECRET: "signing-secret",
       SHIPPING_WEBHOOK_REQUIRE_SIGNATURE: "true",
@@ -108,7 +99,7 @@ describe("shipping webhook auth", () => {
         return {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
-              returns: vi.fn(async () => ({ data: [], error: null }))
+              returns: vi.fn(async () => ({ data: [{ store_id: "store-1" }], error: null }))
             }))
           }))
         };
@@ -124,7 +115,7 @@ describe("shipping webhook auth", () => {
     const request = new NextRequest("http://localhost:3000/api/shipping/webhook", {
       method: "POST",
       headers: {
-        "x-shipping-webhook-secret": "env-secret",
+        "x-shipping-webhook-secret": "store-secret",
         "x-shipping-timestamp": nowSeconds,
         "x-shipping-signature": `v1=${signature}`,
         "content-type": "application/json"
@@ -145,7 +136,7 @@ describe("shipping webhook auth", () => {
         return {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
-              returns: vi.fn(async () => ({ data: [], error: null }))
+              returns: vi.fn(async () => ({ data: [{ store_id: "store-1" }], error: null }))
             }))
           }))
         };
@@ -156,7 +147,7 @@ describe("shipping webhook auth", () => {
     const request = new NextRequest("http://localhost:3000/api/shipping/webhook", {
       method: "POST",
       headers: {
-        "x-shipping-webhook-secret": "env-secret",
+        "x-shipping-webhook-secret": "store-secret",
         "content-type": "application/json"
       },
       body: JSON.stringify({})

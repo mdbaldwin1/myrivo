@@ -45,8 +45,8 @@ describe("billing fee engine", () => {
                 maybeSingle: vi.fn(async () => ({
                   data: {
                     key: "standard",
-                    transaction_fee_bps: 125,
-                    transaction_fee_fixed_cents: 25
+                    transaction_fee_bps: 600,
+                    transaction_fee_fixed_cents: 30
                   },
                   error: null
                 }))
@@ -64,8 +64,8 @@ describe("billing fee engine", () => {
 
     expect(profile).toEqual({
       planKey: "standard",
-      feeBps: 125,
-      feeFixedCents: 25
+      feeBps: 600,
+      feeFixedCents: 30
     });
   });
 });

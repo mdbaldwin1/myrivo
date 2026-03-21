@@ -20,54 +20,41 @@ export type PricingPlan = {
     prioritySupport: boolean;
     customDomain: boolean;
     whiteLabel: boolean;
+    internalOnly: boolean;
   };
 };
 
 const planHighlights: Record<string, string[]> = {
-  starter: [
-    "Hosted storefront + checkout",
-    "Catalog, inventory, and order management",
-    "Email workflows and subscriber capture"
+  standard: [
+    "High-touch storefront, checkout, and seller operations",
+    "Branded commerce experience with no required monthly base",
+    "Single all-in Myrivo fee that covers Stripe processing"
   ],
-  growth: [
-    "Lower transaction fee for scaling volume",
-    "Custom domain storefront support",
-    "Priority support + advanced operations controls"
-  ],
-  scale: [
-    "Lowest platform fee profile",
-    "White-label + multi-store operational scale",
-    "Highest-priority support path"
+  family_friends: [
+    "Internal-use plan for close-circle stores",
+    "Covers baseline Stripe processing without extra Myrivo margin",
+    "Assigned by the Myrivo team only"
   ]
 };
 
 const fallbackPlans: BillingPlanRow[] = [
   {
-    key: "starter",
-    name: "Starter",
+    key: "standard",
+    name: "Standard",
     monthly_price_cents: 0,
-    transaction_fee_bps: 350,
-    transaction_fee_fixed_cents: 0,
+    transaction_fee_bps: 600,
+    transaction_fee_fixed_cents: 30,
     active: true,
-    feature_flags_json: { prioritySupport: false, customDomain: false, whiteLabel: false }
+    feature_flags_json: { prioritySupport: false, customDomain: true, whiteLabel: false }
   },
   {
-    key: "growth",
-    name: "Growth",
-    monthly_price_cents: 4900,
-    transaction_fee_bps: 200,
-    transaction_fee_fixed_cents: 0,
+    key: "family_friends",
+    name: "Family & Friends",
+    monthly_price_cents: 0,
+    transaction_fee_bps: 290,
+    transaction_fee_fixed_cents: 30,
     active: true,
-    feature_flags_json: { prioritySupport: true, customDomain: true, whiteLabel: false }
-  },
-  {
-    key: "scale",
-    name: "Scale",
-    monthly_price_cents: 14900,
-    transaction_fee_bps: 100,
-    transaction_fee_fixed_cents: 0,
-    active: true,
-    feature_flags_json: { prioritySupport: true, customDomain: true, whiteLabel: true }
+    feature_flags_json: { prioritySupport: false, customDomain: true, whiteLabel: false, internalOnly: true }
   }
 ];
 
@@ -87,7 +74,8 @@ function normalizePlan(row: BillingPlanRow): PricingPlan {
     featureFlags: {
       prioritySupport: parseFlag(row.feature_flags_json, "prioritySupport"),
       customDomain: parseFlag(row.feature_flags_json, "customDomain"),
-      whiteLabel: parseFlag(row.feature_flags_json, "whiteLabel")
+      whiteLabel: parseFlag(row.feature_flags_json, "whiteLabel"),
+      internalOnly: parseFlag(row.feature_flags_json, "internalOnly")
     }
   };
 }
@@ -96,6 +84,7 @@ export function resolvePricingPlans(rows: BillingPlanRow[] | null | undefined) {
   const source = rows && rows.length > 0 ? rows : fallbackPlans;
   return source
     .filter((plan) => plan.active)
+    .filter((plan) => !parseFlag(plan.feature_flags_json, "internalOnly"))
     .sort((a, b) => a.monthly_price_cents - b.monthly_price_cents)
     .map(normalizePlan);
 }

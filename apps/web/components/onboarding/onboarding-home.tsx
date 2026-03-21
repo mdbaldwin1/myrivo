@@ -127,7 +127,7 @@ export function OnboardingHome({ existingStores }: OnboardingHomeProps) {
                             Resume
                           </span>
                         </div>
-                        <p className="text-xs text-muted-foreground">Your preview is started. From here, we focus on operational readiness.</p>
+                        <p className="text-xs text-muted-foreground">Your preview is started. From here, we focus on operational readiness, including payments and tax handling.</p>
                       </div>
 
                       <Button asChild variant="outline" className="mt-4 w-full justify-between">

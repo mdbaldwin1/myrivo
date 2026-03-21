@@ -83,7 +83,12 @@ export async function GET(request: NextRequest) {
     ];
   }
 
-  return NextResponse.json({ store, billing, plans: visiblePlans, canManageBillingPlan: auth.context.globalRole === "admin" });
+  return NextResponse.json({
+    store,
+    billing,
+    plans: visiblePlans,
+    canManageBillingPlan: auth.context.storeRole === "owner" || auth.context.storeRole === "admin" || auth.context.globalRole === "admin"
+  });
 }
 
 export async function PUT(request: NextRequest) {
@@ -112,8 +117,11 @@ export async function PUT(request: NextRequest) {
 
   let billingPlanId: string | null | undefined;
   if (payload.data.billingPlanKey) {
-    if (auth.context.globalRole !== "admin") {
-      return NextResponse.json({ error: "Only platform admins can assign billing plans." }, { status: 403 });
+    const canManageBillingPlan =
+      auth.context.storeRole === "owner" || auth.context.storeRole === "admin" || auth.context.globalRole === "admin";
+
+    if (!canManageBillingPlan) {
+      return NextResponse.json({ error: "Only store admins can assign billing plans." }, { status: 403 });
     }
 
     const admin = createSupabaseAdminClient();

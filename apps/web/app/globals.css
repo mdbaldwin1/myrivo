@@ -3,22 +3,22 @@
 @tailwind utilities;
 
 :root {
-  --background: 171 47% 97%;
-  --foreground: 182 39% 15%;
-  --card: 0 0% 100%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 182 39% 15%;
-  --border: 183 38% 82%;
-  --input: 183 38% 82%;
-  --ring: 185 80% 29%;
-  --primary: 185 80% 29%;
-  --primary-foreground: 0 0% 100%;
-  --muted: 184 44% 92%;
-  --muted-foreground: 182 16% 39%;
-  --accent: 182 73% 38%;
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 72% 51%;
-  --destructive-foreground: 0 0% 100%;
+  --background: 171 47% 97%; /* #f4fbfa */
+  --foreground: 182 39% 15%; /* #173435 */
+  --card: 0 0% 100%; /* #ffffff */
+  --popover: 0 0% 100%; /* #ffffff */
+  --popover-foreground: 182 39% 15%; /* #173435 */
+  --border: 183 38% 82%; /* #c0e1e3 */
+  --input: 183 38% 82%; /* #c0e1e3 */
+  --ring: 185 80% 29%; /* #0f7b85 */
+  --primary: 185 80% 29%; /* #0f7b85 */
+  --primary-foreground: 0 0% 100%; /* #ffffff */
+  --muted: 184 44% 92%; /* #e2f2f4 */
+  --muted-foreground: 182 16% 39%; /* #547273 */
+  --accent: 182 73% 38%; /* #1aa3a8 */
+  --accent-foreground: 0 0% 100%; /* #ffffff */
+  --destructive: 0 72% 51%; /* #dc2828 */
+  --destructive-foreground: 0 0% 100%; /* #ffffff */
   --radius-lg: 1rem;
   --radius-md: 0.75rem;
   --radius-sm: 0.5rem;

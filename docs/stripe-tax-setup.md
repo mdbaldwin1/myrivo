@@ -25,13 +25,19 @@ Today Myrivo:
 - creates Checkout Sessions from the **platform Stripe account**
 - uses **destination charges** to transfer funds to connected stores
 - sets `automatic_tax.enabled=true`
-- does **not** set `automatic_tax.liability`
+- sets `automatic_tax.liability.account = store.stripe_account_id`
 
-That means Stripe Tax currently uses the **requesting platform account's** tax configuration, not the connected account's configuration.
+That means Stripe Tax is configured to use the connected seller account's tax liability rather than the platform account's configuration.
 
-In other words:
-- the current code path behaves like a **platform-liable tax model**
-- this does **not** match the intended merchant-owned tax responsibility model
+What is implemented today:
+- live checkout blocks when a store chooses `Stripe Tax` and the connected-account Stripe Tax setup is not ready
+- merchant settings surface Stripe Tax readiness and missing setup fields
+- merchant settings include embedded Stripe Tax settings and tax registrations components for connected accounts
+- stores must make an explicit tax decision before launch:
+  - `Stripe Tax`
+  - `Seller-attested no-tax`
+- seller-attested no-tax is warning-backed and auditable, but it does **not** mean Myrivo determined the seller has no tax obligation
+- checkout still uses one aggregated line item, which is workable for now but not ideal long term
 
 ## Chosen direction
 
@@ -89,21 +95,36 @@ payment_intent_data: {
 
 Myrivo should also:
 - expose connected-account tax readiness in merchant settings
-- block live launch or live payments when merchant tax setup is incomplete
+- require an explicit tax decision before launch
+- block live launch or live payments when a store chooses Stripe Tax and merchant tax setup is incomplete
 - document clearly that merchants are responsible for registrations, tax compliance, and filings
 
-## Required migration work
+## Tax decision policy
 
-The following work is required before Myrivo can honestly claim that sellers handle tax on their own end:
+Myrivo now supports two launch paths:
 
-1. Update checkout code to set connected-account tax liability.
-2. Add merchant tax readiness checks to onboarding / go-live.
-3. Add merchant-facing tax setup surfaces:
-   - tax settings status
-   - registration status
-   - clear setup CTAs
-4. Update merchant-facing docs/copy to state the responsibility model clearly.
-5. Verify test-mode and live-mode flows against connected-account tax configuration.
+1. `Stripe Tax`
+- Seller configures tax settings and registrations on their connected Stripe account.
+- Myrivo uses the connected account's Stripe Tax setup at checkout.
+- This is the preferred and safer default path.
+
+2. `Seller-attested no-tax`
+- Seller explicitly acknowledges that Myrivo does not provide tax advice.
+- Seller confirms they are responsible for determining whether they must register, collect, remit, and file taxes.
+- Myrivo records the acknowledgement timestamp, actor, and note on the store record.
+
+Important boundaries:
+- Myrivo does **not** determine that a seller is exempt from tax obligations.
+- Myrivo does **not** recommend the no-tax path as generally compliant.
+- The no-tax path exists to avoid forcing immediate Stripe Tax setup for sellers who are making their own compliance decision.
+
+## Remaining implementation work
+
+The following work still needs to land before Myrivo can fully claim merchant-owned tax readiness end to end:
+
+1. Verify test-mode and live-mode flows against connected-account tax configuration.
+2. Decide whether seller-attested no-tax stores should trigger extra admin review/flagging before launch.
+3. Consider future follow-up improvements like itemized Stripe line items and richer tax-code controls.
 
 ## Test-mode note
 
@@ -112,8 +133,8 @@ The current local Stripe environment may still point at a test platform account 
 - no default tax code configured
 - no tax registrations configured
 
-That is expected while the migration is still in progress, but it also means:
-- neither platform-liable nor merchant-liable tax is fully ready yet
+That is expected while the readiness work is still in progress, but it also means:
+- merchant-liable tax is not fully launch-ready until connected-account setup is also enforced at go-live
 
 ## Line item caveat
 
@@ -128,11 +149,7 @@ This is a follow-up improvement, not the first blocker for moving to merchant-ow
 
 ## Operational guidance
 
-Until the code and Stripe setup are migrated:
-- do **not** treat the system as merchant-owned tax-ready
-- do **not** assume registrations on the connected account are being used at checkout
-
-Once the migration is complete, the operating guidance should be:
+Current operating guidance:
 
 > Sellers own tax setup, registrations, and filings.
-> Myrivo provides the storefront, checkout, and Stripe Tax integration, but does not take on merchant tax filing responsibility.
+> Myrivo provides the storefront, checkout, Stripe Tax integration, and an auditable no-tax attestation path, but does not take on merchant tax filing responsibility or make compliance determinations for sellers.

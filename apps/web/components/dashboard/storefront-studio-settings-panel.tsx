@@ -25,11 +25,11 @@ function getBuilderSectionIdsForSurface(surface: StorefrontStudioSurfaceId): Sto
     case "about":
       return ["branding", "general"];
     case "policies":
-      return ["general", "shipping"];
+      return ["general", "fulfillment"];
     case "cart":
-      return ["shipping", "pickup"];
+      return ["fulfillment"];
     case "orderSummary":
-      return ["pickup", "shipping"];
+      return ["fulfillment"];
     case "emails":
       return ["general", "branding"];
     default:
@@ -55,17 +55,11 @@ function getSectionSummary(sectionId: StoreSettingsSectionId, storefrontData: St
         storefrontData.branding?.primary_color ? "Primary color set" : "Primary color missing",
         storefrontData.branding?.theme_json ? "Theme tokens configured" : "Theme defaults active"
       ].join(" · ");
-    case "shipping":
+    case "fulfillment":
       return [
         storefrontData.settings?.checkout_enable_flat_rate_shipping ?? true ? "Shipping enabled" : "Shipping disabled",
-        storefrontData.settings?.checkout_flat_rate_shipping_label?.trim() ? "Shipping label customized" : "Default shipping label",
-        storefrontData.settings?.shipping_policy?.trim() ? "Shipping policy set" : "Shipping policy missing"
-      ].join(" · ");
-    case "pickup":
-      return [
         storefrontData.settings?.checkout_enable_local_pickup ? "Pickup enabled" : "Pickup disabled",
-        storefrontData.settings?.checkout_local_pickup_label?.trim() ? "Pickup label customized" : "Default pickup label",
-        storefrontData.settings?.checkout_local_pickup_fee_cents ? "Pickup fee configured" : "No pickup fee"
+        storefrontData.settings?.shipping_policy?.trim() ? "Shipping policy set" : "Shipping policy missing"
       ].join(" · ");
     case "domains":
       return "Customer-facing, but operational. Managed outside the builder.";
@@ -83,10 +77,10 @@ export function StorefrontStudioSettingsPanel({ storeSlug, surface, storefrontDa
     .map((sectionId) => storeSettingsWorkspaceSections.find((section) => section.id === sectionId))
     .filter((section): section is (typeof storeSettingsWorkspaceSections)[number] => Boolean(section));
   const inlineBuilderSections = builderSections.filter((section) =>
-    ["general", "branding", "shipping", "pickup"].includes(section.id)
+    ["general", "branding", "fulfillment"].includes(section.id)
   );
   const linkedBuilderSections = builderSections.filter(
-    (section) => !["general", "branding", "shipping", "pickup"].includes(section.id)
+    (section) => !["general", "branding", "fulfillment"].includes(section.id)
   );
 
   const operationalSections = storeSettingsWorkspaceSections.filter((section) =>
@@ -96,11 +90,11 @@ export function StorefrontStudioSettingsPanel({ storeSlug, surface, storefrontDa
   return (
     <div className="space-y-4">
       {inlineBuilderSections.some((section) => section.id === "branding") ? <StorefrontStudioStorefrontEditorBrandTab /> : null}
-      {inlineBuilderSections.some((section) => section.id === "shipping" || section.id === "pickup") ? (
+      {inlineBuilderSections.some((section) => section.id === "fulfillment") ? (
         <StorefrontStudioFulfillmentSettingsPanel
           storeSlug={storeSlug}
-          showShipping={inlineBuilderSections.some((section) => section.id === "shipping")}
-          showPickup={inlineBuilderSections.some((section) => section.id === "pickup")}
+          showShipping
+          showPickup
         />
       ) : null}
 
@@ -137,7 +131,7 @@ export function StorefrontStudioSettingsPanel({ storeSlug, surface, storefrontDa
           <CardDescription>These stay out of the builder so storefront editing does not mix with domain, staff, and provider administration.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {builderSections.some((section) => section.id === "pickup") ? (
+          {builderSections.some((section) => section.id === "fulfillment") ? (
             <div className="rounded-lg border border-dashed border-border/60 p-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
@@ -147,7 +141,7 @@ export function StorefrontStudioSettingsPanel({ storeSlug, surface, storefrontDa
                   </p>
                 </div>
                 <Link
-                  href={`/dashboard/stores/${storeSlug}/store-settings/pickup`}
+                  href={`/dashboard/stores/${storeSlug}/store-settings/fulfillment`}
                   className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "shrink-0")}
                 >
                   Open

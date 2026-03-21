@@ -27,7 +27,7 @@ export default async function StoreWorkspaceBillingSettingsPage({ params }: Page
     <section className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         <DashboardPageHeader title="Billing" description="Billing plan assignment and platform fee configuration." />
-        <BillingPlanSettings title="Billing Plan" />
+        <BillingPlanSettings title="Billing Plan" editable />
       </div>
     </section>
   );

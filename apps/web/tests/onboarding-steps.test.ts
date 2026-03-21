@@ -12,6 +12,8 @@ function makeProgress(overrides: Partial<StoreOnboardingProgress> = {}): StoreOn
     role: "owner",
     canManageWorkspace: true,
     canLaunch: true,
+    paymentStatus: "ready",
+    taxCollectionMode: "stripe_tax",
     steps: {
       profile: true,
       branding: true,
@@ -60,6 +62,7 @@ describe("onboarding step routes", () => {
   test("builds launch-readiness checklist items with merchant-facing labels", () => {
     const items = getLaunchReadinessChecklistItems(
       makeProgress({
+        paymentStatus: "not_connected",
         steps: {
           profile: false,
           branding: true,
@@ -107,5 +110,121 @@ describe("onboarding step routes", () => {
     );
 
     expect(nextStep).toBeNull();
+  });
+
+  test("uses Stripe setup language when payments are connected but not ready", () => {
+    const nextStep = getOnboardingNextStep(
+      makeProgress({
+        paymentStatus: "setup_required",
+        steps: {
+          profile: true,
+          branding: true,
+          firstProduct: true,
+          payments: false,
+          launch: false
+        },
+        launchReady: false
+      })
+    );
+
+    expect(nextStep).toEqual({
+      id: "payments",
+      label: "Finish Stripe tax setup",
+      href: "/dashboard/stores/sunset-mercantile/store-settings/integrations"
+    });
+
+    const items = getLaunchReadinessChecklistItems(
+      makeProgress({
+        paymentStatus: "setup_required",
+        steps: {
+          profile: true,
+          branding: true,
+          firstProduct: true,
+          payments: false,
+          launch: false
+        },
+        launchReady: false
+      })
+    );
+
+    expect(items[2]).toEqual(
+      expect.objectContaining({
+        id: "payments",
+        label: "Finish Stripe tax setup",
+        completed: false
+      })
+    );
+  });
+
+  test("uses tax decision language when Stripe is connected but the seller has not chosen a tax path", () => {
+    const nextStep = getOnboardingNextStep(
+      makeProgress({
+        paymentStatus: "tax_decision_required",
+        taxCollectionMode: "unconfigured",
+        steps: {
+          profile: true,
+          branding: true,
+          firstProduct: true,
+          payments: false,
+          launch: false
+        },
+        launchReady: false
+      })
+    );
+
+    expect(nextStep).toEqual({
+      id: "payments",
+      label: "Choose tax handling",
+      href: "/dashboard/stores/sunset-mercantile/store-settings/integrations"
+    });
+
+    const items = getLaunchReadinessChecklistItems(
+      makeProgress({
+        paymentStatus: "tax_decision_required",
+        taxCollectionMode: "unconfigured",
+        steps: {
+          profile: true,
+          branding: true,
+          firstProduct: true,
+          payments: false,
+          launch: false
+        },
+        launchReady: false
+      })
+    );
+
+    expect(items[2]).toEqual(
+      expect.objectContaining({
+        id: "payments",
+        label: "Choose tax handling",
+        completed: false
+      })
+    );
+  });
+
+  test("uses payments-ready language for seller-attested no-tax stores", () => {
+    const items = getLaunchReadinessChecklistItems(
+      makeProgress({
+        paymentStatus: "ready",
+        taxCollectionMode: "seller_attested_no_tax",
+        steps: {
+          profile: true,
+          branding: true,
+          firstProduct: true,
+          payments: true,
+          launch: false
+        },
+        launchReady: true
+      })
+    );
+
+    expect(items[2]).toEqual(
+      expect.objectContaining({
+        id: "payments",
+        label: "Payments ready",
+        description: "Stripe payments are ready, and you recorded a no-tax selling decision.",
+        completed: true
+      })
+    );
   });
 });

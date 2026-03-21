@@ -134,7 +134,7 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
       const feeProfile = resolveCheckoutFeeSnapshot(checkout, fallbackFeeProfile);
       const platformFeeCents =
         checkout.platform_fee_cents ??
-        calculatePlatformFeeCents(Math.max(0, existingOrderRow.subtotal_cents - existingOrderRow.discount_cents), feeProfile);
+        calculatePlatformFeeCents(computedTotalCents, feeProfile);
 
       const { error: orderSyncError } = await supabase
         .from("orders")
@@ -184,7 +184,7 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
       await writeOrderFeeBreakdown({
         orderId: existingOrder.id,
         storeId: checkout.store_id,
-        subtotalCents: existingOrderRow.subtotal_cents,
+        feeBaseCents: computedTotalCents,
         feeProfile,
         platformFeeCents,
         netPayoutCents: Math.max(0, computedTotalCents - platformFeeCents)
@@ -245,7 +245,7 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
   const feeProfile = resolveCheckoutFeeSnapshot(checkout, fallbackFeeProfile);
   const platformFeeCents =
     checkout.platform_fee_cents ??
-    calculatePlatformFeeCents(Math.max(0, createdOrderRow.subtotal_cents - createdOrderRow.discount_cents), feeProfile);
+    calculatePlatformFeeCents(computedTotalCents, feeProfile);
 
   const { error: orderSyncError } = await supabase
     .from("orders")
@@ -295,7 +295,7 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
   await writeOrderFeeBreakdown({
     orderId,
     storeId: checkout.store_id,
-    subtotalCents: createdOrderRow.subtotal_cents,
+    feeBaseCents: computedTotalCents,
     feeProfile,
     platformFeeCents,
     netPayoutCents: Math.max(0, computedTotalCents - platformFeeCents)

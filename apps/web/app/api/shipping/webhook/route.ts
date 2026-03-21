@@ -26,16 +26,6 @@ function getWebhookSecret(request: NextRequest): string | null {
   return null;
 }
 
-function isEnvAuthorizedWebhook(secret: string | null): boolean {
-  const { SHIPPING_WEBHOOK_SECRET } = getShippingEnv();
-
-  if (!SHIPPING_WEBHOOK_SECRET) {
-    return false;
-  }
-
-  return secret === SHIPPING_WEBHOOK_SECRET;
-}
-
 function asEnabled(value: string | undefined) {
   const normalized = value?.trim().toLowerCase();
   return normalized === "true" || normalized === "1" || normalized === "yes";
@@ -111,9 +101,8 @@ export async function POST(request: NextRequest) {
   const webhookSecret = getWebhookSecret(request);
   const supabase = createSupabaseAdminClient();
   const storeIdsBySecret = webhookSecret ? await getStoreIdsByWebhookSecret(supabase, webhookSecret) : [];
-  const allowEnvFallback = isEnvAuthorizedWebhook(webhookSecret);
 
-  if (!allowEnvFallback && storeIdsBySecret.length === 0) {
+  if (storeIdsBySecret.length === 0) {
     return NextResponse.json({ error: "Unauthorized webhook." }, { status: 401 });
   }
 

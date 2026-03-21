@@ -2,7 +2,8 @@ import { z } from "zod";
 
 export const publicEnvSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1)
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
+  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().min(1).optional()
 });
 
 export const serverEnvSchema = z.object({
@@ -48,9 +49,6 @@ export const stripeEnvSchema = z.object({
 });
 
 export const shippingEnvSchema = z.object({
-  SHIPPING_PROVIDER: z.enum(["none", "easypost"]).optional(),
-  EASYPOST_API_KEY: z.string().min(1).optional(),
-  SHIPPING_WEBHOOK_SECRET: z.string().min(1).optional(),
   SHIPPING_ALLOW_QUERY_TOKEN: z.string().optional(),
   SHIPPING_WEBHOOK_SIGNING_SECRET: z.string().min(1).optional(),
   SHIPPING_WEBHOOK_REQUIRE_SIGNATURE: z.string().optional(),
@@ -75,7 +73,8 @@ export function getPublicEnv() {
   if (!cachedPublicEnv) {
     cachedPublicEnv = publicEnvSchema.parse({
       NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
     });
   }
 
@@ -129,9 +128,6 @@ export function getStripeEnv() {
 export function getShippingEnv() {
   if (!cachedShippingEnv) {
     cachedShippingEnv = shippingEnvSchema.parse({
-      SHIPPING_PROVIDER: process.env.SHIPPING_PROVIDER,
-      EASYPOST_API_KEY: process.env.EASYPOST_API_KEY,
-      SHIPPING_WEBHOOK_SECRET: process.env.SHIPPING_WEBHOOK_SECRET,
       SHIPPING_ALLOW_QUERY_TOKEN: process.env.SHIPPING_ALLOW_QUERY_TOKEN,
       SHIPPING_WEBHOOK_SIGNING_SECRET: process.env.SHIPPING_WEBHOOK_SIGNING_SECRET,
       SHIPPING_WEBHOOK_REQUIRE_SIGNATURE: process.env.SHIPPING_WEBHOOK_REQUIRE_SIGNATURE,
@@ -181,4 +177,8 @@ export function getAppUrl() {
 
 export function getEnv() {
   return { ...getPublicEnv(), ...getServerEnv(), ...getStripeEnv(), NEXT_PUBLIC_APP_URL: getAppUrl() };
+}
+
+export function getOptionalStripePublishableKey() {
+  return getPublicEnv().NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? null;
 }

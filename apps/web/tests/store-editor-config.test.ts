@@ -25,10 +25,10 @@ function buildBundle(overrides?: Partial<OwnedStoreBundle>): OwnedStoreBundle {
 describe("buildStoreEditorSettingsPayload", () => {
   test("fills editor-facing defaults when settings are missing", () => {
     const payload = buildStoreEditorSettingsPayload(buildBundle(), {
-      provider: "shippo",
-      source: "env",
+      provider: "none",
+      source: "default",
       apiKey: null,
-      webhookSecret: "secret"
+      webhookSecret: null
     });
 
     expect(payload.checkoutRules).toEqual({
@@ -43,6 +43,6 @@ describe("buildStoreEditorSettingsPayload", () => {
       checkoutOrderNotePrompt: "If you have any questions, comments, or concerns about your order, leave a note below."
     });
     expect(payload.integrations.shipping.hasApiKey).toBe(false);
-    expect(payload.integrations.shipping.hasWebhookSecret).toBe(true);
+    expect(payload.integrations.shipping.hasWebhookSecret).toBe(false);
   });
 });

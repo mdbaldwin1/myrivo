@@ -8,6 +8,8 @@ import {
   notifyPlatformAdminsStoreSubmittedForReview
 } from "@/lib/notifications/owner-notifications";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
+import { getStoreStripePaymentsReadiness } from "@/lib/stripe/store-payments-readiness";
+import { isStorePaymentsReadyForLaunch } from "@/lib/stores/tax-compliance";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getStoreOnboardingProgressForStore } from "@/lib/stores/onboarding";
 import { getOwnedStoreBundleForSlug } from "@/lib/stores/owner-store";
@@ -56,12 +58,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Store onboarding status not found." }, { status: 404 });
   }
 
-  if (!progress.launchReady) {
+  const stripeReadiness = await getStoreStripePaymentsReadiness(bundle.store.stripe_account_id);
+  const paymentsReadyForLaunch = isStorePaymentsReadyForLaunch(progress.taxCollectionMode, stripeReadiness);
+
+  if (!progress.launchReady || !paymentsReadyForLaunch) {
     const missingSteps = [
       !progress.steps.profile ? "Store profile" : null,
       !progress.steps.branding ? "Branding" : null,
       !progress.steps.firstProduct ? "First product" : null,
-      !progress.steps.payments ? "Payments" : null
+      progress.taxCollectionMode === "unconfigured" ? "Tax decision" : null,
+      !progress.steps.payments || !paymentsReadyForLaunch ? "Payments" : null
     ].filter((step): step is string => step !== null);
 
     try {
@@ -77,7 +83,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: "Complete profile, branding, first product, and payments before launching this store." },
+      { error: "Complete profile, branding, first product, your tax decision, and Stripe payments setup before launching this store." },
       { status: 409 }
     );
   }

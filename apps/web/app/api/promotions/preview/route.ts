@@ -5,6 +5,7 @@ import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { checkRateLimit } from "@/lib/security/rate-limit";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
+import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const payloadSchema = z.object({
@@ -43,16 +44,15 @@ export async function POST(request: NextRequest) {
 
   const { data: store, error: storeError } = await supabase
     .from("stores")
-    .select("id")
+    .select("id,status")
     .eq("slug", storeSlug)
-    .eq("status", "active")
-    .maybeSingle();
+    .maybeSingle<{ id: string; status: string }>();
 
   if (storeError) {
     return NextResponse.json({ error: storeError.message }, { status: 500 });
   }
 
-  if (!store) {
+  if (!store || !isStorePubliclyAccessibleStatus(store.status)) {
     return NextResponse.json({ error: "Store not found or inactive." }, { status: 404 });
   }
 

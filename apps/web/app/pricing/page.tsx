@@ -6,20 +6,20 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 const faqItems = [
   {
     question: "Do I need a monthly subscription to start?",
-    answer: "No. Starter is usage-based with a transaction fee profile and no monthly platform charge."
+    answer: "No. Myrivo can run stores on transaction-fee-only pricing, and any paid plan changes are assigned by the Myrivo team rather than self-served in the product."
   },
   {
     question: "How do platform fees work?",
     answer:
-      "Each paid order records a fee snapshot in billing reporting so payout math is auditable. Your store sees platform fee and net payout per order."
+      "Each successful order is charged one Myrivo platform fee on the full processed order amount. Myrivo covers Stripe processing costs inside that fee, and every order records a fee snapshot for auditable payout reporting."
   },
   {
     question: "Can I start small and upgrade later?",
-    answer: "Yes. You can move between active plans and keep operating history, order data, and content settings."
+    answer: "Yes. We can reassign your store to a different plan without affecting operating history, order data, or storefront content."
   },
   {
     question: "Is tax handled by Myrivo or Stripe?",
-    answer: "Stripe Tax should handle tax calculation and collection. Myrivo remains the commerce workflow layer while Stripe handles tax logic."
+    answer: "Stripe Tax handles calculation at checkout, but sellers are still responsible for their own tax setup, registrations, and filings on their connected Stripe accounts."
   }
 ] as const;
 
@@ -44,18 +44,18 @@ export default async function PricingPage() {
           Start lean. Scale with control.
         </h1>
         <p className="mt-4 max-w-3xl text-base leading-relaxed text-muted-foreground">
-          Plan pricing comes from live billing config and every paid order snapshots fee math for audit-grade payout reporting.
+          Plan pricing comes from live billing config, applies to the full processed order amount, and snapshots fee math on every paid order for audit-grade payout reporting.
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <MarketingTrackedButtonLink
             href={isAuthenticated ? "/dashboard/billing?entry=pricing" : "/signup?source=pricing"}
-            ctaKey={isAuthenticated ? "pricing_hero_open_billing" : "pricing_hero_start_free"}
-            ctaLabel={isAuthenticated ? "Open billing" : "Start free"}
+            ctaKey={isAuthenticated ? "pricing_hero_view_billing" : "pricing_hero_start_free"}
+            ctaLabel={isAuthenticated ? "View billing" : "Start free"}
             sectionKey="hero"
             conversionIntent={isAuthenticated ? undefined : "signup"}
             className="h-11 rounded-full bg-primary px-6 text-primary-foreground hover:bg-primary"
           >
-            {isAuthenticated ? "Open billing" : "Start free"}
+            {isAuthenticated ? "View billing" : "Start free"}
           </MarketingTrackedButtonLink>
           <MarketingTrackedButtonLink
             href="/compare"
@@ -100,6 +100,7 @@ export default async function PricingPage() {
             <div className="mt-4 rounded-xl border border-border bg-background p-3 text-sm text-foreground">
               <p>Platform fee: {formatPlatformFeePercent(plan.feeBps)}</p>
               <p>Fixed fee: {formatMoney(plan.feeFixedCents)}</p>
+              <p className="text-muted-foreground">Applied to the full processed order amount. Myrivo covers Stripe processing costs.</p>
             </div>
             <ul className="mt-4 space-y-2 text-sm text-muted-foreground">
               {plan.highlights.map((item) => (
@@ -110,12 +111,12 @@ export default async function PricingPage() {
               <MarketingTrackedButtonLink
                 href={isAuthenticated ? "/dashboard/billing?entry=pricing-plan" : "/signup?source=pricing-plan"}
                 ctaKey={`pricing_plan_${plan.key}`}
-                ctaLabel={isAuthenticated ? `Manage ${plan.name}` : `Choose ${plan.name}`}
+                ctaLabel={isAuthenticated ? `View ${plan.name}` : `Get started with ${plan.name}`}
                 sectionKey="plan_cards"
                 conversionIntent={isAuthenticated ? undefined : "signup"}
                 className="h-10 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary"
               >
-                {isAuthenticated ? "Manage plan" : "Choose plan"}
+                {isAuthenticated ? "View plan details" : "Get started"}
               </MarketingTrackedButtonLink>
             </div>
           </article>

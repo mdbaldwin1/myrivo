@@ -893,11 +893,6 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
               </div>
 
               <form onSubmit={checkout} className="space-y-2">
-                <StorefrontPrivacyCollectionNotice
-                  surface="checkout"
-                  store={resolvedStore}
-                  profile={resolvedPrivacyProfile}
-                />
                 <Input
                   type="text"
                   placeholder={copy.cart.promoPlaceholder}
@@ -924,6 +919,11 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                     />
                   ) : null}
                 </div>
+                <StorefrontPrivacyCollectionNotice
+                  surface="checkout"
+                  store={resolvedStore}
+                  profile={resolvedPrivacyProfile}
+                />
                 <AppAlert variant="error" compact message={error} />
               </form>
               <Link href={buildStorefrontProductsPath(resolvedStore.slug)} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "mx-auto text-sm font-medium")}>

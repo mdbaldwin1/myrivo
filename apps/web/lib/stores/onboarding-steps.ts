@@ -25,6 +25,42 @@ function getDetailsHref(store: StoreOnboardingProgress): string {
   return `/dashboard/stores/${store.slug}/storefront-studio?editor=brand`;
 }
 
+function getPaymentsStepLabel(store: StoreOnboardingProgress) {
+  if (store.paymentStatus === "ready") {
+    return "Payments ready";
+  }
+
+  if (store.paymentStatus === "tax_decision_required") {
+    return "Choose tax handling";
+  }
+
+  if (store.paymentStatus === "setup_required") {
+    return store.taxCollectionMode === "seller_attested_no_tax" ? "Finish Stripe payments setup" : "Finish Stripe tax setup";
+  }
+
+  return "Connect payments";
+}
+
+function getPaymentsStepDescription(store: StoreOnboardingProgress) {
+  if (store.paymentStatus === "ready") {
+    return store.taxCollectionMode === "seller_attested_no_tax"
+      ? "Stripe payments are ready, and you recorded a no-tax selling decision."
+      : "Stripe, payouts, and tax setup are ready for launch.";
+  }
+
+  if (store.paymentStatus === "tax_decision_required") {
+    return "Choose whether to set up Stripe Tax or acknowledge selling without tax collection before launch.";
+  }
+
+  if (store.paymentStatus === "setup_required") {
+    return store.taxCollectionMode === "seller_attested_no_tax"
+      ? "Stripe is connected, but payouts or account setup still need attention before launch."
+      : "Stripe is connected, but live checkout still needs payouts or tax setup completed.";
+  }
+
+  return "Connect Stripe before you apply to launch.";
+}
+
 export function getOnboardingRemainingStepIds(store: StoreOnboardingProgress): OnboardingStepId[] {
   const steps: Array<{ id: OnboardingStepId; completed: boolean }> = [
     { id: "profile", completed: store.steps.profile },
@@ -55,8 +91,8 @@ export function getLaunchReadinessChecklistItems(store: StoreOnboardingProgress)
     },
     {
       id: "payments",
-      label: store.steps.payments ? "Payments connected" : "Connect payments",
-      description: "Stripe can wait until after preview, but it needs to be ready before launch.",
+      label: getPaymentsStepLabel(store),
+      description: getPaymentsStepDescription(store),
       href: `/dashboard/stores/${store.slug}/store-settings/integrations`,
       completed: store.steps.payments
     }
@@ -89,7 +125,7 @@ export function getOnboardingNextStep(store: StoreOnboardingProgress): Onboardin
     return { id: "firstProduct", label: "Add your first product", href: `/dashboard/stores/${store.slug}/catalog` };
   }
   if (!store.steps.payments) {
-    return { id: "payments", label: "Connect payments", href: `/dashboard/stores/${store.slug}/store-settings/integrations` };
+    return { id: "payments", label: getPaymentsStepLabel(store), href: `/dashboard/stores/${store.slug}/store-settings/integrations` };
   }
   if (!store.steps.launch && store.canLaunch) {
     if (store.status === "pending_review" || store.status === "suspended" || store.status === "removed" || store.status === "live") {

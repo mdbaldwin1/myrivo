@@ -1,9 +1,11 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { AlertTriangle } from "lucide-react";
 import { DashboardHeaderStoreLifecycleControls } from "@/components/dashboard/dashboard-header-store-lifecycle-controls";
 import type { StoreOption } from "@/components/dashboard/store-switcher";
 import { DashboardHeaderStoreControl } from "@/components/dashboard/dashboard-header-store-control";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { getStoreLifecycleLabel, getStoreLifecycleTone } from "@/lib/stores/lifecycle";
 import type { StoreOnboardingProgress } from "@/lib/stores/onboarding";
 import type { StoreStatus } from "@/types/database";
@@ -45,6 +47,8 @@ export function DashboardHeaderStoreSection({
     );
   }
 
+  const showNoTaxIndicator = storeOnboardingProgress?.taxCollectionMode === "seller_attested_no_tax";
+
   return (
     <div className="flex min-w-0 items-center justify-center gap-2">
       {(storeStatus || storeOnboardingProgress) ? (
@@ -62,6 +66,21 @@ export function DashboardHeaderStoreSection({
             >
               {getStoreLifecycleLabel(storeStatus as StoreStatus)}
             </p>
+          ) : null}
+          {showNoTaxIndicator ? (
+            <TooltipProvider delayDuration={120}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-amber-200 bg-amber-50 text-amber-800">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    <span className="sr-only">Seller-attested no-tax path is active</span>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  Seller-attested no-tax path is active for this store.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           ) : null}
           {storeOnboardingProgress ? <DashboardHeaderStoreLifecycleControls progress={storeOnboardingProgress} mode="action" /> : null}
         </div>

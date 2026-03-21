@@ -81,7 +81,7 @@ export async function resolveStoreFeeProfile(storeId: string): Promise<FeeProfil
 export async function writeOrderFeeBreakdown(params: {
   orderId: string;
   storeId: string;
-  subtotalCents: number;
+  feeBaseCents: number;
   feeProfile: FeeProfile;
   platformFeeCents: number;
   netPayoutCents: number;
@@ -95,7 +95,7 @@ export async function writeOrderFeeBreakdown(params: {
       plan_key: params.feeProfile.planKey,
       fee_bps: params.feeProfile.feeBps,
       fee_fixed_cents: params.feeProfile.feeFixedCents,
-      subtotal_cents: params.subtotalCents,
+      subtotal_cents: params.feeBaseCents,
       platform_fee_cents: params.platformFeeCents,
       net_payout_cents: params.netPayoutCents
     },

@@ -14,9 +14,7 @@ describe("store settings workspace classification", () => {
     expect(ownershipById.legal).toBe("operations");
     expect(ownershipById.privacy).toBe("operations");
     expect(ownershipById.billing).toBe("operations");
-    expect(ownershipById.shipping).toBe("operations");
-    expect(ownershipById.pickup).toBe("operations");
-
+    expect(ownershipById.fulfillment).toBe("operations");
     expect(ownershipById.domains).toBe("operations");
     expect(ownershipById.team).toBe("operations");
     expect(ownershipById.integrations).toBe("operations");
@@ -25,14 +23,13 @@ describe("store settings workspace classification", () => {
   test("exposes only operational or mixed sections in settings workspace navigation", () => {
     expect(storeSettingsWorkspaceNavigationSectionIds).toEqual([
       "general",
-      "legal",
-      "privacy",
-      "billing",
-      "shipping",
-      "pickup",
       "domains",
+      "fulfillment",
+      "integrations",
+      "billing",
       "team",
-      "integrations"
+      "legal",
+      "privacy"
     ]);
   });
 

@@ -33,7 +33,7 @@ This checklist is for the final release cut from `develop` to `main`.
 - [ ] Latest Supabase migrations applied in target environment. (Owner: Engineering, Target: 2026-03-10)
 - [ ] Onboarding milestone migration applied in target environment (`20260319123000_store_onboarding_session_milestones.sql`). (Owner: Engineering, Target: 2026-03-19)
 - [ ] `npm run verify:platform-rollout` passes in target environment. (Owner: Engineering, Target: 2026-03-10)
-- [ ] Reviews rollout gate configured (`REVIEWS_FEATURE_ENABLED`, `REVIEWS_ROLLOUT_STORE_SLUGS`) per launch phase. (Owner: Engineering, Target: 2026-03-12)
+- [ ] Reviews rollout allowlist configured (`REVIEWS_ROLLOUT_STORE_SLUGS`) per launch phase. (Owner: Engineering, Target: 2026-03-12)
 - [ ] Reviews aggregate snapshot backfill completed using `scripts/reviews-backfill-aggregate-snapshots.mjs`. (Owner: Engineering, Target: 2026-03-12)
 - [ ] Stripe webhook endpoint verified reachable from production. (Owner: Engineering, Target: 2026-03-11)
 - [ ] Error monitoring + alerting enabled for checkout and webhooks. (Owner: Engineering, Target: 2026-03-13)
@@ -54,7 +54,7 @@ This checklist is for the final release cut from `develop` to `main`.
 
 ## Shipping + fulfillment readiness
 
-- [ ] Configure shipping env vars (`SHIPPING_PROVIDER`, `EASYPOST_API_KEY`, `SHIPPING_WEBHOOK_SECRET`, `SHIPPING_WEBHOOK_SIGNING_SECRET`) for live tracking sync. (Owner: Engineering, Target: 2026-03-11)
+- [ ] Configure per-store shipping provider credentials/webhook secret and set shipping webhook security env vars (`SHIPPING_WEBHOOK_SIGNING_SECRET`, `SHIPPING_WEBHOOK_REQUIRE_SIGNATURE`) for live tracking sync. (Owner: Engineering, Target: 2026-03-11)
 - [ ] Configure shipping provider webhook to `POST /api/shipping/webhook` and include header `x-shipping-webhook-secret`. If signature verification is enabled, include `x-shipping-timestamp` and `x-shipping-signature`. (Owner: Engineering, Target: 2026-03-11)
 - [ ] Verify order lifecycle transitions: `pending_fulfillment -> packing -> shipped -> delivered`. (Owner: Ops, Target: 2026-03-12)
 - [ ] Verify `Ship` action saves carrier/tracking and generates tracking URL. (Owner: Ops, Target: 2026-03-12)

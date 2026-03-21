@@ -1,6 +1,7 @@
 export type StoreStatus = "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
 export type GlobalUserRole = "user" | "admin" | "support";
 export type StoreMemberRole = "owner" | "admin" | "staff" | "customer";
+export type StoreTaxCollectionMode = "unconfigured" | "stripe_tax" | "seller_attested_no_tax";
 
 export type StoreRecord = {
   id: string;
@@ -12,6 +13,10 @@ export type StoreRecord = {
   default_pickup_radius_miles: number;
   white_label_enabled: boolean;
   stripe_account_id: string | null;
+  tax_collection_mode: StoreTaxCollectionMode;
+  tax_compliance_acknowledged_at: string | null;
+  tax_compliance_acknowledged_by_user_id: string | null;
+  tax_compliance_note: string | null;
   created_at: string;
   updated_at: string;
 };

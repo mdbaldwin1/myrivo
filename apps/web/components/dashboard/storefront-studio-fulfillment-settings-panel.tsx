@@ -262,8 +262,8 @@ export function StorefrontStudioFulfillmentSettingsPanel({
 
           <p className="text-xs text-muted-foreground">
             Need to change pickup locations, hours, blackout windows, radius rules, or buyer scheduling logic?{" "}
-            <Link href={`/dashboard/stores/${storeSlug}/store-settings/pickup`} className="font-medium text-primary underline-offset-4 hover:underline">
-              Open pickup operations
+            <Link href={`/dashboard/stores/${storeSlug}/store-settings/fulfillment`} className="font-medium text-primary underline-offset-4 hover:underline">
+              Open fulfillment settings
             </Link>
             .
           </p>

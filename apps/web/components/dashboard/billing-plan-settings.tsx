@@ -41,9 +41,18 @@ export function BillingPlanSettings({ title = "Billing Plan", editable = false }
   const isDirty = billingPlanKey !== savedBillingPlanKey;
 
   const selectedPlan = useMemo(() => plans?.find((plan) => plan.key === billingPlanKey) ?? null, [billingPlanKey, plans]);
-  const billingHelper = selectedPlan
-    ? `${(selectedPlan.transaction_fee_bps / 100).toFixed(2)}% + $${(selectedPlan.transaction_fee_fixed_cents / 100).toFixed(2)} per successful order`
-    : "";
+  const billingHelper = useMemo(() => {
+    if (!selectedPlan) {
+      return "";
+    }
+
+    const rateLabel = `${(selectedPlan.transaction_fee_bps / 100).toFixed(2)}% + $${(selectedPlan.transaction_fee_fixed_cents / 100).toFixed(2)} per successful order`;
+    if (selectedPlan.key === "family_friends") {
+      return `${rateLabel}. Internal-use plan intended to cover baseline Stripe processing without adding extra Myrivo margin.`;
+    }
+
+    return `${rateLabel}. Myrivo covers Stripe processing costs within that fee.`;
+  }, [selectedPlan]);
 
   const fetchConfig = useCallback(async () => {
     const response = await fetch(buildStoreScopedApiPath("/api/stores/platform-config", storeSlug), { cache: "no-store" });
@@ -153,7 +162,7 @@ export function BillingPlanSettings({ title = "Billing Plan", editable = false }
         {loading ? <p className="text-sm text-muted-foreground">Loading billing plan...</p> : null}
         <FormField
           label="Assigned Plan"
-          description={billingHelper || "Plan determines the platform fee charged per successful order, on top of Stripe fees."}
+          description={billingHelper || "Plan determines the single platform fee charged on the full processed order amount. Myrivo covers Stripe processing costs within that fee."}
           inputId="billing-plan-assigned-plan"
         >
           {effectiveEditable ? (
