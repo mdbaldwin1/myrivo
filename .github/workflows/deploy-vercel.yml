@@ -44,10 +44,10 @@ jobs:
         run: npx vercel project inspect "$VERCEL_PROJECT" --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
 
       - name: Link repository to Vercel project
-        run: npx vercel link --project "$VERCEL_PROJECT" --scope="$VERCEL_SCOPE" --yes --token="$VERCEL_TOKEN" --cwd apps/web
+        run: npx vercel link --project "$VERCEL_PROJECT" --scope="$VERCEL_SCOPE" --yes --token="$VERCEL_TOKEN"
 
       - name: Pull Vercel environment (production)
-        run: npx vercel pull --yes --environment=production --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN" --cwd apps/web
+        run: npx vercel pull --yes --environment=production --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
 
       - name: Deploy production to Vercel
-        run: npx vercel deploy --prod --yes --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN" --cwd apps/web
+        run: npx vercel deploy --prod --yes --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
