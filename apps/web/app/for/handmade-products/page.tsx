@@ -1,28 +1,36 @@
 import type { Metadata } from "next";
 import { MarketingSiteChrome } from "@/components/marketing/marketing-site-chrome";
 import { MarketingTrackedButtonLink } from "@/components/marketing/marketing-tracked-button-link";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
-  title: "Store builder for handmade products | Myrivo",
-  description: "Launch a branded storefront for handmade products with checkout, fulfillment, and customer communication built in."
+  title: "Handmade and small-batch storefronts | Myrivo",
+  description: "Launch a branded storefront for handmade and small-batch products with checkout, fulfillment, promos, and seller operations in one platform."
 };
 
 const highlights = [
-  "A premium storefront for small-batch goods like tallow skincare, pottery, woodwork, apparel, and gifts.",
-  "Built-in product pages, checkout, promos, reviews, and order workflows in one place.",
-  "Start without a monthly subscription and only pay when orders come through."
+  "A branded storefront for skincare, pottery, woodwork, apparel, gifts, candles, and other small-batch goods.",
+  "Product pages, checkout, promotions, reviews, and order flow in one connected system.",
+  "Start without a monthly subscription, then pay when successful orders come through."
 ];
 
-export default function HandmadeProductsPage() {
+export default async function HandmadeProductsPage() {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+  const isAuthenticated = Boolean(user?.id);
+
   return (
-    <MarketingSiteChrome activePath="/for">
+    <MarketingSiteChrome activePath="/for" isAuthenticated={isAuthenticated}>
       <section className="marketing-rise rounded-3xl border border-border bg-card p-8 sm:p-10">
         <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">For Handmade Brands</p>
         <h1 className="mt-4 [font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-4xl leading-tight text-foreground sm:text-5xl">
-          Build a beautiful online shop for handmade and small-batch products.
+          A better storefront for handmade and small-batch brands.
         </h1>
         <p className="mt-4 max-w-3xl text-base leading-relaxed text-muted-foreground">
-          Myrivo is built for independent makers who want their own branded storefront without the usual pile of themes, plugins, and disconnected tools.
+          Myrivo fits independent makers who care how the shop looks and want products, checkout, fulfillment, and day-to-day operations to stay
+          manageable as orders grow.
         </p>
       </section>
 
@@ -36,9 +44,11 @@ export default function HandmadeProductsPage() {
           </ul>
         </article>
 
-        <article className="rounded-2xl border border-border bg-primary p-6 text-primary-foreground">
-          <h2 className="[font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-2xl">Launch your first storefront</h2>
-          <p className="mt-3 text-sm text-[hsl(var(--primary-foreground))]">Create your account, add products, set up fulfillment, and start selling from a shop that feels like your brand.</p>
+        <article className="rounded-2xl border border-border bg-[linear-gradient(145deg,hsl(var(--primary)),hsl(var(--brand-secondary)))] p-6 text-primary-foreground">
+          <h2 className="[font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-2xl">Launch without piecing together extra tools</h2>
+          <p className="mt-3 text-sm text-[hsl(var(--primary-foreground))]">
+            Create your account, add products, set pickup or shipping, and publish from a storefront that feels like your brand.
+          </p>
           <div className="mt-5 flex flex-wrap gap-3">
             <MarketingTrackedButtonLink
               href="/signup"

@@ -1,9 +1,23 @@
-export function getStoreSlugFromDashboardPathname(pathname: string | null | undefined): string | null {
+function normalizeDashboardPathname(pathname: string | null | undefined): string | null {
   if (!pathname) {
     return null;
   }
 
-  const match = pathname.match(/^\/dashboard\/stores\/([^/]+)/);
+  try {
+    const url = pathname.startsWith("/") ? new URL(pathname, "http://localhost") : new URL(pathname, "http://localhost");
+    return url.pathname.replace(/\/$/, "") || "/";
+  } catch {
+    return pathname.replace(/\/$/, "") || "/";
+  }
+}
+
+export function getStoreSlugFromDashboardPathname(pathname: string | null | undefined): string | null {
+  const normalizedPathname = normalizeDashboardPathname(pathname);
+  if (!normalizedPathname) {
+    return null;
+  }
+
+  const match = normalizedPathname.match(/^\/dashboard\/stores\/([^/]+)/);
   return match?.[1] ?? null;
 }
 
@@ -15,11 +29,24 @@ export function resolveCurrentStoreWorkspaceSlug(
 }
 
 export function isStoreWorkspacePath(pathname: string | null | undefined, storeSlug: string | null | undefined): boolean {
-  if (!pathname || !storeSlug) {
+  const normalizedPathname = normalizeDashboardPathname(pathname);
+  if (!normalizedPathname || !storeSlug) {
     return false;
   }
 
-  return pathname === `/dashboard/stores/${storeSlug}` || pathname.startsWith(`/dashboard/stores/${storeSlug}/`);
+  return normalizedPathname === `/dashboard/stores/${storeSlug}` || normalizedPathname.startsWith(`/dashboard/stores/${storeSlug}/`);
+}
+
+export function isDashboardOnboardingPath(pathname: string | null | undefined): boolean {
+  const normalizedPathname = normalizeDashboardPathname(pathname);
+  if (!normalizedPathname) {
+    return false;
+  }
+
+  return (
+    normalizedPathname === "/dashboard/stores/onboarding/new" ||
+    /^\/dashboard\/stores\/[^/]+\/onboarding(?:\/.*)?$/i.test(normalizedPathname)
+  );
 }
 
 export function buildStoreWorkspacePath(

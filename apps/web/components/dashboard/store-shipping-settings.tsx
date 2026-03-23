@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
 import { Select } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useConfirmDialog } from "@/components/ui/use-confirm-dialog";
 import { notify } from "@/lib/feedback/toast";
 import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
 
@@ -40,6 +41,7 @@ export function StoreShippingSettings() {
   const [flyoutBaseline, setFlyoutBaseline] = useState("");
   const [pageError, setPageError] = useState<string | null>(null);
   const [flyoutError, setFlyoutError] = useState<string | null>(null);
+  const { requestConfirm, confirmDialog } = useConfirmDialog();
 
   function buildFlyoutSnapshot() {
     return JSON.stringify({
@@ -142,7 +144,12 @@ export function StoreShippingSettings() {
   }
 
   async function clearSettings() {
-    const confirmed = window.confirm("Clear this store's shipping integration setup? This will remove the saved provider credentials and webhook secret.");
+    const confirmed = await requestConfirm({
+      title: "Clear shipping setup?",
+      description: "This will remove the saved provider credentials and webhook secret for this store.",
+      confirmLabel: "Clear setup",
+      confirmVariant: "destructive"
+    });
     if (!confirmed) {
       return;
     }
@@ -311,6 +318,7 @@ export function StoreShippingSettings() {
             </FormField>
           </div>
         </Flyout>
+        {confirmDialog}
       </div>
     </SectionCard>
   );

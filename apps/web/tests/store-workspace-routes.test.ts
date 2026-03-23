@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  isDashboardOnboardingPath,
   getStoreSlugFromDashboardPathname,
   isStoreWorkspacePath,
   resolveCurrentStoreWorkspaceSlug
@@ -25,5 +26,12 @@ describe("store workspace route helpers", () => {
     expect(isStoreWorkspacePath("/dashboard/stores/at-home-apothecary-2", "at-home-apothecary-2")).toBe(true);
     expect(isStoreWorkspacePath("/dashboard/stores/at-home-apothecary-2/orders", "at-home-apothecary-2")).toBe(true);
     expect(isStoreWorkspacePath("/dashboard/stores/at-home-apothecary-2/orders", "at-home-apothecary")).toBe(false);
+  });
+
+  test("detects focused onboarding routes", () => {
+    expect(isDashboardOnboardingPath("/dashboard/stores/onboarding/new")).toBe(true);
+    expect(isDashboardOnboardingPath("/dashboard/stores/margies-flower-shop/onboarding")).toBe(true);
+    expect(isDashboardOnboardingPath("/dashboard/stores/margies-flower-shop/onboarding/reveal")).toBe(true);
+    expect(isDashboardOnboardingPath("/dashboard/stores/margies-flower-shop")).toBe(false);
   });
 });

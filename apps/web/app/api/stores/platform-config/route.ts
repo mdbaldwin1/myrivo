@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStorePermission } from "@/lib/auth/authorization";
+import { canAssignBillingPlanKey, formatBillingPlanLabel, isVisibleStoreWorkspaceBillingPlan } from "@/lib/billing/plans";
 import { readJsonBody } from "@/lib/http/read-json-body";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -50,6 +51,7 @@ export async function GET(request: NextRequest) {
   }
 
   const allPlans = plans ?? [];
+  const globalRole = auth.context.globalRole;
   const assignedPlanRaw =
     billing && typeof billing === "object" && !Array.isArray(billing)
       ? ((billing as { billing_plans?: unknown }).billing_plans ?? null)
@@ -65,16 +67,14 @@ export async function GET(request: NextRequest) {
       ? ((assignedPlan as { key?: unknown }).key as string | undefined)
       : undefined;
 
-  let visiblePlans = auth.context.globalRole === "admin" ? allPlans : allPlans.filter((plan) => plan.key !== "family_friends");
+  let visiblePlans = allPlans.filter((plan) => isVisibleStoreWorkspaceBillingPlan(globalRole, plan.key));
   if (assignedPlan && assignedPlanKey && !visiblePlans.some((plan) => plan.key === assignedPlanKey)) {
     visiblePlans = [
       ...visiblePlans,
       {
         id: "",
         key: assignedPlanKey,
-        name:
-          (assignedPlan as { name?: string }).name ??
-          assignedPlanKey.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()),
+        name: (assignedPlan as { name?: string }).name ?? formatBillingPlanLabel(assignedPlanKey),
         monthly_price_cents: 0,
         transaction_fee_bps: (assignedPlan as { transaction_fee_bps?: number }).transaction_fee_bps ?? 0,
         transaction_fee_fixed_cents: (assignedPlan as { transaction_fee_fixed_cents?: number }).transaction_fee_fixed_cents ?? 0,
@@ -140,12 +140,11 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Billing plan not found" }, { status: 400 });
     }
 
-    if (plan.key !== "standard" && plan.key !== "family_friends") {
+    if (!canAssignBillingPlanKey(auth.context.globalRole, plan.key)) {
+      if (plan.key === "family_friends") {
+        return NextResponse.json({ error: "Only platform admins can assign the family & friends plan." }, { status: 403 });
+      }
       return NextResponse.json({ error: "Unsupported billing plan." }, { status: 400 });
-    }
-
-    if (plan.key === "family_friends" && auth.context.globalRole !== "admin") {
-      return NextResponse.json({ error: "Only platform admins can assign the family & friends plan." }, { status: 403 });
     }
 
     billingPlanId = plan.id;

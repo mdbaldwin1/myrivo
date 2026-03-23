@@ -47,6 +47,10 @@ function syncBodyTheme(targetDocument: Document) {
   } else {
     targetDocument.body.removeAttribute("style");
   }
+
+  targetDocument.documentElement.style.height = "100%";
+  targetDocument.body.style.height = "100%";
+  targetDocument.body.style.overflow = "hidden";
 }
 
 export function StorefrontStudioPreviewViewport({ title, widthPx, children }: StorefrontStudioPreviewViewportProps) {
@@ -55,7 +59,7 @@ export function StorefrontStudioPreviewViewport({ title, widthPx, children }: St
 
   const srcDoc = useMemo(
     () =>
-      `<!DOCTYPE html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /></head><body><div id="${IFRAME_ROOT_ID}"></div></body></html>`,
+      `<!DOCTYPE html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><style>html,body{margin:0;padding:0;height:100%;min-height:100%;overflow:hidden;}#${IFRAME_ROOT_ID}{height:100%;min-height:100%;}</style></head><body><div id="${IFRAME_ROOT_ID}"></div></body></html>`,
     []
   );
 
@@ -102,7 +106,7 @@ export function StorefrontStudioPreviewViewport({ title, widthPx, children }: St
         ref={setIframeElement}
         title={title}
         srcDoc={srcDoc}
-        className="h-full w-full border-0 bg-white"
+        className="mx-auto block h-full w-full border-0 bg-white"
         style={{ width: `${widthPx}px`, maxWidth: "100%" }}
       />
       {mountNode ? createPortal(children, mountNode) : null}

@@ -67,6 +67,7 @@ type Props = {
   >;
   reviewsCopy: StorefrontCopyConfig["reviews"];
   studio?: {
+    enabled?: boolean;
     onSectionTitleChange?: (value: string) => void;
     onSummaryTemplateChange?: (value: string) => void;
     onEmptyStateChange?: (value: string) => void;
@@ -199,7 +200,7 @@ export function StorefrontReviewsSection({
   studio
 }: Props) {
   const runtime = useOptionalStorefrontRuntime();
-  const studioEnabled = runtime?.mode === "studio";
+  const studioEnabled = Boolean(studio?.enabled) || runtime?.mode === "studio";
   const resolvedPrivacyProfile = runtime?.privacyProfile ?? null;
   const radiusClass = getStorefrontRadiusClass(reviewsTheme.radiusScale);
   const resolvedStoreSlug = storeSlug.trim() || runtime?.store.slug?.trim() || "";
@@ -221,6 +222,10 @@ export function StorefrontReviewsSection({
   const suppressNextImageClickRef = useRef(false);
 
   const endpoint = useMemo(() => {
+    if (studioEnabled) {
+      return null;
+    }
+
     const limit = Math.max(1, Math.min(50, reviewsTheme.reviewsItemsPerPage));
     const sort = reviewsTheme.reviewsDefaultSort;
     if (productId) {
@@ -230,7 +235,7 @@ export function StorefrontReviewsSection({
       return null;
     }
     return `/api/reviews/store/${encodeURIComponent(resolvedStoreSlug)}?limit=${limit}&sort=${sort}`;
-  }, [productId, resolvedStoreSlug, reviewsTheme.reviewsDefaultSort, reviewsTheme.reviewsItemsPerPage]);
+  }, [productId, resolvedStoreSlug, reviewsTheme.reviewsDefaultSort, reviewsTheme.reviewsItemsPerPage, studioEnabled]);
 
   const loadReviews = useCallback(async (nextCursor: string | null, append: boolean) => {
     if (!endpoint) {

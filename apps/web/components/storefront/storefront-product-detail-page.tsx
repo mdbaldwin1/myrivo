@@ -327,6 +327,7 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
 
   const reviewsStudio = studioEnabledWithDocument
     ? {
+        enabled: true,
         onSectionTitleChange: (value: string) => updateProductsField("copy.reviews.sectionTitle", value),
         onSummaryTemplateChange: (value: string) => updateProductsField("copy.reviews.summaryTemplate", value),
         onEmptyStateChange: (value: string) => updateProductsField("copy.reviews.emptyState", value),

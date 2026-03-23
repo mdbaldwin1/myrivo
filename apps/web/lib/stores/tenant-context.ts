@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { hasStoreRole } from "@/lib/auth/roles";
 import type { StoreMemberRole, StoreRecord } from "@/types/database";
 
 export const ACTIVE_STORE_COOKIE = "myrivo_active_store_slug";
@@ -30,6 +31,17 @@ export function resolveActiveStoreFromList(stores: AccessibleStore[], preferredS
   }
 
   return stores[0] ?? null;
+}
+
+export function resolveActiveStoreForRole(
+  stores: AccessibleStore[],
+  requiredRole: StoreMemberRole | "support",
+  preferredSlug?: string | null
+): AccessibleStore | null {
+  return resolveActiveStoreFromList(
+    stores.filter((store) => hasStoreRole(store.role, requiredRole)),
+    preferredSlug
+  );
 }
 
 export async function readSelectedStoreSlugFromCookies(): Promise<string | null> {

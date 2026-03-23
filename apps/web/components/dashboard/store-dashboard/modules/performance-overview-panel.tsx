@@ -167,7 +167,7 @@ export function PerformanceOverviewPanel({
         />
 
         <div className="grid gap-2 sm:grid-cols-3">
-          <article className="rounded-md border border-border bg-muted/20 p-3">
+          <article className="rounded-md border border-[hsl(var(--brand-secondary))]/20 bg-[hsl(var(--brand-secondary-soft))]/55 p-3">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Revenue</p>
             <p className="mt-1 text-xl font-semibold">{formatCurrency(performance.grossRevenueCents)}</p>
           </article>
@@ -202,7 +202,7 @@ export function PerformanceOverviewPanel({
             {chartData.every((point) => point.grossRevenueCents === 0) ? (
               <p className="text-sm text-muted-foreground">No paid orders in this period.</p>
             ) : (
-              <div ref={chartContainerRef} className="h-64 w-full min-w-0 min-h-[16rem] rounded-md border border-border bg-muted/10 p-3">
+              <div ref={chartContainerRef} className="h-64 w-full min-w-0 min-h-[16rem] rounded-md border border-[hsl(var(--brand-secondary))]/15 bg-gradient-to-br from-[hsl(var(--brand-secondary-soft))]/35 to-background p-3">
                 {chartReady ? (
                   <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
                     <LineChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
@@ -223,10 +223,10 @@ export function PerformanceOverviewPanel({
                       <Line
                         type="monotone"
                         dataKey="grossRevenueDollars"
-                        stroke="hsl(var(--primary))"
+                        stroke="hsl(var(--brand-secondary))"
                         strokeWidth={2.5}
-                        dot={{ r: 3, strokeWidth: 0, fill: "hsl(var(--primary))" }}
-                        activeDot={{ r: 5, strokeWidth: 0, fill: "hsl(var(--primary))" }}
+                        dot={{ r: 3, strokeWidth: 0, fill: "hsl(var(--brand-secondary))" }}
+                        activeDot={{ r: 5, strokeWidth: 0, fill: "hsl(var(--brand-secondary))" }}
                       />
                     </LineChart>
                   </ResponsiveContainer>

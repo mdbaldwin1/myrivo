@@ -1,14 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { generateMetadata as generateTermsMetadata } from "@/app/terms/page";
-import { StorefrontUnavailablePage } from "@/components/storefront/storefront-unavailable-page";
-import { StorefrontLegalPage } from "@/components/storefront/storefront-legal-page";
-import { StorefrontRuntimeProvider } from "@/components/storefront/storefront-runtime-provider";
-import { getPublishedStoreLegalDocumentSnapshot, resolveStoreLegalDocument } from "@/lib/legal/store-documents";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { loadStorefrontData } from "@/lib/storefront/load-storefront-data";
-import { createStorefrontRuntime } from "@/lib/storefront/runtime";
-import { loadStorefrontUnavailableData } from "@/lib/storefront/unavailable";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
@@ -23,6 +15,25 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function StorefrontSlugTermsPage({ params }: PageProps) {
   const { slug } = await params;
+  const [
+    { StorefrontUnavailablePage },
+    { StorefrontLegalPage },
+    { StorefrontRuntimeProvider },
+    { createSupabaseAdminClient },
+    { getPublishedStoreLegalDocumentSnapshot, getStoreLegalDocumentByStoreId, resolveStoreLegalDocument },
+    { loadStorefrontData },
+    { createStorefrontRuntime },
+    { loadStorefrontUnavailableData }
+  ] = await Promise.all([
+    import("@/components/storefront/storefront-unavailable-page"),
+    import("@/components/storefront/storefront-legal-page"),
+    import("@/components/storefront/storefront-runtime-provider"),
+    import("@/lib/supabase/admin"),
+    import("@/lib/legal/store-documents"),
+    import("@/lib/storefront/load-storefront-data"),
+    import("@/lib/storefront/runtime"),
+    import("@/lib/storefront/unavailable")
+  ]);
   const data = await loadStorefrontData(slug);
 
   if (!data) {
@@ -34,7 +45,6 @@ export default async function StorefrontSlugTermsPage({ params }: PageProps) {
   }
 
   const admin = createSupabaseAdminClient();
-  const { getStoreLegalDocumentByStoreId } = await import("@/lib/legal/store-documents");
   const record = await getStoreLegalDocumentByStoreId(admin, data.store.id, "terms");
   const publishedSnapshot = getPublishedStoreLegalDocumentSnapshot(record);
   const document = resolveStoreLegalDocument("terms", data.store, data.settings, {

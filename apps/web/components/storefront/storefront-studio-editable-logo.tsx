@@ -27,6 +27,7 @@ type StorefrontStudioEditableLogoProps = {
   titleSize: HeaderTitleSize;
   buttonRadiusClass: string;
   compact: boolean;
+  onNavigateHref?: ((href: string) => void) | null;
 };
 
 export function StorefrontStudioEditableLogo({
@@ -38,7 +39,8 @@ export function StorefrontStudioEditableLogo({
   logoSize,
   titleSize,
   buttonRadiusClass,
-  compact
+  compact,
+  onNavigateHref = null
 }: StorefrontStudioEditableLogoProps) {
   const document = useOptionalStorefrontStudioDocument();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -85,15 +87,15 @@ export function StorefrontStudioEditableLogo({
   const canRenderTitle = showTitle || !canRenderLogo;
   const logoSizeClass = compact
     ? logoSize === "small"
-      ? "h-10 max-w-[34vw] sm:max-w-[220px]"
+      ? "max-h-10 max-w-[34vw] sm:max-w-[220px]"
       : logoSize === "large"
-        ? "h-14 max-w-[48vw] sm:max-w-[320px]"
-        : "h-12 max-w-[40vw] sm:max-w-[260px]"
+        ? "max-h-14 max-w-[48vw] sm:max-w-[320px]"
+        : "max-h-12 max-w-[40vw] sm:max-w-[260px]"
     : logoSize === "small"
-      ? "h-16 max-w-[46vw] sm:h-24 sm:max-w-[420px]"
+      ? "max-h-16 max-w-[46vw] sm:max-h-24 sm:max-w-[420px]"
       : logoSize === "large"
-        ? "h-24 max-w-[60vw] sm:h-40 sm:max-w-[640px]"
-        : "h-20 max-w-[54vw] sm:h-32 sm:max-w-[540px]";
+        ? "max-h-24 max-w-[60vw] sm:max-h-40 sm:max-w-[640px]"
+        : "max-h-20 max-w-[54vw] sm:max-h-32 sm:max-w-[540px]";
   const titleSizeClass = compact
     ? titleSize === "small"
       ? "text-xs"
@@ -108,7 +110,18 @@ export function StorefrontStudioEditableLogo({
 
   return (
     <div className="w-fit">
-      <Link href={href} className="inline-flex items-center gap-3">
+      <Link
+        href={href}
+        className="inline-flex items-center gap-3"
+        onClick={(event) => {
+          if (!onNavigateHref) {
+            return;
+          }
+
+          event.preventDefault();
+          onNavigateHref(event.currentTarget.href);
+        }}
+      >
         {showLogo ? (
           <span className="group/logo relative inline-flex w-fit shrink-0 self-start">
             {canRenderLogo ? (
@@ -119,10 +132,10 @@ export function StorefrontStudioEditableLogo({
                 height={320}
                 loading="eager"
                 unoptimized
+                style={{ width: "auto", height: "auto" }}
                 className={cn(
-                  "h-auto object-contain transition-all duration-200",
+                  "object-contain transition-all duration-200",
                   buttonRadiusClass,
-                  "w-auto",
                   logoSizeClass
                 )}
               />

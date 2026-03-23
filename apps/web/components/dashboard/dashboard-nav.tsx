@@ -227,10 +227,11 @@ export function DashboardNav({
     );
   }
 
+  const isAdminWorkspaceMode = normalizedPath === "/dashboard/admin" || normalizedPath.startsWith("/dashboard/admin/");
+  const canRenderStoreWorkspaceLinks = hasActiveStore && isStoreWorkspaceRoute && !isAdminWorkspaceMode;
   const isStoreSettingsMode =
     normalizedPath === `${storeWorkspaceBaseHref}/store-settings` || normalizedPath.startsWith(`${storeWorkspaceBaseHref}/store-settings/`);
   const isReportsMode = normalizedPath === `${storeWorkspaceBaseHref}/reports` || normalizedPath.startsWith(`${storeWorkspaceBaseHref}/reports/`);
-  const isAdminWorkspaceMode = normalizedPath === "/dashboard/admin" || normalizedPath.startsWith("/dashboard/admin/");
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -244,7 +245,7 @@ export function DashboardNav({
             </div>
           ) : null}
 
-          {hasAnyStoreAccess && hasActiveStore && isStoreWorkspaceRoute && !isAdminWorkspaceMode ? (
+          {canRenderStoreWorkspaceLinks ? (
             <div>
               {isStoreSettingsMode ? (
                 <div className="space-y-1">
@@ -269,7 +270,7 @@ export function DashboardNav({
             </div>
           ) : null}
 
-          {hasAnyStoreAccess && !isStoreWorkspaceRoute && !isAdminWorkspaceMode ? (
+          {hasAnyStoreAccess && !canRenderStoreWorkspaceLinks && !isAdminWorkspaceMode ? (
             <div>
               {showLabels ? <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Myrivo Workspace</p> : null}
               <div className="space-y-1">
@@ -281,7 +282,7 @@ export function DashboardNav({
             </div>
           ) : null}
 
-          {!hasAnyStoreAccess && !isAdminWorkspaceMode && (
+          {!hasAnyStoreAccess && !canRenderStoreWorkspaceLinks && !isAdminWorkspaceMode && (
             <div>
               {showLabels ? <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Myrivo Workspace</p> : null}
               <div className="space-y-1">

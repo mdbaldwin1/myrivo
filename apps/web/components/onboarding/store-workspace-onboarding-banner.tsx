@@ -64,11 +64,11 @@ export function StoreWorkspaceOnboardingBanner({ progress }: StoreWorkspaceOnboa
   }
 
   return (
-    <section className="mx-3 mb-0 mt-3 rounded-lg border border-amber-200 bg-amber-50/70 px-4 py-3">
+    <section className="mx-3 mb-0 mt-3 rounded-lg border border-[hsl(var(--brand-secondary))]/20 bg-gradient-to-r from-[hsl(var(--brand-secondary-soft))]/95 via-background to-primary/5 px-4 py-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-amber-900">Preview ready. Next comes launch readiness.</p>
-          <p className="text-sm text-amber-900/90">
+          <p className="text-sm font-semibold text-[hsl(var(--brand-secondary))]">Preview ready. Next comes launch readiness.</p>
+          <p className="text-sm text-foreground/80">
             {liveProgress.name} has a seeded storefront preview. {remainingReadinessCount} step{remainingReadinessCount === 1 ? "" : "s"} left before launch.
             {" "}Next up: {nextStep.label}.
           </p>
@@ -77,7 +77,7 @@ export function StoreWorkspaceOnboardingBanner({ progress }: StoreWorkspaceOnboa
           type="button"
           variant="ghost"
           size="icon"
-          className="h-7 w-7 text-amber-900 hover:bg-amber-100 hover:text-amber-900"
+          className="h-7 w-7 text-[hsl(var(--brand-secondary))] hover:bg-[hsl(var(--brand-secondary-soft))] hover:text-[hsl(var(--brand-secondary))]"
           aria-label="Dismiss onboarding banner"
           onClick={() => {
             setDismissedLocalKey(dismissKey);
@@ -91,7 +91,7 @@ export function StoreWorkspaceOnboardingBanner({ progress }: StoreWorkspaceOnboa
       </div>
       <div className="mt-2">
         <Link href={nextStep.href}>
-          <Button size="sm" className="h-8">
+          <Button size="sm" variant="brand" className="h-8">
             {nextStep.label}
           </Button>
         </Link>

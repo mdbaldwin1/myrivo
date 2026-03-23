@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { DashboardHeaderBackButton } from "@/components/dashboard/dashboard-header-back-button";
 import { DashboardHeaderNotifications } from "@/components/dashboard/dashboard-header-notifications";
@@ -13,6 +14,7 @@ import { DashboardNav } from "@/components/dashboard/dashboard-nav";
 import { useLocalStorageFlag, writeLocalStorageFlag } from "@/components/dashboard/use-local-storage-flag";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { MAIN_CONTENT_ID } from "@/lib/accessibility";
+import { isDashboardOnboardingPath, resolveCurrentStoreWorkspaceSlug } from "@/lib/routes/store-workspace";
 import { cn } from "@/lib/utils";
 import type { StoreOption } from "@/components/dashboard/store-switcher";
 import type { GlobalUserRole, StoreStatus } from "@/types/database";
@@ -50,9 +52,28 @@ export function DashboardShell({
   storeOnboardingProgress
 }: DashboardShellProps) {
   const sidebarCollapsed = useLocalStorageFlag(DASHBOARD_SIDEBAR_STORAGE_KEY);
+  const pathname = usePathname();
+  const effectiveStoreSlug = resolveCurrentStoreWorkspaceSlug(pathname, activeStoreSlug);
+  const effectiveHasStoreAccess = hasStoreAccess || Boolean(effectiveStoreSlug);
+  const focusedOnboardingShell = isDashboardOnboardingPath(pathname);
 
   function handleSidebarCollapsedChange(nextCollapsed: boolean) {
     writeLocalStorageFlag(DASHBOARD_SIDEBAR_STORAGE_KEY, nextCollapsed);
+  }
+
+  if (focusedOnboardingShell) {
+    return (
+      <div data-dashboard-shell="true" data-dashboard-shell-mode="onboarding" className="fixed inset-0 flex w-full flex-col overflow-hidden bg-stone-50">
+        <main
+          id={MAIN_CONTENT_ID}
+          tabIndex={-1}
+          data-dashboard-scroll-container="true"
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-none bg-stone-50 focus:outline-none"
+        >
+          <div className="flex min-h-full min-w-0 flex-1 flex-col">{children}</div>
+        </main>
+      </div>
+    );
   }
 
   return (
@@ -67,8 +88,8 @@ export function DashboardShell({
             </Link>
             <span className="hidden h-4 w-px bg-border sm:block" />
             <DashboardHeaderStoreSection
-              hasStoreAccess={hasStoreAccess}
-              activeStoreSlug={activeStoreSlug}
+              hasStoreAccess={effectiveHasStoreAccess}
+              activeStoreSlug={effectiveStoreSlug}
               storeStatus={storeStatus}
               stores={stores}
               storeOnboardingProgress={storeOnboardingProgress}
@@ -77,8 +98,8 @@ export function DashboardShell({
           </div>
           <div className="hidden min-w-0 items-center justify-center lg:flex">
             <DashboardHeaderStoreSection
-              hasStoreAccess={hasStoreAccess}
-              activeStoreSlug={activeStoreSlug}
+              hasStoreAccess={effectiveHasStoreAccess}
+              activeStoreSlug={effectiveStoreSlug}
               storeStatus={storeStatus}
               stores={stores}
               storeOnboardingProgress={storeOnboardingProgress}
@@ -89,10 +110,10 @@ export function DashboardShell({
             <Link href="/docs" target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", size: "sm" })}>
               Docs
             </Link>
-            <DashboardHeaderStorefrontLink storeSlug={activeStoreSlug} />
-            <DashboardHeaderNotifications storeSlug={activeStoreSlug} initialNotificationSoundEnabled={initialNotificationSoundEnabled} />
+            <DashboardHeaderStorefrontLink storeSlug={effectiveStoreSlug} />
+            <DashboardHeaderNotifications storeSlug={effectiveStoreSlug} initialNotificationSoundEnabled={initialNotificationSoundEnabled} />
             <DashboardMobileNavSheet
-              activeStoreSlug={activeStoreSlug}
+              activeStoreSlug={effectiveStoreSlug}
               stores={stores}
               globalRole={globalRole}
               userDisplayName={userDisplayName}
@@ -114,7 +135,7 @@ export function DashboardShell({
         >
           <aside className="flex w-full shrink-0 border-r border-border/70 bg-stone-50">
             <DashboardNav
-              activeStoreSlug={activeStoreSlug}
+              activeStoreSlug={effectiveStoreSlug}
               stores={stores}
               globalRole={globalRole}
               userDisplayName={userDisplayName}

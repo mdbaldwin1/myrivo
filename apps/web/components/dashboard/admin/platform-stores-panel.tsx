@@ -5,6 +5,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SectionCard } from "@/components/ui/section-card";
+import type { BillingPlanOption, BillingPlanSummary } from "@/lib/billing/plans";
+import { notify } from "@/lib/feedback/toast";
 import { STORE_GOVERNANCE_REASON_CODES, STORE_GOVERNANCE_REASON_LABELS, type StoreGovernanceReasonCode } from "@/lib/platform/store-governance";
 
 type StoreStatus = "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
@@ -19,6 +21,7 @@ type PlatformStoresResponse = {
     suspendedStoresCount: number;
     offlineStoresCount: number;
   };
+  plans: BillingPlanOption[];
   stores: Array<{
     id: string;
     owner_user_id: string;
@@ -29,6 +32,7 @@ type PlatformStoresResponse = {
     stripe_account_id: string | null;
     created_at: string;
     activeMemberCount: number;
+    billingPlan: BillingPlanSummary | null;
     owner: {
       id: string;
       email: string | null;
@@ -69,14 +73,19 @@ export function PlatformStoresPanel() {
   const highlightedStoreRef = useRef<HTMLDivElement | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [savingPlanId, setSavingPlanId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | StoreStatus>("all");
   const [data, setData] = useState<PlatformStoresResponse | null>(null);
   const [reasonCodeByStore, setReasonCodeByStore] = useState<Record<string, StoreGovernanceReasonCode>>({});
   const [reasonDetailByStore, setReasonDetailByStore] = useState<Record<string, string>>({});
+  const [billingPlanKeyByStore, setBillingPlanKeyByStore] = useState<Record<string, string>>({});
+  const [billingPlanErrorByStore, setBillingPlanErrorByStore] = useState<Record<string, string>>({});
 
   const canMutate = data?.role === "admin";
   const fallbackReasonCode: StoreGovernanceReasonCode = "incomplete_setup";
+  const defaultBillingPlanKey = data?.plans?.find((plan) => plan.key === "standard")?.key ?? data?.plans?.[0]?.key ?? "standard";
+  const plansByKey = useMemo(() => new Map((data?.plans ?? []).map((plan) => [plan.key, plan])), [data?.plans]);
 
   async function load() {
     const response = await fetch("/api/platform/stores", { cache: "no-store" });
@@ -175,6 +184,52 @@ export function PlatformStoresPanel() {
     await load();
   }
 
+  function getSelectedBillingPlanKey(store: PlatformStoresResponse["stores"][number]) {
+    return billingPlanKeyByStore[store.id] ?? store.billingPlan?.key ?? defaultBillingPlanKey;
+  }
+
+  function clearBillingPlanError(storeId: string) {
+    setBillingPlanErrorByStore((current) => {
+      if (!current[storeId]) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[storeId];
+      return next;
+    });
+  }
+
+  async function saveBillingPlan(store: PlatformStoresResponse["stores"][number]) {
+    if (!canMutate || savingId || savingPlanId) {
+      return;
+    }
+
+    const billingPlanKey = getSelectedBillingPlanKey(store);
+    setSavingPlanId(store.id);
+    clearBillingPlanError(store.id);
+
+    const response = await fetch(`/api/platform/stores/${store.id}/billing-plan`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ billingPlanKey })
+    });
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+
+    if (!response.ok) {
+      setBillingPlanErrorByStore((current) => ({
+        ...current,
+        [store.id]: payload?.error ?? "Unable to save pricing plan."
+      }));
+      setSavingPlanId(null);
+      return;
+    }
+
+    notify.success("Pricing plan saved.");
+    setSavingPlanId(null);
+    await load();
+  }
+
   return (
     <section className="space-y-4">
       <SectionCard title="Stores" description="Open the workspace, storefront, or governance flow for any store.">
@@ -201,49 +256,115 @@ export function PlatformStoresPanel() {
         {visibleStores.length === 0 && !loading ? <p className="text-sm text-muted-foreground">No stores match the current filters.</p> : null}
 
         <div className="space-y-2">
-          {visibleStores.map((store) => (
-            <div key={store.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-3 text-sm">
-              <div className="min-w-0">
-                <p className="font-medium">
-                  {store.name} <span className="text-muted-foreground">({store.slug})</span>
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {statusLabel[store.status]}
-                  {store.white_label_enabled ? " · white label" : ""}
-                  {store.stripe_account_id ? " · payments connected" : " · payments not connected"}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Owner: {store.owner.display_name ?? store.owner.email ?? "Unknown owner"} · {store.activeMemberCount} active member(s) · created{" "}
-                  {new Date(store.created_at).toLocaleDateString()}
-                </p>
+          {visibleStores.map((store) => {
+            const selectedBillingPlanKey = getSelectedBillingPlanKey(store);
+            const currentBillingPlanKey = store.billingPlan?.key ?? defaultBillingPlanKey;
+            const selectedPlan = plansByKey.get(selectedBillingPlanKey);
+            const isBillingPlanDirty = selectedBillingPlanKey !== currentBillingPlanKey;
+            const isStoreBusy = savingId === store.id || savingPlanId === store.id;
+
+            return (
+              <div key={store.id} className="space-y-3 rounded-md border border-border/70 px-3 py-3 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium">
+                      {store.name} <span className="text-muted-foreground">({store.slug})</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {statusLabel[store.status]}
+                      {store.white_label_enabled ? " · white label" : ""}
+                      {store.stripe_account_id ? " · payments connected" : " · payments not connected"}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Owner: {store.owner.display_name ?? store.owner.email ?? "Unknown owner"} · {store.activeMemberCount} active member(s) · created{" "}
+                      {new Date(store.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button type="button" size="sm" asChild>
+                      <Link href={`/dashboard/stores/${store.slug}`}>Open workspace</Link>
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" asChild>
+                      <Link href={`/s/${store.slug}`} target="_blank" rel="noreferrer">
+                        View storefront
+                      </Link>
+                    </Button>
+                    {store.status === "pending_review" ? (
+                      <Button type="button" size="sm" variant="outline" asChild>
+                        <Link href={`/dashboard/admin/stores?storeId=${encodeURIComponent(store.id)}`}>Review</Link>
+                      </Button>
+                    ) : null}
+                    {store.status === "suspended" || store.status === "offline" ? (
+                      <Button type="button" size="sm" variant="outline" onClick={() => void act(store.id, "restore")} disabled={isStoreBusy}>
+                        Restore
+                      </Button>
+                    ) : null}
+                    {store.status !== "removed" ? (
+                      <Button type="button" size="sm" variant="destructive" onClick={() => void act(store.id, "remove")} disabled={isStoreBusy}>
+                        Remove
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="grid gap-2 rounded-md border border-border/60 bg-muted/15 p-3 sm:grid-cols-[minmax(0,220px)_auto] sm:items-end">
+                  <label className="text-xs">
+                    <span className="mb-1 block font-medium text-muted-foreground">Pricing plan</span>
+                    <select
+                      className="h-9 w-full rounded-md border border-border/70 bg-background px-2 text-sm"
+                      value={selectedBillingPlanKey}
+                      onChange={(event) => {
+                        const nextKey = event.target.value;
+                        setBillingPlanKeyByStore((current) => ({
+                          ...current,
+                          [store.id]: nextKey
+                        }));
+                        clearBillingPlanError(store.id);
+                      }}
+                      disabled={!canMutate || isStoreBusy}
+                    >
+                      {(data?.plans ?? []).map((plan) => (
+                        <option key={plan.key} value={plan.key}>
+                          {plan.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setBillingPlanKeyByStore((current) => {
+                          if (!(store.id in current)) {
+                            return current;
+                          }
+
+                          const next = { ...current };
+                          delete next[store.id];
+                          return next;
+                        });
+                        clearBillingPlanError(store.id);
+                      }}
+                      disabled={!canMutate || isStoreBusy || !isBillingPlanDirty}
+                    >
+                      Reset
+                    </Button>
+                    <Button type="button" size="sm" onClick={() => void saveBillingPlan(store)} disabled={!canMutate || isStoreBusy || !isBillingPlanDirty}>
+                      {savingPlanId === store.id ? "Saving..." : "Save plan"}
+                    </Button>
+                    {!canMutate ? <p className="text-xs text-muted-foreground">Admin action required</p> : null}
+                  </div>
+                  <p className={billingPlanErrorByStore[store.id] ? "text-xs text-destructive sm:col-span-2" : "text-xs text-muted-foreground sm:col-span-2"}>
+                    {billingPlanErrorByStore[store.id] ??
+                      (selectedPlan
+                        ? `${(selectedPlan.transaction_fee_bps / 100).toFixed(2)}% + $${(selectedPlan.transaction_fee_fixed_cents / 100).toFixed(2)} per successful order.`
+                        : "Plan determines the platform fee charged on successful orders.")}
+                  </p>
+                </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button type="button" size="sm" asChild>
-                  <Link href={`/dashboard/stores/${store.slug}`}>Open workspace</Link>
-                </Button>
-                <Button type="button" size="sm" variant="outline" asChild>
-                  <Link href={`/s/${store.slug}`} target="_blank" rel="noreferrer">
-                    View storefront
-                  </Link>
-                </Button>
-                {store.status === "pending_review" ? (
-                  <Button type="button" size="sm" variant="outline" asChild>
-                    <Link href={`/dashboard/admin/stores?storeId=${encodeURIComponent(store.id)}`}>Review</Link>
-                  </Button>
-                ) : null}
-                {store.status === "suspended" || store.status === "offline" ? (
-                  <Button type="button" size="sm" variant="outline" onClick={() => void act(store.id, "restore")} disabled={savingId === store.id}>
-                    Restore
-                  </Button>
-                ) : null}
-                {store.status !== "removed" ? (
-                  <Button type="button" size="sm" variant="outline" onClick={() => void act(store.id, "remove")} disabled={savingId === store.id}>
-                    Remove
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </SectionCard>
 

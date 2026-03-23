@@ -97,6 +97,15 @@ export function formatMoney(cents: number) {
   }).format(Math.max(0, cents) / 100);
 }
 
+export function formatMoneyWithCents(cents: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(Math.max(0, cents) / 100);
+}
+
 export function formatPlatformFeePercent(bps: number) {
   return `${(Math.max(0, bps) / 100).toFixed(2)}%`;
 }

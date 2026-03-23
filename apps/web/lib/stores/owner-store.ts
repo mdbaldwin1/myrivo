@@ -2,7 +2,7 @@ import { hasGlobalRole, hasStoreRole } from "@/lib/auth/roles";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isMissingColumnInSchemaCache, isMissingRelationInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { hasStoreLaunchedOnce } from "@/lib/stores/lifecycle";
-import { readSelectedStoreSlugFromCookies, resolveActiveStoreFromList, type AccessibleStore } from "@/lib/stores/tenant-context";
+import { readSelectedStoreSlugFromCookies, resolveActiveStoreForRole, type AccessibleStore } from "@/lib/stores/tenant-context";
 import type {
   StoreRecord,
   StoreBrandingRecord,
@@ -445,13 +445,9 @@ export async function getOwnedStoreBundle(
   const supabase = await createSupabaseServerClient();
   const accessibleStores = await resolveAccessibleStores(userId);
   const selectedStoreSlug = await readSelectedStoreSlugFromCookies();
-  const resolvedStore = resolveActiveStoreFromList(accessibleStores, selectedStoreSlug);
+  const resolvedStore = resolveActiveStoreForRole(accessibleStores, requiredRole, selectedStoreSlug);
 
   if (!resolvedStore) {
-    return null;
-  }
-
-  if (!hasStoreRole(resolvedStore.role, requiredRole)) {
     return null;
   }
 

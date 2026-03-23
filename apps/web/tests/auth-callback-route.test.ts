@@ -103,4 +103,38 @@ describe("auth callback route", () => {
 
     expect(response.headers.get("location")).toBe("http://localhost:3000/invite/abcdefghijklmnopqrstuvwxyz123456");
   });
+
+  test("redirects code-only recovery callbacks to reset-password", async () => {
+    authGetUserMock.mockResolvedValue({
+      data: {
+        user: {
+          id: "user-1",
+          user_metadata: {}
+        }
+      }
+    });
+
+    const route = await import("@/app/auth/callback/route");
+    const response = await route.GET(new NextRequest("http://localhost:3000/auth/callback?code=abc123"));
+
+    expect(response.headers.get("location")).toBe("http://localhost:3000/reset-password");
+  });
+
+  test("redirects code-only signup callbacks to dashboard when signup metadata is present", async () => {
+    authGetUserMock.mockResolvedValue({
+      data: {
+        user: {
+          id: "user-1",
+          user_metadata: {
+            signup_legal_version_ids: ["legal-version-1", "legal-version-2"]
+          }
+        }
+      }
+    });
+
+    const route = await import("@/app/auth/callback/route");
+    const response = await route.GET(new NextRequest("http://localhost:3000/auth/callback?code=abc123"));
+
+    expect(response.headers.get("location")).toBe("http://localhost:3000/dashboard");
+  });
 });

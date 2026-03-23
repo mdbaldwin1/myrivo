@@ -6,7 +6,7 @@ import { getMissingRequiredLegalVersions, recordPendingSignupLegalAcceptances } 
 import { resolveAccountNotificationPreferences } from "@/lib/notifications/preferences";
 import { resolveStoreSlugFromCurrentDashboardRoute } from "@/lib/stores/active-store";
 import { getStoreOnboardingProgressForStore } from "@/lib/stores/onboarding";
-import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
+import { getOwnedStoreBundle, getOwnedStoreBundleForSlug } from "@/lib/stores/owner-store";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { GlobalUserRole } from "@/types/database";
@@ -50,14 +50,18 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const userAvatarPath = profile?.avatar_path ?? null;
   const notificationSoundEnabled = resolveAccountNotificationPreferences(profile?.metadata).notificationSoundEnabled;
   const routeStoreSlug = await resolveStoreSlugFromCurrentDashboardRoute();
-  const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, routeStoreSlug, "staff");
+  const [workspaceBundle, routeBundle] = await Promise.all([
+    getOwnedStoreBundle(user.id, "staff"),
+    routeStoreSlug ? getOwnedStoreBundleForSlug(user.id, routeStoreSlug, "staff") : Promise.resolve(null)
+  ]);
+  const bundle = routeBundle ?? workspaceBundle;
   const admin = createSupabaseAdminClient();
 
   const storeStatus = bundle?.store.status ?? null;
-  const storeSlug = bundle?.store.slug ?? null;
+  const storeSlug = bundle?.store.slug ?? routeStoreSlug ?? null;
   const storeOnboardingProgress = storeSlug ? await getStoreOnboardingProgressForStore(user.id, storeSlug) : null;
-  const availableStores = bundle?.availableStores ?? [];
-  const hasStoreAccess = availableStores.length > 0 && Boolean(storeSlug);
+  const availableStores = workspaceBundle?.availableStores ?? routeBundle?.availableStores ?? [];
+  const hasStoreAccess = availableStores.length > 0;
   const analyticsAccess = bundle ? await resolveStoreAnalyticsAccessByStoreId(admin, bundle.store.id) : null;
 
   return (

@@ -1,28 +1,36 @@
 import type { Metadata } from "next";
 import { MarketingSiteChrome } from "@/components/marketing/marketing-site-chrome";
 import { MarketingTrackedButtonLink } from "@/components/marketing/marketing-tracked-button-link";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
-  title: "Multi-store commerce platform | Myrivo",
-  description: "Operate multiple storefronts with governance, approvals, and role-based admin controls in Myrivo."
+  title: "Multi-store commerce operations | Myrivo",
+  description: "Run multiple stores with approvals, moderation, role-based access, and governance in one platform."
 };
 
 const controls = [
-  "Admin workspace for approval queue, moderation queue, and audit timeline.",
+  "Approval and moderation queues from one admin workspace.",
   "Role-based access controls across user-level and store-level contexts.",
-  "Store readiness and governance controls before stores go live."
+  "Store readiness, status, and governance controls before stores go live."
 ];
 
-export default function MultiStoreCommercePage() {
+export default async function MultiStoreCommercePage() {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+  const isAuthenticated = Boolean(user?.id);
+
   return (
-    <MarketingSiteChrome activePath="/for">
+    <MarketingSiteChrome activePath="/for" isAuthenticated={isAuthenticated}>
       <section className="marketing-rise rounded-3xl border border-border bg-card p-8 sm:p-10">
         <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">For Platform Teams</p>
         <h1 className="mt-4 [font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-4xl leading-tight text-foreground sm:text-5xl">
-          Multi-store commerce with serious platform governance.
+          Multi-store commerce with stronger platform control.
         </h1>
         <p className="mt-4 max-w-3xl text-base leading-relaxed text-muted-foreground">
-          Operate many stores without losing control of risk, permissions, or operational consistency.
+          Myrivo fits teams that need storefronts and seller operations on one platform while still keeping approvals, permissions, and launch readiness
+          under control.
         </p>
       </section>
 
@@ -36,9 +44,11 @@ export default function MultiStoreCommercePage() {
           </ul>
         </article>
 
-        <article className="rounded-2xl border border-border bg-primary p-6 text-primary-foreground">
-          <h2 className="[font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-2xl">See the architecture</h2>
-          <p className="mt-3 text-sm text-[hsl(var(--primary-foreground))]">Review operational tradeoffs, governance depth, and launch strategy in minutes.</p>
+        <article className="rounded-2xl border border-border bg-[linear-gradient(145deg,hsl(var(--primary)),hsl(var(--brand-secondary)))] p-6 text-primary-foreground">
+          <h2 className="[font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-2xl">See where governance matters most</h2>
+          <p className="mt-3 text-sm text-[hsl(var(--primary-foreground))]">
+            Compare Myrivo with the usual mix of marketplace rules, separate store tools, and manual oversight.
+          </p>
           <div className="mt-5 flex flex-wrap gap-3">
             <MarketingTrackedButtonLink
               href="/signup"

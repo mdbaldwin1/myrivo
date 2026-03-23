@@ -46,7 +46,7 @@ export function StoreHubPortfolioPanel({ stores, logoByStoreId }: StoreHubPortfo
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {stores.map((store) => (
-            <li key={store.id} className="rounded-md border border-border/70 bg-card p-3 transition-colors hover:border-primary/40">
+            <li key={store.id} className="rounded-md border border-border/70 bg-card p-3 transition-colors hover:border-[hsl(var(--brand-secondary))]/35">
               {(() => {
                 const canOpenWorkspace = hasStoreRole(store.role, "staff");
                 const overviewHref = `/dashboard/stores/${store.slug}`;
@@ -66,7 +66,7 @@ export function StoreHubPortfolioPanel({ stores, logoByStoreId }: StoreHubPortfo
                         className="h-10 w-10 shrink-0 rounded-md border border-border object-cover"
                       />
                     ) : (
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-xs font-semibold">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[hsl(var(--brand-secondary))]/15 bg-[hsl(var(--brand-secondary-soft))]/55 text-xs font-semibold text-[hsl(var(--brand-secondary))]">
                         {store.name.slice(0, 2).toUpperCase()}
                       </div>
                     )}
@@ -87,7 +87,7 @@ export function StoreHubPortfolioPanel({ stores, logoByStoreId }: StoreHubPortfo
                         className="h-10 w-10 shrink-0 rounded-md border border-border object-cover"
                       />
                     ) : (
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-xs font-semibold">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[hsl(var(--brand-secondary))]/15 bg-[hsl(var(--brand-secondary-soft))]/55 text-xs font-semibold text-[hsl(var(--brand-secondary))]">
                         {store.name.slice(0, 2).toUpperCase()}
                       </div>
                     )}
@@ -122,7 +122,7 @@ export function StoreHubPortfolioPanel({ stores, logoByStoreId }: StoreHubPortfo
               <div className="mt-3 flex items-center gap-2">
                 {canOpenWorkspace ? (
                   <>
-                    <Button size="sm" asChild>
+                    <Button size="sm" variant="brand" asChild>
                       <StoreWorkspaceLaunchLink href={overviewHref} storeSlug={store.slug}>Open</StoreWorkspaceLaunchLink>
                     </Button>
                     <Button size="sm" variant="outline" asChild>

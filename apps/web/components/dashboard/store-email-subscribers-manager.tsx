@@ -147,7 +147,10 @@ export function StoreEmailSubscribersManager() {
 
         {!loading && !error ? (
           subscribers.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No subscribers yet.</p>
+            <div className="rounded-md border border-[hsl(var(--brand-secondary))]/20 bg-[hsl(var(--brand-secondary-soft))]/45 px-4 py-5">
+              <p className="text-sm font-medium text-[hsl(var(--brand-secondary))]">No subscribers yet.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Once shoppers opt in from your storefront, this list will start filling in here.</p>
+            </div>
           ) : (
             <div className="overflow-x-auto rounded-md border border-border">
               <table className="w-full text-left text-sm">
