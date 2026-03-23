@@ -35,6 +35,7 @@ export const serverEnvSchema = z.object({
 
 export const appUrlEnvSchema = z.object({
   NEXT_PUBLIC_APP_URL: z.string().url().optional(),
+  MYRIVO_PUBLIC_APP_URL: z.string().url().optional(),
   VERCEL_PROJECT_PRODUCTION_URL: z.string().min(1).optional(),
   VERCEL_URL: z.string().min(1).optional()
 });
@@ -67,6 +68,7 @@ let cachedServerEnv: z.infer<typeof serverEnvSchema> | null = null;
 let cachedStripeEnv: z.infer<typeof stripeEnvSchema> | null = null;
 let cachedStripeStubMode: boolean | null = null;
 let cachedAppUrl: string | null = null;
+let cachedExternalAppUrl: string | null = null;
 let cachedShippingEnv: z.infer<typeof shippingEnvSchema> | null = null;
 
 export function getPublicEnv() {
@@ -160,6 +162,7 @@ export function getAppUrl() {
   if (!cachedAppUrl) {
     const env = appUrlEnvSchema.parse({
       NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+      MYRIVO_PUBLIC_APP_URL: process.env.MYRIVO_PUBLIC_APP_URL,
       VERCEL_PROJECT_PRODUCTION_URL: process.env.VERCEL_PROJECT_PRODUCTION_URL,
       VERCEL_URL: process.env.VERCEL_URL
     });
@@ -173,6 +176,29 @@ export function getAppUrl() {
   }
 
   return cachedAppUrl;
+}
+
+export function getExternalAppUrl() {
+  if (!cachedExternalAppUrl) {
+    const env = appUrlEnvSchema.parse({
+      NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+      MYRIVO_PUBLIC_APP_URL: process.env.MYRIVO_PUBLIC_APP_URL,
+      VERCEL_PROJECT_PRODUCTION_URL: process.env.VERCEL_PROJECT_PRODUCTION_URL,
+      VERCEL_URL: process.env.VERCEL_URL
+    });
+
+    const candidate = env.MYRIVO_PUBLIC_APP_URL ?? env.NEXT_PUBLIC_APP_URL ?? env.VERCEL_PROJECT_PRODUCTION_URL ?? env.VERCEL_URL;
+
+    if (!candidate) {
+      throw new Error(
+        "Missing external app URL configuration (MYRIVO_PUBLIC_APP_URL, NEXT_PUBLIC_APP_URL, or Vercel URL fallback)."
+      );
+    }
+
+    cachedExternalAppUrl = z.string().url().parse(normalizeHostOrUrl(candidate));
+  }
+
+  return cachedExternalAppUrl;
 }
 
 export function getEnv() {

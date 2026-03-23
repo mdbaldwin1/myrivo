@@ -9,6 +9,8 @@ These are the minimum app env vars for a real production deployment:
 
 - `NEXT_PUBLIC_APP_URL`
   - Canonical app origin, for example `https://www.myrivo.app`
+- `MYRIVO_PUBLIC_APP_URL`
+  - Canonical public origin for externally emailed links when app actions may be triggered from local/dev
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
@@ -17,6 +19,8 @@ These are the minimum app env vars for a real production deployment:
 
 - `NEXT_PUBLIC_APP_URL`
   - Usually `http://localhost:3000`
+- `MYRIVO_PUBLIC_APP_URL`
+  - Recommended if local actions can send real emails; typically `https://www.myrivo.app`
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
@@ -42,6 +46,8 @@ Recommended local defaults:
 
 - `RESEND_API_KEY`
   - Required to actually send transactional/platform emails through Resend
+- `MYRIVO_PUBLIC_APP_URL`
+  - Recommended canonical public origin for invite/order/marketing email links when the app is run outside production
 - `MYRIVO_EMAIL_PROVIDER`
   - Currently `resend`
 - `MYRIVO_EMAIL_FROM`
@@ -137,6 +143,7 @@ These are not general app runtime vars, but they matter for automated delivery:
 
 - Keep `SUPABASE_SERVICE_ROLE_KEY`, Stripe secrets, Resend keys, and Vercel API tokens server-only.
 - `NEXT_PUBLIC_APP_URL` should match the real deployed origin in production, and the Supabase auth redirect allowlist should include its callback URL.
+- `MYRIVO_PUBLIC_APP_URL` lets local/dev runtime actions still generate public-facing email links without pointing recipients at `localhost`.
 - `MYRIVO_SINGLE_STORE_SLUG` is a fallback/default runtime slug, not the source of truth for store ownership.
 - Shipping provider credentials and per-store webhook secrets live in `store_integrations`, not deployment env vars.
 - `.env.example` is now aligned with the current runtime surface; use it as the starting point for local and production env setup.

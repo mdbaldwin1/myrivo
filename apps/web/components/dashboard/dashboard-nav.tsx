@@ -287,6 +287,7 @@ export function DashboardNav({
               {showLabels ? <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Myrivo Workspace</p> : null}
               <div className="space-y-1">
                 {renderNavLink({ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard })}
+                {renderNavLink({ href: "/dashboard/stores", label: "Store Hub", icon: Store })}
                 {canAccessPlatform ? (
                   renderNavLink({ href: "/dashboard/admin", label: "Admin Workspace", icon: Shield }, { trailingChevron: showLabels })
                 ) : null}

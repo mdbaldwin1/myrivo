@@ -42,7 +42,15 @@ export function StoreHubPortfolioPanel({ stores, logoByStoreId }: StoreHubPortfo
   return (
     <SectionCard title="Store Portfolio" description="All accessible stores ranked by attention needed.">
       {stores.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No accessible stores yet.</p>
+        <div className="space-y-3 rounded-md border border-dashed border-border/70 bg-muted/10 p-4">
+          <p className="text-sm font-medium">No stores yet</p>
+          <p className="text-sm text-muted-foreground">
+            You do not have store workspace access yet. Create your first store to start building your storefront and seller workflow.
+          </p>
+          <Button size="sm" variant="brand" asChild>
+            <Link href="/dashboard/stores/onboarding/new">Create store</Link>
+          </Button>
+        </div>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {stores.map((store) => (

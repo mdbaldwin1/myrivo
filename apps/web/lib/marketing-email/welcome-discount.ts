@@ -1,4 +1,4 @@
-import { getAppUrl, getServerEnv } from "@/lib/env";
+import { getExternalAppUrl, getServerEnv } from "@/lib/env";
 import { createEmailStudioDocumentFromSection } from "@/lib/email-studio/model";
 import { renderEmailStudioTemplate } from "@/lib/email-studio/render";
 import { resolveMarketingEmailComplianceDefaults } from "@/lib/marketing-email/compliance";
@@ -109,7 +109,7 @@ export async function sendWelcomeDiscountEmail(input: {
   const expiryText = formatExpiryText(input.promotion.ends_at);
   const minimumSpendText = input.promotion.min_subtotal_cents > 0 ? formatCurrency(input.promotion.min_subtotal_cents) : "";
   const footerAddress = compliance.footerAddress ? `Mailing address: ${compliance.footerAddress}` : "";
-  const appUrl = getAppUrl();
+  const appUrl = getExternalAppUrl();
   const unsubscribeUrl = `${appUrl}${compliance.unsubscribeHref}`;
   const privacyUrl = `${appUrl}${compliance.privacyPolicyHref}`;
   const storeUrl = `${appUrl}/s/${input.store.slug}`;

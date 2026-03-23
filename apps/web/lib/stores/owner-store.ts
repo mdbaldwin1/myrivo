@@ -1,4 +1,5 @@
 import { hasGlobalRole, hasStoreRole } from "@/lib/auth/roles";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isMissingColumnInSchemaCache, isMissingRelationInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { hasStoreLaunchedOnce } from "@/lib/stores/lifecycle";
@@ -77,18 +78,11 @@ export type OwnedStoreBundle = {
   >;
 };
 
-type MembershipStoreRow = {
+type MembershipRow = {
+  store_id: string;
   role: StoreMemberRole;
   status: string;
   permissions_json: Record<string, unknown> | null;
-  store: Pick<StoreRecord, "id" | "name" | "slug" | "status" | "has_launched_once" | "stripe_account_id"> | null;
-};
-
-type LegacyMembershipStoreRow = {
-  role: StoreMemberRole;
-  status: string;
-  permissions_json: Record<string, unknown> | null;
-  store: Pick<StoreRecord, "id" | "name" | "slug" | "status" | "stripe_account_id"> | null;
 };
 
 function isTransientFetchFailure(error: unknown) {
@@ -156,52 +150,64 @@ async function resolveOwnedStores(
 
 async function resolveAccessibleStores(userId: string): Promise<AccessibleStore[]> {
   const supabase = await createSupabaseServerClient();
+  const admin = createSupabaseAdminClient();
   const membershipQuery = supabase
     .from("store_memberships")
-    .select("role,status,permissions_json,store:stores!inner(id,name,slug,status,has_launched_once,stripe_account_id)")
+    .select("store_id,role,status,permissions_json")
     .eq("user_id", userId)
     .eq("status", "active");
-  const { data: memberships, error: membershipsError } = await membershipQuery.returns<MembershipStoreRow[]>();
+  const { data: memberships, error: membershipsError } = await membershipQuery.returns<MembershipRow[]>();
 
-  let normalizedMemberships: MembershipStoreRow[] = memberships ?? [];
-  let recoveredMemberships = false;
-
-  if (membershipsError && isMissingColumnInSchemaCache(membershipsError, "has_launched_once")) {
-    const legacyMembershipQuery = await supabase
-      .from("store_memberships")
-      .select("role,status,permissions_json,store:stores!inner(id,name,slug,status,stripe_account_id)")
-      .eq("user_id", userId)
-      .eq("status", "active")
-      .returns<LegacyMembershipStoreRow[]>();
-
-    if (legacyMembershipQuery.error && !isMissingRelationInSchemaCache(legacyMembershipQuery.error)) {
-      throw new Error(legacyMembershipQuery.error.message);
-    }
-
-    normalizedMemberships = (legacyMembershipQuery.data ?? []).map((entry) => ({
-      ...entry,
-      store: entry.store ? withLaunchHistory(entry.store) : null
-    }));
-    recoveredMemberships = true;
-  }
-
-  if (
-    membershipsError &&
-    !isMissingRelationInSchemaCache(membershipsError) &&
-    !isMissingColumnInSchemaCache(membershipsError, "has_launched_once")
-  ) {
+  if (membershipsError && !isMissingRelationInSchemaCache(membershipsError)) {
     throw new Error(membershipsError.message);
   }
 
-  const membershipStores = membershipsError && !recoveredMemberships
-    ? []
-    : normalizedMemberships
-        .filter((entry) => entry.store)
-        .map((entry) => ({
-          ...entry.store!,
-          role: entry.role,
-          permissions_json: entry.permissions_json ?? {}
-        }));
+  const normalizedMemberships = memberships ?? [];
+  const membershipStoreIds = Array.from(new Set(normalizedMemberships.map((entry) => entry.store_id).filter(Boolean)));
+
+  let membershipStoreRows: Array<Pick<StoreRecord, "id" | "name" | "slug" | "status" | "has_launched_once" | "stripe_account_id">> = [];
+
+  if (membershipStoreIds.length > 0) {
+    const { data: stores, error: storesError } = await admin
+      .from("stores")
+      .select("id,name,slug,status,has_launched_once,stripe_account_id")
+      .in("id", membershipStoreIds)
+      .order("name", { ascending: true });
+
+    if (storesError && isMissingColumnInSchemaCache(storesError, "has_launched_once")) {
+      const legacyStores = await admin
+        .from("stores")
+        .select("id,name,slug,status,stripe_account_id")
+        .in("id", membershipStoreIds)
+        .order("name", { ascending: true });
+
+      if (legacyStores.error) {
+        throw new Error(legacyStores.error.message);
+      }
+
+      membershipStoreRows = (legacyStores.data ?? []).map((store) => withLaunchHistory(store));
+    } else if (storesError) {
+      throw new Error(storesError.message);
+    } else {
+      membershipStoreRows = stores ?? [];
+    }
+  }
+
+  const membershipStoreById = new Map(membershipStoreRows.map((store) => [store.id, store]));
+  const membershipStores = normalizedMemberships.reduce<AccessibleStore[]>((stores, entry) => {
+    const store = membershipStoreById.get(entry.store_id);
+    if (!store) {
+      return stores;
+    }
+
+    stores.push({
+      ...store,
+      role: entry.role,
+      permissions_json: entry.permissions_json ?? {}
+    });
+
+    return stores;
+  }, []);
 
   const ownedStores =
     membershipsError && !isMissingRelationInSchemaCache(membershipsError)
