@@ -3,11 +3,11 @@ import { isValidStoreSlug, normalizeStoreSlug } from "@/lib/stores/slug";
 
 describe("store slug utilities", () => {
   test("normalizes names into URL-safe slugs", () => {
-    expect(normalizeStoreSlug("At Home Apothecary !!")).toBe("at-home-apothecary");
+    expect(normalizeStoreSlug("Sunset Mercantile !!")).toBe("sunset-mercantile");
   });
 
   test("validates slug length and charset", () => {
-    expect(isValidStoreSlug("tallow-shop")).toBe(true);
+    expect(isValidStoreSlug("sunset-shop")).toBe(true);
     expect(isValidStoreSlug("No")).toBe(false);
     expect(isValidStoreSlug("bad_slug")).toBe(false);
   });

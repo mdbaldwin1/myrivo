@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Pencil, RefreshCw, Trash2 } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { Flyout } from "@/components/ui/flyout";
@@ -8,7 +10,10 @@ import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
 import { Select } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useConfirmDialog } from "@/components/ui/use-confirm-dialog";
 import { notify } from "@/lib/feedback/toast";
+import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
 
 type ShippingSettingsResponse = {
   shippingProvider: "none" | "easypost";
@@ -21,6 +26,8 @@ type ShippingSettingsResponse = {
 };
 
 export function StoreShippingSettings() {
+  const pathname = usePathname();
+  const storeSlug = getStoreSlugFromDashboardPathname(pathname);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [provider, setProvider] = useState<"none" | "easypost">("none");
@@ -29,11 +36,12 @@ export function StoreShippingSettings() {
   const [webhookUrl, setWebhookUrl] = useState("");
   const [hasApiKey, setHasApiKey] = useState(false);
   const [hasWebhookSecret, setHasWebhookSecret] = useState(false);
-  const [source, setSource] = useState<"store" | "env" | null>(null);
+  const [source, setSource] = useState<"store" | "env" | "default" | null>(null);
   const [isFlyoutOpen, setIsFlyoutOpen] = useState(false);
   const [flyoutBaseline, setFlyoutBaseline] = useState("");
   const [pageError, setPageError] = useState<string | null>(null);
   const [flyoutError, setFlyoutError] = useState<string | null>(null);
+  const { requestConfirm, confirmDialog } = useConfirmDialog();
 
   function buildFlyoutSnapshot() {
     return JSON.stringify({
@@ -69,11 +77,11 @@ export function StoreShippingSettings() {
     setFlyoutError(null);
   }
 
-  async function loadSettings() {
+  const loadSettings = useCallback(async () => {
     setLoading(true);
     setPageError(null);
 
-    const response = await fetch("/api/stores/shipping", { cache: "no-store" });
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/shipping", storeSlug), { cache: "no-store" });
     const payload = (await response.json()) as ShippingSettingsResponse;
 
     if (!response.ok) {
@@ -89,7 +97,7 @@ export function StoreShippingSettings() {
     setHasWebhookSecret(payload.hasWebhookSecret);
     setSource(payload.source ?? null);
     setLoading(false);
-  }
+  }, [storeSlug]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -97,14 +105,14 @@ export function StoreShippingSettings() {
     }, 0);
 
     return () => clearTimeout(timeout);
-  }, []);
+  }, [loadSettings]);
 
   async function saveSettings(regenerateWebhookSecret = false) {
     setSaving(true);
     setFlyoutError(null);
     setPageError(null);
 
-    const response = await fetch("/api/stores/shipping", {
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/shipping", storeSlug), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -135,27 +143,104 @@ export function StoreShippingSettings() {
     }
   }
 
+  async function clearSettings() {
+    const confirmed = await requestConfirm({
+      title: "Clear shipping setup?",
+      description: "This will remove the saved provider credentials and webhook secret for this store.",
+      confirmLabel: "Clear setup",
+      confirmVariant: "destructive"
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    setSaving(true);
+    setFlyoutError(null);
+    setPageError(null);
+
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/shipping", storeSlug), {
+      method: "DELETE"
+    });
+
+    const payload = (await response.json()) as ShippingSettingsResponse;
+    setSaving(false);
+
+    if (!response.ok) {
+      setPageError(payload.error ?? "Unable to clear shipping settings.");
+      return;
+    }
+
+    setProvider("none");
+    setApiKey("");
+    setWebhookSecret("");
+    setWebhookUrl(payload.webhookUrl);
+    setHasApiKey(false);
+    setHasWebhookSecret(false);
+    setSource(payload.source ?? "default");
+    setIsFlyoutOpen(false);
+    notify.success("Shipping setup cleared.");
+  }
+
+  const hasConfiguredSetup = source === "store" || provider !== "none" || hasApiKey || hasWebhookSecret;
+
   return (
-    <SectionCard
-      title="Shipping Provider"
-      action={
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="ghost" size="sm" onClick={() => void loadSettings()} disabled={loading || saving}>
-            Refresh
-          </Button>
-          <Button type="button" variant="outline" size="sm" onClick={openFlyout} disabled={saving || loading}>
-            Edit
-          </Button>
-        </div>
-      }
-    >
+    <SectionCard title="Shipping Provider">
       <div className="space-y-4">
         {loading ? <p className="text-sm text-muted-foreground">Loading shipping settings...</p> : null}
 
-        {!loading ? (
+        {!loading && !hasConfiguredSetup ? (
+          <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 p-4">
+            <p className="text-sm font-medium">No shipping integration configured yet</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Set up a provider when this store is ready for synced shipping updates.
+            </p>
+            <div className="mt-3">
+              <Button type="button" variant="outline" size="sm" onClick={openFlyout} disabled={saving}>
+                Configure shipping
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {!loading && hasConfiguredSetup ? (
           <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
-            <p className="text-sm font-medium">Current Configuration</p>
-            <p className="mt-1 text-xs text-muted-foreground">These values reflect the currently active store shipping integration state.</p>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">Current Configuration</p>
+                <p className="mt-1 text-xs text-muted-foreground">These values reflect the currently active store shipping integration state.</p>
+              </div>
+              <TooltipProvider delayDuration={120}>
+                <div className="flex items-center gap-1">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => void loadSettings()} disabled={loading || saving}>
+                        <RefreshCw className="h-4 w-4" />
+                        <span className="sr-only">Refresh shipping settings</span>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">Refresh</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={openFlyout} disabled={saving}>
+                        <Pencil className="h-4 w-4" />
+                        <span className="sr-only">Manage shipping setup</span>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">Manage Setup</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => void clearSettings()} disabled={saving}>
+                        <Trash2 className="h-4 w-4" />
+                        <span className="sr-only">Clear shipping setup</span>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">Delete / Clear</TooltipContent>
+                  </Tooltip>
+                </div>
+              </TooltipProvider>
+            </div>
             <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
               <p>Provider: {provider === "easypost" ? "EasyPost" : "None"}</p>
               <p>Source: {source ?? "unknown"}</p>
@@ -233,6 +318,7 @@ export function StoreShippingSettings() {
             </FormField>
           </div>
         </Flyout>
+        {confirmDialog}
       </div>
     </SectionCard>
   );

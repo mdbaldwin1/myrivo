@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { buttonVariants } from "@/components/ui/button";
+import { isStoreWorkspacePath, resolveCurrentStoreWorkspaceSlug } from "@/lib/routes/store-workspace";
 
 type DashboardHeaderStorefrontLinkProps = {
   storeSlug: string | null;
@@ -10,18 +11,15 @@ type DashboardHeaderStorefrontLinkProps = {
 
 export function DashboardHeaderStorefrontLink({ storeSlug }: DashboardHeaderStorefrontLinkProps) {
   const pathname = usePathname();
-  const isStoreWorkspaceRoute = Boolean(
-    storeSlug &&
-      pathname &&
-      (pathname === `/dashboard/stores/${storeSlug}` || pathname.startsWith(`/dashboard/stores/${storeSlug}/`))
-  );
+  const effectiveStoreSlug = resolveCurrentStoreWorkspaceSlug(pathname, storeSlug);
+  const isStoreWorkspaceRoute = isStoreWorkspacePath(pathname, effectiveStoreSlug);
 
-  if (!storeSlug || !isStoreWorkspaceRoute) {
+  if (!effectiveStoreSlug || !isStoreWorkspaceRoute) {
     return null;
   }
 
   return (
-    <Link href={`/s/${storeSlug}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "default", size: "sm" })}>
+    <Link href={`/s/${effectiveStoreSlug}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "default", size: "sm" })}>
       View storefront
     </Link>
   );

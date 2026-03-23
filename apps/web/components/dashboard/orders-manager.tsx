@@ -1,17 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
+import { ContextHelpLink } from "@/components/dashboard/context-help-link";
 import { Flyout } from "@/components/ui/flyout";
 import { OrderDetailPanel } from "@/components/dashboard/order-detail-panel";
+import { OrderPickupOverridePanel } from "@/components/dashboard/order-pickup-override-panel";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
-import { RowActionButton, RowActions } from "@/components/ui/row-actions";
+import { MoreHorizontal } from "lucide-react";
+import { RowActions } from "@/components/ui/row-actions";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { notify } from "@/lib/feedback/toast";
@@ -38,7 +42,13 @@ type OrderRow = Pick<
   | "subtotal_cents"
   | "total_cents"
   | "status"
+  | "fulfillment_method"
+  | "fulfillment_label"
   | "fulfillment_status"
+  | "pickup_location_id"
+  | "pickup_window_start_at"
+  | "pickup_window_end_at"
+  | "pickup_timezone"
   | "discount_cents"
   | "promo_code"
   | "carrier"
@@ -59,6 +69,12 @@ type OrdersResponse = {
 };
 
 const statusOptions: OrderStatus[] = ["pending", "paid", "failed", "cancelled"];
+const fulfillmentStatusOptions: Array<OrderRecord["fulfillment_status"]> = [
+  "pending_fulfillment",
+  "packing",
+  "shipped",
+  "delivered"
+];
 
 function formatFulfillmentStatus(status: OrderRecord["fulfillment_status"]) {
   if (status === "pending_fulfillment") return "Pending fulfillment";
@@ -88,36 +104,77 @@ function getFeeBreakdown(order: OrderRow): OrderFeeBreakdown | null {
 }
 
 export function OrdersManager({ initialOrders }: OrdersManagerProps) {
+  const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const activeStoreSlug = getStoreSlugFromDashboardPathname(pathname);
   const pickListHref = buildStoreWorkspacePath(activeStoreSlug, "/orders/pick-list", "/dashboard/stores");
   const [orders, setOrders] = useState(initialOrders);
-  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [shippingOrderId, setShippingOrderId] = useState<string | null>(null);
   const [shippingCarrier, setShippingCarrier] = useState("usps");
   const [trackingNumber, setTrackingNumber] = useState("");
   const [shippingInitialCarrier, setShippingInitialCarrier] = useState("usps");
   const [shippingInitialTrackingNumber, setShippingInitialTrackingNumber] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | OrderStatus>("all");
+  const [fulfillmentFilter, setFulfillmentFilter] = useState<"all" | OrderRecord["fulfillment_status"]>("all");
+  const [pickupOverrideOrderId, setPickupOverrideOrderId] = useState<string | null>(null);
+  const [pickupOverrideDirty, setPickupOverrideDirty] = useState(false);
+  const [pickupOverrideSaving, setPickupOverrideSaving] = useState(false);
+  const [pickupOverrideError, setPickupOverrideError] = useState<string | null>(null);
+  const [orderDetailRefreshToken, setOrderDetailRefreshToken] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [savingShipment, setSavingShipment] = useState(false);
   const [syncingOrderId, setSyncingOrderId] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [shippingError, setShippingError] = useState<string | null>(null);
+  const selectedOrderId = searchParams.get("orderId");
 
-  const visibleOrders = useMemo(
-    () => (statusFilter === "all" ? orders : orders.filter((order) => order.status === statusFilter)),
-    [orders, statusFilter]
-  );
+  const visibleOrders = useMemo(() => {
+    return orders.filter((order) => {
+      const matchesStatus = statusFilter === "all" || order.status === statusFilter;
+      const matchesFulfillment = fulfillmentFilter === "all" || order.fulfillment_status === fulfillmentFilter;
+      return matchesStatus && matchesFulfillment;
+    });
+  }, [fulfillmentFilter, orders, statusFilter]);
   const isShippingFlyoutDirty =
     Boolean(shippingOrderId) &&
     (shippingCarrier !== shippingInitialCarrier || trackingNumber.trim() !== shippingInitialTrackingNumber.trim());
+
+  function updateOrderDetailUrl(orderId: string | null) {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    if (orderId) {
+      nextParams.set("orderId", orderId);
+    } else {
+      nextParams.delete("orderId");
+    }
+    const nextQuery = nextParams.toString();
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+  }
+
+  function openOrderDetail(orderId: string) {
+    updateOrderDetailUrl(orderId);
+  }
+
+  function stopRowClick(event: { stopPropagation: () => void }) {
+    event.stopPropagation();
+  }
+
+  function closeOrderDetail() {
+    updateOrderDetailUrl(null);
+  }
 
   function closeShippingFlyout() {
     setShippingOrderId(null);
     setTrackingNumber("");
     setShippingCarrier("usps");
     setShippingError(null);
+  }
+
+  function closePickupOverrideFlyout() {
+    setPickupOverrideOrderId(null);
+    setPickupOverrideDirty(false);
+    setPickupOverrideSaving(false);
+    setPickupOverrideError(null);
   }
 
   async function updateStatus(orderId: string, status: OrderStatus) {
@@ -251,7 +308,7 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
     <DashboardPageScaffold
       title="Orders"
       description="Track order status, ship orders, and keep delivery status synced."
-      className="p-4 lg:p-4"
+      className="p-3"
       action={
         <RowActions align="start">
           <Button type="button" variant="outline" size="sm" asChild>
@@ -262,25 +319,50 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
           <Button type="button" variant="outline" size="sm" onClick={() => void exportOrdersCsv()} disabled={exporting}>
             {exporting ? "Exporting..." : "Export CSV"}
           </Button>
+          <ContextHelpLink
+            href="/docs/catalog-and-orders#order-fulfillment"
+            context="orders_manager"
+            storeSlug={activeStoreSlug ?? undefined}
+            label="Order Help"
+          />
         </RowActions>
       }
     >
       <Card>
         <CardHeader>
-          <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <CardTitle className="text-lg">Order List</CardTitle>
               <CardDescription>Update payment and fulfillment status, then manage shipping details per order.</CardDescription>
             </div>
-            <div className="w-full max-w-52">
-              <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}>
-                <option value="all">All statuses</option>
-                {statusOptions.map((status) => (
-                  <option key={status} value={status}>
-                    {status}
-                  </option>
-                ))}
-              </Select>
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+              <div className="w-full sm:w-44">
+                <FormField label="Order status">
+                  <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}>
+                    <option value="all">All statuses</option>
+                    {statusOptions.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </Select>
+                </FormField>
+              </div>
+              <div className="w-full sm:w-52">
+                <FormField label="Fulfillment status">
+                  <Select
+                    value={fulfillmentFilter}
+                    onChange={(event) => setFulfillmentFilter(event.target.value as "all" | OrderRecord["fulfillment_status"])}
+                  >
+                    <option value="all">All fulfillment</option>
+                    {fulfillmentStatusOptions.map((status) => (
+                      <option key={status} value={status}>
+                        {formatFulfillmentStatus(status)}
+                      </option>
+                    ))}
+                  </Select>
+                </FormField>
+              </div>
             </div>
           </div>
         </CardHeader>
@@ -300,7 +382,7 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
                   <TableHead>Status</TableHead>
                   <TableHead>Fulfillment</TableHead>
                   <TableHead>Tracking</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -314,90 +396,113 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
                   visibleOrders.map((order) => {
                     const feeBreakdown = getFeeBreakdown(order);
                     return (
-                      <TableRow key={order.id}>
-                      <TableCell>{new Date(order.created_at).toLocaleString()}</TableCell>
-                      <TableCell>{order.customer_email}</TableCell>
-                      <TableCell>${(order.total_cents / 100).toFixed(2)}</TableCell>
-                      <TableCell>
-                        {order.discount_cents > 0 ? `-$${(order.discount_cents / 100).toFixed(2)}` : "$0.00"}
-                        {order.promo_code ? <p className="text-xs text-muted-foreground">{order.promo_code}</p> : null}
-                      </TableCell>
-                      <TableCell>${((feeBreakdown?.platform_fee_cents ?? 0) / 100).toFixed(2)}</TableCell>
-                      <TableCell>${((feeBreakdown?.net_payout_cents ?? 0) / 100).toFixed(2)}</TableCell>
-                      <TableCell>
-                        <Select value={order.status} onChange={(event) => void updateStatus(order.id, event.target.value as OrderStatus)}>
-                          {statusOptions.map((status) => (
-                            <option key={status} value={status}>
-                              {status}
-                            </option>
-                          ))}
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        <Select
-                          value={order.fulfillment_status}
-                          onChange={(event) => void updateFulfillment(order.id, event.target.value as OrderRecord["fulfillment_status"])}
-                        >
-                          {getFulfillmentOptionsForCurrent(order.fulfillment_status).map((status) => (
-                            <option key={status} value={status}>
-                              {formatFulfillmentStatus(status)}
-                            </option>
-                          ))}
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        {order.tracking_number ? (
-                          <div className="space-y-1">
-                            <p className="text-xs font-medium">{order.tracking_number}</p>
-                            <p className="text-xs text-muted-foreground">{order.shipment_status ?? "unknown"}</p>
-                            {order.tracking_url ? (
-                              <a href={order.tracking_url} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline">
-                                Open tracking
-                              </a>
-                            ) : null}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">Not shipped</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <RowActions align="start">
-                          <RowActionButton type="button" onClick={() => setSelectedOrderId(order.id)}>
-                            View
-                          </RowActionButton>
-                          <RowActionButton
-                            type="button"
-                            onClick={() => {
-                              setShippingOrderId(order.id);
-                              setShippingError(null);
-                              const initialCarrier = order.carrier ?? "usps";
-                              const initialTracking = order.tracking_number ?? "";
-                              setShippingCarrier(initialCarrier);
-                              setTrackingNumber(initialTracking);
-                              setShippingInitialCarrier(initialCarrier);
-                              setShippingInitialTrackingNumber(initialTracking);
-                            }}
+                      <TableRow
+                        key={order.id}
+                        tabIndex={0}
+                        className="cursor-pointer transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+                        onClick={() => openOrderDetail(order.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            openOrderDetail(order.id);
+                          }
+                        }}
+                      >
+                        <TableCell>{new Date(order.created_at).toLocaleString()}</TableCell>
+                        <TableCell>{order.customer_email}</TableCell>
+                        <TableCell>${(order.total_cents / 100).toFixed(2)}</TableCell>
+                        <TableCell>
+                          {order.discount_cents > 0 ? `-$${(order.discount_cents / 100).toFixed(2)}` : "$0.00"}
+                          {order.promo_code ? <p className="text-xs text-muted-foreground">{order.promo_code}</p> : null}
+                        </TableCell>
+                        <TableCell>${((feeBreakdown?.platform_fee_cents ?? 0) / 100).toFixed(2)}</TableCell>
+                        <TableCell>${((feeBreakdown?.net_payout_cents ?? 0) / 100).toFixed(2)}</TableCell>
+                        <TableCell onClick={stopRowClick}>
+                          <Select value={order.status} onChange={(event) => void updateStatus(order.id, event.target.value as OrderStatus)}>
+                            {statusOptions.map((status) => (
+                              <option key={status} value={status}>
+                                {status}
+                              </option>
+                            ))}
+                          </Select>
+                        </TableCell>
+                        <TableCell onClick={stopRowClick}>
+                          <Select
+                            value={order.fulfillment_status}
+                            onChange={(event) => void updateFulfillment(order.id, event.target.value as OrderRecord["fulfillment_status"])}
                           >
-                            {order.tracking_number ? "Edit Ship" : "Ship"}
-                          </RowActionButton>
-                          <RowActionButton
-                            type="button"
-                            onClick={() => void refreshTracking(order.id)}
-                            disabled={!order.tracking_number || syncingOrderId === order.id}
-                          >
-                            {syncingOrderId === order.id ? "Syncing..." : "Sync"}
-                          </RowActionButton>
-                          <RowActionButton type="button" asChild>
-                            <Link
-                              href={buildStoreWorkspacePath(activeStoreSlug, `/orders/${order.id}/packing-slip`, "/dashboard/stores")}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              Slip
-                            </Link>
-                          </RowActionButton>
-                        </RowActions>
-                      </TableCell>
+                            {getFulfillmentOptionsForCurrent(order.fulfillment_status).map((status) => (
+                              <option key={status} value={status}>
+                                {formatFulfillmentStatus(status)}
+                              </option>
+                            ))}
+                          </Select>
+                        </TableCell>
+                        <TableCell onClick={stopRowClick}>
+                          {order.tracking_number ? (
+                            <div className="space-y-1">
+                              <p className="text-xs font-medium">{order.tracking_number}</p>
+                              <p className="text-xs text-muted-foreground">{order.shipment_status ?? "unknown"}</p>
+                              {order.tracking_url ? (
+                                <a href={order.tracking_url} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline">
+                                  Open tracking
+                                </a>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Not shipped</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right" onClick={stopRowClick}>
+                          <RowActions>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 p-0" aria-label="More order actions">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => openOrderDetail(order.id)}>View</DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                {order.fulfillment_method === "pickup" && order.fulfillment_status !== "delivered" ? (
+                                  <>
+                                    <DropdownMenuItem onClick={() => setPickupOverrideOrderId(order.id)}>Reschedule pickup</DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                  </>
+                                ) : null}
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setShippingOrderId(order.id);
+                                    setShippingError(null);
+                                    const initialCarrier = order.carrier ?? "usps";
+                                    const initialTracking = order.tracking_number ?? "";
+                                    setShippingCarrier(initialCarrier);
+                                    setTrackingNumber(initialTracking);
+                                    setShippingInitialCarrier(initialCarrier);
+                                    setShippingInitialTrackingNumber(initialTracking);
+                                  }}
+                                >
+                                  {order.tracking_number ? "Edit shipment" : "Mark shipped"}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => void refreshTracking(order.id)}
+                                  disabled={!order.tracking_number || syncingOrderId === order.id}
+                                >
+                                  {syncingOrderId === order.id ? "Syncing tracking..." : "Sync tracking"}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem asChild>
+                                  <Link
+                                    href={buildStoreWorkspacePath(activeStoreSlug, `/orders/${order.id}/packing-slip`, "/dashboard/stores")}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    Open packing slip
+                                  </Link>
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </RowActions>
+                        </TableCell>
                       </TableRow>
                     );
                   })
@@ -405,9 +510,65 @@ export function OrdersManager({ initialOrders }: OrdersManagerProps) {
               </TableBody>
             </Table>
           </div>
-          <OrderDetailPanel orderId={selectedOrderId} onClose={() => setSelectedOrderId(null)} />
         </CardContent>
       </Card>
+
+      <Flyout
+        open={Boolean(selectedOrderId)}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeOrderDetail();
+          }
+        }}
+        title="Order Detail"
+        description="Customer, payment, fulfillment, and line-item detail for this order."
+      >
+        <OrderDetailPanel
+          orderId={selectedOrderId}
+          onReschedulePickup={(orderId) => setPickupOverrideOrderId(orderId)}
+          refreshToken={orderDetailRefreshToken}
+        />
+      </Flyout>
+
+      <Flyout
+        open={Boolean(pickupOverrideOrderId)}
+        onOpenChange={(open) => {
+          if (!open) {
+            closePickupOverrideFlyout();
+          }
+        }}
+        confirmDiscardOnClose
+        isDirty={pickupOverrideDirty}
+        onDiscardConfirm={closePickupOverrideFlyout}
+        title="Reschedule pickup"
+        description="Override a customer-selected pickup slot only when necessary. Saving sends the customer an immediate update."
+        footer={({ requestClose }) => (
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={requestClose}>
+              Close
+            </Button>
+            <Button type="submit" form="pickup-override-form" disabled={pickupOverrideSaving}>
+              {pickupOverrideSaving ? "Saving..." : "Save pickup override"}
+            </Button>
+          </div>
+        )}
+      >
+        <AppAlert variant="error" message={pickupOverrideError} />
+        {pickupOverrideOrderId ? (
+          <OrderPickupOverridePanel
+            orderId={pickupOverrideOrderId}
+            onDirtyChange={setPickupOverrideDirty}
+            onSavingChange={setPickupOverrideSaving}
+            onError={setPickupOverrideError}
+            onSaved={(order) => {
+              setOrders((current) => current.map((entry) => (entry.id === order.id ? order : entry)));
+              setOrderDetailRefreshToken((current) => current + 1);
+              notify.success("Pickup details updated. Customer notification sent.");
+              closePickupOverrideFlyout();
+            }}
+          />
+        ) : null}
+      </Flyout>
 
       <Flyout
         open={Boolean(shippingOrderId)}

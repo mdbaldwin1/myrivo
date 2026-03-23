@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
+import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 
 type SitemapUrlEntry = {
   loc: string;
@@ -49,9 +50,9 @@ export async function GET(request: NextRequest) {
       .from("stores")
       .select("id,status,white_label_enabled,updated_at")
       .eq("slug", customDomainStoreSlug)
-      .maybeSingle<{ id: string; status: "draft" | "pending_review" | "active" | "suspended"; white_label_enabled: boolean; updated_at: string }>();
+      .maybeSingle<{ id: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed"; white_label_enabled: boolean; updated_at: string }>();
 
-    if (!store || store.status !== "active" || !store.white_label_enabled) {
+    if (!store || !isStorePubliclyAccessibleStatus(store.status) || !store.white_label_enabled) {
       return new NextResponse(buildSitemapXml([]), {
         headers: { "Content-Type": "application/xml; charset=utf-8" }
       });
@@ -101,7 +102,15 @@ export async function GET(request: NextRequest) {
 
   const platformEntries: SitemapUrlEntry[] = [
     { loc: `${origin}/`, changefreq: "weekly", priority: 1.0 },
+    { loc: `${origin}/features`, changefreq: "weekly", priority: 0.8 },
+    { loc: `${origin}/compare`, changefreq: "weekly", priority: 0.7 },
+    { loc: `${origin}/for`, changefreq: "weekly", priority: 0.7 },
+    { loc: `${origin}/for/handmade-products`, changefreq: "weekly", priority: 0.7 },
+    { loc: `${origin}/for/local-pickup-orders`, changefreq: "weekly", priority: 0.7 },
+    { loc: `${origin}/for/multi-store-commerce`, changefreq: "weekly", priority: 0.7 },
     { loc: `${origin}/pricing`, changefreq: "weekly", priority: 0.8 },
+    { loc: `${origin}/terms`, changefreq: "monthly", priority: 0.4 },
+    { loc: `${origin}/privacy`, changefreq: "monthly", priority: 0.4 },
     { loc: `${origin}/docs`, changefreq: "weekly", priority: 0.7 }
   ];
 

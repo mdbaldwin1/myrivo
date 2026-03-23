@@ -1,20 +1,29 @@
 import { DashboardHomeShell } from "@/components/dashboard/dashboard-home-shell";
 import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
+import { resolveAuthenticatedWorkspacePath } from "@/lib/auth/authenticated-workspace";
 import { getDashboardHomeData } from "@/lib/dashboard/home/get-dashboard-home-data";
 import { resolveCustomerStorefrontLinksBySlug } from "@/lib/customer/storefront-links";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { GlobalUserRole } from "@/types/database";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const supabase = await createSupabaseServerClient();
+  const adminSupabase = createSupabaseAdminClient();
   const {
     data: { user }
   } = await supabase.auth.getUser();
 
   if (!user) {
     return null;
+  }
+
+  const landingPath = await resolveAuthenticatedWorkspacePath(user.id);
+  if (landingPath !== "/dashboard") {
+    redirect(landingPath);
   }
 
   const [{ data: profile }, { data: savedStores }, { data: savedItems }, { data: carts }, { data: orders }] = await Promise.all([
@@ -33,6 +42,7 @@ export default async function DashboardPage() {
   const role = profile?.global_role ?? "user";
   const dashboardHomeData = await getDashboardHomeData({
     supabase,
+    adminSupabase,
     userId: user.id,
     userEmail: user.email ?? null,
     role
@@ -60,8 +70,8 @@ export default async function DashboardPage() {
   return (
     <DashboardPageScaffold
       title="Dashboard"
-      description="Your personal home for customer activity, workspace signals, and immediate next actions."
-      className="p-4 lg:p-4"
+      description="Your saved storefront activity, carts, and orders."
+      className="p-3"
     >
       <DashboardHomeShell
         data={dashboardHomeData}

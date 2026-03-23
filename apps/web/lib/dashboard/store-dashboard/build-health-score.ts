@@ -43,7 +43,7 @@ export function buildHealthScore(input: BuildHealthScoreInput): BuildHealthScore
       id: "checkout",
       label: "Checkout method configured",
       status: input.hasCheckoutConfigured ? "ready" : "action_needed",
-      href: `/dashboard/stores/${input.storeSlug}/store-settings/checkout-experience`,
+      href: `/dashboard/stores/${input.storeSlug}/storefront-studio?surface=cart`,
       weight: 15
     },
     {

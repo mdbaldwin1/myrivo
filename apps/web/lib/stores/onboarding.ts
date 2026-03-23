@@ -1,16 +1,26 @@
 import { hasStoreRole } from "@/lib/auth/roles";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getStoreStripePaymentsReadiness } from "@/lib/stripe/store-payments-readiness";
+import { hasStoreLaunchedOnce, isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
+import { isStorePaymentsReadyForLaunch, type StoreTaxCollectionMode } from "@/lib/stores/tax-compliance";
+import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export type OnboardingStoreRole = "owner" | "admin" | "staff" | "customer";
+export type OnboardingPaymentsStatus = "not_connected" | "tax_decision_required" | "setup_required" | "ready";
 
 export type StoreOnboardingProgress = {
   id: string;
   name: string;
   slug: string;
-  status: "draft" | "pending_review" | "active" | "suspended";
+  status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
+  hasLaunchedOnce: boolean;
+  statusReasonCode?: string | null;
+  statusReasonDetail?: string | null;
   role: OnboardingStoreRole;
   canManageWorkspace: boolean;
   canLaunch: boolean;
+  paymentStatus: OnboardingPaymentsStatus;
+  taxCollectionMode: StoreTaxCollectionMode;
   steps: {
     profile: boolean;
     branding: boolean;
@@ -29,8 +39,26 @@ type MembershipStoreRow = {
     id: string;
     name: string;
     slug: string;
-    status: "draft" | "pending_review" | "active" | "suspended";
+    status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
+    has_launched_once: boolean;
+    status_reason_code: string | null;
+    status_reason_detail: string | null;
     stripe_account_id: string | null;
+    tax_collection_mode: StoreTaxCollectionMode;
+  } | null;
+};
+
+type LegacyMembershipStoreRow = {
+  role: OnboardingStoreRole;
+  store: {
+    id: string;
+    name: string;
+    slug: string;
+    status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
+    status_reason_code: string | null;
+    status_reason_detail: string | null;
+    stripe_account_id: string | null;
+    tax_collection_mode?: StoreTaxCollectionMode;
   } | null;
 };
 
@@ -50,10 +78,63 @@ type ProgressSourceStore = {
   id: string;
   name: string;
   slug: string;
-  status: "draft" | "pending_review" | "active" | "suspended";
+  status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
+  has_launched_once: boolean;
+  status_reason_code: string | null;
+  status_reason_detail: string | null;
   stripe_account_id: string | null;
+  tax_collection_mode: StoreTaxCollectionMode;
   role: OnboardingStoreRole;
 };
+
+function withLaunchHistory<T extends { status: ProgressSourceStore["status"] }>(
+  store: T & { has_launched_once?: boolean | null }
+): T & { has_launched_once: boolean } {
+  return {
+    ...store,
+    has_launched_once: hasStoreLaunchedOnce(store.status, store.has_launched_once ?? null)
+  };
+}
+
+async function resolveOwnedProgressStores(
+  userId: string
+): Promise<ProgressSourceStore[]> {
+  const admin = createSupabaseAdminClient();
+  const initialResult = await admin
+    .from("stores")
+    .select("id,name,slug,status,has_launched_once,status_reason_code,status_reason_detail,stripe_account_id,tax_collection_mode")
+    .eq("owner_user_id", userId)
+    .order("name", { ascending: true });
+
+  let stores = initialResult.data ?? [];
+
+  if (
+    initialResult.error &&
+    (isMissingColumnInSchemaCache(initialResult.error, "has_launched_once") ||
+      isMissingColumnInSchemaCache(initialResult.error, "tax_collection_mode"))
+  ) {
+    const legacyResult = await admin
+      .from("stores")
+      .select("id,name,slug,status,status_reason_code,status_reason_detail,stripe_account_id")
+      .eq("owner_user_id", userId)
+      .order("name", { ascending: true });
+
+    if (legacyResult.error) {
+      throw new Error(legacyResult.error.message);
+    }
+
+    stores = (legacyResult.data ?? []).map((store) =>
+      withLaunchHistory({
+        ...store,
+        tax_collection_mode: "unconfigured" as const
+      })
+    );
+  } else if (initialResult.error) {
+    throw new Error(initialResult.error.message);
+  }
+
+  return stores.map((store) => ({ ...store, role: "owner" as const }));
+}
 
 function hasProfileBasics(storeName: string, supportEmail: string | null | undefined): boolean {
   return storeName.trim().length >= 2 && Boolean(supportEmail?.includes("@"));
@@ -66,17 +147,31 @@ function hasBrandBasics(branding: BrandingRow | undefined): boolean {
   return Boolean(branding.primary_color || branding.accent_color);
 }
 
+async function resolvePaymentsStatusForStore(store: ProgressSourceStore): Promise<OnboardingPaymentsStatus> {
+  if (!store.stripe_account_id) {
+    return "not_connected";
+  }
+
+  const readiness = await getStoreStripePaymentsReadiness(store.stripe_account_id);
+  if (store.tax_collection_mode === "unconfigured") {
+    return "tax_decision_required";
+  }
+
+  return isStorePaymentsReadyForLaunch(store.tax_collection_mode, readiness) ? "ready" : "setup_required";
+}
+
 function buildProgress(
   store: ProgressSourceStore,
   settings: SettingsRow | undefined,
   branding: BrandingRow | undefined,
-  hasProduct: boolean
+  hasProduct: boolean,
+  paymentStatus: OnboardingPaymentsStatus
 ): StoreOnboardingProgress {
   const profile = hasProfileBasics(store.name, settings?.support_email);
   const brand = hasBrandBasics(branding);
   const firstProduct = hasProduct;
-  const payments = Boolean(store.stripe_account_id);
-  const launch = store.status === "active";
+  const payments = paymentStatus === "ready";
+  const launch = isStorePubliclyAccessibleStatus(store.status);
   const launchReady = profile && brand && firstProduct && payments;
   const completedStepCount = [profile, brand, firstProduct, payments, launch].filter(Boolean).length;
 
@@ -85,9 +180,14 @@ function buildProgress(
     name: store.name,
     slug: store.slug,
     status: store.status,
+    hasLaunchedOnce: store.has_launched_once,
+    statusReasonCode: store.status_reason_code,
+    statusReasonDetail: store.status_reason_detail,
     role: store.role,
     canManageWorkspace: hasStoreRole(store.role, "staff"),
     canLaunch: hasStoreRole(store.role, "admin"),
+    paymentStatus,
+    taxCollectionMode: store.tax_collection_mode,
     steps: {
       profile,
       branding: brand,
@@ -102,21 +202,62 @@ function buildProgress(
 }
 
 export async function getStoreOnboardingProgressForUser(userId: string): Promise<StoreOnboardingProgress[]> {
-  const supabase = await createSupabaseServerClient();
-  const { data: memberships } = await supabase
+  const admin = createSupabaseAdminClient();
+  const initialResult = await admin
     .from("store_memberships")
-    .select("role,store:stores!inner(id,name,slug,status,stripe_account_id)")
+    .select("role,store:stores!inner(id,name,slug,status,has_launched_once,status_reason_code,status_reason_detail,stripe_account_id,tax_collection_mode)")
     .eq("user_id", userId)
     .eq("status", "active")
     .returns<MembershipStoreRow[]>();
 
-  const stores = (memberships ?? [])
+  let memberships = initialResult.data ?? [];
+
+  if (
+    initialResult.error &&
+    (isMissingColumnInSchemaCache(initialResult.error, "has_launched_once") ||
+      isMissingColumnInSchemaCache(initialResult.error, "tax_collection_mode"))
+  ) {
+    const legacyResult = await admin
+      .from("store_memberships")
+      .select("role,store:stores!inner(id,name,slug,status,status_reason_code,status_reason_detail,stripe_account_id)")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .returns<LegacyMembershipStoreRow[]>();
+
+    if (legacyResult.error) {
+      throw new Error(legacyResult.error.message);
+    }
+
+    memberships = (legacyResult.data ?? []).map((membership) => ({
+      ...membership,
+      store: membership.store
+        ? withLaunchHistory({
+            ...membership.store,
+            tax_collection_mode: "unconfigured" as const
+          })
+        : null
+    }));
+  } else if (initialResult.error) {
+    throw new Error(initialResult.error.message);
+  }
+
+  const membershipStores = (memberships ?? [])
     .filter((membership) => membership.store)
     .map((membership) => ({
       ...membership.store!,
+      tax_collection_mode: membership.store?.tax_collection_mode ?? "unconfigured",
       role: membership.role
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    }));
+
+  const storesById = new Map<string, ProgressSourceStore>();
+  for (const store of membershipStores) {
+    storesById.set(store.id, store);
+  }
+  for (const store of await resolveOwnedProgressStores(userId)) {
+    storesById.set(store.id, store);
+  }
+
+  const stores = Array.from(storesById.values()).sort((a, b) => a.name.localeCompare(b.name));
 
   if (stores.length === 0) {
     return [];
@@ -125,23 +266,32 @@ export async function getStoreOnboardingProgressForUser(userId: string): Promise
   const storeIds = stores.map((store) => store.id);
 
   const [{ data: settingsRows }, { data: brandingRows }] = await Promise.all([
-    supabase.from("store_settings").select("store_id,support_email").in("store_id", storeIds).returns<SettingsRow[]>(),
-    supabase.from("store_branding").select("store_id,logo_path,primary_color,accent_color").in("store_id", storeIds).returns<BrandingRow[]>()
+    admin.from("store_settings").select("store_id,support_email").in("store_id", storeIds).returns<SettingsRow[]>(),
+    admin.from("store_branding").select("store_id,logo_path,primary_color,accent_color").in("store_id", storeIds).returns<BrandingRow[]>()
   ]);
 
   const hasProductByStoreId = new Map<string, boolean>();
   await Promise.all(
     storeIds.map(async (storeId) => {
-      const { data } = await supabase.from("products").select("id").eq("store_id", storeId).limit(1);
+      const { data } = await admin.from("products").select("id").eq("store_id", storeId).limit(1);
       hasProductByStoreId.set(storeId, Boolean((data ?? []).length));
     })
   );
 
   const settingsByStoreId = new Map((settingsRows ?? []).map((row) => [row.store_id, row]));
   const brandingByStoreId = new Map((brandingRows ?? []).map((row) => [row.store_id, row]));
+  const paymentsByStoreId = new Map(
+    await Promise.all(stores.map(async (store) => [store.id, await resolvePaymentsStatusForStore(store)] as const))
+  );
 
   return stores.map((store) =>
-    buildProgress(store, settingsByStoreId.get(store.id), brandingByStoreId.get(store.id), hasProductByStoreId.get(store.id) ?? false)
+    buildProgress(
+      store,
+      settingsByStoreId.get(store.id),
+      brandingByStoreId.get(store.id),
+      hasProductByStoreId.get(store.id) ?? false,
+      paymentsByStoreId.get(store.id) ?? "not_connected"
+    )
   );
 }
 
@@ -151,28 +301,74 @@ export async function getStoreOnboardingProgressForStore(userId: string, storeSl
     return null;
   }
 
-  const supabase = await createSupabaseServerClient();
-  const { data: memberships } = await supabase
+  const admin = createSupabaseAdminClient();
+  const initialResult = await admin
     .from("store_memberships")
-    .select("role,store:stores!inner(id,name,slug,status,stripe_account_id)")
+    .select("role,store:stores!inner(id,name,slug,status,has_launched_once,status_reason_code,status_reason_detail,stripe_account_id,tax_collection_mode)")
     .eq("user_id", userId)
     .eq("status", "active")
     .returns<MembershipStoreRow[]>();
 
-  const targetStore = (memberships ?? [])
+  let memberships = initialResult.data ?? [];
+
+  if (
+    initialResult.error &&
+    (isMissingColumnInSchemaCache(initialResult.error, "has_launched_once") ||
+      isMissingColumnInSchemaCache(initialResult.error, "tax_collection_mode"))
+  ) {
+    const legacyResult = await admin
+      .from("store_memberships")
+      .select("role,store:stores!inner(id,name,slug,status,status_reason_code,status_reason_detail,stripe_account_id)")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .returns<LegacyMembershipStoreRow[]>();
+
+    if (legacyResult.error) {
+      throw new Error(legacyResult.error.message);
+    }
+
+    memberships = (legacyResult.data ?? []).map((membership) => ({
+      ...membership,
+      store: membership.store
+        ? withLaunchHistory({
+            ...membership.store,
+            tax_collection_mode: "unconfigured" as const
+          })
+        : null
+    }));
+  } else if (initialResult.error) {
+    throw new Error(initialResult.error.message);
+  }
+
+  const membershipStores = (memberships ?? [])
     .filter((membership) => membership.store)
-    .map((membership) => ({ ...membership.store!, role: membership.role }))
-    .find((store) => store.slug === normalizedSlug);
+    .map((membership) => ({
+      ...membership.store!,
+      tax_collection_mode: membership.store?.tax_collection_mode ?? "unconfigured",
+      role: membership.role
+    }));
+
+  const storesBySlug = new Map<string, ProgressSourceStore>();
+  for (const store of membershipStores) {
+    storesBySlug.set(store.slug, store);
+  }
+  for (const store of await resolveOwnedProgressStores(userId)) {
+    storesBySlug.set(store.slug, store);
+  }
+
+  const targetStore = storesBySlug.get(normalizedSlug) ?? null;
 
   if (!targetStore) {
     return null;
   }
 
   const [{ data: settings }, { data: branding }, { data: products }] = await Promise.all([
-    supabase.from("store_settings").select("store_id,support_email").eq("store_id", targetStore.id).maybeSingle<SettingsRow>(),
-    supabase.from("store_branding").select("store_id,logo_path,primary_color,accent_color").eq("store_id", targetStore.id).maybeSingle<BrandingRow>(),
-    supabase.from("products").select("id").eq("store_id", targetStore.id).limit(1)
+    admin.from("store_settings").select("store_id,support_email").eq("store_id", targetStore.id).maybeSingle<SettingsRow>(),
+    admin.from("store_branding").select("store_id,logo_path,primary_color,accent_color").eq("store_id", targetStore.id).maybeSingle<BrandingRow>(),
+    admin.from("products").select("id").eq("store_id", targetStore.id).limit(1)
   ]);
 
-  return buildProgress(targetStore, settings ?? undefined, branding ?? undefined, Boolean((products ?? []).length));
+  const paymentStatus = await resolvePaymentsStatusForStore(targetStore);
+
+  return buildProgress(targetStore, settings ?? undefined, branding ?? undefined, Boolean((products ?? []).length), paymentStatus);
 }

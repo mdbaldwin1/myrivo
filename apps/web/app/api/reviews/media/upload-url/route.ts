@@ -13,6 +13,8 @@ import {
   validateReviewMediaDimensions,
   REVIEW_MEDIA_BUCKET
 } from "@/lib/reviews/media";
+import { isReviewsEnabledForStoreSlug } from "@/lib/reviews/feature-gating";
+import { logReviewUploadError } from "@/lib/reviews/telemetry";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -38,6 +40,9 @@ export async function POST(request: NextRequest) {
   }
 
   const payload = parsed.data;
+  if (!isReviewsEnabledForStoreSlug(payload.storeSlug)) {
+    return fail(404, "Reviews are not enabled for this store.");
+  }
   if (!REVIEW_MEDIA_ALLOWED_MIME.has(payload.mimeType)) {
     return fail(400, "Unsupported file type. Use PNG, JPEG, or WEBP.");
   }
@@ -63,15 +68,36 @@ export async function POST(request: NextRequest) {
   try {
     await ensureReviewMediaBucket();
   } catch (error) {
+    void logReviewUploadError({
+      storeId: store.id,
+      stage: "upload_url",
+      reason: "bucket_init_failed",
+      draftId: payload.reviewDraftId,
+      details: { message: error instanceof Error ? error.message : "bucket init failed" }
+    }).catch(() => null);
     return fail(500, error instanceof Error ? error.message : "Unable to initialize review media bucket.");
   }
 
   try {
     const existingAssets = await listReviewDraftMediaAssets(store.id, payload.reviewDraftId);
     if (existingAssets.length >= limits.maxImagesPerReview) {
+      void logReviewUploadError({
+        storeId: store.id,
+        stage: "upload_url",
+        reason: "max_images_exceeded",
+        draftId: payload.reviewDraftId,
+        details: { existingCount: existingAssets.length, maxImagesPerReview: limits.maxImagesPerReview }
+      }).catch(() => null);
       return fail(400, `Maximum ${limits.maxImagesPerReview} images allowed per review.`);
     }
   } catch (error) {
+    void logReviewUploadError({
+      storeId: store.id,
+      stage: "upload_url",
+      reason: "list_draft_media_failed",
+      draftId: payload.reviewDraftId,
+      details: { message: error instanceof Error ? error.message : "draft media list failed" }
+    }).catch(() => null);
     return fail(500, error instanceof Error ? error.message : "Unable to validate draft media state.");
   }
 
@@ -86,6 +112,13 @@ export async function POST(request: NextRequest) {
   const { data, error } = await admin.storage.from(REVIEW_MEDIA_BUCKET).createSignedUploadUrl(storagePath);
 
   if (error || !data?.signedUrl) {
+    void logReviewUploadError({
+      storeId: store.id,
+      stage: "upload_url",
+      reason: "signed_url_failed",
+      draftId: payload.reviewDraftId,
+      details: { message: error?.message ?? "Unable to create signed upload URL." }
+    }).catch(() => null);
     return fail(500, error?.message ?? "Unable to create signed upload URL.");
   }
 

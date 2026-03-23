@@ -4,14 +4,14 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { ChevronDown, ChevronUp, Copy } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { BRANDED_SENDER_ENABLED } from "@/lib/notifications/branded-sender";
 import { SectionCard } from "@/components/ui/section-card";
 import { notify } from "@/lib/feedback/toast";
-import { buildStoreWorkspacePath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
+import { buildStoreScopedApiPath, buildStoreWorkspacePath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
 
 type DomainRecord = {
   id: string;
@@ -357,7 +357,7 @@ export function DomainManager() {
     }));
   }
 
-  async function refreshVerifiedDomainDnsRecords(records: DomainRecord[]) {
+  const refreshVerifiedDomainDnsRecords = useCallback(async (records: DomainRecord[]) => {
     const verifiedDomains = records.filter((record) => record.verification_status === "verified");
     if (verifiedDomains.length === 0) {
       return;
@@ -365,7 +365,7 @@ export function DomainManager() {
 
     const refreshed = await Promise.all(
       verifiedDomains.map(async (record) => {
-        const response = await fetch(`/api/stores/domains/${record.id}/verify`, { method: "POST" });
+        const response = await fetch(buildStoreScopedApiPath(`/api/stores/domains/${record.id}/verify`, activeStoreSlug), { method: "POST" });
         const payload = (await response.json().catch(() => ({}))) as { domain?: DomainRecord };
         if (!response.ok || !payload.domain) {
           return null;
@@ -381,17 +381,17 @@ export function DomainManager() {
 
     const updatesById = new Map(updates.map((record) => [record.id, record]));
     setDomains((current) => current.map((record) => updatesById.get(record.id) ?? record));
-  }
+  }, [activeStoreSlug]);
 
-  async function fetchDomains() {
+  const fetchDomains = useCallback(async () => {
     const [domainsResponse, whiteLabelResponse] = await Promise.all([
-      fetch("/api/stores/domains", { cache: "no-store" }),
-      fetch("/api/stores/white-label", { cache: "no-store" })
+      fetch(buildStoreScopedApiPath("/api/stores/domains", activeStoreSlug), { cache: "no-store" }),
+      fetch(buildStoreScopedApiPath("/api/stores/white-label", activeStoreSlug), { cache: "no-store" })
     ]);
     const domainsPayload = (await domainsResponse.json()) as { domains?: DomainRecord[]; error?: string };
     const whiteLabelPayload = (await whiteLabelResponse.json()) as { enabled?: boolean; error?: string };
     return { domainsResponse, whiteLabelResponse, domainsPayload, whiteLabelPayload };
-  }
+  }, [activeStoreSlug]);
 
   async function reloadDomains() {
     setError(null);
@@ -440,7 +440,7 @@ export function DomainManager() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [fetchDomains, refreshVerifiedDomainDnsRecords]);
 
   async function addDomain() {
     const validationError = validateDomain(newDomain);
@@ -459,7 +459,7 @@ export function DomainManager() {
     setSaving(true);
     setError(null);
 
-    const response = await fetch("/api/stores/domains", {
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/domains", activeStoreSlug), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ domain: candidate })
@@ -484,7 +484,7 @@ export function DomainManager() {
     setSaving(true);
     setError(null);
 
-    const response = await fetch(`/api/stores/domains/${id}/verify`, { method: "POST" });
+    const response = await fetch(buildStoreScopedApiPath(`/api/stores/domains/${id}/verify`, activeStoreSlug), { method: "POST" });
     const payload = (await response.json()) as { domain?: DomainRecord; error?: string };
 
     if (!response.ok || !payload.domain) {
@@ -502,7 +502,7 @@ export function DomainManager() {
     setSaving(true);
     setError(null);
 
-    const response = await fetch(`/api/stores/domains/${id}`, {
+    const response = await fetch(buildStoreScopedApiPath(`/api/stores/domains/${id}`, activeStoreSlug), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isPrimary: true })
@@ -529,7 +529,7 @@ export function DomainManager() {
     setSaving(true);
     setError(null);
 
-    const response = await fetch(`/api/stores/domains/${id}`, {
+    const response = await fetch(buildStoreScopedApiPath(`/api/stores/domains/${id}`, activeStoreSlug), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ emailSenderEnabled: enabled })
@@ -555,7 +555,7 @@ export function DomainManager() {
     setSaving(true);
     setError(null);
 
-    const response = await fetch(`/api/stores/domains/${id}`, { method: "DELETE" });
+    const response = await fetch(buildStoreScopedApiPath(`/api/stores/domains/${id}`, activeStoreSlug), { method: "DELETE" });
     const payload = (await response.json()) as { ok?: boolean; error?: string };
 
     if (!response.ok) {
@@ -848,14 +848,14 @@ export function DomainManager() {
                                       <span className="font-mono">{instruction.type}</span>
                                     </div>
                                   </td>
-                                  <td className="py-1 pr-3 align-middle">
+                                  <td className="group py-1 pr-3 align-middle">
                                     <div className="flex items-center gap-2">
                                       <span className="font-mono">{instruction.host}</span>
                                       <Button
                                         type="button"
                                         variant="ghost"
                                         size="icon"
-                                        className="h-7 w-7"
+                                        className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
                                         aria-label="Copy host"
                                         title="Copy host"
                                         onClick={() => void copyTextToClipboard(instruction.host, "Host")}
@@ -865,14 +865,14 @@ export function DomainManager() {
                                       </Button>
                                     </div>
                                   </td>
-                                  <td className="py-1 pr-3 align-middle">
+                                  <td className="group py-1 pr-3 align-middle">
                                     <div className="flex items-center gap-2">
                                       <span className="font-mono break-all">{instruction.value}</span>
                                       <Button
                                         type="button"
                                         variant="ghost"
                                         size="icon"
-                                        className="h-7 w-7"
+                                        className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
                                         aria-label="Copy value"
                                         title="Copy value"
                                         onClick={() => void copyTextToClipboard(instruction.value, "Value")}

@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { fail, ok } from "@/lib/http/api-response";
+import { isReviewsEnabledForStoreSlug } from "@/lib/reviews/feature-gating";
 import { buildReviewSummary, decodeCursor, listPublishedReviews } from "@/lib/reviews/read";
 import { resolveActiveStoreBySlug } from "@/lib/reviews/media";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -28,6 +29,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ sto
   const params = paramsSchema.safeParse(await context.params);
   if (!params.success) {
     return fail(400, "Invalid store slug.");
+  }
+  if (!isReviewsEnabledForStoreSlug(params.data.storeSlug)) {
+    return fail(404, "Reviews are not enabled for this store.");
   }
 
   const parsedQuery = querySchema.safeParse({

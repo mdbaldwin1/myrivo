@@ -1,28 +1,48 @@
 import { headers } from "next/headers";
+import { getPlatformStorefrontPrivacySettings } from "@/lib/privacy/platform-storefront-privacy";
+import { resolveStoreAnalyticsAccessByStoreId } from "@/lib/analytics/access";
+import { resolveStorePrivacyProfile } from "@/lib/privacy/store-privacy";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isMissingColumnInSchemaCache, isMissingRelationInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { mapStoreExperienceContentRow } from "@/lib/store-experience/content";
 import { isRecord, mergeStorefrontCopy } from "@/lib/store-experience/merge";
+import type { StorefrontData } from "@/lib/storefront/runtime";
+import { buildMergedStorefrontThemeJson } from "@/lib/storefront/theme-overrides";
 import { resolveStoreSlugForServerRender } from "@/lib/stores/active-store";
 import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
+import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 
-function getString(record: Record<string, unknown>, key: string, fallback: string | null = null) {
-  const value = record[key];
+function getValueAtPath(record: Record<string, unknown>, key: string): unknown {
+  return key.split(".").reduce<unknown>((current, part) => {
+    if (!current || typeof current !== "object" || Array.isArray(current)) {
+      return undefined;
+    }
+
+    return (current as Record<string, unknown>)[part];
+  }, record);
+}
+
+export function getString(record: Record<string, unknown>, key: string, fallback: string | null = null) {
+  const value = getValueAtPath(record, key);
   return typeof value === "string" ? value : fallback;
 }
 
-function getBoolean(record: Record<string, unknown>, key: string, fallback: boolean) {
-  const value = record[key];
+export function getBoolean(record: Record<string, unknown>, key: string, fallback: boolean) {
+  const value = getValueAtPath(record, key);
   return typeof value === "boolean" ? value : fallback;
 }
 
-function getNumber(record: Record<string, unknown>, key: string, fallback: number) {
-  const value = record[key];
+export function getNumber(record: Record<string, unknown>, key: string, fallback: number) {
+  const value = getValueAtPath(record, key);
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-export async function loadStorefrontData(explicitStoreSlug?: string | null) {
+export function resolveStorefrontProductStatuses(canManageStore: boolean) {
+  return canManageStore ? (["active", "draft"] as const) : (["active"] as const);
+}
+
+export async function loadStorefrontData(explicitStoreSlug?: string | null): Promise<StorefrontData | null> {
   const supabase = await createSupabaseServerClient();
   const admin = createSupabaseAdminClient();
   const requestHeaders = await headers();
@@ -70,29 +90,37 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null) {
     }
   }
 
-  if (store.status !== "active" && !isOwnerPreview) {
+  if (!isStorePubliclyAccessibleStatus(store.status) && !isOwnerPreview) {
     return null;
   }
 
+  const visibleProductStatuses = resolveStorefrontProductStatuses(canManageStore);
+
   const [
+    analytics,
     { data: branding, error: brandingError },
     { data: settings, error: settingsError },
+    { data: privacyProfile, error: privacyProfileError },
+    platformPrivacySettings,
     { data: contentBlocks, error: contentBlocksError },
     { data: experienceContent, error: experienceContentError },
     { data: products, error: productsError }
   ] = await Promise.all([
+    resolveStoreAnalyticsAccessByStoreId(admin, store.id),
     admin
       .from("store_branding")
-      .select("logo_path,primary_color,accent_color,theme_json")
+      .select("logo_path,favicon_path,apple_touch_icon_path,og_image_path,twitter_image_path,primary_color,accent_color,theme_json")
       .eq("store_id", store.id)
       .maybeSingle(),
     admin
       .from("store_settings")
       .select(
-        "support_email,fulfillment_message,shipping_policy,return_policy,announcement,seo_title,seo_description,seo_noindex,seo_location_city,seo_location_region,seo_location_state,seo_location_postal_code,seo_location_country_code,seo_location_address_line1,seo_location_address_line2,seo_location_show_full_address,footer_tagline,footer_note,instagram_url,facebook_url,tiktok_url,policy_faqs,about_article_html,about_sections,storefront_copy_json,email_capture_enabled,email_capture_heading,email_capture_description,email_capture_success_message,checkout_enable_local_pickup,checkout_local_pickup_label,checkout_local_pickup_fee_cents,checkout_enable_flat_rate_shipping,checkout_flat_rate_shipping_label,checkout_flat_rate_shipping_fee_cents,checkout_allow_order_note,checkout_order_note_prompt,updated_at"
+        "support_email,fulfillment_message,shipping_policy,return_policy,announcement,seo_title,seo_description,seo_noindex,seo_location_city,seo_location_region,seo_location_state,seo_location_postal_code,seo_location_country_code,seo_location_address_line1,seo_location_address_line2,seo_location_show_full_address,footer_tagline,footer_note,instagram_url,facebook_url,tiktok_url,policy_faqs,about_article_html,about_sections,storefront_copy_json,email_capture_enabled,email_capture_heading,email_capture_description,email_capture_success_message,welcome_popup_enabled,welcome_popup_eyebrow,welcome_popup_headline,welcome_popup_body,welcome_popup_email_placeholder,welcome_popup_cta_label,welcome_popup_decline_label,welcome_popup_image_layout,welcome_popup_delay_seconds,welcome_popup_dismiss_days,welcome_popup_image_path,welcome_popup_promotion_id,checkout_enable_local_pickup,checkout_local_pickup_label,checkout_local_pickup_fee_cents,checkout_enable_flat_rate_shipping,checkout_flat_rate_shipping_label,checkout_flat_rate_shipping_fee_cents,checkout_allow_order_note,checkout_order_note_prompt,updated_at"
       )
       .eq("store_id", store.id)
       .maybeSingle(),
+    admin.from("store_privacy_profiles").select("*").eq("store_id", store.id).maybeSingle(),
+    getPlatformStorefrontPrivacySettings(admin),
     admin
       .from("store_content_blocks")
       .select("id,sort_order,eyebrow,title,body,cta_label,cta_url,is_active")
@@ -109,7 +137,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null) {
         "id,title,description,slug,image_urls,image_alt_text,seo_title,seo_description,is_featured,created_at,price_cents,inventory_qty,product_variants(id,title,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_made_to_order,is_default,status,sort_order,created_at),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))"
       )
       .eq("store_id", store.id)
-      .eq("status", "active")
+      .in("status", [...visibleProductStatuses])
       .order("created_at", { ascending: false })
   ]);
 
@@ -133,7 +161,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null) {
         "id,title,description,image_urls,is_featured,created_at,price_cents,inventory_qty,product_variants(id,title,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_made_to_order,is_default,status,sort_order,created_at),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))"
       )
       .eq("store_id", store.id)
-      .eq("status", "active")
+      .in("status", [...visibleProductStatuses])
       .order("created_at", { ascending: false });
 
     resolvedProducts = (legacyProducts.data ?? []).map((product) => ({
@@ -155,7 +183,12 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null) {
     isMissingColumnInSchemaCache(settingsError, "seo_description") ||
     isMissingColumnInSchemaCache(settingsError, "seo_noindex") ||
     isMissingColumnInSchemaCache(settingsError, "seo_location_city") ||
-    isMissingColumnInSchemaCache(settingsError, "seo_location_show_full_address")
+    isMissingColumnInSchemaCache(settingsError, "seo_location_show_full_address") ||
+    isMissingColumnInSchemaCache(settingsError, "welcome_popup_enabled") ||
+    isMissingColumnInSchemaCache(settingsError, "welcome_popup_eyebrow") ||
+    isMissingColumnInSchemaCache(settingsError, "welcome_popup_promotion_id") ||
+    isMissingColumnInSchemaCache(settingsError, "welcome_popup_decline_label") ||
+    isMissingColumnInSchemaCache(settingsError, "welcome_popup_image_layout")
   ) {
     const legacySettings = await admin
       .from("store_settings")
@@ -177,7 +210,19 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null) {
           seo_location_country_code: null,
           seo_location_address_line1: null,
           seo_location_address_line2: null,
-          seo_location_show_full_address: false
+          seo_location_show_full_address: false,
+          welcome_popup_enabled: false,
+          welcome_popup_eyebrow: null,
+          welcome_popup_headline: null,
+          welcome_popup_body: null,
+          welcome_popup_email_placeholder: null,
+          welcome_popup_cta_label: null,
+          welcome_popup_decline_label: null,
+          welcome_popup_image_layout: "left",
+          welcome_popup_delay_seconds: 6,
+          welcome_popup_dismiss_days: 14,
+          welcome_popup_image_path: null,
+          welcome_popup_promotion_id: null
         }
       : null;
     resolvedSettingsError = legacySettings.error;
@@ -185,6 +230,10 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null) {
 
   if (resolvedSettingsError && !isMissingRelationInSchemaCache(resolvedSettingsError)) {
     throw new Error(resolvedSettingsError.message);
+  }
+
+  if (privacyProfileError && !isMissingRelationInSchemaCache(privacyProfileError)) {
+    throw new Error(privacyProfileError.message);
   }
 
   if (contentBlocksError && !isMissingRelationInSchemaCache(contentBlocksError)) {
@@ -205,136 +254,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null) {
   const emailsSection = sectionedContent.emails;
   const brandingThemeJson = isRecord(branding?.theme_json) ? branding.theme_json : {};
 
-  const homeHero = isRecord(homeSection.hero) ? homeSection.hero : {};
-  const homeVisibility = isRecord(homeSection.visibility) ? homeSection.visibility : {};
-  const productsVisibility = isRecord(productsSection.visibility) ? productsSection.visibility : {};
-  const productsLayout = isRecord(productsSection.layout) ? productsSection.layout : {};
-  const productsCards = isRecord(productsSection.productCards) ? productsSection.productCards : {};
-
-  const resolvedHomeShowContentBlocks = getBoolean(
-    homeVisibility,
-    "showContentBlocks",
-    getBoolean(brandingThemeJson, "homeShowContentBlocks", getBoolean(brandingThemeJson, "showContentBlocks", true))
-  );
-
-  const sectionedThemeOverrides: Record<string, unknown> = {
-    heroEyebrow: getString(homeHero, "eyebrow", getString(homeHero, "heroEyebrow", "")) ?? "",
-    heroHeadline: getString(homeHero, "headline", getString(homeHero, "heroHeadline", "")) ?? "",
-    heroSubcopy: getString(homeHero, "subcopy", getString(homeHero, "heroSubcopy", "")) ?? "",
-    heroBadgeOne: getString(homeHero, "badgeOne", getString(homeHero, "heroBadgeOne", "")) ?? "",
-    heroBadgeTwo: getString(homeHero, "badgeTwo", getString(homeHero, "heroBadgeTwo", "")) ?? "",
-    heroBadgeThree: getString(homeHero, "badgeThree", getString(homeHero, "heroBadgeThree", "")) ?? "",
-    heroBrandDisplay: getString(homeHero, "brandDisplay", getString(homeHero, "heroBrandDisplay", "title")) ?? "title",
-    showPolicyStrip: getBoolean(homeVisibility, "showPolicyStrip", getBoolean(brandingThemeJson, "showPolicyStrip", true)),
-    showContentBlocks: resolvedHomeShowContentBlocks,
-    homeShowHero: getBoolean(homeVisibility, "showHero", getBoolean(brandingThemeJson, "homeShowHero", true)),
-    homeShowContentBlocks: resolvedHomeShowContentBlocks,
-    homeShowFeaturedProducts: getBoolean(
-      homeVisibility,
-      "showFeaturedProducts",
-      getBoolean(brandingThemeJson, "homeShowFeaturedProducts", true)
-    ),
-    homeFeaturedProductsLimit: getNumber(
-      homeVisibility,
-      "featuredProductsLimit",
-      getNumber(brandingThemeJson, "homeFeaturedProductsLimit", 6)
-    ),
-    productsShowSearch: getBoolean(productsVisibility, "showSearch", getBoolean(brandingThemeJson, "productsShowSearch", true)),
-    productsShowSort: getBoolean(productsVisibility, "showSort", getBoolean(brandingThemeJson, "productsShowSort", true)),
-    productsShowAvailability: getBoolean(
-      productsVisibility,
-      "showAvailability",
-      getBoolean(brandingThemeJson, "productsShowAvailability", true)
-    ),
-    productsShowOptionFilters: getBoolean(
-      productsVisibility,
-      "showOptionFilters",
-      getBoolean(brandingThemeJson, "productsShowOptionFilters", true)
-    ),
-    productsFilterLayout: getString(
-      productsLayout,
-      "filterLayout",
-      getString(brandingThemeJson, "productsFilterLayout", "sidebar")
-    ) ?? "sidebar",
-    productsFiltersDefaultOpen: getBoolean(
-      productsLayout,
-      "filtersDefaultOpen",
-      getBoolean(brandingThemeJson, "productsFiltersDefaultOpen", false)
-    ),
-    productGridColumns: getNumber(productsLayout, "gridColumns", getNumber(brandingThemeJson, "productGridColumns", 3)),
-    productCardShowDescription: getBoolean(
-      productsCards,
-      "showDescription",
-      getBoolean(brandingThemeJson, "productCardShowDescription", true)
-    ),
-    productCardDescriptionLines: getNumber(
-      productsCards,
-      "descriptionLines",
-      getNumber(brandingThemeJson, "productCardDescriptionLines", 2)
-    ),
-    productCardShowFeaturedBadge: getBoolean(
-      productsCards,
-      "showFeaturedBadge",
-      getBoolean(brandingThemeJson, "productCardShowFeaturedBadge", true)
-    ),
-    productCardShowAvailability: getBoolean(
-      productsCards,
-      "showAvailability",
-      getBoolean(brandingThemeJson, "productCardShowAvailability", true)
-    ),
-    productCardShowQuickAdd: getBoolean(
-      productsCards,
-      "showQuickAdd",
-      getBoolean(brandingThemeJson, "productCardShowQuickAdd", true)
-    ),
-    productCardImageHoverZoom: getBoolean(
-      productsCards,
-      "imageHoverZoom",
-      getBoolean(brandingThemeJson, "productCardImageHoverZoom", true)
-    ),
-    productCardShowCarouselArrows: getBoolean(
-      productsCards,
-      "showCarouselArrows",
-      getBoolean(brandingThemeJson, "productCardShowCarouselArrows", true)
-    ),
-    productCardShowCarouselDots: getBoolean(
-      productsCards,
-      "showCarouselDots",
-      getBoolean(brandingThemeJson, "productCardShowCarouselDots", true)
-    ),
-    productCardImageFit: getString(productsCards, "imageFit", getString(brandingThemeJson, "productCardImageFit", "cover")) ?? "cover",
-    reviewsEnabled: getBoolean(productsSection, "reviews.enabled", getBoolean(brandingThemeJson, "reviewsEnabled", true)),
-    reviewsShowOnHome: getBoolean(productsSection, "reviews.showOnHome", getBoolean(brandingThemeJson, "reviewsShowOnHome", true)),
-    reviewsShowOnProductDetail: getBoolean(
-      productsSection,
-      "reviews.showOnProductDetail",
-      getBoolean(brandingThemeJson, "reviewsShowOnProductDetail", true)
-    ),
-    reviewsFormEnabled: getBoolean(productsSection, "reviews.formEnabled", getBoolean(brandingThemeJson, "reviewsFormEnabled", true)),
-    reviewsDefaultSort:
-      getString(productsSection, "reviews.defaultSort", getString(brandingThemeJson, "reviewsDefaultSort", "newest")) ?? "newest",
-    reviewsItemsPerPage: getNumber(
-      productsSection,
-      "reviews.itemsPerPage",
-      getNumber(brandingThemeJson, "reviewsItemsPerPage", 10)
-    ),
-    reviewsShowVerifiedBadge: getBoolean(
-      productsSection,
-      "reviews.showVerifiedBadge",
-      getBoolean(brandingThemeJson, "reviewsShowVerifiedBadge", true)
-    ),
-    reviewsShowMediaGallery: getBoolean(
-      productsSection,
-      "reviews.showMediaGallery",
-      getBoolean(brandingThemeJson, "reviewsShowMediaGallery", true)
-    ),
-    reviewsShowSummary: getBoolean(productsSection, "reviews.showSummary", getBoolean(brandingThemeJson, "reviewsShowSummary", true))
-  };
-
-  const mergedTheme = {
-    ...((branding?.theme_json ?? {}) as Record<string, unknown>),
-    ...sectionedThemeOverrides
-  };
+  const mergedTheme = buildMergedStorefrontThemeJson(brandingThemeJson, sectionedContent);
 
   const mergedCopy = mergeStorefrontCopy((resolvedSettings?.storefront_copy_json ?? {}) as Record<string, unknown>, [
     isRecord(homeSection.copy) ? homeSection.copy : {},
@@ -415,6 +335,18 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null) {
           "successMessage",
           resolvedSettings?.email_capture_success_message ?? null
         ),
+        welcome_popup_enabled: resolvedSettings?.welcome_popup_enabled ?? false,
+        welcome_popup_eyebrow: resolvedSettings?.welcome_popup_eyebrow ?? null,
+        welcome_popup_headline: resolvedSettings?.welcome_popup_headline ?? null,
+        welcome_popup_body: resolvedSettings?.welcome_popup_body ?? null,
+        welcome_popup_email_placeholder: resolvedSettings?.welcome_popup_email_placeholder ?? null,
+        welcome_popup_cta_label: resolvedSettings?.welcome_popup_cta_label ?? null,
+        welcome_popup_decline_label: resolvedSettings?.welcome_popup_decline_label ?? null,
+        welcome_popup_image_layout: resolvedSettings?.welcome_popup_image_layout ?? "left",
+        welcome_popup_delay_seconds: resolvedSettings?.welcome_popup_delay_seconds ?? 6,
+        welcome_popup_dismiss_days: resolvedSettings?.welcome_popup_dismiss_days ?? 14,
+        welcome_popup_image_path: resolvedSettings?.welcome_popup_image_path ?? null,
+        welcome_popup_promotion_id: resolvedSettings?.welcome_popup_promotion_id ?? null,
         checkout_enable_local_pickup: resolvedSettings?.checkout_enable_local_pickup ?? false,
         checkout_local_pickup_label: resolvedSettings?.checkout_local_pickup_label ?? null,
         checkout_local_pickup_fee_cents: resolvedSettings?.checkout_local_pickup_fee_cents ?? 0,
@@ -432,6 +364,9 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null) {
       isAuthenticated,
       canManageStore
     },
+    analytics,
+    privacyProfile: resolveStorePrivacyProfile(privacyProfileError ? null : privacyProfile, platformPrivacySettings, finalSettings),
+    experienceContent: sectionedContent,
     branding: branding
       ? {
           ...branding,

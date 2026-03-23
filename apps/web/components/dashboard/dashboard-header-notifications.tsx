@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Bell } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NotificationsFeed } from "@/components/dashboard/notifications-feed";
+import { useHasMounted } from "@/components/use-has-mounted";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { buildStoreWorkspacePath } from "@/lib/routes/store-workspace";
@@ -31,31 +32,12 @@ const NOTIFICATION_SOUND_PREF_STORAGE_KEY = "myrivo.notificationSoundEnabled";
 const NOTIFICATION_LAST_UNREAD_STORAGE_KEY = "myrivo.notificationLastUnreadCount";
 
 export function DashboardHeaderNotifications({ storeSlug, initialNotificationSoundEnabled = false }: DashboardHeaderNotificationsProps) {
+  const hasMounted = useHasMounted();
   const [open, setOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(() => {
-    if (typeof window === "undefined") {
-      return initialNotificationSoundEnabled;
-    }
-    const stored = window.localStorage.getItem(NOTIFICATION_SOUND_PREF_STORAGE_KEY);
-    if (initialNotificationSoundEnabled) {
-      return true;
-    }
-    if (stored === "1") {
-      return true;
-    }
-    return false;
-  });
-  const [initialUnreadCount] = useState(() => {
-    if (typeof window === "undefined") {
-      return 0;
-    }
-    const raw = window.localStorage.getItem(NOTIFICATION_LAST_UNREAD_STORAGE_KEY);
-    const parsed = raw ? Number.parseInt(raw, 10) : NaN;
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
-  });
-  const hasLoadedUnreadRef = useRef(typeof window !== "undefined" && window.localStorage.getItem(NOTIFICATION_LAST_UNREAD_STORAGE_KEY) !== null);
-  const unreadCountRef = useRef(initialUnreadCount);
+  const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(initialNotificationSoundEnabled);
+  const hasLoadedUnreadRef = useRef(false);
+  const unreadCountRef = useRef(0);
   const lastSoundAtRef = useRef(0);
   const pendingSoundRef = useRef(false);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -206,6 +188,22 @@ export function DashboardHeaderNotifications({ storeSlug, initialNotificationSou
   }, []);
 
   useEffect(() => {
+    const restoreClientStateTimeout = window.setTimeout(() => {
+      const storedNotificationSoundEnabled = window.localStorage.getItem(NOTIFICATION_SOUND_PREF_STORAGE_KEY) === "1";
+      const storedUnreadCountRaw = window.localStorage.getItem(NOTIFICATION_LAST_UNREAD_STORAGE_KEY);
+      const storedUnreadCount = storedUnreadCountRaw ? Number.parseInt(storedUnreadCountRaw, 10) : NaN;
+
+      if (storedNotificationSoundEnabled || initialNotificationSoundEnabled) {
+        setNotificationSoundEnabled(true);
+      }
+
+      if (Number.isFinite(storedUnreadCount) && storedUnreadCount >= 0) {
+        unreadCountRef.current = storedUnreadCount;
+        hasLoadedUnreadRef.current = true;
+        setUnreadCount(storedUnreadCount);
+      }
+    }, 0);
+
     const initialLoadTimeout = window.setTimeout(() => {
       void Promise.all([loadUnreadCount(), loadNotificationSoundPreference()]);
     }, 0);
@@ -238,6 +236,7 @@ export function DashboardHeaderNotifications({ storeSlug, initialNotificationSou
     window.addEventListener("keydown", handleUserInteraction);
 
     return () => {
+      window.clearTimeout(restoreClientStateTimeout);
       window.clearTimeout(initialLoadTimeout);
       window.clearInterval(intervalId);
       window.removeEventListener("focus", handleWindowFocus);
@@ -245,7 +244,7 @@ export function DashboardHeaderNotifications({ storeSlug, initialNotificationSou
       window.removeEventListener("pointerdown", handleUserInteraction);
       window.removeEventListener("keydown", handleUserInteraction);
     };
-  }, [ensureAudioContextReady, loadNotificationSoundPreference, loadUnreadCount, maybePlayPendingPing]);
+  }, [ensureAudioContextReady, initialNotificationSoundEnabled, loadNotificationSoundPreference, loadUnreadCount, maybePlayPendingPing]);
 
   useEffect(() => {
     return () => {
@@ -260,6 +259,14 @@ export function DashboardHeaderNotifications({ storeSlug, initialNotificationSou
       }
     };
   }, []);
+
+  if (!hasMounted) {
+    return (
+      <Button type="button" variant="outline" size="icon" className="relative h-9 w-9" aria-label="Notifications">
+        <Bell className="h-4 w-4" />
+      </Button>
+    );
+  }
 
   return (
     <DropdownMenu

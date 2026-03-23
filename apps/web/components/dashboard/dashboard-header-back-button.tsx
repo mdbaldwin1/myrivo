@@ -14,8 +14,13 @@ function resolveBackHref(pathname: string): string | null {
   if (storeWorkspaceMatch) {
     const storeSlug = storeWorkspaceMatch[1];
     if (
-      normalized.startsWith(`/dashboard/stores/${storeSlug}/content-workspace/`) ||
+      normalized === `/dashboard/stores/${storeSlug}/storefront-studio` ||
+      normalized.startsWith(`/dashboard/stores/${storeSlug}/storefront-studio/`) ||
+      normalized === `/dashboard/stores/${storeSlug}/email-studio` ||
+      normalized.startsWith(`/dashboard/stores/${storeSlug}/email-studio/`) ||
+      normalized === `/dashboard/stores/${storeSlug}/store-settings` ||
       normalized.startsWith(`/dashboard/stores/${storeSlug}/store-settings/`) ||
+      normalized === `/dashboard/stores/${storeSlug}/reports` ||
       normalized.startsWith(`/dashboard/stores/${storeSlug}/reports/`)
     ) {
       return `/dashboard/stores/${storeSlug}`;

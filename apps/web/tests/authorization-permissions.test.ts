@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const authGetUserMock = vi.fn();
 const serverFromMock = vi.fn();
-const getOwnedStoreBundleMock = vi.fn();
+const getOwnedStoreBundleForOptionalSlugMock = vi.fn();
 
 vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient: vi.fn(async () => ({
@@ -12,14 +12,14 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 vi.mock("@/lib/stores/owner-store", () => ({
-  getOwnedStoreBundle: (...args: unknown[]) => getOwnedStoreBundleMock(...args)
+  getOwnedStoreBundleForOptionalSlug: (...args: unknown[]) => getOwnedStoreBundleForOptionalSlugMock(...args)
 }));
 
 beforeEach(() => {
   vi.resetModules();
   authGetUserMock.mockReset();
   serverFromMock.mockReset();
-  getOwnedStoreBundleMock.mockReset();
+  getOwnedStoreBundleForOptionalSlugMock.mockReset();
   authGetUserMock.mockResolvedValue({ data: { user: { id: "user-1" } } });
   serverFromMock.mockImplementation((table: string) => {
     if (table !== "user_profiles") {
@@ -37,7 +37,7 @@ beforeEach(() => {
 
 describe("requireStorePermission", () => {
   test("returns 403 when permission override denies access", async () => {
-    getOwnedStoreBundleMock.mockResolvedValue({
+    getOwnedStoreBundleForOptionalSlugMock.mockResolvedValue({
       store: { id: "store-1", slug: "curby" },
       role: "admin",
       permissionsJson: { "store.manage_domains": false }
@@ -51,7 +51,7 @@ describe("requireStorePermission", () => {
   });
 
   test("returns context when permission is granted", async () => {
-    getOwnedStoreBundleMock.mockResolvedValue({
+    getOwnedStoreBundleForOptionalSlugMock.mockResolvedValue({
       store: { id: "store-1", slug: "curby" },
       role: "staff",
       permissionsJson: { "store.manage_catalog": true }

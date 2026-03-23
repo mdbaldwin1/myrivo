@@ -1,3 +1,6 @@
+"use client";
+
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { OrderRecord, ProductRecord } from "@/types/database";
 import { SectionCard } from "@/components/ui/section-card";
 
@@ -41,7 +44,11 @@ function buildDailyRevenue(orders: Array<Pick<OrderRecord, "total_cents" | "stat
 
 export function InsightsPanel({ recentOrders, products, showLowStockWatchlist = true, title = "Insights" }: InsightsPanelProps) {
   const dailyRevenue = buildDailyRevenue(recentOrders);
-  const maxRevenue = Math.max(1, ...dailyRevenue.map((point) => point.revenueCents));
+  const dailyRevenueChartData = dailyRevenue.map((point) => ({
+    ...point,
+    shortDate: point.date.slice(5),
+    revenueDollars: point.revenueCents / 100
+  }));
   const paidOrders = recentOrders.filter((order) => order.status === "paid");
   const grossCents = paidOrders.reduce((sum, order) => sum + order.total_cents, 0);
   const discountsCents = paidOrders.reduce((sum, order) => sum + order.discount_cents, 0);
@@ -55,7 +62,7 @@ export function InsightsPanel({ recentOrders, products, showLowStockWatchlist = 
     <SectionCard title={title} description="Revenue, discounts, and stock health for operational planning.">
       <div className="space-y-4">
         <div className="grid gap-3 md:grid-cols-2">
-          <article className="rounded-md border border-border bg-muted/25 p-3">
+          <article className="rounded-md border border-[hsl(var(--brand-secondary))]/20 bg-[hsl(var(--brand-secondary-soft))]/55 p-3">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Paid Revenue</p>
             <p className="mt-2 text-2xl font-semibold">${(grossCents / 100).toFixed(2)}</p>
           </article>
@@ -86,21 +93,40 @@ export function InsightsPanel({ recentOrders, products, showLowStockWatchlist = 
 
         <section className="space-y-2">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Daily Revenue (14 days)</h3>
-          <div className="grid gap-2">
-            {dailyRevenue.length === 0 ? (
+          <div className="min-w-0">
+            {dailyRevenueChartData.length === 0 ? (
               <p className="text-sm text-muted-foreground">No paid orders yet.</p>
             ) : (
-              dailyRevenue.map((point) => (
-                <div key={point.date} className="grid grid-cols-[90px_1fr_120px] items-center gap-2 text-xs">
-                  <span>{point.date.slice(5)}</span>
-                  <div className="h-3 overflow-hidden rounded-full bg-muted">
-                    <div className="h-full bg-primary" style={{ width: `${(point.revenueCents / maxRevenue) * 100}%` }} />
-                  </div>
-                  <span>
-                    ${(point.revenueCents / 100).toFixed(2)} ({point.orderCount})
-                  </span>
-                </div>
-              ))
+              <div className="h-64 min-w-0 rounded-md border border-[hsl(var(--brand-secondary))]/15 bg-gradient-to-br from-[hsl(var(--brand-secondary-soft))]/35 to-background p-3">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
+                  <BarChart data={dailyRevenueChartData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/60" />
+                    <XAxis
+                      dataKey="shortDate"
+                      tickLine={false}
+                      axisLine={false}
+                      fontSize={12}
+                      className="fill-muted-foreground"
+                    />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      fontSize={12}
+                      className="fill-muted-foreground"
+                      tickFormatter={(value) => `$${value}`}
+                    />
+                    <Tooltip
+                      cursor={{ fill: "hsl(var(--muted) / 0.28)" }}
+                      formatter={(value, _name, item) => [
+                        `$${Number(value ?? 0).toFixed(2)} (${item?.payload?.orderCount ?? 0} orders)`,
+                        "Revenue"
+                      ]}
+                      labelFormatter={(label) => `Date: ${label}`}
+                    />
+                    <Bar dataKey="revenueDollars" fill="hsl(var(--brand-secondary))" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             )}
           </div>
         </section>

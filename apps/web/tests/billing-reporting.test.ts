@@ -10,9 +10,9 @@ function makeOrder(overrides: Partial<BillingReportOrder>): BillingReportOrder {
     currency: "usd",
     created_at: "2026-03-01T00:00:00.000Z",
     order_fee_breakdowns: {
-      subtotal_cents: 1000,
+      subtotal_cents: 1200,
       platform_fee_cents: 100,
-      net_payout_cents: 900,
+      net_payout_cents: 1100,
       fee_bps: 1000,
       fee_fixed_cents: 0,
       plan_key: "standard"
@@ -30,9 +30,9 @@ describe("buildBillingReport", () => {
         subtotal_cents: 2000,
         total_cents: 2200,
         order_fee_breakdowns: {
-          subtotal_cents: 2000,
+          subtotal_cents: 2200,
           platform_fee_cents: 200,
-          net_payout_cents: 1800,
+          net_payout_cents: 2000,
           fee_bps: 1000,
           fee_fixed_cents: 0,
           plan_key: "standard"
@@ -44,7 +44,7 @@ describe("buildBillingReport", () => {
     expect(report.summary.paidOrderCount).toBe(2);
     expect(report.summary.grossCents).toBe(3400);
     expect(report.summary.platformFeeCents).toBe(300);
-    expect(report.summary.netPayoutCents).toBe(2700);
+    expect(report.summary.netPayoutCents).toBe(3100);
     expect(report.summary.reconciliationIssueCount).toBe(0);
   });
 
@@ -70,6 +70,7 @@ describe("buildBillingReport", () => {
       }),
       makeOrder({
         id: "order-5",
+        total_cents: 1000,
         order_fee_breakdowns: {
           subtotal_cents: 1000,
           platform_fee_cents: 101,
@@ -82,7 +83,7 @@ describe("buildBillingReport", () => {
     ]);
 
     expect(report.summary.reconciliationIssueCount).toBe(2);
-    expect(report.issues.some((entry) => entry.issue.includes("does not match order subtotal"))).toBe(true);
-    expect(report.issues.some((entry) => entry.issue.includes("does not match fee subtotal"))).toBe(true);
+    expect(report.issues.some((entry) => entry.issue.includes("does not match order total"))).toBe(true);
+    expect(report.issues.some((entry) => entry.issue.includes("does not match fee basis amount"))).toBe(true);
   });
 });

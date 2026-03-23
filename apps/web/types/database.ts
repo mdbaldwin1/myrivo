@@ -1,6 +1,7 @@
-export type StoreStatus = "draft" | "pending_review" | "active" | "suspended";
+export type StoreStatus = "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
 export type GlobalUserRole = "user" | "admin" | "support";
 export type StoreMemberRole = "owner" | "admin" | "staff" | "customer";
+export type StoreTaxCollectionMode = "unconfigured" | "stripe_tax" | "seller_attested_no_tax";
 
 export type StoreRecord = {
   id: string;
@@ -8,9 +9,73 @@ export type StoreRecord = {
   name: string;
   slug: string;
   status: StoreStatus;
+  has_launched_once: boolean;
   default_pickup_radius_miles: number;
   white_label_enabled: boolean;
   stripe_account_id: string | null;
+  tax_collection_mode: StoreTaxCollectionMode;
+  tax_compliance_acknowledged_at: string | null;
+  tax_compliance_acknowledged_by_user_id: string | null;
+  tax_compliance_note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StoreOnboardingSessionStatus =
+  | "in_progress"
+  | "generation_pending"
+  | "generation_running"
+  | "generation_failed"
+  | "reveal_ready"
+  | "completed"
+  | "abandoned";
+
+export type StoreOnboardingSessionRecord = {
+  id: string;
+  store_id: string;
+  owner_user_id: string;
+  status: StoreOnboardingSessionStatus;
+  current_step: string | null;
+  last_completed_step: string | null;
+  first_product_id: string | null;
+  started_at: string;
+  completed_at: string | null;
+  last_seen_at: string | null;
+  generation_requested_at: string | null;
+  generation_completed_at: string | null;
+  generation_failed_at: string | null;
+  generation_error_code: string | null;
+  generation_error_message: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StoreOnboardingAnswersRecord = {
+  store_id: string;
+  session_id: string;
+  answers_json: Record<string, unknown>;
+  normalized_answers_json: Record<string, unknown>;
+  step_progress_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StoreOnboardingGenerationRunStatus = "pending" | "running" | "succeeded" | "failed" | "partially_applied";
+
+export type StoreOnboardingGenerationRunRecord = {
+  id: string;
+  store_id: string;
+  session_id: string;
+  status: StoreOnboardingGenerationRunStatus;
+  provider: string | null;
+  model: string | null;
+  input_json: Record<string, unknown>;
+  output_json: Record<string, unknown>;
+  applied_snapshot_json: Record<string, unknown>;
+  error_code: string | null;
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -33,6 +98,22 @@ export type UserProfileRecord = {
   avatar_path: string | null;
   global_role: GlobalUserRole;
   metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PlatformTeamInviteRole = "admin" | "support";
+
+export type PlatformTeamInviteRecord = {
+  id: string;
+  email: string;
+  role: PlatformTeamInviteRole;
+  status: "pending" | "accepted" | "revoked" | "expired";
+  token_hash: string;
+  invited_by_user_id: string;
+  accepted_by_user_id: string | null;
+  accepted_at: string | null;
+  expires_at: string;
   created_at: string;
   updated_at: string;
 };
@@ -149,6 +230,18 @@ export type StoreSettingsRecord = {
   email_capture_heading: string | null;
   email_capture_description: string | null;
   email_capture_success_message: string | null;
+  welcome_popup_enabled: boolean;
+  welcome_popup_eyebrow: string | null;
+  welcome_popup_headline: string | null;
+  welcome_popup_body: string | null;
+  welcome_popup_email_placeholder: string | null;
+  welcome_popup_cta_label: string | null;
+  welcome_popup_decline_label: string | null;
+  welcome_popup_image_layout: string | null;
+  welcome_popup_delay_seconds: number;
+  welcome_popup_dismiss_days: number;
+  welcome_popup_image_path: string | null;
+  welcome_popup_promotion_id: string | null;
   checkout_enable_local_pickup: boolean;
   checkout_local_pickup_label: string | null;
   checkout_local_pickup_fee_cents: number;
@@ -157,6 +250,143 @@ export type StoreSettingsRecord = {
   checkout_flat_rate_shipping_fee_cents: number;
   checkout_allow_order_note: boolean;
   checkout_order_note_prompt: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StoreLegalDocumentKey = "privacy" | "terms";
+export type StoreLegalDocumentSourceMode = "template" | "custom";
+
+export type StoreLegalDocumentRecord = {
+  id: string;
+  store_id: string;
+  key: StoreLegalDocumentKey;
+  source_mode: StoreLegalDocumentSourceMode;
+  template_version: string;
+  title_override: string | null;
+  body_markdown: string;
+  variables_json: Record<string, unknown>;
+  addendum_markdown: string;
+  published_source_mode: StoreLegalDocumentSourceMode;
+  published_template_version: string;
+  published_title: string | null;
+  published_body_markdown: string;
+  published_variables_json: Record<string, unknown>;
+  published_addendum_markdown: string;
+  published_base_document_version_id: string | null;
+  published_base_version_label: string | null;
+  published_version: number;
+  published_change_summary: string | null;
+  effective_at: string | null;
+  published_at: string | null;
+  published_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StoreLegalDocumentVersionRecord = {
+  id: string;
+  store_legal_document_id: string;
+  store_id: string;
+  key: StoreLegalDocumentKey;
+  version_number: number;
+  source_mode: StoreLegalDocumentSourceMode;
+  template_version: string;
+  title: string;
+  body_markdown: string;
+  variables_json: Record<string, unknown>;
+  addendum_markdown: string;
+  base_document_version_id: string | null;
+  base_version_label: string | null;
+  change_summary: string | null;
+  effective_at: string | null;
+  published_at: string;
+  published_by_user_id: string | null;
+  created_at: string;
+};
+
+export type StorePrivacyRequestType = "access" | "deletion" | "correction" | "know" | "opt_out_sale_share";
+export type StorePrivacyRequestStatus = "open" | "in_progress" | "completed" | "closed";
+export type StorePrivacyOptOutState = "active" | "revoked";
+export type AccessibilityReportStatus = "new" | "triaged" | "in_progress" | "resolved" | "dismissed";
+export type AccessibilityReportPriority = "low" | "medium" | "high" | "critical";
+
+export type StorePrivacyProfileRecord = {
+  store_id: string;
+  privacy_contact_email: string | null;
+  privacy_rights_email: string | null;
+  privacy_contact_name: string | null;
+  collection_notice_addendum_markdown: string;
+  california_notice_markdown: string;
+  do_not_sell_markdown: string;
+  request_page_intro_markdown: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PlatformStorefrontPrivacySettingsRecord = {
+  key: "default";
+  notice_at_collection_enabled: boolean;
+  checkout_notice_enabled: boolean;
+  newsletter_notice_enabled: boolean;
+  review_notice_enabled: boolean;
+  show_california_notice: boolean;
+  show_do_not_sell_link: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StorePrivacyRequestRecord = {
+  id: string;
+  store_id: string;
+  email: string;
+  full_name: string | null;
+  request_type: StorePrivacyRequestType;
+  status: StorePrivacyRequestStatus;
+  source: "privacy_page" | "support" | "manual";
+  details: string | null;
+  metadata_json: Record<string, unknown>;
+  resolved_at: string | null;
+  resolved_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StorePrivacyOptOutRecord = {
+  id: string;
+  store_id: string;
+  email: string;
+  full_name: string | null;
+  state: StorePrivacyOptOutState;
+  source: "privacy_page" | "browser_signal" | "support" | "manual";
+  latest_request_id: string | null;
+  metadata_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AccessibilityReportRecord = {
+  id: string;
+  reporter_name: string | null;
+  reporter_email: string;
+  page_url: string | null;
+  feature_area: string;
+  issue_summary: string;
+  expected_behavior: string | null;
+  actual_behavior: string;
+  assistive_technology: string | null;
+  browser: string | null;
+  device: string | null;
+  blocks_critical_flow: boolean;
+  status: AccessibilityReportStatus;
+  priority: AccessibilityReportPriority;
+  owner_notes: string | null;
+  remediation_notes: string | null;
+  source: "public_form" | "support" | "manual";
+  triaged_at: string | null;
+  resolved_at: string | null;
+  resolved_by_user_id: string | null;
+  metadata_json: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 };
@@ -192,6 +422,8 @@ export type StoreContentBlockRecord = {
 
 export type OrderStatus = "pending" | "paid" | "failed" | "cancelled";
 
+export type OrderRefundStatus = "requested" | "processing" | "succeeded" | "failed" | "cancelled";
+
 export type OrderRecord = {
   id: string;
   store_id: string;
@@ -226,6 +458,97 @@ export type OrderRecord = {
   last_tracking_sync_at: string | null;
   discount_cents: number;
   promo_code: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OrderRefundRecord = {
+  id: string;
+  order_id: string;
+  store_id: string;
+  requested_by_user_id: string | null;
+  processed_by_user_id: string | null;
+  amount_cents: number;
+  reason_key: string;
+  reason_note: string | null;
+  customer_message: string | null;
+  status: OrderRefundStatus;
+  stripe_refund_id: string | null;
+  metadata_json: Record<string, unknown>;
+  processed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OrderDisputeStatus =
+  | "warning_needs_response"
+  | "warning_under_review"
+  | "warning_closed"
+  | "needs_response"
+  | "under_review"
+  | "won"
+  | "lost"
+  | "prevented";
+
+export type OrderDisputeRecord = {
+  id: string;
+  order_id: string;
+  store_id: string;
+  stripe_dispute_id: string;
+  stripe_charge_id: string | null;
+  stripe_payment_intent_id: string | null;
+  amount_cents: number;
+  currency: string;
+  reason: string;
+  status: OrderDisputeStatus;
+  is_charge_refundable: boolean;
+  response_due_by: string | null;
+  metadata_json: Record<string, unknown>;
+  closed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OrderShippingDelayStatus =
+  | "delay_detected"
+  | "customer_contact_required"
+  | "awaiting_customer_response"
+  | "delay_approved"
+  | "delay_rejected"
+  | "cancel_requested"
+  | "refund_required"
+  | "resolved";
+
+export type OrderShippingDelayReasonKey =
+  | "inventory_shortfall"
+  | "supplier_delay"
+  | "production_delay"
+  | "carrier_disruption"
+  | "weather_or_emergency"
+  | "address_or_verification_issue"
+  | "fulfillment_capacity_issue"
+  | "other";
+
+export type OrderShippingDelayCustomerPath =
+  | "notify_only"
+  | "request_delay_approval"
+  | "offer_cancel_or_refund";
+
+export type OrderShippingDelayRecord = {
+  id: string;
+  order_id: string;
+  store_id: string;
+  created_by_user_id: string | null;
+  resolved_by_user_id: string | null;
+  status: OrderShippingDelayStatus;
+  reason_key: OrderShippingDelayReasonKey;
+  customer_path: OrderShippingDelayCustomerPath;
+  original_ship_promise: string | null;
+  revised_ship_date: string | null;
+  internal_note: string | null;
+  resolution_note: string | null;
+  metadata_json: Record<string, unknown>;
+  resolved_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -356,7 +679,6 @@ export type BillingPlanRecord = {
 export type StoreBillingProfileRecord = {
   store_id: string;
   billing_plan_id: string | null;
-  test_mode_enabled: boolean;
   metadata_json: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -448,12 +770,23 @@ export type PromotionRecord = {
   discount_value: number;
   min_subtotal_cents: number;
   max_redemptions: number | null;
+  per_customer_redemption_limit: number | null;
   times_redeemed: number;
   starts_at: string | null;
   ends_at: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
+};
+
+export type PromotionRedemptionRecord = {
+  id: string;
+  store_id: string;
+  promotion_id: string;
+  order_id: string;
+  customer_user_id: string | null;
+  customer_email_normalized: string;
+  created_at: string;
 };
 
 export type AuditEventRecord = {

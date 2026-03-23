@@ -10,6 +10,7 @@ const requirePlatformRoleMock = vi.fn<(...args: unknown[]) => Promise<AuthContex
 const enforceTrustedOriginMock = vi.fn<(request: NextRequest) => Response | null>();
 const logAuditEventMock = vi.fn();
 const notifyOwnersStoreStatusChangedMock = vi.fn();
+const expirePendingStorefrontCheckoutSessionsMock = vi.fn();
 const adminFromMock = vi.fn();
 
 vi.mock("@/lib/auth/authorization", () => ({
@@ -28,6 +29,10 @@ vi.mock("@/lib/notifications/owner-notifications", () => ({
   notifyOwnersStoreStatusChanged: (...args: unknown[]) => notifyOwnersStoreStatusChangedMock(...args)
 }));
 
+vi.mock("@/lib/storefront/checkout-finalization", () => ({
+  expirePendingStorefrontCheckoutSessions: (...args: unknown[]) => expirePendingStorefrontCheckoutSessionsMock(...args)
+}));
+
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: vi.fn(() => ({
     from: (...args: unknown[]) => adminFromMock(...args)
@@ -39,6 +44,7 @@ beforeEach(() => {
   enforceTrustedOriginMock.mockReset();
   logAuditEventMock.mockReset();
   notifyOwnersStoreStatusChangedMock.mockReset();
+  expirePendingStorefrontCheckoutSessionsMock.mockReset();
   adminFromMock.mockReset();
 
   enforceTrustedOriginMock.mockReturnValue(null);
@@ -46,6 +52,7 @@ beforeEach(() => {
     context: { globalRole: "admin", userId: "admin-1", storeId: "", storeSlug: "", storeRole: "customer" },
     response: null
   });
+  expirePendingStorefrontCheckoutSessionsMock.mockResolvedValue(undefined);
 });
 
 describe("platform store status route", () => {
@@ -55,32 +62,33 @@ describe("platform store status route", () => {
       error: null
     }));
     const secondMaybeSingle = vi.fn(async () => ({
-      data: { id: "store-1", name: "Demo", slug: "demo", status: "active" },
+      data: { id: "store-1", name: "Demo", slug: "demo", status: "live" },
       error: null
     }));
 
     adminFromMock.mockImplementation((table: string) => {
-      if (table !== "stores") {
-        throw new Error(`Unexpected table ${table}`);
-      }
-      let callCount = 0;
-      return {
-        select: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            maybeSingle: () => {
-              callCount += 1;
-              return callCount === 1 ? firstMaybeSingle() : secondMaybeSingle();
-            }
-          }))
-        })),
-        update: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            select: vi.fn(() => ({
-              maybeSingle: () => secondMaybeSingle()
+      if (table === "stores") {
+        let callCount = 0;
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: () => {
+                callCount += 1;
+                return callCount === 1 ? firstMaybeSingle() : secondMaybeSingle();
+              }
+            }))
+          })),
+          update: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              select: vi.fn(() => ({
+                maybeSingle: () => secondMaybeSingle()
+              }))
             }))
           }))
-        }))
-      };
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
     });
 
     const route = await import("@/app/api/platform/stores/[storeId]/status/route");
@@ -94,10 +102,11 @@ describe("platform store status route", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       ok: true,
-      store: { id: "store-1", status: "active" }
+      store: { id: "store-1", status: "live" }
     });
     expect(logAuditEventMock).toHaveBeenCalledTimes(1);
     expect(notifyOwnersStoreStatusChangedMock).toHaveBeenCalledTimes(1);
+    expect(expirePendingStorefrontCheckoutSessionsMock).not.toHaveBeenCalled();
   });
 
   test("rejects approval when store is not pending review", async () => {
@@ -154,5 +163,55 @@ describe("platform store status route", () => {
 
     const response = await route.PATCH(request, { params: Promise.resolve({ storeId: "store-1" }) });
     expect(response.status).toBe(400);
+  });
+
+  test("moves pending review store to changes requested", async () => {
+    const firstMaybeSingle = vi.fn(async () => ({
+      data: { id: "store-1", name: "Demo", slug: "demo", status: "pending_review" },
+      error: null
+    }));
+    const secondMaybeSingle = vi.fn(async () => ({
+      data: { id: "store-1", name: "Demo", slug: "demo", status: "changes_requested" },
+      error: null
+    }));
+
+    adminFromMock.mockImplementation((table: string) => {
+      if (table !== "stores") {
+        throw new Error(`Unexpected table ${table}`);
+      }
+      let callCount = 0;
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            maybeSingle: () => {
+              callCount += 1;
+              return callCount === 1 ? firstMaybeSingle() : secondMaybeSingle();
+            }
+          }))
+        })),
+        update: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            select: vi.fn(() => ({
+              maybeSingle: () => secondMaybeSingle()
+            }))
+          }))
+        }))
+      };
+    });
+
+    const route = await import("@/app/api/platform/stores/[storeId]/status/route");
+    const request = new NextRequest("http://localhost:3000/api/platform/stores/store-1/status", {
+      method: "PATCH",
+      body: JSON.stringify({ action: "request_changes", reasonCode: "incomplete_setup", reason: "Add your legal pages." }),
+      headers: { "content-type": "application/json", origin: "http://localhost:3000", host: "localhost:3000" }
+    });
+
+    const response = await route.PATCH(request, { params: Promise.resolve({ storeId: "store-1" }) });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      store: { id: "store-1", status: "changes_requested" }
+    });
+    expect(expirePendingStorefrontCheckoutSessionsMock).toHaveBeenCalledWith("store-1");
   });
 });

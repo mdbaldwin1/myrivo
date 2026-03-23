@@ -24,7 +24,7 @@ export default async function StoreWorkspaceReportsInventoryPage({ params }: Pag
   }
 
   return (
-    <section className="space-y-4 p-4 lg:p-4">
+    <section className="space-y-3 p-3">
       <DashboardPageHeader
         title="Inventory Ledger"
         description="Historical stock movements for audit, reconciliation, and support workflows."

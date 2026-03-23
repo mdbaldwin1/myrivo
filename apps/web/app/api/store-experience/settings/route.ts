@@ -3,8 +3,9 @@ import { z } from "zod";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getStoreShippingConfig } from "@/lib/shipping/store-config";
+import { buildStoreEditorSettingsPayload } from "@/lib/store-editor/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
+import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
 import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
 
 const settingsUpdateSchema = z.object({
@@ -56,10 +57,34 @@ const settingsUpdateSchema = z.object({
         })
         .optional()
     })
+    .optional(),
+  newsletterCapture: z
+    .object({
+      enabled: z.boolean().optional(),
+      heading: z.string().max(200).nullable().optional(),
+      description: z.string().max(500).nullable().optional(),
+      successMessage: z.string().max(240).nullable().optional()
+    })
+    .optional(),
+  welcomePopup: z
+    .object({
+      enabled: z.boolean().optional(),
+      eyebrow: z.string().max(80).nullable().optional(),
+      headline: z.string().max(200).nullable().optional(),
+      body: z.string().max(500).nullable().optional(),
+      emailPlaceholder: z.string().max(120).nullable().optional(),
+      ctaLabel: z.string().max(120).nullable().optional(),
+      declineLabel: z.string().max(120).nullable().optional(),
+      imageLayout: z.enum(["top", "left"]).optional(),
+      delaySeconds: z.number().int().min(0).max(60).optional(),
+      dismissDays: z.number().int().min(1).max(365).optional(),
+      imagePath: z.string().max(500).nullable().optional(),
+      promotionId: z.string().uuid().nullable().optional()
+    })
     .optional()
 });
 
-async function resolveOwnerContext() {
+async function resolveOwnerContext(storeSlug?: string | null) {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user }
@@ -69,7 +94,7 @@ async function resolveOwnerContext() {
     return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) } as const;
   }
 
-  const bundle = await getOwnedStoreBundle(user.id, "staff");
+  const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, storeSlug, "staff");
   if (!bundle) {
     return { error: NextResponse.json({ error: "No store found for account" }, { status: 404 }) } as const;
   }
@@ -77,8 +102,8 @@ async function resolveOwnerContext() {
   return { supabase, bundle } as const;
 }
 
-export async function GET() {
-  const resolved = await resolveOwnerContext();
+export async function GET(request: NextRequest) {
+  const resolved = await resolveOwnerContext(request.nextUrl.searchParams.get("storeSlug"));
   if ("error" in resolved) {
     return resolved.error;
   }
@@ -87,54 +112,7 @@ export async function GET() {
   const shippingConfig = await getStoreShippingConfig(supabase, bundle.store.id, true);
 
   return NextResponse.json({
-    settings: {
-      profile: {
-        id: bundle.store.id,
-        name: bundle.store.name,
-        slug: bundle.store.slug,
-        status: bundle.store.status
-      },
-      branding: bundle.branding,
-      checkoutRules: bundle.settings
-        ? {
-            fulfillmentMessage: bundle.settings.fulfillment_message,
-            checkoutEnableLocalPickup: bundle.settings.checkout_enable_local_pickup,
-            checkoutLocalPickupLabel: bundle.settings.checkout_local_pickup_label,
-            checkoutLocalPickupFeeCents: bundle.settings.checkout_local_pickup_fee_cents,
-            checkoutEnableFlatRateShipping: bundle.settings.checkout_enable_flat_rate_shipping,
-            checkoutFlatRateShippingLabel: bundle.settings.checkout_flat_rate_shipping_label,
-            checkoutFlatRateShippingFeeCents: bundle.settings.checkout_flat_rate_shipping_fee_cents,
-            checkoutAllowOrderNote: bundle.settings.checkout_allow_order_note,
-            checkoutOrderNotePrompt: bundle.settings.checkout_order_note_prompt
-          }
-        : null,
-      seo: {
-        title: bundle.settings?.seo_title ?? null,
-        description: bundle.settings?.seo_description ?? null,
-        noindex: bundle.settings?.seo_noindex ?? false,
-        location: {
-          city: bundle.settings?.seo_location_city ?? null,
-          region: bundle.settings?.seo_location_region ?? null,
-          state: bundle.settings?.seo_location_state ?? null,
-          postalCode: bundle.settings?.seo_location_postal_code ?? null,
-          countryCode: bundle.settings?.seo_location_country_code ?? null,
-          addressLine1: bundle.settings?.seo_location_address_line1 ?? null,
-          addressLine2: bundle.settings?.seo_location_address_line2 ?? null,
-          showFullAddress: bundle.settings?.seo_location_show_full_address ?? false
-        }
-      },
-      integrations: {
-        payments: {
-          stripeAccountId: bundle.store.stripe_account_id
-        },
-        shipping: {
-          provider: shippingConfig.provider,
-          source: shippingConfig.source,
-          hasApiKey: Boolean(shippingConfig.apiKey),
-          hasWebhookSecret: Boolean(shippingConfig.webhookSecret)
-        }
-      }
-    }
+    settings: buildStoreEditorSettingsPayload(bundle, shippingConfig)
   });
 }
 
@@ -149,7 +127,7 @@ export async function PUT(request: NextRequest) {
     return payload.response;
   }
 
-  const resolved = await resolveOwnerContext();
+  const resolved = await resolveOwnerContext(request.nextUrl.searchParams.get("storeSlug"));
   if ("error" in resolved) {
     return resolved.error;
   }
@@ -266,6 +244,69 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
     updatedAreas.push("seo");
+  }
+
+  if (payload.data.newsletterCapture) {
+    const current = bundle.settings;
+    const next = payload.data.newsletterCapture;
+    const { error } = await supabase
+      .from("store_settings")
+      .upsert(
+        {
+          store_id: bundle.store.id,
+          email_capture_enabled: next.enabled ?? current?.email_capture_enabled ?? false,
+          email_capture_heading: next.heading ?? current?.email_capture_heading ?? null,
+          email_capture_description: next.description ?? current?.email_capture_description ?? null,
+          email_capture_success_message: next.successMessage ?? current?.email_capture_success_message ?? null
+        },
+        { onConflict: "store_id" }
+      );
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    updatedAreas.push("newsletterCapture");
+  }
+
+  if (payload.data.welcomePopup) {
+    const current = bundle.settings;
+    const next = payload.data.welcomePopup;
+    const { error } = await supabase
+      .from("store_settings")
+      .upsert(
+        {
+          store_id: bundle.store.id,
+          welcome_popup_enabled: next.enabled ?? current?.welcome_popup_enabled ?? false,
+          welcome_popup_eyebrow: next.eyebrow ?? current?.welcome_popup_eyebrow ?? null,
+          welcome_popup_headline: next.headline ?? current?.welcome_popup_headline ?? null,
+          welcome_popup_body: next.body ?? current?.welcome_popup_body ?? null,
+          welcome_popup_email_placeholder: next.emailPlaceholder ?? current?.welcome_popup_email_placeholder ?? null,
+          welcome_popup_cta_label: next.ctaLabel ?? current?.welcome_popup_cta_label ?? null,
+          welcome_popup_decline_label: next.declineLabel ?? current?.welcome_popup_decline_label ?? null,
+          welcome_popup_image_layout: next.imageLayout ?? current?.welcome_popup_image_layout ?? "left",
+          welcome_popup_delay_seconds: next.delaySeconds ?? current?.welcome_popup_delay_seconds ?? 6,
+          welcome_popup_dismiss_days: next.dismissDays ?? current?.welcome_popup_dismiss_days ?? 14,
+          welcome_popup_image_path: next.imagePath ?? current?.welcome_popup_image_path ?? null,
+          welcome_popup_promotion_id: next.promotionId ?? current?.welcome_popup_promotion_id ?? null
+        },
+        { onConflict: "store_id" }
+      );
+
+    if (error) {
+      if (
+        isMissingColumnInSchemaCache(error, "welcome_popup_enabled") ||
+        isMissingColumnInSchemaCache(error, "welcome_popup_eyebrow") ||
+        isMissingColumnInSchemaCache(error, "welcome_popup_decline_label") ||
+        isMissingColumnInSchemaCache(error, "welcome_popup_image_layout")
+      ) {
+        return NextResponse.json(
+          { error: "Welcome popup settings require the latest database migration. Please run migrations and try again." },
+          { status: 400 }
+        );
+      }
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    updatedAreas.push("welcomePopup");
   }
 
   return NextResponse.json({ ok: true, updatedAreas });

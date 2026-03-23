@@ -25,7 +25,7 @@ export function buildAlerts(input: BuildAlertsInput): StoreDashboardAlert[] {
     });
   }
 
-  if (input.storeStatus === "active" && !input.hasVerifiedPrimaryDomain) {
+  if (input.storeStatus === "live" && !input.hasVerifiedPrimaryDomain) {
     alerts.push({
       id: "domain-not-verified",
       severity: "critical",

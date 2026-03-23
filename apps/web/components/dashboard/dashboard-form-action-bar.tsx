@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -15,6 +16,7 @@ type DashboardFormActionBarProps = {
   discardDisabled?: boolean;
   statusMessage?: string | null;
   statusVariant?: "error" | "warning" | "info";
+  actions?: ReactNode;
 };
 
 export function DashboardFormActionBar({
@@ -27,7 +29,8 @@ export function DashboardFormActionBar({
   saveDisabled = false,
   discardDisabled = false,
   statusMessage = null,
-  statusVariant = "error"
+  statusVariant = "error",
+  actions
 }: DashboardFormActionBarProps) {
   return (
     <div
@@ -41,6 +44,7 @@ export function DashboardFormActionBar({
           <AppAlert compact variant={statusVariant} message={statusMessage} className="text-sm" />
         </div>
         <div className="flex items-center gap-2">
+          {actions}
           <Button type="submit" form={formId} name="intent" value="discard" variant="outline" disabled={discardDisabled}>
             {discardLabel}
           </Button>

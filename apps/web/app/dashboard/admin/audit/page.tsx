@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { ContextHelpLink } from "@/components/dashboard/context-help-link";
 import { PlatformAuditPanel } from "@/components/dashboard/admin/platform-audit-panel";
 import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
 import { hasGlobalRole } from "@/lib/auth/roles";
@@ -29,7 +30,12 @@ export default async function DashboardAdminAuditPage() {
   }
 
   return (
-    <DashboardPageScaffold title="Platform Audit" description="Inspect platform actions across stores, moderation, and governance." className="p-4 lg:p-4">
+    <DashboardPageScaffold
+      title="Platform Audit"
+      description="Inspect platform actions across stores, moderation, and governance."
+      className="p-3"
+      action={<ContextHelpLink href="/docs/audit-explorer-and-evidence#evidence-export-playbook" context="admin_audit" label="Audit Docs" />}
+    >
       <PlatformAuditPanel />
     </DashboardPageScaffold>
   );

@@ -1,40 +1,45 @@
-# Pricing Strategy (Hybrid)
+# Pricing Strategy (Current Admin-Managed Model)
 
 ## Model
 
-Myrivo uses a hybrid model:
+Myrivo currently uses admin-managed billing plans:
 
-- Free plan: no monthly subscription, higher platform fee on each transaction.
-- Paid plans: monthly subscription with reduced or zero platform fee.
+- Plans are assigned by platform admins, not self-served by merchants.
+- Stores can run without a monthly subscription.
+- Each successful order is charged a single Myrivo fee on the full processed order amount.
+- Myrivo covers standard Stripe processing costs inside that fee.
+- Every paid order records a fee snapshot for payout and reporting auditability.
 
-Stripe card processing fees are separate and always visible to merchants.
+## Active tiers
 
-## Suggested initial tiers
-
-- Free
+- Standard
   - Monthly price: $0
-  - Platform fee: 2.0% (`200` bps)
-- Starter
-  - Monthly price: $19
-  - Platform fee: 1.0% (`100` bps)
-- Growth
-  - Monthly price: $49
-  - Platform fee: 0.5% (`50` bps)
-- Scale
-  - Monthly price: $99
-  - Platform fee: 0% (`0` bps)
+  - Fee: 6.0% + $0.30
+  - Intended for normal public storefronts
+
+- Family & Friends
+  - Monthly price: $0
+  - Fee: 2.9% + $0.30
+  - Internal-use tier for low-volume close-circle stores
+  - Intended to cover baseline Stripe processing without adding extra Myrivo margin
+  - Assigned by platform admins only
+
+## Positioning notes
+
+- Standard is the public-facing plan.
+- Family & Friends is an operational exception, not a public pricing tier.
+- There is no in-product Stripe Billing subscription flow today.
+- Optional future paid tiers should be introduced only when Myrivo is ready to support a broader subscription-based pricing story.
 
 ## Stripe implementation notes
 
-- Use Stripe Connect for merchant payouts.
-- Persist `platform_fee_bps` on `subscriptions`.
-- On order payment, calculate and store:
-  - `orders.platform_fee_bps`
-  - `orders.platform_fee_cents`
-- Use Stripe transfer + application fee patterns consistent with Connect account type.
+- Use Stripe Connect Express for seller payouts.
+- Calculate the platform fee against the full processed order amount.
+- Persist fee snapshots on each paid order for historical accuracy.
+- Use destination charges with application fees consistent with the current Connect configuration.
 
 ## Upgrade behavior
 
-- Plan changes affect future transactions only by default.
+- Plan reassignments affect future transactions only by default.
 - Historical orders preserve original fee metadata.
-- Optional future enhancement: immediate fee changes with prorated subscription billing.
+- There is no self-serve upgrade, downgrade, billing portal, or subscription billing flow in the current product.

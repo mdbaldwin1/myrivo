@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Added a preview-first store onboarding system with resumable setup sessions, onboarding-first first-product creation, AI/deterministic storefront generation, reveal-to-workspace handoff, launch-readiness guidance, and platform onboarding analytics.
+- Added configurable per-customer promotion redemption caps with race-safe checkout enforcement, redemption ledger tracking, and merchant promotion controls for unlimited, one-per-customer, or custom customer limits.
+- Added governance metadata to the Myrivo docs library, including documented ownership, review cadence, next-review dates, and an overdue-doc review process.
+- Added a shared refunds/disputes contract module and new operational docs describing the intended financial statuses, refund reasons, dispute lifecycle, and merchant UX model.
+- Added order-level refund request persistence, merchant refund actions in the order flyout, refund history in order detail, and audit-backed refund request recording.
+- Added Stripe-backed refund execution, dispute synchronization, customer refund/dispute messaging with Email Studio templates, and billing-report visibility for refund/dispute operations.
+
+- Added public-site marketing analytics with CTA/signup funnel tracking, admin reporting at `/dashboard/admin/marketing`, and lightweight experiment support for conversion optimization.
+- Added a platform-managed cookie compliance layer with a public cookie policy, shopper cookie preferences banner, footer cookie controls, and consent-gated storefront analytics.
+- Added a store privacy compliance layer with configurable point-of-collection notices, California rights surfaces, shopper privacy request intake, and operator workflow hooks in Store Settings > Legal.
+- Added store-level Privacy Policy and Terms & Conditions management with Store Settings > Legal, storefront legal routes, template-backed previews, and explicit draft/publish safeguards.
+- Reworked legal policy management into a two-tier model: Myrivo-managed platform Privacy/Terms documents plus admin-managed storefront legal base templates, with merchants now limited to store-specific variables and approved addenda in Store Settings > Legal.
+- Seeded thorough v1 baselines for platform and storefront legal documents, backfilled missing storefront legal snapshots, and automatically seed new stores with published customer-facing Privacy Policy and Terms & Conditions documents.
+- Added a public accessibility statement, global skip link support, storefront current-page semantics, reduced-motion hardening, and accessible chart fallbacks across shared storefront and dashboard shell surfaces.
+- Rebuilt storefront editing around Storefront Studio, moved builder-owned content/settings into the Studio canvas, and retired duplicate legacy builder routes into redirects or Studio handoff pages while leaving operational settings outside the builder.
+- Added Email Studio as the canonical transactional-template workspace, with legacy email editing routes redirected into it and sample-data preview support for lifecycle email composition.
 - Initial Myrivo platform foundation with monorepo tooling, web app scaffold, Supabase schema, and Stripe integration skeleton.
 - Added Tailwind-based UI foundation with componentized page sections and theme token variables.
 - Added configurable pricing module for fee/tier behavior and wired Stripe handlers to plan config.

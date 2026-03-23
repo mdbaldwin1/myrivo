@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { logAuditEvent } from "@/lib/audit/log";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getOwnedStoreBundle, getOwnedStoreBundleForSlug } from "@/lib/stores/owner-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -101,6 +102,20 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ r
   if (updateError) {
     return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
+
+  await logAuditEvent({
+    storeId: bundle.store.id,
+    actorUserId: user.id,
+    action: "review_media_moderation_updated",
+    entity: "review_media",
+    entityId: media.id,
+    metadata: {
+      reviewId: review.id,
+      moderationAction: payload.data.action,
+      moderationReason: payload.data.reason ?? null,
+      nextStatus
+    }
+  });
 
   return NextResponse.json({ media: updatedMedia });
 }

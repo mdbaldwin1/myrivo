@@ -19,11 +19,14 @@ This roadmap covers the remaining work for production launch and post-launch har
 5. Fulfillment flow and digital delivery automation?
 - Partial only: fulfillment statuses exist. Configurable workflow states, automated email delivery, and digital fulfillment rules are not complete.
 
+6. Who owns sales-tax setup and filing?
+- Sellers should own tax registrations, tax configuration, and filings on their connected Stripe accounts. Myrivo should support Stripe Tax calculation, but should not remain the platform-liable tax operator for merchant storefront sales.
+
 ## Phase 1: Launch-critical (P0)
 
 ### A) Admin portal and operations controls
 - Build admin-only area with role-gated access.
-- Add platform-wide views: stores, domains, subscriptions, orders, payouts, incidents.
+- Add platform-wide views: stores, domains, billing plans, orders, payouts, incidents.
 - Add admin actions: suspend/reactivate store, force domain re-verify, retry webhook finalization, inspect audit trail.
 - Add immutable admin audit log entries for all elevated actions.
 
@@ -37,6 +40,20 @@ This roadmap covers the remaining work for production launch and post-launch har
   - trust signals (domain, support email, content quality)
 - Route medium/high risk to manual review queue.
 - Add reviewer dashboard + decision history.
+
+### B.1) Merchant-owned tax readiness
+- Move Stripe Tax liability from the platform account to the connected seller account in checkout.
+- Add merchant-facing tax readiness/status in the store workspace.
+- Require an explicit tax decision before live store activation:
+  - `Stripe Tax` path:
+    - head office configured
+    - tax defaults configured
+    - registrations configured where required
+  - `Seller-attested no-tax` path:
+    - seller acknowledgement captured
+    - warning remains visible in merchant workspace
+- Document clearly that sellers are responsible for their own tax compliance and filings.
+- Decide whether the no-tax path should require extra admin review before approval.
 
 ### C) Refunds, cancellations, disputes baseline
 - Add merchant-side refund actions from order detail.
@@ -89,15 +106,17 @@ This roadmap covers the remaining work for production launch and post-launch har
 
 1. Admin portal skeleton + role gating
 2. Review status model + go-live approval workflow (AI pre-screen + human queue)
-3. Refund API + order timeline updates
-4. Messaging MVP (email relay + order thread)
-5. Fulfillment state machine config
-6. Digital delivery engine
-7. Reliability hardening (webhook ledger/retries/reconciliation)
+3. Merchant-owned Stripe Tax migration + tax readiness gating
+4. Refund API + order timeline updates
+5. Messaging MVP (email relay + order thread)
+6. Fulfillment state machine config
+7. Digital delivery engine
+8. Reliability hardening (webhook ledger/retries/reconciliation)
 
 ## Exit criteria for launch
 
 - All P0 items complete and tested in staging
-- Stripe platform billing and Stripe Connect flows validated in live mode
+- Stripe Connect flows, platform fee snapshots, and admin-managed billing-plan assignment validated in live mode
+- Connected-account tax liability and merchant tax readiness flow validated in staging/live-prep
 - Refund/dispute and review escalation runbooks approved
 - On-call alerts for checkout and webhook failures enabled

@@ -20,6 +20,8 @@ import {
   hashReviewSignal,
   normalizeReviewText
 } from "@/lib/reviews/abuse";
+import { buildReviewComplianceMetadata, sanitizeReviewIncentiveDescription } from "@/lib/reviews/compliance";
+import { isReviewsEnabledForStoreSlug } from "@/lib/reviews/feature-gating";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { notifyOwnersReviewCreated } from "@/lib/notifications/owner-notifications";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -46,6 +48,8 @@ const bodySchema = z
     body: z.string().trim().max(5000).optional(),
     reviewerName: z.string().trim().max(120).optional(),
     reviewerEmail: z.string().trim().email().max(320),
+    incentivized: z.boolean().optional().default(false),
+    incentiveDescription: z.string().trim().max(160).optional(),
     media: z.array(reviewMediaSchema).max(20).optional().default([])
   })
   .superRefine((value, ctx) => {
@@ -57,6 +61,13 @@ const bodySchema = z
     }
     if (value.media.length > 0 && !value.reviewDraftId) {
       ctx.addIssue({ code: "custom", message: "reviewDraftId is required when media is attached", path: ["reviewDraftId"] });
+    }
+    if (value.incentivized && !sanitizeReviewIncentiveDescription(value.incentiveDescription)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Describe the incentive so the review can be disclosed correctly.",
+        path: ["incentiveDescription"]
+      });
     }
   });
 
@@ -172,6 +183,10 @@ export async function POST(request: NextRequest) {
   }
 
   const payload = parsed.data;
+  if (!isReviewsEnabledForStoreSlug(payload.storeSlug)) {
+    return fail(404, "Reviews are not enabled for this store.");
+  }
+
   const store = await resolveActiveStoreBySlug(payload.storeSlug);
   if (!store) {
     return fail(404, "Store not found.");
@@ -342,14 +357,20 @@ export async function POST(request: NextRequest) {
     return fail(500, error instanceof Error ? error.message : "Unable to verify purchase state.");
   }
 
-  const metadata = {
+  const metadata = buildReviewComplianceMetadata(
+    {
     fingerprint: abuseEvaluation.fingerprint,
     abuse_reasons: abuseEvaluation.reasons,
     ip_hash: ipHash,
     user_agent: request.headers.get("user-agent") ?? null,
     review_draft_id: payload.reviewDraftId ?? null,
     source: "storefront"
-  };
+    },
+    {
+      incentivized: payload.incentivized,
+      incentiveDescription: payload.incentiveDescription
+    }
+  );
 
   const moderationReason = abuseEvaluation.holdForModeration
     ? `abuse:${abuseEvaluation.reasons.join(",") || "flagged"}`

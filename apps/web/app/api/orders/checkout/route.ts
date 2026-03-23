@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { resolveStorefrontSessionLink } from "@/lib/analytics/session-linking";
 import { getAppUrl, isStripeStubMode } from "@/lib/env";
 import { calculatePlatformFeeCents, resolveStoreFeeProfile, writeOrderFeeBreakdown } from "@/lib/billing/fees";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
@@ -8,11 +9,19 @@ import { resolveAvailablePickupLocations } from "@/lib/pickup/availability";
 import { buildPickupSlots } from "@/lib/pickup/scheduling";
 import { formatVariantLabel } from "@/lib/products/variants";
 import { calculateDiscountCents } from "@/lib/promotions/calculate-discount";
+import { normalizePromotionRedemptionEmail, PROMOTION_CUSTOMER_CAP_REACHED_ERROR } from "@/lib/promotions/redemption";
 import { checkRateLimit } from "@/lib/security/rate-limit";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
+import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
+import { buildStorefrontCheckoutPath } from "@/lib/storefront/paths";
+import { buildStubCheckoutRpcPayload } from "@/lib/storefront/stub-checkout";
+import { getStoreStripePaymentsReadiness } from "@/lib/stripe/store-payments-readiness";
 import { getStripeClient } from "@/lib/stripe/server";
+import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { isStorePaymentsReadyForLaunch, type StoreTaxCollectionMode } from "@/lib/stores/tax-compliance";
 
 const itemSchema = z
   .object({
@@ -23,6 +32,17 @@ const itemSchema = z
   .refine((value) => Boolean(value.productId || value.variantId), {
     message: "Each item requires productId or variantId"
   });
+
+const attributionTouchSchema = z.object({
+  entryPath: z.string().trim().max(512).optional(),
+  referrerUrl: z.string().trim().max(1024).optional(),
+  referrerHost: z.string().trim().max(255).optional(),
+  utmSource: z.string().trim().max(255).optional(),
+  utmMedium: z.string().trim().max(255).optional(),
+  utmCampaign: z.string().trim().max(255).optional(),
+  utmTerm: z.string().trim().max(255).optional(),
+  utmContent: z.string().trim().max(255).optional()
+});
 
 const payloadSchema = z.object({
   firstName: z.string().trim().min(1).max(80),
@@ -37,6 +57,13 @@ const payloadSchema = z.object({
   pickupWindowEndAt: z.string().datetime().optional(),
   customerNote: z.string().trim().max(1200).optional(),
   promoCode: z.string().trim().min(3).max(40).optional(),
+  analyticsSessionId: z.string().trim().min(16).max(128).optional(),
+  attribution: z
+    .object({
+      firstTouch: attributionTouchSchema.optional(),
+      lastTouch: attributionTouchSchema.optional()
+    })
+    .optional(),
   items: z.array(itemSchema).min(1)
 });
 
@@ -59,12 +86,131 @@ type VariantRow = {
   products: VariantProductJoin | VariantProductJoin[] | null;
 };
 
+type StripeCheckoutLineSource = {
+  productTitle: string;
+  variantLabel: string;
+  quantity: number;
+  unitPriceCents: number;
+};
+
+type StripeCheckoutLineItem = {
+  price_data: {
+    currency: "usd";
+    product_data: {
+      name: string;
+      description?: string;
+    };
+    unit_amount: number;
+  };
+  quantity: number;
+};
+
 function normalizeVariantProduct(product: VariantRow["products"]): VariantProductJoin | null {
   if (!product) {
     return null;
   }
 
   return Array.isArray(product) ? (product[0] ?? null) : product;
+}
+
+function allocateDiscountAcrossLineItems(items: StripeCheckoutLineSource[], discountCents: number) {
+  if (discountCents <= 0 || items.length === 0) {
+    return items.map((item) => ({ ...item, lineDiscountCents: 0 }));
+  }
+
+  const subtotalCents = items.reduce((sum, item) => sum + item.unitPriceCents * item.quantity, 0);
+  if (subtotalCents <= 0) {
+    return items.map((item) => ({ ...item, lineDiscountCents: 0 }));
+  }
+
+  const allocations = items.map((item, index) => {
+    const lineSubtotalCents = item.unitPriceCents * item.quantity;
+    const exactDiscount = (lineSubtotalCents * discountCents) / subtotalCents;
+    const flooredDiscount = Math.floor(exactDiscount);
+
+    return {
+      index,
+      lineSubtotalCents,
+      fractionalRemainder: exactDiscount - flooredDiscount,
+      lineDiscountCents: Math.min(lineSubtotalCents, flooredDiscount)
+    };
+  });
+
+  let remainingDiscountCents = Math.min(
+    discountCents,
+    subtotalCents
+  ) - allocations.reduce((sum, allocation) => sum + allocation.lineDiscountCents, 0);
+
+  allocations.sort((left, right) => {
+    if (right.fractionalRemainder !== left.fractionalRemainder) {
+      return right.fractionalRemainder - left.fractionalRemainder;
+    }
+    return left.index - right.index;
+  });
+
+  while (remainingDiscountCents > 0) {
+    let applied = false;
+
+    for (const allocation of allocations) {
+      if (allocation.lineDiscountCents >= allocation.lineSubtotalCents) {
+        continue;
+      }
+
+      allocation.lineDiscountCents += 1;
+      remainingDiscountCents -= 1;
+      applied = true;
+
+      if (remainingDiscountCents === 0) {
+        break;
+      }
+    }
+
+    if (!applied) {
+      break;
+    }
+  }
+
+  allocations.sort((left, right) => left.index - right.index);
+
+  return items.map((item, index) => ({
+    ...item,
+    lineDiscountCents: allocations[index]?.lineDiscountCents ?? 0
+  }));
+}
+
+function buildStripeCheckoutLineItems(items: StripeCheckoutLineSource[], discountCents: number): StripeCheckoutLineItem[] {
+  const discountedItems = allocateDiscountAcrossLineItems(items, discountCents);
+  const lineItems: StripeCheckoutLineItem[] = [];
+
+  for (const item of discountedItems) {
+    const adjustedLineTotalCents = Math.max(0, item.unitPriceCents * item.quantity - item.lineDiscountCents);
+    const baseUnitAmountCents = Math.floor(adjustedLineTotalCents / item.quantity);
+    const remainderUnits = adjustedLineTotalCents - baseUnitAmountCents * item.quantity;
+    const description = item.variantLabel !== item.productTitle ? item.variantLabel : undefined;
+
+    const pushLine = (unitAmountCents: number, quantity: number) => {
+      if (quantity <= 0) {
+        return;
+      }
+
+      lineItems.push({
+        price_data: {
+          currency: "usd",
+          product_data: {
+            name: item.productTitle,
+            ...(description ? { description } : {})
+          },
+          unit_amount: unitAmountCents
+        },
+        quantity
+      });
+    };
+
+    pushLine(baseUnitAmountCents, item.quantity - remainderUnits);
+    pushLine(baseUnitAmountCents + 1, remainderUnits);
+  }
+
+  return lineItems;
 }
 
 export async function POST(request: NextRequest) {
@@ -103,7 +249,9 @@ export async function POST(request: NextRequest) {
     pickupWindowEndAt,
     customerNote,
     items,
-    promoCode
+    promoCode,
+    analyticsSessionId,
+    attribution
   } = payload.data;
   const storeSlug = await resolveStoreSlugFromRequestAsync(request);
   if (!storeSlug) {
@@ -114,12 +262,11 @@ export async function POST(request: NextRequest) {
     .from("stores")
     .select("id,name,slug,status,stripe_account_id")
     .eq("slug", storeSlug)
-    .eq("status", "active")
     .maybeSingle<{
       id: string;
       name: string;
       slug: string;
-      status: string;
+      status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
       stripe_account_id: string | null;
     }>();
 
@@ -127,18 +274,47 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: storeError.message }, { status: 500 });
   }
 
-  if (!store) {
+  if (!store || !isStorePubliclyAccessibleStatus(store.status)) {
     return NextResponse.json({ error: "Store not found or inactive." }, { status: 404 });
   }
 
-  const { data: billingProfile, error: billingProfileError } = await supabase
-    .from("store_billing_profiles")
-    .select("test_mode_enabled")
-    .eq("store_id", store.id)
-    .maybeSingle<{ test_mode_enabled: boolean }>();
+  const { data: taxDecision, error: taxDecisionError } = await supabase
+    .from("stores")
+    .select("tax_collection_mode")
+    .eq("id", store.id)
+    .maybeSingle<{ tax_collection_mode: StoreTaxCollectionMode }>();
 
-  if (billingProfileError) {
-    return NextResponse.json({ error: billingProfileError.message }, { status: 500 });
+  if (taxDecisionError && !isMissingColumnInSchemaCache(taxDecisionError, "tax_collection_mode")) {
+    return NextResponse.json({ error: taxDecisionError.message }, { status: 500 });
+  }
+
+  const taxCollectionMode: StoreTaxCollectionMode = isMissingColumnInSchemaCache(taxDecisionError, "tax_collection_mode")
+    ? "unconfigured"
+    : (taxDecision?.tax_collection_mode ?? "unconfigured");
+
+  const sessionLink = await resolveStorefrontSessionLink(supabase, {
+    storeId: store.id,
+    sessionKey: analyticsSessionId
+  });
+
+  const serverSupabase = await createSupabaseServerClient();
+  const {
+    data: { user: authenticatedUser }
+  } = await serverSupabase.auth.getUser();
+
+  let sourceCartId: string | null = null;
+  if (authenticatedUser) {
+    const { data: activeCart } = await serverSupabase
+      .from("customer_carts")
+      .select("id")
+      .eq("user_id", authenticatedUser.id)
+      .eq("store_id", store.id)
+      .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<{ id: string }>();
+
+    sourceCartId = activeCart?.id ?? null;
   }
 
   const { data: checkoutSettings, error: checkoutSettingsError } = await supabase
@@ -491,7 +667,7 @@ export async function POST(request: NextRequest) {
   }
 
   const variantMap = new Map((variants ?? []).map((variant) => [variant.id, variant]));
-  const rpcItems: Array<{ productId: string; variantId: string; quantity: number; variantLabel: string }> = [];
+  const rpcItems: Array<{ productId: string; variantId: string; quantity: number; variantLabel: string; productTitle: string; unitPriceCents: number }> = [];
   let subtotalCents = 0;
 
   for (const [variantId, entry] of aggregatedVariantItems.entries()) {
@@ -514,31 +690,38 @@ export async function POST(request: NextRequest) {
 
     subtotalCents += variant.price_cents * entry.quantity;
 
+    const variantLabel = formatVariantLabel({ title: variant.title, option_values: variant.option_values }, product.title);
+
     rpcItems.push({
       productId: product.id,
       variantId,
       quantity: entry.quantity,
-      variantLabel: formatVariantLabel({ title: variant.title, option_values: variant.option_values }, product.title)
+      variantLabel,
+      productTitle: product.title,
+      unitPriceCents: variant.price_cents
     });
   }
 
   let discountCents = 0;
   let normalizedPromoCode: string | null = null;
+  const normalizedCustomerEmail = normalizePromotionRedemptionEmail(email);
 
   if (promoCode?.trim()) {
     normalizedPromoCode = promoCode.trim().toUpperCase();
 
     const { data: promotion, error: promotionError } = await supabase
       .from("promotions")
-      .select("code,discount_type,discount_value,min_subtotal_cents,max_redemptions,times_redeemed,starts_at,ends_at,is_active")
+      .select("id,code,discount_type,discount_value,min_subtotal_cents,max_redemptions,per_customer_redemption_limit,times_redeemed,starts_at,ends_at,is_active")
       .eq("store_id", store.id)
       .eq("code", normalizedPromoCode)
       .maybeSingle<{
+        id: string;
         code: string;
         discount_type: "percent" | "fixed";
         discount_value: number;
         min_subtotal_cents: number;
         max_redemptions: number | null;
+        per_customer_redemption_limit: number | null;
         times_redeemed: number;
         starts_at: string | null;
         ends_at: string | null;
@@ -567,6 +750,46 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Promo code redemption limit reached." }, { status: 400 });
     }
 
+    if (promotion.per_customer_redemption_limit !== null) {
+      const redemptionIds = new Set<string>();
+
+      const { data: emailRedemptions, error: emailRedemptionsError } = await supabase
+        .from("promotion_redemptions")
+        .select("id")
+        .eq("promotion_id", promotion.id)
+        .eq("customer_email_normalized", normalizedCustomerEmail)
+        .returns<Array<{ id: string }>>();
+
+      if (emailRedemptionsError) {
+        return NextResponse.json({ error: emailRedemptionsError.message }, { status: 500 });
+      }
+
+      for (const redemption of emailRedemptions ?? []) {
+        redemptionIds.add(redemption.id);
+      }
+
+      if (authenticatedUser?.id) {
+        const { data: userRedemptions, error: userRedemptionsError } = await supabase
+          .from("promotion_redemptions")
+          .select("id")
+          .eq("promotion_id", promotion.id)
+          .eq("customer_user_id", authenticatedUser.id)
+          .returns<Array<{ id: string }>>();
+
+        if (userRedemptionsError) {
+          return NextResponse.json({ error: userRedemptionsError.message }, { status: 500 });
+        }
+
+        for (const redemption of userRedemptions ?? []) {
+          redemptionIds.add(redemption.id);
+        }
+      }
+
+      if (redemptionIds.size >= promotion.per_customer_redemption_limit) {
+        return NextResponse.json({ error: PROMOTION_CUSTOMER_CAP_REACHED_ERROR }, { status: 400 });
+      }
+    }
+
     if (subtotalCents < promotion.min_subtotal_cents) {
       return NextResponse.json(
         { error: `Promo requires minimum subtotal of $${(promotion.min_subtotal_cents / 100).toFixed(2)}.` },
@@ -581,22 +804,27 @@ export async function POST(request: NextRequest) {
   const shippingFeeCents = selectedFulfillment.feeCents;
   const totalCents = itemTotalCents + shippingFeeCents;
   const feeProfile = await resolveStoreFeeProfile(store.id);
-  const platformFeeCents = calculatePlatformFeeCents(itemTotalCents, feeProfile);
+  const platformFeeCents = calculatePlatformFeeCents(totalCents, feeProfile);
 
   if (totalCents <= 0) {
     return NextResponse.json({ error: "Order total must be greater than $0.00." }, { status: 400 });
   }
 
-  const shouldUseStubMode = isStripeStubMode() || Boolean(billingProfile?.test_mode_enabled);
+  const shouldUseStubMode = isStripeStubMode();
 
   if (shouldUseStubMode) {
-    const { data, error } = await supabase.rpc("stub_checkout_create_paid_order", {
-      p_store_slug: storeSlug,
-      p_customer_email: email,
-      p_items: rpcItems,
-      p_stub_payment_ref: `stub_pi_${Date.now()}`,
-      p_promo_code: promoCode ? promoCode.toUpperCase() : null
-    });
+    const { data, error } = await supabase.rpc(
+      "stub_checkout_create_paid_order",
+      buildStubCheckoutRpcPayload({
+        storeSlug,
+        customerEmail: email,
+        customerUserId: authenticatedUser?.id ?? null,
+        items: rpcItems,
+        stubPaymentRef: `stub_pi_${Date.now()}`,
+        discountCents,
+        promoCode: promoCode ? promoCode.toUpperCase() : null
+      })
+    );
 
     if (error) {
       const message = error.message || "Unable to complete checkout.";
@@ -653,7 +881,7 @@ export async function POST(request: NextRequest) {
     await writeOrderFeeBreakdown({
       orderId: result.order_id,
       storeId: store.id,
-      subtotalCents: orderBeforeUpdate.subtotal_cents,
+      feeBaseCents: computedTotalCents,
       feeProfile,
       platformFeeCents,
       netPayoutCents: Math.max(0, computedTotalCents - platformFeeCents)
@@ -676,20 +904,21 @@ export async function POST(request: NextRequest) {
   }
 
   const applicationFeeAmount = platformFeeCents;
+  const stripeReadiness = await getStoreStripePaymentsReadiness(store.stripe_account_id);
+
+  if (!isStorePaymentsReadyForLaunch(taxCollectionMode, stripeReadiness)) {
+    if (taxCollectionMode === "unconfigured") {
+      return NextResponse.json({ error: "This store's tax handling choice is not complete yet." }, { status: 409 });
+    }
+
+    if (taxCollectionMode === "stripe_tax" && stripeReadiness.taxSettingsStatus && stripeReadiness.taxSettingsStatus !== "active") {
+      return NextResponse.json({ error: "This store's Stripe tax setup is not complete yet." }, { status: 409 });
+    }
+
+    return NextResponse.json({ error: "This store's Stripe account is not ready to accept live payments yet." }, { status: 409 });
+  }
 
   const stripe = getStripeClient();
-
-  try {
-    const account = await stripe.accounts.retrieve(store.stripe_account_id);
-    if (!account.charges_enabled || !account.payouts_enabled) {
-      return NextResponse.json({ error: "This store's Stripe account is not ready to accept live payments yet." }, { status: 409 });
-    }
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to verify Stripe account readiness." },
-      { status: 502 }
-    );
-  }
 
   const { data: pendingCheckout, error: pendingCheckoutError } = await supabase
     .from("storefront_checkout_sessions")
@@ -710,11 +939,15 @@ export async function POST(request: NextRequest) {
       pickup_window_end_at: resolvedPickupWindowEndAt,
       pickup_timezone: resolvedPickupTimezone,
       promo_code: normalizedPromoCode,
+      analytics_session_key: sessionLink?.sessionKey ?? null,
+      analytics_session_id: sessionLink?.id ?? null,
+      source_cart_id: sourceCartId,
       fee_plan_key: feeProfile.planKey,
       fee_bps: feeProfile.feeBps,
       fee_fixed_cents: feeProfile.feeFixedCents,
       item_total_cents: itemTotalCents,
       platform_fee_cents: platformFeeCents,
+      attribution_json: attribution ?? {},
       items: rpcItems,
       status: "pending"
     })
@@ -752,14 +985,31 @@ export async function POST(request: NextRequest) {
 
   let sessionId: string | null = null;
   let sessionUrl: string | null = null;
+  const stripeLineItems = buildStripeCheckoutLineItems(
+    rpcItems.map((item) => ({
+      productTitle: item.productTitle,
+      variantLabel: item.variantLabel,
+      quantity: item.quantity,
+      unitPriceCents: item.unitPriceCents
+    })),
+    discountCents
+  );
 
   try {
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       customer_email: email,
-      automatic_tax: {
-        enabled: true
-      },
+      ...(taxCollectionMode === "stripe_tax"
+        ? {
+            automatic_tax: {
+              enabled: true,
+              liability: {
+                type: "account",
+                account: store.stripe_account_id
+              }
+            }
+          }
+        : {}),
       billing_address_collection: "auto",
       ...(selectedFulfillment.method === "shipping"
         ? {
@@ -768,18 +1018,25 @@ export async function POST(request: NextRequest) {
             }
           }
         : {}),
-      line_items: [
-        {
-          price_data: {
-            currency: "usd",
-            product_data: { name: `${store.name} order` },
-            unit_amount: totalCents
-          },
-          quantity: 1
-        }
-      ],
-      success_url: `${appUrl}/checkout?status=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${appUrl}/checkout?status=cancelled`,
+      line_items: stripeLineItems,
+      ...(selectedFulfillment.method === "shipping"
+        ? {
+            shipping_options: [
+              {
+                shipping_rate_data: {
+                  display_name: selectedFulfillment.label,
+                  type: "fixed_amount",
+                  fixed_amount: {
+                    amount: shippingFeeCents,
+                    currency: "usd"
+                  }
+                }
+              }
+            ]
+          }
+        : {}),
+      success_url: `${appUrl}${buildStorefrontCheckoutPath(store.slug)}?status=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${appUrl}${buildStorefrontCheckoutPath(store.slug)}?status=cancelled`,
       metadata: {
         checkout_kind: "storefront_order",
         storefront_checkout_id: pendingCheckout.id,

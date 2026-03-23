@@ -25,7 +25,7 @@ export default async function StoreWorkspacePromotionsPage({ params }: PageProps
 
   const { data: promotions, error: promotionsError } = await supabase
     .from("promotions")
-    .select("id,code,discount_type,discount_value,min_subtotal_cents,max_redemptions,times_redeemed,starts_at,ends_at,is_active,created_at")
+    .select("id,code,discount_type,discount_value,min_subtotal_cents,max_redemptions,per_customer_redemption_limit,times_redeemed,starts_at,ends_at,is_active,created_at")
     .eq("store_id", bundle.store.id)
     .order("created_at", { ascending: false });
 
@@ -34,7 +34,7 @@ export default async function StoreWorkspacePromotionsPage({ params }: PageProps
   }
 
   return (
-    <section className="space-y-4 p-4 lg:p-4">
+    <section className="space-y-3 p-3">
       <DashboardPageHeader title="Promotions" description="Create and manage discount offers." />
       <PromotionsManager initialPromotions={promotions ?? []} />
     </section>

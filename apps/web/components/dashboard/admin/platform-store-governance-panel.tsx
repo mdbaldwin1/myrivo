@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { SectionCard } from "@/components/ui/section-card";
@@ -12,7 +13,7 @@ type GovernanceResponse = {
     id: string;
     name: string;
     slug: string;
-    status: "draft" | "pending_review" | "active" | "suspended";
+    status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
     created_at: string;
   }>;
   decisions: Array<{
@@ -22,19 +23,24 @@ type GovernanceResponse = {
     reasonCode: StoreGovernanceReasonCode | null;
     reasonLabel: string | null;
     reasonDetail: string | null;
-    store: { id: string; name: string; slug: string; status: "draft" | "pending_review" | "active" | "suspended" };
+    store: { id: string; name: string; slug: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" };
     actor: { id: string; displayName: string | null; email: string | null };
   }>;
   error?: string;
 };
 
 export function PlatformStoreGovernancePanel() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<GovernanceResponse | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [reasonCodeByStore, setReasonCodeByStore] = useState<Record<string, StoreGovernanceReasonCode>>({});
   const [reasonDetailByStore, setReasonDetailByStore] = useState<Record<string, string>>({});
+  const highlightedStoreId = searchParams.get("storeId");
+  const highlightedStoreRef = useRef<HTMLDivElement | null>(null);
 
   async function fetchGovernanceData() {
     const response = await fetch("/api/platform/stores/governance", { cache: "no-store" });
@@ -79,6 +85,23 @@ export function PlatformStoreGovernancePanel() {
 
   const fallbackReasonCode = useMemo<StoreGovernanceReasonCode>(() => "incomplete_setup", []);
 
+  useEffect(() => {
+    if (!highlightedStoreId || !highlightedStoreRef.current) {
+      return;
+    }
+    highlightedStoreRef.current.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [highlightedStoreId, data?.pendingStores]);
+
+  function clearHighlightedStore() {
+    if (!highlightedStoreId) {
+      return;
+    }
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.delete("storeId");
+    const nextSearch = nextParams.toString();
+    router.replace(nextSearch ? `${pathname}?${nextSearch}` : pathname, { scroll: false });
+  }
+
   async function act(storeId: string, action: "approve" | "reject" | "suspend") {
     if (!canMutate || savingId) {
       return;
@@ -111,8 +134,14 @@ export function PlatformStoreGovernancePanel() {
         <AppAlert variant="error" message={error} className="mb-2" />
         {data && data.pendingStores.length === 0 ? <p className="text-sm text-muted-foreground">No stores are waiting for review.</p> : null}
         <div className="space-y-3">
-          {(data?.pendingStores ?? []).map((store) => (
-            <div key={store.id} className="space-y-2 rounded-md border border-border/70 bg-muted/15 p-3">
+          {(data?.pendingStores ?? []).map((store) => {
+            const isHighlighted = store.id === highlightedStoreId;
+            return (
+            <div
+              key={store.id}
+              ref={isHighlighted ? highlightedStoreRef : null}
+              className={isHighlighted ? "space-y-2 rounded-md border border-primary/40 bg-primary/5 p-3" : "space-y-2 rounded-md border border-border/70 bg-muted/15 p-3"}
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="font-medium">
@@ -122,6 +151,11 @@ export function PlatformStoreGovernancePanel() {
                 </div>
                 {canMutate ? (
                   <div className="flex flex-wrap items-center gap-2">
+                    {isHighlighted ? (
+                      <Button type="button" size="sm" variant="outline" onClick={clearHighlightedStore} disabled={savingId === store.id}>
+                        Clear
+                      </Button>
+                    ) : null}
                     <Button type="button" size="sm" onClick={() => void act(store.id, "approve")} disabled={savingId === store.id}>
                       Approve
                     </Button>
@@ -174,7 +208,8 @@ export function PlatformStoreGovernancePanel() {
                 </label>
               </div>
             </div>
-          ))}
+          );
+          })}
         </div>
       </SectionCard>
 

@@ -2,7 +2,7 @@
   "name": "myrivo",
   "private": true,
   "version": "0.1.0",
-  "description": "Single-store commerce app for At Home Apothecary",
+  "description": "Single-store commerce app for independent merchants",
   "packageManager": "npm@10.8.2",
   "workspaces": [
     "apps/*",
@@ -22,7 +22,9 @@
     "e2e:test": "npm run env:test && npm run -w @myrivo/web e2e",
     "snapshot:store-experience": "node scripts/export-store-experience-snapshot.mjs",
     "replay:store-experience": "npm run guard:test-store && node scripts/replay-store-experience-snapshot.mjs",
-    "verify:platform-rollout": "node scripts/verify-platform-rollout.mjs --env-file=.env.local"
+    "verify:platform-rollout": "node scripts/verify-platform-rollout.mjs --env-file=.env.local",
+    "backfill:reviews-aggregates": "node scripts/reviews-backfill-aggregate-snapshots.mjs --env-file=.env.local",
+    "backfill:reviews-aggregates:dry": "node scripts/reviews-backfill-aggregate-snapshots.mjs --env-file=.env.local --dry-run"
   },
   "devDependencies": {
     "prettier": "^3.6.2",

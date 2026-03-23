@@ -1,0 +1,248 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type {
+  PlatformStorefrontPrivacySettingsRecord,
+  StorePrivacyOptOutRecord,
+  StorePrivacyOptOutState,
+  StorePrivacyProfileRecord,
+  StorePrivacyRequestRecord,
+  StorePrivacyRequestStatus,
+  StorePrivacyRequestType,
+  StoreRecord,
+  StoreSettingsRecord
+} from "@/types/database";
+import {
+  getDefaultPlatformStorefrontPrivacySettings,
+  type ResolvedPlatformStorefrontPrivacySettings
+} from "@/lib/privacy/platform-storefront-privacy";
+import { buildStorefrontPrivacyPath, buildStorefrontPrivacyRequestPath } from "@/lib/storefront/paths";
+
+export type { StorePrivacyRequestStatus, StorePrivacyRequestType };
+export type { StorePrivacyOptOutState };
+
+export const STORE_PRIVACY_REQUEST_TYPES: readonly StorePrivacyRequestType[] = [
+  "access",
+  "deletion",
+  "correction",
+  "know",
+  "opt_out_sale_share"
+];
+export const STORE_PRIVACY_REQUEST_STATUSES = ["open", "in_progress", "completed", "closed"] as const;
+export const STORE_PRIVACY_OPT_OUT_STATES = ["active", "revoked"] as const;
+
+export const STORE_PRIVACY_INFORMATION_ARCHITECTURE = {
+  platformOwns: [
+    "platform-wide privacy statement and support posture",
+    "account-signup legal acceptance and platform-level privacy disclosure",
+    "browser-signal detection and enforcement, including Global Privacy Control",
+    "future automated rights fulfillment infrastructure and shared suppression plumbing"
+  ],
+  storeSettingsLegalOwns: [
+    "store-level privacy contact details",
+    "store-level California/privacy addenda",
+    "privacy request intake and operator workflow state",
+    "store-specific request intro and disclosure addenda"
+  ],
+  storefrontOwns: [
+    "rendering privacy notices at collection points",
+    "privacy policy and rights links in shopper-facing navigation",
+    "customer-facing privacy request form and confirmation messaging",
+    "showing store-scoped opt-out and California rights entry points"
+  ],
+  nonGoals: [
+    "a separate drag-and-drop privacy studio",
+    "forcing every store to publish a standalone California page by default",
+    "store-managed account-signup legal acceptance",
+    "store-specific browser-signal interpretation rules"
+  ]
+} as const;
+
+export type StorePrivacyNoticeSurface = "checkout" | "newsletter" | "review";
+
+export type ResolvedStorePrivacyProfile = {
+  platform: ResolvedPlatformStorefrontPrivacySettings;
+  noticeAtCollectionEnabled: boolean;
+  checkoutNoticeEnabled: boolean;
+  newsletterNoticeEnabled: boolean;
+  reviewNoticeEnabled: boolean;
+  showCaliforniaNotice: boolean;
+  showDoNotSellLink: boolean;
+  privacyContactEmail: string;
+  privacyRightsEmail: string;
+  privacyContactName: string;
+  collectionNoticeAddendumMarkdown: string;
+  californiaNoticeMarkdown: string;
+  doNotSellMarkdown: string;
+  requestPageIntroMarkdown: string;
+};
+
+export function getDefaultStorePrivacyProfile(
+  platformSettings?: ResolvedPlatformStorefrontPrivacySettings,
+  settings?: Pick<StoreSettingsRecord, "support_email"> | null
+): ResolvedStorePrivacyProfile {
+  const supportEmail = settings?.support_email?.trim() || "privacy@example.com";
+  const resolvedPlatformSettings = platformSettings ?? getDefaultPlatformStorefrontPrivacySettings();
+  return {
+    platform: resolvedPlatformSettings,
+    noticeAtCollectionEnabled: resolvedPlatformSettings.noticeAtCollectionEnabled,
+    checkoutNoticeEnabled: resolvedPlatformSettings.checkoutNoticeEnabled,
+    newsletterNoticeEnabled: resolvedPlatformSettings.newsletterNoticeEnabled,
+    reviewNoticeEnabled: resolvedPlatformSettings.reviewNoticeEnabled,
+    showCaliforniaNotice: resolvedPlatformSettings.showCaliforniaNotice,
+    showDoNotSellLink: resolvedPlatformSettings.showDoNotSellLink,
+    privacyContactEmail: supportEmail,
+    privacyRightsEmail: supportEmail,
+    privacyContactName: "Privacy team",
+    collectionNoticeAddendumMarkdown: "",
+    californiaNoticeMarkdown: "",
+    doNotSellMarkdown: "",
+    requestPageIntroMarkdown: ""
+  };
+}
+
+export function resolveStorePrivacyProfile(
+  profile: StorePrivacyProfileRecord | null | undefined,
+  platformSettings: PlatformStorefrontPrivacySettingsRecord | ResolvedPlatformStorefrontPrivacySettings | null | undefined,
+  settings?: Pick<StoreSettingsRecord, "support_email"> | null
+): ResolvedStorePrivacyProfile {
+  const resolvedPlatformSettings =
+    platformSettings && "noticeAtCollectionEnabled" in platformSettings
+      ? platformSettings
+      : platformSettings
+        ? {
+            noticeAtCollectionEnabled: platformSettings.notice_at_collection_enabled,
+            checkoutNoticeEnabled: platformSettings.checkout_notice_enabled,
+            newsletterNoticeEnabled: platformSettings.newsletter_notice_enabled,
+            reviewNoticeEnabled: platformSettings.review_notice_enabled,
+            showCaliforniaNotice: platformSettings.show_california_notice,
+            showDoNotSellLink: platformSettings.show_do_not_sell_link
+          }
+        : getDefaultPlatformStorefrontPrivacySettings();
+  const fallback = getDefaultStorePrivacyProfile(resolvedPlatformSettings, settings);
+  if (!profile) {
+    return fallback;
+  }
+
+  return {
+    platform: resolvedPlatformSettings,
+    noticeAtCollectionEnabled: resolvedPlatformSettings.noticeAtCollectionEnabled,
+    checkoutNoticeEnabled: resolvedPlatformSettings.checkoutNoticeEnabled,
+    newsletterNoticeEnabled: resolvedPlatformSettings.newsletterNoticeEnabled,
+    reviewNoticeEnabled: resolvedPlatformSettings.reviewNoticeEnabled,
+    showCaliforniaNotice: resolvedPlatformSettings.showCaliforniaNotice,
+    showDoNotSellLink: resolvedPlatformSettings.showDoNotSellLink,
+    privacyContactEmail: profile.privacy_contact_email?.trim() || fallback.privacyContactEmail,
+    privacyRightsEmail: profile.privacy_rights_email?.trim() || fallback.privacyRightsEmail,
+    privacyContactName: profile.privacy_contact_name?.trim() || fallback.privacyContactName,
+    collectionNoticeAddendumMarkdown: profile.collection_notice_addendum_markdown?.trim() || "",
+    californiaNoticeMarkdown: profile.california_notice_markdown?.trim() || "",
+    doNotSellMarkdown: profile.do_not_sell_markdown?.trim() || "",
+    requestPageIntroMarkdown: profile.request_page_intro_markdown?.trim() || ""
+  };
+}
+
+export function getStorePrivacyCollectionNotice(
+  surface: StorePrivacyNoticeSurface,
+  store: Pick<StoreRecord, "name" | "slug">,
+  profile: ResolvedStorePrivacyProfile
+) {
+  const surfaceLead =
+    surface === "checkout"
+      ? "When you check out, we collect the information needed to process and fulfill your order."
+      : surface === "newsletter"
+        ? "When you join the email list, we collect your email address to send store updates and offers."
+        : "When you submit a review, we collect the information needed to publish and moderate your review.";
+
+  return {
+    body: `${surfaceLead} Review ${store.name}'s Privacy Policy for details on how your information is used.`,
+    policyHref: buildStorefrontPrivacyPath(store.slug),
+    californiaHref: `${buildStorefrontPrivacyPath(store.slug)}#california-privacy-notice`,
+    requestHref: buildStorefrontPrivacyRequestPath(store.slug),
+    doNotSellHref: `${buildStorefrontPrivacyRequestPath(store.slug)}?type=opt_out_sale_share`,
+    addendumMarkdown: profile.collectionNoticeAddendumMarkdown
+  };
+}
+
+export function getStorePrivacyRequestTypes() {
+  return [...STORE_PRIVACY_REQUEST_TYPES];
+}
+
+export function getStorePrivacyRequestTypeLabel(requestType: (typeof STORE_PRIVACY_REQUEST_TYPES)[number]) {
+  switch (requestType) {
+    case "access":
+      return "Access my information";
+    case "deletion":
+      return "Delete my information";
+    case "correction":
+      return "Correct my information";
+    case "know":
+      return "Know what information you have";
+    case "opt_out_sale_share":
+      return "Do not sell or share my information";
+  }
+}
+
+export async function getStorePrivacyProfileByStoreId(supabase: SupabaseClient, storeId: string) {
+  const { data, error } = await supabase
+    .from("store_privacy_profiles")
+    .select("*")
+    .eq("store_id", storeId)
+    .maybeSingle<StorePrivacyProfileRecord>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data;
+}
+
+export async function getStorePrivacyRequestsByStoreId(supabase: SupabaseClient, storeId: string) {
+  const { data, error } = await supabase
+    .from("store_privacy_requests")
+    .select("*")
+    .eq("store_id", storeId)
+    .order("created_at", { ascending: false })
+    .returns<StorePrivacyRequestRecord[]>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data ?? [];
+}
+
+export async function getStorePrivacyOptOutsByStoreId(supabase: SupabaseClient, storeId: string) {
+  const { data, error } = await supabase
+    .from("store_privacy_opt_outs")
+    .select("*")
+    .eq("store_id", storeId)
+    .order("updated_at", { ascending: false })
+    .returns<StorePrivacyOptOutRecord[]>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data ?? [];
+}
+
+export function getStorePrivacyRequestStatusLabel(status: StorePrivacyRequestStatus) {
+  switch (status) {
+    case "open":
+      return "Open";
+    case "in_progress":
+      return "In progress";
+    case "completed":
+      return "Completed";
+    case "closed":
+      return "Closed";
+  }
+}
+
+export function getStorePrivacyOptOutStateLabel(state: StorePrivacyOptOutState) {
+  switch (state) {
+    case "active":
+      return "Active";
+    case "revoked":
+      return "Revoked";
+  }
+}

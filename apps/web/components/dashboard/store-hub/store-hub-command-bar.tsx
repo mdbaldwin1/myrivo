@@ -1,12 +1,17 @@
 import Link from "next/link";
+import { StoreWorkspaceLaunchLink } from "@/components/dashboard/store-workspace-launch-link";
 import { Button } from "@/components/ui/button";
 import type { StoreHubData } from "@/lib/dashboard/store-hub/store-hub-types";
 
 type StoreHubCommandBarProps = {
   filters: StoreHubData["filters"];
+  activeStore: {
+    slug: string;
+    name: string;
+  } | null;
 };
 
-export function StoreHubCommandBar({ filters }: StoreHubCommandBarProps) {
+export function StoreHubCommandBar({ filters, activeStore }: StoreHubCommandBarProps) {
   const rangeOptions: Array<StoreHubData["filters"]["range"]> = ["today", "7d", "30d"];
 
   function hrefFor(range: StoreHubData["filters"]["range"], compare: boolean) {
@@ -39,8 +44,15 @@ export function StoreHubCommandBar({ filters }: StoreHubCommandBarProps) {
         <span className="rounded-full border border-border px-2 py-0.5 text-muted-foreground">Updated: {new Date(filters.generatedAt).toLocaleString()}</span>
       </div>
       <div className="flex flex-wrap items-center gap-2">
+        {activeStore ? (
+          <Button size="sm" variant="outline" asChild>
+            <StoreWorkspaceLaunchLink href={`/dashboard/stores/${activeStore.slug}`} storeSlug={activeStore.slug}>
+              Open {activeStore.name}
+            </StoreWorkspaceLaunchLink>
+          </Button>
+        ) : null}
         <Button size="sm" asChild>
-          <Link href="/onboarding">Create store</Link>
+          <Link href="/dashboard/stores/onboarding/new">Create store</Link>
         </Button>
         <Button size="sm" variant="outline" asChild>
           <Link href="/dashboard">Customer dashboard</Link>

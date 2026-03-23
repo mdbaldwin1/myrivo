@@ -8,6 +8,8 @@ import {
   notifyPlatformAdminsStoreSubmittedForReview
 } from "@/lib/notifications/owner-notifications";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
+import { getStoreStripePaymentsReadiness } from "@/lib/stripe/store-payments-readiness";
+import { isStorePaymentsReadyForLaunch } from "@/lib/stores/tax-compliance";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getStoreOnboardingProgressForStore } from "@/lib/stores/onboarding";
 import { getOwnedStoreBundleForSlug } from "@/lib/stores/owner-store";
@@ -56,12 +58,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Store onboarding status not found." }, { status: 404 });
   }
 
-  if (!progress.launchReady) {
+  const stripeReadiness = await getStoreStripePaymentsReadiness(bundle.store.stripe_account_id);
+  const paymentsReadyForLaunch = isStorePaymentsReadyForLaunch(progress.taxCollectionMode, stripeReadiness);
+
+  if (!progress.launchReady || !paymentsReadyForLaunch) {
     const missingSteps = [
       !progress.steps.profile ? "Store profile" : null,
       !progress.steps.branding ? "Branding" : null,
       !progress.steps.firstProduct ? "First product" : null,
-      !progress.steps.payments ? "Payments" : null
+      progress.taxCollectionMode === "unconfigured" ? "Tax decision" : null,
+      !progress.steps.payments || !paymentsReadyForLaunch ? "Payments" : null
     ].filter((step): step is string => step !== null);
 
     try {
@@ -77,20 +83,28 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: "Complete profile, branding, first product, and payments before launching this store." },
+      { error: "Complete profile, branding, first product, your tax decision, and Stripe payments setup before launching this store." },
       { status: 409 }
     );
   }
 
-  if (progress.status === "active") {
-    return NextResponse.json({ ok: true, store: { id: progress.id, slug: progress.slug, status: "active" } });
+  if (progress.status === "live") {
+    return NextResponse.json({ ok: true, store: { id: progress.id, slug: progress.slug, status: "live" } });
   }
 
   if (progress.status === "pending_review") {
     return NextResponse.json({ ok: true, store: { id: progress.id, slug: progress.slug, status: "pending_review" } });
   }
 
-  const { error } = await supabase.from("stores").update({ status: "pending_review" }).eq("id", progress.id);
+  if (!["draft", "changes_requested", "rejected"].includes(progress.status)) {
+    return NextResponse.json({ error: "This store cannot be submitted for review right now." }, { status: 409 });
+  }
+
+  const { error } = await supabase
+    .from("stores")
+    .update({ status: "pending_review", status_reason_code: null, status_reason_detail: null })
+    .eq("id", progress.id)
+    .eq("status", progress.status);
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

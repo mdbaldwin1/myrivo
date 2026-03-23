@@ -1,4 +1,3 @@
-import { getShippingEnv } from "@/lib/env";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type ShippingProvider = "none" | "easypost";
@@ -7,7 +6,7 @@ export type ShippingConfig = {
   provider: ShippingProvider;
   apiKey: string | null;
   webhookSecret: string | null;
-  source: "store" | "env";
+  source: "store" | "default";
 };
 
 function normalizeProvider(value: string | null | undefined): ShippingProvider {
@@ -47,12 +46,11 @@ export async function getStoreShippingConfig(
     };
   }
 
-  const env = getShippingEnv();
   return {
-    provider: normalizeProvider(env.SHIPPING_PROVIDER),
-    apiKey: includeSecrets ? normalizeSecret(env.EASYPOST_API_KEY) : null,
-    webhookSecret: includeSecrets ? normalizeSecret(env.SHIPPING_WEBHOOK_SECRET) : null,
-    source: "env"
+    provider: "none",
+    apiKey: null,
+    webhookSecret: null,
+    source: "default"
   };
 }
 

@@ -8,13 +8,13 @@ Build a multi-tenant ecommerce platform for small makers that provides:
 - Product catalog and inventory management
 - Checkout and order management
 - Stripe-based payment processing
-- Hybrid monetization: free tier with platform transaction fee, paid tiers with reduced or zero fee
+- Admin-managed billing plans with platform transaction-fee configuration
 
 ## Core Stack
 
 - Frontend: Next.js (TypeScript)
 - Backend: Supabase (Postgres, Auth, Storage, Edge Functions)
-- Payments: Stripe (Connect + Billing)
+- Payments: Stripe Connect
 - Deployment: Vercel (web app)
 
 ## Multi-Tenant Model
@@ -39,14 +39,16 @@ Build a multi-tenant ecommerce platform for small makers that provides:
 - `products`: id, store_id, title, description, price_cents, inventory_qty, status
 - `orders`: id, store_id, customer_email, currency, subtotal_cents, total_cents, status, platform_fee_bps, platform_fee_cents
 - `order_items`: id, order_id, product_id, quantity, unit_price_cents
-- `subscriptions`: id, store_id, stripe_customer_id, stripe_subscription_id, plan_key, status, platform_fee_bps
+- `billing_plans`: key, name, monthly_price_cents, transaction_fee_bps, transaction_fee_fixed_cents, active
+- `store_billing_profiles`: store_id, billing_plan_key, overrides_json
 
 ## Integrations
 
 ### Stripe
 
-- Use Stripe Connect (Standard) for merchant payouts.
-- Platform charges subscription via Stripe Billing.
+- Use Stripe Connect Express for merchant payouts.
+- Use destination charges plus application fees for storefront orders.
+- Keep Stripe Billing and customer billing portals out of scope for the current product.
 - Keep payment data minimal in DB; store Stripe IDs and status snapshots.
 - Webhooks handled by Next.js route handlers and/or Supabase Edge Functions.
 
@@ -86,21 +88,21 @@ Build a multi-tenant ecommerce platform for small makers that provides:
 - Basic analytics (orders, revenue, top products)
 
 5. Billing + Hardening
-- Subscription plans and billing portal
+- Admin-managed billing plan assignment and reporting
 - Audit logs, rate limiting, retryable webhooks
 - Monitoring and SLO alerts
 
 ## Revenue Strategy Recommendation
 
-- Use a hybrid model:
-  - Free tier: no monthly fee, platform fee on transactions
-  - Paid tiers: monthly subscription with reduced or zero platform fee
+- Use admin-managed plan assignment:
+  - Transaction-fee-only plans for lean launches
+  - Optional higher-touch paid plans assigned by Myrivo admins when commercially needed
 - Keep Stripe processing fees separate and transparent in merchant reporting.
 - Suggested initial tiers:
   - Free: baseline storefront + checkout, higher platform fee
-  - Starter: low monthly fee, reduced platform fee
-  - Growth: higher monthly fee, optional zero platform fee
-  - Scale: premium monthly fee, zero platform fee, multi-user roles and priority support
+  - Starter: reduced platform fee
+  - Growth: lower platform fee with more support/configuration
+  - Scale: lowest platform fee with white-glove support and advanced controls
 
 ## Immediate Next Tasks
 

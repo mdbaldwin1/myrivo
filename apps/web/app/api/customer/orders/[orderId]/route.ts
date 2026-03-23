@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAuthenticatedCustomerUser } from "@/lib/customer/account";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { OrderShippingDelayRecord } from "@/types/database";
 
 const paramsSchema = z.object({
   orderId: z.string().uuid()
@@ -93,8 +94,21 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: itemsError.message }, { status: 500 });
   }
 
+  const { data: shippingDelays, error: shippingDelaysError } = await supabase
+    .from("order_shipping_delays")
+    .select("id,order_id,store_id,created_by_user_id,resolved_by_user_id,status,reason_key,customer_path,original_ship_promise,revised_ship_date,internal_note,resolution_note,metadata_json,resolved_at,created_at,updated_at")
+    .eq("order_id", order.id)
+    .eq("store_id", order.store_id)
+    .order("created_at", { ascending: false })
+    .returns<OrderShippingDelayRecord[]>();
+
+  if (shippingDelaysError) {
+    return NextResponse.json({ error: shippingDelaysError.message }, { status: 500 });
+  }
+
   return NextResponse.json({
     order,
-    items: items ?? []
+    items: items ?? [],
+    shippingDelays: shippingDelays ?? []
   });
 }

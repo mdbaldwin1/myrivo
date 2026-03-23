@@ -11,7 +11,7 @@ export type StoreOption = {
   id: string;
   name: string;
   slug: string;
-  status: "draft" | "pending_review" | "active" | "suspended";
+  status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
   role: "owner" | "admin" | "staff" | "customer" | "support";
 };
 

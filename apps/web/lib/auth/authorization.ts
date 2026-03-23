@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { hasGlobalRole, hasStorePermission, type StorePermission } from "@/lib/auth/roles";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
+import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
 import type { GlobalUserRole, StoreMemberRole } from "@/types/database";
 
 export type AuthorizedStoreContext = {
@@ -17,7 +17,10 @@ export type AuthorizationResult = {
   response: NextResponse | null;
 };
 
-export async function requireStoreRole(requiredRole: StoreMemberRole | "support"): Promise<AuthorizationResult> {
+export async function requireStoreRole(
+  requiredRole: StoreMemberRole | "support",
+  storeSlug?: string | null
+): Promise<AuthorizationResult> {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user }
@@ -27,7 +30,7 @@ export async function requireStoreRole(requiredRole: StoreMemberRole | "support"
     return { context: null, response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }
 
-  const bundle = await getOwnedStoreBundle(user.id, requiredRole);
+  const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, storeSlug, requiredRole);
   if (!bundle) {
     return { context: null, response: NextResponse.json({ error: "Store access denied" }, { status: 403 }) };
   }
@@ -51,7 +54,7 @@ export async function requireStoreRole(requiredRole: StoreMemberRole | "support"
   };
 }
 
-export async function requireStorePermission(permission: StorePermission): Promise<AuthorizationResult> {
+export async function requireStorePermission(permission: StorePermission, storeSlug?: string | null): Promise<AuthorizationResult> {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user }
@@ -61,7 +64,7 @@ export async function requireStorePermission(permission: StorePermission): Promi
     return { context: null, response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }
 
-  const bundle = await getOwnedStoreBundle(user.id, "customer");
+  const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, storeSlug, "customer");
   if (!bundle) {
     return { context: null, response: NextResponse.json({ error: "Store access denied" }, { status: 403 }) };
   }

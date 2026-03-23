@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Menu } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { DashboardNav } from "@/components/dashboard/dashboard-nav";
+import { useHasMounted } from "@/components/use-has-mounted";
 import type { StoreOption } from "@/components/dashboard/store-switcher";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -13,21 +14,32 @@ type DashboardMobileNavSheetProps = {
   activeStoreSlug: string | null;
   stores: StoreOption[];
   globalRole: GlobalUserRole;
+  userDisplayName?: string | null;
+  userEmail?: string | null;
   userAvatarPath?: string | null;
-  initialTestModeEnabled: boolean;
-  canManageTestMode: boolean;
+  analyticsDashboardEnabled: boolean;
 };
 
 export function DashboardMobileNavSheet({
   activeStoreSlug,
   stores,
   globalRole,
+  userDisplayName,
+  userEmail,
   userAvatarPath,
-  initialTestModeEnabled,
-  canManageTestMode
+  analyticsDashboardEnabled
 }: DashboardMobileNavSheetProps) {
+  const hasMounted = useHasMounted();
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
+
+  if (!hasMounted) {
+    return (
+      <Button type="button" variant="ghost" size="icon" aria-label="Open dashboard navigation menu" className="lg:hidden">
+        <Menu className="h-5 w-5" />
+      </Button>
+    );
+  }
 
   return (
     <Sheet key={pathname} open={isOpen} onOpenChange={setIsOpen}>
@@ -46,9 +58,11 @@ export function DashboardMobileNavSheet({
             activeStoreSlug={activeStoreSlug}
             stores={stores}
             globalRole={globalRole}
+            userDisplayName={userDisplayName}
+            userEmail={userEmail}
             userAvatarPath={userAvatarPath}
-            initialTestModeEnabled={initialTestModeEnabled}
-            canManageTestMode={canManageTestMode}
+            analyticsDashboardEnabled={analyticsDashboardEnabled}
+            mode="mobile"
             className="h-full"
             onNavigate={() => setIsOpen(false)}
           />

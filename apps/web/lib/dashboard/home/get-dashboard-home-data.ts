@@ -1,10 +1,13 @@
+import { getPendingStoreInvitesByEmail } from "@/lib/account/pending-store-invites";
 import { hasGlobalRole } from "@/lib/auth/roles";
 import type { DashboardHomeData, DashboardHomePriorityItem } from "@/lib/dashboard/home/dashboard-home-types";
+import { buildStorefrontCartPath } from "@/lib/storefront/paths";
 import type { GlobalUserRole } from "@/types/database";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type DashboardHomeInput = {
   supabase: SupabaseClient;
+  adminSupabase?: SupabaseClient;
   userId: string;
   userEmail: string | null;
   role: GlobalUserRole;
@@ -61,7 +64,7 @@ type NotificationRow = {
 type MembershipRow = {
   store_id: string;
   role: "owner" | "admin" | "staff" | "customer";
-  stores: { id: string; slug: string; status: "draft" | "pending_review" | "active" | "suspended" } | null;
+  stores: { id: string; slug: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" } | null;
 };
 
 type ManagedStoreOrderRow = {
@@ -80,6 +83,7 @@ type BuildDashboardHomePrioritiesInput = {
   unreadCount: number;
   activeCarts: DashboardHomeData["carts"];
   openOrders: DashboardHomeData["orders"]["open"];
+  pendingInvites: DashboardHomeData["pendingInvites"];
   managedStoreCount: number;
   pendingFulfillmentCount: number;
   pendingReviewCount: number;
@@ -88,6 +92,19 @@ type BuildDashboardHomePrioritiesInput = {
 
 export function buildDashboardHomePriorities(input: BuildDashboardHomePrioritiesInput): DashboardHomePriorityItem[] {
   const items: DashboardHomePriorityItem[] = [];
+
+  if (input.pendingInvites.length > 0) {
+    const firstInvite = input.pendingInvites[0];
+    if (firstInvite) {
+      items.push({
+        id: "pending-store-invites",
+        title: "Team invite waiting",
+        detail: `${firstInvite.storeName} invited you as ${firstInvite.role}.`,
+        href: "/dashboard",
+        severity: "high"
+      });
+    }
+  }
 
   if (input.platformPendingApprovals > 0) {
     items.push({
@@ -128,7 +145,7 @@ export function buildDashboardHomePriorities(input: BuildDashboardHomePriorities
       id: "active-cart",
       title: "Continue checkout",
       detail: `${firstCart.storeName} cart has ${firstCart.itemCount} item(s).`,
-      href: `/cart?store=${encodeURIComponent(firstCart.storeSlug)}`,
+      href: buildStorefrontCartPath(firstCart.storeSlug),
       severity: "medium"
     });
   }
@@ -179,6 +196,7 @@ export function buildDashboardHomePriorities(input: BuildDashboardHomePriorities
 
 export async function getDashboardHomeData(input: DashboardHomeInput): Promise<DashboardHomeData> {
   const normalizedEmail = (input.userEmail ?? "").trim().toLowerCase();
+  const inviteSupabase = input.adminSupabase ?? input.supabase;
 
   const [
     { data: carts, error: cartsError },
@@ -347,10 +365,13 @@ export async function getDashboardHomeData(input: DashboardHomeInput): Promise<D
       }
     : null;
 
+  const normalizedPendingInvites = await getPendingStoreInvitesByEmail(inviteSupabase, input.userEmail);
+
   const priorities = buildDashboardHomePriorities({
     unreadCount: unreadCount ?? 0,
     activeCarts: normalizedCarts,
     openOrders,
+    pendingInvites: normalizedPendingInvites,
     managedStoreCount: managedStores.length,
     pendingFulfillmentCount: workspacePulse?.pendingFulfillmentCount ?? 0,
     pendingReviewCount,
@@ -406,6 +427,7 @@ export async function getDashboardHomeData(input: DashboardHomeInput): Promise<D
         createdAt: entry.created_at
       }))
     },
+    pendingInvites: normalizedPendingInvites,
     workspacePulse,
     platformPulse
   };

@@ -4,7 +4,7 @@ import { logAuditEvent } from "@/lib/audit/log";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
+import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
 
 const settingsSchema = z.object({
   supportEmail: z.string().email().nullable().optional(),
@@ -49,6 +49,18 @@ const settingsSchema = z.object({
   emailCaptureHeading: z.string().max(120).nullable().optional(),
   emailCaptureDescription: z.string().max(280).nullable().optional(),
   emailCaptureSuccessMessage: z.string().max(180).nullable().optional(),
+  welcomePopupEnabled: z.boolean().optional(),
+  welcomePopupEyebrow: z.string().max(80).nullable().optional(),
+  welcomePopupHeadline: z.string().max(200).nullable().optional(),
+  welcomePopupBody: z.string().max(500).nullable().optional(),
+  welcomePopupEmailPlaceholder: z.string().max(120).nullable().optional(),
+  welcomePopupCtaLabel: z.string().max(120).nullable().optional(),
+  welcomePopupDeclineLabel: z.string().max(120).nullable().optional(),
+  welcomePopupImageLayout: z.enum(["top", "left"]).optional(),
+  welcomePopupDelaySeconds: z.number().int().min(0).max(60).optional(),
+  welcomePopupDismissDays: z.number().int().min(1).max(365).optional(),
+  welcomePopupImagePath: z.string().max(500).nullable().optional(),
+  welcomePopupPromotionId: z.string().uuid().nullable().optional(),
   checkoutEnableLocalPickup: z.boolean().optional(),
   checkoutLocalPickupLabel: z.string().max(120).nullable().optional(),
   checkoutLocalPickupFeeCents: z.number().int().min(0).max(250000).optional(),
@@ -59,7 +71,7 @@ const settingsSchema = z.object({
   checkoutOrderNotePrompt: z.string().max(300).nullable().optional()
 });
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user }
@@ -69,7 +81,7 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const bundle = await getOwnedStoreBundle(user.id, "staff");
+  const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, request.nextUrl.searchParams.get("storeSlug"), "staff");
 
   if (!bundle) {
     return NextResponse.json({ error: "No store found for account" }, { status: 404 });
@@ -99,7 +111,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const bundle = await getOwnedStoreBundle(user.id, "staff");
+  const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, request.nextUrl.searchParams.get("storeSlug"), "staff");
 
   if (!bundle) {
     return NextResponse.json({ error: "No store found for account" }, { status: 404 });
@@ -148,6 +160,66 @@ export async function PUT(request: NextRequest) {
           payload.data.emailCaptureSuccessMessage ?? null,
           existing?.email_capture_success_message ?? null
         ),
+        welcome_popup_enabled: resolveValue(
+          "welcomePopupEnabled",
+          payload.data.welcomePopupEnabled ?? false,
+          existing?.welcome_popup_enabled ?? false
+        ),
+        welcome_popup_eyebrow: resolveValue(
+          "welcomePopupEyebrow",
+          payload.data.welcomePopupEyebrow ?? null,
+          existing?.welcome_popup_eyebrow ?? null
+        ),
+        welcome_popup_headline: resolveValue(
+          "welcomePopupHeadline",
+          payload.data.welcomePopupHeadline ?? null,
+          existing?.welcome_popup_headline ?? null
+        ),
+        welcome_popup_body: resolveValue(
+          "welcomePopupBody",
+          payload.data.welcomePopupBody ?? null,
+          existing?.welcome_popup_body ?? null
+        ),
+        welcome_popup_email_placeholder: resolveValue(
+          "welcomePopupEmailPlaceholder",
+          payload.data.welcomePopupEmailPlaceholder ?? null,
+          existing?.welcome_popup_email_placeholder ?? null
+        ),
+        welcome_popup_cta_label: resolveValue(
+          "welcomePopupCtaLabel",
+          payload.data.welcomePopupCtaLabel ?? null,
+          existing?.welcome_popup_cta_label ?? null
+        ),
+        welcome_popup_decline_label: resolveValue(
+          "welcomePopupDeclineLabel",
+          payload.data.welcomePopupDeclineLabel ?? null,
+          existing?.welcome_popup_decline_label ?? null
+        ),
+        welcome_popup_image_layout: resolveValue(
+          "welcomePopupImageLayout",
+          payload.data.welcomePopupImageLayout ?? "left",
+          existing?.welcome_popup_image_layout ?? "left"
+        ),
+        welcome_popup_delay_seconds: resolveValue(
+          "welcomePopupDelaySeconds",
+          payload.data.welcomePopupDelaySeconds ?? 6,
+          existing?.welcome_popup_delay_seconds ?? 6
+        ),
+        welcome_popup_dismiss_days: resolveValue(
+          "welcomePopupDismissDays",
+          payload.data.welcomePopupDismissDays ?? 14,
+          existing?.welcome_popup_dismiss_days ?? 14
+        ),
+        welcome_popup_image_path: resolveValue(
+          "welcomePopupImagePath",
+          payload.data.welcomePopupImagePath ?? null,
+          existing?.welcome_popup_image_path ?? null
+        ),
+        welcome_popup_promotion_id: resolveValue(
+          "welcomePopupPromotionId",
+          payload.data.welcomePopupPromotionId ?? null,
+          existing?.welcome_popup_promotion_id ?? null
+        ),
         checkout_enable_local_pickup: resolveValue(
           "checkoutEnableLocalPickup",
           payload.data.checkoutEnableLocalPickup ?? false,
@@ -192,7 +264,7 @@ export async function PUT(request: NextRequest) {
       { onConflict: "store_id" }
     )
     .select(
-      "support_email,fulfillment_message,shipping_policy,return_policy,announcement,footer_tagline,footer_note,instagram_url,facebook_url,tiktok_url,policy_faqs,about_article_html,about_sections,storefront_copy_json,email_capture_enabled,email_capture_heading,email_capture_description,email_capture_success_message,checkout_enable_local_pickup,checkout_local_pickup_label,checkout_local_pickup_fee_cents,checkout_enable_flat_rate_shipping,checkout_flat_rate_shipping_label,checkout_flat_rate_shipping_fee_cents,checkout_allow_order_note,checkout_order_note_prompt"
+      "support_email,fulfillment_message,shipping_policy,return_policy,announcement,footer_tagline,footer_note,instagram_url,facebook_url,tiktok_url,policy_faqs,about_article_html,about_sections,storefront_copy_json,email_capture_enabled,email_capture_heading,email_capture_description,email_capture_success_message,welcome_popup_enabled,welcome_popup_eyebrow,welcome_popup_headline,welcome_popup_body,welcome_popup_email_placeholder,welcome_popup_cta_label,welcome_popup_decline_label,welcome_popup_image_layout,welcome_popup_delay_seconds,welcome_popup_dismiss_days,welcome_popup_image_path,welcome_popup_promotion_id,checkout_enable_local_pickup,checkout_local_pickup_label,checkout_local_pickup_fee_cents,checkout_enable_flat_rate_shipping,checkout_flat_rate_shipping_label,checkout_flat_rate_shipping_fee_cents,checkout_allow_order_note,checkout_order_note_prompt"
     )
     .single();
 
@@ -219,6 +291,7 @@ export async function PUT(request: NextRequest) {
       aboutSectionsCount: payload.data.aboutSections?.length ?? 0,
       hasStorefrontCopyOverrides: Boolean(payload.data.storefrontCopy && Object.keys(payload.data.storefrontCopy).length > 0),
       emailCaptureEnabled: payload.data.emailCaptureEnabled ?? false,
+      welcomePopupEnabled: payload.data.welcomePopupEnabled ?? false,
       checkoutEnableLocalPickup: payload.data.checkoutEnableLocalPickup ?? false,
       checkoutEnableFlatRateShipping: payload.data.checkoutEnableFlatRateShipping ?? true,
       checkoutAllowOrderNote: payload.data.checkoutAllowOrderNote ?? false

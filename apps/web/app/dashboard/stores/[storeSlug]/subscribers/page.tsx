@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 export default function StoreWorkspaceSubscribersPage() {
   return (
-    <section className="space-y-4 p-4 lg:p-4">
+    <section className="space-y-3 p-3">
       <DashboardPageHeader title="Subscribers" description="Manage newsletter signups captured from your storefront." />
       <StoreEmailSubscribersManager />
     </section>

@@ -4,7 +4,7 @@ import { StoreDashboardShell } from "@/components/dashboard/store-dashboard/stor
 import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { getStoreDashboardData } from "@/lib/dashboard/store-dashboard/get-store-dashboard-data";
-import type { StoreDashboardDateRange } from "@/lib/dashboard/store-dashboard/store-dashboard-types";
+import type { StoreDashboardPerformanceView } from "@/lib/dashboard/store-dashboard/store-dashboard-types";
 import { getOwnedStoreBundleForSlug } from "@/lib/stores/owner-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -12,14 +12,30 @@ export const dynamic = "force-dynamic";
 
 type StoreWorkspacePageProps = {
   params: Promise<{ storeSlug: string }>;
-  searchParams?: Promise<{ range?: string; compare?: string }>;
+  searchParams?: Promise<{ view?: string; month?: string; year?: string }>;
 };
 
-function normalizeRange(rawRange: string | undefined): StoreDashboardDateRange {
-  if (rawRange === "today" || rawRange === "7d" || rawRange === "30d") {
-    return rawRange;
+function normalizePerformanceView(rawView: string | undefined): StoreDashboardPerformanceView {
+  if (rawView === "month" || rawView === "year") {
+    return rawView;
   }
-  return "7d";
+  return "month";
+}
+
+function normalizePerformanceMonth(rawMonth: string | undefined) {
+  if (rawMonth && /^\d{4}-\d{2}$/.test(rawMonth)) {
+    return rawMonth;
+  }
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function normalizePerformanceYear(rawYear: string | undefined) {
+  const parsed = Number(rawYear);
+  if (Number.isFinite(parsed) && parsed >= 2000 && parsed <= 3000) {
+    return parsed;
+  }
+  return new Date().getUTCFullYear();
 }
 
 export default async function StoreWorkspacePage({ params, searchParams }: StoreWorkspacePageProps) {
@@ -41,13 +57,13 @@ export default async function StoreWorkspacePage({ params, searchParams }: Store
     return null;
   }
 
-  const range = normalizeRange(resolvedSearchParams?.range);
-  const compare = resolvedSearchParams?.compare === "1" || resolvedSearchParams?.compare === "true";
+  const performanceView = normalizePerformanceView(resolvedSearchParams?.view);
+  const performanceMonth = normalizePerformanceMonth(resolvedSearchParams?.month);
+  const performanceYear = normalizePerformanceYear(resolvedSearchParams?.year);
   const retryParams = new URLSearchParams();
-  retryParams.set("range", range);
-  if (compare) {
-    retryParams.set("compare", "1");
-  }
+  retryParams.set("view", performanceView);
+  retryParams.set("month", performanceMonth);
+  retryParams.set("year", String(performanceYear));
   const retryHref = `/dashboard/stores/${activeStore.slug}?${retryParams.toString()}`;
 
   let data: Awaited<ReturnType<typeof getStoreDashboardData>> | null = null;
@@ -57,8 +73,9 @@ export default async function StoreWorkspacePage({ params, searchParams }: Store
     data = await getStoreDashboardData({
       supabase,
       store: activeStore,
-      range,
-      compare
+      performanceView,
+      performanceMonth,
+      performanceYear
     });
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Unable to load dashboard data.";
@@ -66,7 +83,7 @@ export default async function StoreWorkspacePage({ params, searchParams }: Store
 
   if (loadError || !data) {
     return (
-      <DashboardPageScaffold title={`${activeStore.name} Control Tower`} description="Dashboard data is temporarily unavailable." className="p-4 lg:p-4">
+      <DashboardPageScaffold title={`${activeStore.name} Control Tower`} description="Dashboard data is temporarily unavailable." className="p-3">
         <AppAlert
           variant="error"
           message={loadError ?? "Unable to load dashboard data."}

@@ -97,7 +97,7 @@ export function StoreBootstrapForm({ existingStores }: StoreBootstrapFormProps) 
   return (
     <div className="space-y-4">
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <Card className="border-border/80">
+        <Card className="border-[hsl(var(--brand-secondary))]/15 bg-gradient-to-br from-[hsl(var(--brand-secondary-soft))]/80 via-background to-primary/5">
           <CardHeader>
             <CardTitle>Set up your store workspace</CardTitle>
             <CardDescription>Create a new store and we will route you directly into its management workspace.</CardDescription>
@@ -110,7 +110,7 @@ export function StoreBootstrapForm({ existingStores }: StoreBootstrapFormProps) 
                   required
                   minLength={2}
                   maxLength={80}
-                  placeholder="At Home Apothecary"
+                  placeholder="Sunset Mercantile"
                   value={storeName}
                   onChange={(event) => {
                     setStoreName(event.target.value);
@@ -125,14 +125,14 @@ export function StoreBootstrapForm({ existingStores }: StoreBootstrapFormProps) 
                 Store URL preview: <span className="font-medium text-foreground">/s/{slugPreview}</span>
               </p>
               <AppAlert variant="error" message={error} />
-              <Button type="submit" disabled={loading || !storeName.trim()} className="w-full sm:w-auto">
+              <Button type="submit" variant="brand" disabled={loading || !storeName.trim()} className="w-full sm:w-auto">
                 {loading ? "Creating store..." : "Create store"}
               </Button>
             </form>
           </CardContent>
         </Card>
 
-        <Card className="border-border/80">
+        <Card className="border-[hsl(var(--brand-secondary))]/15">
           <CardHeader>
             <CardTitle>Launch checklist</CardTitle>
             <CardDescription>After creation, work through these items before sharing your storefront link.</CardDescription>
@@ -147,7 +147,7 @@ export function StoreBootstrapForm({ existingStores }: StoreBootstrapFormProps) 
               ))}
             </ul>
             <Link href="/docs/getting-started" target="_blank" rel="noreferrer">
-              <Button type="button" variant="outline" className="w-full justify-between">
+              <Button type="button" variant="outline" className="w-full justify-between border-[hsl(var(--brand-secondary))]/20 hover:bg-[hsl(var(--brand-secondary-soft))]/50">
                 <span className="inline-flex items-center gap-2">
                   <BookOpen className="h-4 w-4" />
                   Open onboarding docs
@@ -188,7 +188,15 @@ export function StoreBootstrapForm({ existingStores }: StoreBootstrapFormProps) 
                         { label: "General", completed: store.steps.profile },
                         { label: "Branding", completed: store.steps.branding },
                         { label: "First product", completed: store.steps.firstProduct },
-                        { label: "Payments", completed: store.steps.payments },
+                        {
+                          label:
+                            store.paymentStatus === "ready"
+                              ? "Payments ready"
+                              : store.paymentStatus === "setup_required"
+                                ? "Finish Stripe setup"
+                                : "Connect payments",
+                          completed: store.steps.payments
+                        },
                         { label: "Launch", completed: store.steps.launch }
                       ].map((step) => (
                         <li key={step.label} className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -215,7 +223,7 @@ export function StoreBootstrapForm({ existingStores }: StoreBootstrapFormProps) 
                         );
                       })()}
                       {store.canLaunch && store.launchReady && store.status === "draft" ? (
-                        <Button type="button" size="sm" onClick={() => void handleLaunchStore(store.slug)} disabled={launchingStoreSlug === store.slug}>
+                        <Button type="button" size="sm" variant="brand" onClick={() => void handleLaunchStore(store.slug)} disabled={launchingStoreSlug === store.slug}>
                           <Rocket className="h-4 w-4" />
                           {launchingStoreSlug === store.slug ? "Submitting..." : "Submit for review"}
                         </Button>

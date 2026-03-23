@@ -8,14 +8,26 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { buildStorefrontThemeStyle, resolveStorefrontThemeConfig } from "@/lib/theme/storefront-theme";
 import { formatVariantLabel } from "@/lib/products/variants";
-import { readStorefrontCart, writeStorefrontCart, type StorefrontCartEntry } from "@/lib/storefront/cart";
+import { readStorefrontCart, syncStorefrontCart, writeStorefrontCart, type StorefrontCartEntry } from "@/lib/storefront/cart";
 import { StorefrontHeader } from "@/components/storefront/storefront-header";
 import { StorefrontCartButton } from "@/components/storefront/storefront-cart-button";
 import { StorefrontFooter } from "@/components/storefront/storefront-footer";
+import { StorefrontPrivacyCollectionNotice } from "@/components/storefront/storefront-privacy-collection-notice";
+import { StorefrontStudioEditableButtonLabel } from "@/components/storefront/storefront-studio-editable-button-label";
+import { StorefrontStudioEditableText } from "@/components/storefront/storefront-studio-editable-text";
+import { useOptionalStorefrontRuntime } from "@/components/storefront/storefront-runtime-provider";
+import { useOptionalStorefrontAnalytics } from "@/components/storefront/storefront-analytics-provider";
+import { useStorefrontPageView } from "@/components/storefront/use-storefront-analytics-events";
+import { MAIN_CONTENT_ID } from "@/lib/accessibility";
 import { cn } from "@/lib/utils";
+import { buildStorefrontCartAnalyticsValue } from "@/lib/analytics/storefront-instrumentation";
+import { getStorefrontButtonRadiusClass, getStorefrontCardStyleClass, getStorefrontRadiusClass } from "@/lib/storefront/appearance";
 import { resolveStorefrontCopy } from "@/lib/storefront/copy";
+import { getStorefrontPageWidthClass } from "@/lib/storefront/layout";
 import { STOREFRONT_TEXT_LINK_EFFECT_CLASS } from "@/lib/storefront/link-effects";
 import { resolveFooterNavLinks, resolveHeaderNavLinks } from "@/lib/storefront/navigation";
+import { buildStorefrontCheckoutPath, buildStorefrontProductPath, buildStorefrontProductsPath } from "@/lib/storefront/paths";
+import { resolveStorefrontPresentation } from "@/lib/storefront/presentation";
 
 type StorefrontVariant = {
   id: string;
@@ -33,6 +45,9 @@ type StorefrontVariant = {
 type StorefrontProduct = {
   id: string;
   title: string;
+  slug: string;
+  image_urls?: string[] | null;
+  image_alt_text?: string | null;
   product_variants: StorefrontVariant[];
 };
 
@@ -105,19 +120,15 @@ type Props = {
     checkout_order_note_prompt?: string | null;
   } | null;
   products: StorefrontProduct[];
+  studio?: {
+    enabled: boolean;
+    onTitleChange?: (value: string) => void;
+    onSubtitleChange?: (value: string) => void;
+    onEmptyMessageChange?: (value: string) => void;
+    onCheckoutLabelChange?: (value: string) => void;
+    onOrderNotePromptChange?: (value: string) => void;
+  };
 };
-
-const pageWidthClasses = {
-  narrow: "max-w-5xl",
-  standard: "max-w-6xl",
-  wide: "max-w-7xl"
-} as const;
-
-const buttonRadiusClasses = {
-  soft: "!rounded-2xl",
-  rounded: "!rounded-xl",
-  sharp: "!rounded-none"
-} as const;
 
 function getSortedActiveVariants(product: StorefrontProduct) {
   return [...(product.product_variants ?? [])]
@@ -135,39 +146,58 @@ function getDefaultVariant(product: StorefrontProduct) {
   return variants.find((variant) => variant.is_default) ?? variants[0] ?? null;
 }
 
-export function StorefrontCartPage({ store, viewer, branding, settings, products }: Props) {
-  const themeConfig = resolveStorefrontThemeConfig(branding?.theme_json ?? {});
-  const copy = resolveStorefrontCopy(settings?.storefront_copy_json ?? {});
-  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, store.slug);
-  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, store.slug);
-  const buttonRadiusClass = buttonRadiusClasses[themeConfig.radiusScale];
+export function StorefrontCartPage({ store, viewer, branding, settings, products, studio }: Props) {
+  const runtime = useOptionalStorefrontRuntime();
+  const analytics = useOptionalStorefrontAnalytics();
+  const resolvedStore = runtime?.store ?? store;
+  const resolvedViewer = runtime?.viewer ?? viewer;
+  const resolvedBranding = runtime?.branding ?? branding;
+  const resolvedProducts = runtime?.products ?? products;
+  const resolvedPresentation = runtime ? resolveStorefrontPresentation(runtime) : null;
+  const resolvedSettings = resolvedPresentation?.settings ?? settings;
+  const resolvedPrivacyProfile = runtime?.privacyProfile ?? null;
+  const themeConfig = resolvedPresentation?.themeConfig ?? resolveStorefrontThemeConfig(resolvedBranding?.theme_json ?? {});
+  const copy = resolvedPresentation?.copy ?? resolveStorefrontCopy(resolvedSettings?.storefront_copy_json ?? {});
+  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, resolvedStore.slug);
+  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, resolvedStore.slug);
+  const radiusClass = getStorefrontRadiusClass(themeConfig.radiusScale);
+  const buttonRadiusClass = getStorefrontButtonRadiusClass(themeConfig.radiusScale);
+  const cardClass = getStorefrontCardStyleClass(themeConfig.cardStyle);
+  const isIntegrated = themeConfig.cardStyle === "integrated";
+  const studioEnabled = runtime?.mode === "studio";
   const storefrontThemeStyle = buildStorefrontThemeStyle({
-    primaryColor: branding?.primary_color,
-    accentColor: branding?.accent_color,
+    primaryColor: resolvedBranding?.primary_color,
+    accentColor: resolvedBranding?.accent_color,
     themeConfig
   });
+  const checkoutEnableLocalPickup = resolvedSettings?.checkout_enable_local_pickup ?? false;
+  const checkoutLocalPickupLabel = resolvedSettings?.checkout_local_pickup_label ?? null;
+  const checkoutLocalPickupFeeCents = resolvedSettings?.checkout_local_pickup_fee_cents ?? 0;
+  const checkoutEnableFlatRateShipping = resolvedSettings?.checkout_enable_flat_rate_shipping ?? true;
+  const checkoutFlatRateShippingLabel = resolvedSettings?.checkout_flat_rate_shipping_label ?? null;
+  const checkoutFlatRateShippingFeeCents = resolvedSettings?.checkout_flat_rate_shipping_fee_cents ?? 0;
 
-  const fulfillmentOptions = useMemo(() => {
+  const fulfillmentOptions = (() => {
     const options: Array<{ method: "pickup" | "shipping"; label: string; feeCents: number }> = [];
-    if (settings?.checkout_enable_local_pickup) {
+    if (checkoutEnableLocalPickup) {
       options.push({
         method: "pickup",
-        label: settings.checkout_local_pickup_label?.trim() || "Local pickup",
-        feeCents: Math.max(0, settings.checkout_local_pickup_fee_cents ?? 0)
+        label: checkoutLocalPickupLabel?.trim() || "Local pickup",
+        feeCents: Math.max(0, checkoutLocalPickupFeeCents)
       });
     }
-    if (settings?.checkout_enable_flat_rate_shipping ?? true) {
+    if (checkoutEnableFlatRateShipping) {
       options.push({
         method: "shipping",
-        label: settings?.checkout_flat_rate_shipping_label?.trim() || "Shipping",
-        feeCents: Math.max(0, settings?.checkout_flat_rate_shipping_fee_cents ?? 0)
+        label: checkoutFlatRateShippingLabel?.trim() || "Shipping",
+        feeCents: Math.max(0, checkoutFlatRateShippingFeeCents)
       });
     }
     if (options.length === 0) {
       options.push({ method: "shipping", label: "Shipping", feeCents: 0 });
     }
     return options;
-  }, [settings]);
+  })();
 
   const [cart, setCart] = useState<StorefrontCartEntry[]>([]);
   const hasHydratedCartRef = useRef(false);
@@ -193,16 +223,19 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
   const [selectedPickupSlot, setSelectedPickupSlot] = useState<{ startsAt: string; endsAt: string } | null>(null);
   const [pickupStatusMessage, setPickupStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const trackedCartViewRef = useRef(false);
+
+  useStorefrontPageView("cart");
 
   useEffect(() => {
     queueMicrotask(() => {
       const loaded = readStorefrontCart();
-      const filtered = loaded.filter((entry) => products.some((product) => product.id === entry.productId));
+      const filtered = loaded.filter((entry) => resolvedProducts.some((product) => product.id === entry.productId));
       hasHydratedCartRef.current = true;
       setCart(filtered);
 
       void (async () => {
-        const response = await fetch(`/api/customer/cart?store=${encodeURIComponent(store.slug)}`, { cache: "no-store" });
+        const response = await fetch(`/api/customer/cart?store=${encodeURIComponent(resolvedStore.slug)}`, { cache: "no-store" });
         if (!response.ok) {
           return;
         }
@@ -228,20 +261,43 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
           return;
         }
 
-        setCart(sanitized);
+        setCart((current) => {
+          if (current.length === 0) {
+            return sanitized;
+          }
+
+          const currentMap = new Map<string, StorefrontCartEntry>(
+            current.map((item) => [`${item.productId}:${item.variantId}`, item] as [string, StorefrontCartEntry])
+          );
+          const merged = [...current];
+
+          for (const item of sanitized) {
+            const key = `${item.productId}:${item.variantId}`;
+            if (currentMap.has(key)) {
+              continue;
+            }
+            merged.push(item);
+          }
+
+          void syncStorefrontCart(merged, resolvedStore.slug, {
+            analyticsSessionId: analytics?.getSessionId() ?? null,
+            attribution: analytics?.getAttributionSnapshot() ?? null
+          });
+          return merged;
+        });
       })();
     });
-  }, [products, store.slug]);
+  }, [analytics, resolvedProducts, resolvedStore.slug]);
 
   useEffect(() => {
     if (!hasHydratedCartRef.current) {
       return;
     }
-    const filtered = cart.filter((entry) => products.some((product) => product.id === entry.productId));
+    const filtered = cart.filter((entry) => resolvedProducts.some((product) => product.id === entry.productId));
     writeStorefrontCart(filtered);
 
     const timeout = setTimeout(() => {
-      void fetch(`/api/customer/cart?store=${encodeURIComponent(store.slug)}`, {
+      void fetch(`/api/customer/cart?store=${encodeURIComponent(resolvedStore.slug)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -249,21 +305,23 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
             productId: entry.productId,
             variantId: entry.variantId,
             quantity: entry.quantity
-          }))
+          })),
+          analyticsSessionId: analytics?.getSessionId() ?? undefined,
+          attribution: analytics?.getAttributionSnapshot() ?? undefined
         })
       });
     }, 250);
 
     return () => clearTimeout(timeout);
-  }, [cart, products, store.slug]);
+  }, [analytics, cart, resolvedProducts, resolvedStore.slug]);
 
   useEffect(() => {
-    if (selectedFulfillmentMethod !== "pickup" || !settings?.checkout_enable_local_pickup) {
+    if (selectedFulfillmentMethod !== "pickup" || !resolvedSettings?.checkout_enable_local_pickup) {
       return;
     }
 
     void (async () => {
-      const response = await fetch(`/api/storefront/pickup-options?store=${encodeURIComponent(store.slug)}`, {
+      const response = await fetch(`/api/storefront/pickup-options?store=${encodeURIComponent(resolvedStore.slug)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -289,12 +347,12 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
       }
       setPickupStatusMessage(payload.reason ?? null);
     })();
-  }, [buyerLatitude, buyerLongitude, selectedFulfillmentMethod, selectedPickupLocationId, selectedPickupSlot, settings?.checkout_enable_local_pickup, store.slug]);
+  }, [buyerLatitude, buyerLongitude, resolvedSettings?.checkout_enable_local_pickup, resolvedStore.slug, selectedFulfillmentMethod, selectedPickupLocationId, selectedPickupSlot]);
 
   const cartItems = useMemo(() => {
     return cart
       .map((entry) => {
-        const product = products.find((item) => item.id === entry.productId);
+        const product = resolvedProducts.find((item) => item.id === entry.productId);
         if (!product) return null;
         const variant = getSortedActiveVariants(product).find((item) => item.id === entry.variantId) ?? getDefaultVariant(product);
         if (!variant) return null;
@@ -304,7 +362,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
         (item): item is { productId: string; variantId: string; quantity: number; product: StorefrontProduct; variant: StorefrontVariant } =>
           item !== null
       );
-  }, [cart, products]);
+  }, [cart, resolvedProducts]);
 
   const subtotalCents = cartItems.reduce((sum, item) => sum + item.variant.price_cents * item.quantity, 0);
   const selectedFulfillment =
@@ -312,6 +370,28 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
   const shippingFeeCents = selectedFulfillment?.feeCents ?? 0;
   const discountedSubtotalCents = Math.max(0, subtotalCents - appliedDiscountCents);
   const checkoutTotalCents = discountedSubtotalCents + shippingFeeCents;
+
+  useEffect(() => {
+    if (!analytics || !hasHydratedCartRef.current || trackedCartViewRef.current) {
+      return;
+    }
+
+    analytics.track({
+      eventType: "cart_view",
+      value: buildStorefrontCartAnalyticsValue({
+        items: cartItems.map((item) => ({
+          productId: item.productId,
+          variantId: item.variantId,
+          quantity: item.quantity,
+          unitPriceCents: item.variant.price_cents
+        })),
+        fulfillmentMethod: selectedFulfillment.method,
+        discountCents: appliedDiscountCents,
+        shippingCents: shippingFeeCents
+      })
+    });
+    trackedCartViewRef.current = true;
+  }, [analytics, appliedDiscountCents, cartItems, selectedFulfillment.method, shippingFeeCents]);
 
   function updateQuantity(productId: string, variantId: string, quantity: number) {
     if (quantity <= 0) {
@@ -336,7 +416,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
     setApplyingPromo(true);
     setError(null);
 
-    const response = await fetch(`/api/promotions/preview?store=${encodeURIComponent(store.slug)}`, {
+    const response = await fetch(`/api/promotions/preview?store=${encodeURIComponent(resolvedStore.slug)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -380,7 +460,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
     setPending(true);
     setError(null);
 
-    const response = await fetch(`/api/orders/checkout?store=${encodeURIComponent(store.slug)}`, {
+    const response = await fetch(`/api/orders/checkout?store=${encodeURIComponent(resolvedStore.slug)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -394,8 +474,10 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
         pickupLocationId: selectedPickupLocationId ?? undefined,
         pickupWindowStartAt: selectedPickupSlot?.startsAt,
         pickupWindowEndAt: selectedPickupSlot?.endsAt,
-        customerNote: settings?.checkout_allow_order_note ? orderNote.trim() || undefined : undefined,
+        customerNote: resolvedSettings?.checkout_allow_order_note ? orderNote.trim() || undefined : undefined,
         promoCode: promoCode.trim() || undefined,
+        analyticsSessionId: analytics?.getSessionId() ?? undefined,
+        attribution: analytics?.getAttributionSnapshot() ?? undefined,
         items: cartItems.map((item) => ({ productId: item.productId, variantId: item.variantId, quantity: item.quantity }))
       })
     });
@@ -404,7 +486,49 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
     setPending(false);
 
     if (response.ok && payload.mode === "checkout" && payload.checkoutUrl) {
+      analytics?.track({
+        eventType: "checkout_started",
+        value: buildStorefrontCartAnalyticsValue({
+          items: cartItems.map((item) => ({
+            productId: item.productId,
+            variantId: item.variantId,
+            quantity: item.quantity,
+            unitPriceCents: item.variant.price_cents
+          })),
+          fulfillmentMethod: selectedFulfillment.method,
+          discountCents: appliedDiscountCents,
+          shippingCents: shippingFeeCents
+        })
+      });
+      void analytics?.flush({ immediate: true, keepalive: true });
       window.location.assign(payload.checkoutUrl);
+      return;
+    }
+
+    if (response.ok && payload.orderId && payload.paymentMode === "stub") {
+      analytics?.track({
+        eventType: "checkout_started",
+        orderId: payload.orderId,
+        value: buildStorefrontCartAnalyticsValue({
+          items: cartItems.map((item) => ({
+            productId: item.productId,
+            variantId: item.variantId,
+            quantity: item.quantity,
+            unitPriceCents: item.variant.price_cents
+          })),
+          fulfillmentMethod: selectedFulfillment.method,
+          discountCents: appliedDiscountCents,
+          shippingCents: shippingFeeCents
+        })
+      });
+      void analytics?.flush({ immediate: true, keepalive: true });
+      writeStorefrontCart([]);
+      setCart([]);
+      void syncStorefrontCart([], resolvedStore.slug, {
+        analyticsSessionId: analytics?.getSessionId() ?? null,
+        attribution: analytics?.getAttributionSnapshot() ?? null
+      });
+      window.location.assign(`${buildStorefrontCheckoutPath(resolvedStore.slug)}?status=success&orderId=${encodeURIComponent(payload.orderId)}`);
       return;
     }
 
@@ -416,72 +540,170 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
       style={{ ...storefrontThemeStyle, backgroundImage: "none", backgroundAttachment: "fixed" }}
       className="min-h-screen w-full bg-[color:var(--storefront-bg)] text-[color:var(--storefront-text)] [font-family:var(--storefront-font-body)]"
     >
-      {themeConfig.showPolicyStrip && settings?.announcement ? (
-        <section className="fixed inset-x-0 top-0 z-[70] w-full bg-[var(--storefront-accent)] px-4 py-2 text-center text-xs font-medium text-[color:var(--storefront-accent-foreground)] sm:px-6">
-          {settings.announcement}
+      {themeConfig.showPolicyStrip && resolvedSettings?.announcement ? (
+        <section
+          className={
+            studioEnabled
+              ? "sticky top-0 z-50 w-full bg-[var(--storefront-accent)] px-4 py-2 text-center text-xs font-medium text-[color:var(--storefront-accent-foreground)] sm:px-6"
+              : "fixed inset-x-0 top-0 z-[70] w-full bg-[var(--storefront-accent)] px-4 py-2 text-center text-xs font-medium text-[color:var(--storefront-accent-foreground)] sm:px-6"
+          }
+        >
+          {resolvedSettings.announcement}
         </section>
       ) : null}
 
       <StorefrontHeader
-        storeName={store.name}
-        logoPath={branding?.logo_path}
-        showTitle={themeConfig.heroBrandDisplay !== "logo" || !branding?.logo_path}
-        containerClassName={pageWidthClasses[themeConfig.pageWidth]}
+        storeName={resolvedStore.name}
+        logoPath={resolvedBranding?.logo_path}
+        showLogo={themeConfig.headerShowLogo}
+        showTitle={themeConfig.headerShowTitle}
+        containerClassName={getStorefrontPageWidthClass(themeConfig.pageWidth)}
         navItems={headerNavLinks}
         buttonRadiusClass={buttonRadiusClass}
-        topOffsetPx={themeConfig.showPolicyStrip && settings?.announcement ? 32 : 0}
-        rightContent={<StorefrontCartButton storeSlug={store.slug} ariaLabel={copy.nav.openCartAria} buttonRadiusClass={buttonRadiusClass} />}
+        topOffsetPx={themeConfig.showPolicyStrip && resolvedSettings?.announcement ? 32 : 0}
+        rightContent={<StorefrontCartButton storeSlug={resolvedStore.slug} ariaLabel={copy.nav.openCartAria} buttonRadiusClass={buttonRadiusClass} />}
       />
 
-      <main className={cn("mx-auto w-full space-y-6 px-6 py-10", pageWidthClasses[themeConfig.pageWidth])}>
+      <main
+        id={MAIN_CONTENT_ID}
+        tabIndex={-1}
+        className={cn("mx-auto w-full space-y-6 px-4 py-7 focus:outline-none sm:px-6 sm:py-9 lg:py-10", getStorefrontPageWidthClass(themeConfig.pageWidth))}
+      >
         <div className="space-y-1">
-          <h1 className="text-4xl font-semibold leading-tight [font-family:var(--storefront-font-heading)]">{copy.cart.title}</h1>
-          <p className="text-sm text-muted-foreground">{copy.cart.subtitle}</p>
+          {studio?.enabled ? (
+            <StorefrontStudioEditableText
+              as="h1"
+              value={copy.cart.title}
+              onChange={(value) => studio.onTitleChange?.(value)}
+              placeholder="Cart title"
+              displayClassName="text-4xl font-semibold leading-tight [font-family:var(--storefront-font-heading)]"
+            />
+          ) : (
+            <h1 className="text-4xl font-semibold leading-tight [font-family:var(--storefront-font-heading)]">{copy.cart.title}</h1>
+          )}
+          {studio?.enabled ? (
+            <StorefrontStudioEditableText
+              as="p"
+              multiline
+              value={copy.cart.subtitle}
+              onChange={(value) => studio.onSubtitleChange?.(value)}
+              placeholder="Cart subtitle"
+              displayClassName="text-sm text-muted-foreground"
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">{copy.cart.subtitle}</p>
+          )}
         </div>
 
         {cartItems.length === 0 ? (
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">{copy.cart.empty}</p>
-            <Link href={`/products?store=${encodeURIComponent(store.slug)}`} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "text-sm font-medium")}>
+            {studio?.enabled ? (
+              <StorefrontStudioEditableText
+                as="p"
+                value={copy.cart.empty}
+                onChange={(value) => studio.onEmptyMessageChange?.(value)}
+                placeholder="Empty cart message"
+                displayClassName="text-sm text-muted-foreground"
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">{copy.cart.empty}</p>
+            )}
+            <Link href={buildStorefrontProductsPath(resolvedStore.slug)} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "text-sm font-medium")}>
               {copy.cart.browseProducts}
             </Link>
           </div>
         ) : (
-          <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_380px]">
-            <section className="space-y-4">
-              <ul className="space-y-4">
+          <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(21rem,0.88fr)] xl:items-start">
+            <section className="space-y-4 sm:space-y-5">
+              <ul className="space-y-3 sm:space-y-4">
                 {cartItems.map((item) => (
-                  <li key={`${item.productId}:${item.variantId}`} className="space-y-3 border-b border-border/50 pb-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <p className="text-base font-medium">{item.product.title}</p>
-                        <p className="text-xs text-muted-foreground">{formatVariantLabel(item.variant, "Default")}</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => updateQuantity(item.productId, item.variantId, 0)}
-                        className="text-xs text-muted-foreground underline-offset-4 hover:underline"
+                  <li
+                    key={`${item.productId}:${item.variantId}`}
+                    className={cn("space-y-4 p-4 sm:p-5", radiusClass, cardClass, isIntegrated ? "border border-border/50 bg-[color:var(--storefront-surface)]/70 shadow-sm" : "")}
+                  >
+                    <div className="flex items-start gap-4">
+                      <Link
+                        href={buildStorefrontProductPath(resolvedStore.slug, item.product.slug)}
+                        className={cn("relative block h-20 w-20 shrink-0 overflow-hidden border border-border/50 bg-muted/10 sm:h-24 sm:w-24", radiusClass)}
                       >
-                        {copy.cart.remove}
-                      </button>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <Input
-                        type="number"
-                        min={1}
-                        max={99}
-                        value={item.quantity}
-                        onChange={(event) => updateQuantity(item.productId, item.variantId, Number(event.target.value))}
-                        className="h-9 w-24 border-border/60"
-                      />
-                      <p className="text-sm font-medium">${((item.variant.price_cents * item.quantity) / 100).toFixed(2)}</p>
+                        {item.product.image_urls?.[0] ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={item.product.image_urls[0]}
+                            alt={item.product.image_alt_text?.trim() || item.product.title}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center px-3 text-center text-xs text-muted-foreground">
+                            {item.product.title}
+                          </div>
+                        )}
+                      </Link>
+                      <div className="min-w-0 flex-1 space-y-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 space-y-1">
+                            <Link
+                              href={buildStorefrontProductPath(resolvedStore.slug, item.product.slug)}
+                              className="block text-base font-medium underline-offset-4 hover:underline"
+                            >
+                              {item.product.title}
+                            </Link>
+                            <p className="text-xs text-muted-foreground">{formatVariantLabel(item.variant, "Default")}</p>
+                            <p className="text-sm text-muted-foreground">${(item.variant.price_cents / 100).toFixed(2)} each</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => updateQuantity(item.productId, item.variantId, 0)}
+                            className="shrink-0 text-xs text-muted-foreground underline-offset-4 hover:underline"
+                          >
+                            {copy.cart.remove}
+                          </button>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <div
+                            className={cn(
+                              "inline-flex items-center overflow-hidden border border-border/60 bg-[color:var(--storefront-surface)]",
+                              buttonRadiusClass
+                            )}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => updateQuantity(item.productId, item.variantId, item.quantity - 1)}
+                              className="flex h-10 w-10 items-center justify-center text-lg font-medium text-foreground transition hover:bg-muted/20 disabled:opacity-40"
+                              disabled={item.quantity <= 1}
+                              aria-label={`Decrease quantity of ${item.product.title}`}
+                            >
+                              -
+                            </button>
+                            <Input
+                              type="number"
+                              min={1}
+                              max={99}
+                              value={item.quantity}
+                              onChange={(event) => updateQuantity(item.productId, item.variantId, Number(event.target.value))}
+                              className="h-10 w-14 border-0 border-x border-border/60 px-0 text-center [appearance:textfield] focus-visible:ring-0 focus-visible:ring-offset-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                              aria-label={`Quantity of ${item.product.title}`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => updateQuantity(item.productId, item.variantId, item.quantity + 1)}
+                              className="flex h-10 w-10 items-center justify-center text-lg font-medium text-foreground transition hover:bg-muted/20 disabled:opacity-40"
+                              disabled={item.quantity >= 99}
+                              aria-label={`Increase quantity of ${item.product.title}`}
+                            >
+                              +
+                            </button>
+                          </div>
+                          <p className="text-sm font-medium">${((item.variant.price_cents * item.quantity) / 100).toFixed(2)}</p>
+                        </div>
+                      </div>
                     </div>
                   </li>
                 ))}
               </ul>
             </section>
 
-            <aside className="space-y-5 border border-border/60 bg-[color:var(--storefront-surface)] p-5 lg:sticky lg:top-24 lg:h-fit">
+            <aside className={cn("space-y-5 p-4 sm:p-5 xl:sticky xl:top-24 xl:h-fit", radiusClass, cardClass, isIntegrated ? "border border-border/60 bg-[color:var(--storefront-surface)] shadow-sm" : "")}>
               <h2 className="text-xl font-semibold [font-family:var(--storefront-font-heading)]">{copy.cart.orderSummary}</h2>
               <div className="space-y-3 border-b border-border/40 pb-4">
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -521,7 +743,10 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                 <p className="text-sm font-medium">How do you want to receive your products?*</p>
                 <div className="space-y-2">
                   {fulfillmentOptions.map((option) => (
-                    <label key={option.method} className="flex cursor-pointer items-center justify-between gap-3 border border-border/60 px-3 py-2 text-sm">
+                    <label
+                      key={option.method}
+                      className={cn("flex cursor-pointer items-center justify-between gap-3 border border-border/60 px-3 py-2.5 text-sm", buttonRadiusClass)}
+                    >
                       <span className="flex items-center gap-2">
                         <input
                           type="radio"
@@ -567,7 +792,10 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                   {pickupSelectionMode === "buyer_select" && pickupOptions && pickupOptions.length > 0 ? (
                     <div className="space-y-2">
                       {pickupOptions.map((location) => (
-                        <label key={location.id} className="flex cursor-pointer items-start justify-between gap-3 border border-border/50 px-3 py-2 text-xs">
+                        <label
+                          key={location.id}
+                          className={cn("flex cursor-pointer items-start justify-between gap-3 border border-border/50 px-3 py-2 text-xs", buttonRadiusClass)}
+                        >
                           <span className="space-y-0.5">
                             <span className="block font-medium">{location.name}</span>
                             <span className="block text-muted-foreground">
@@ -609,12 +837,27 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                 </div>
               ) : null}
 
-              {settings?.checkout_allow_order_note ? (
+              {resolvedSettings?.checkout_allow_order_note ? (
                 <div className="space-y-2 border-b border-border/40 pb-4">
-                  <p className="text-sm text-muted-foreground">
-                    {settings.checkout_order_note_prompt?.trim() ||
-                      "If you have any questions, comments, or concerns about your order, leave a note below."}
-                  </p>
+                  {studio?.enabled ? (
+                    <StorefrontStudioEditableText
+                      value={
+                        resolvedSettings.checkout_order_note_prompt?.trim() ||
+                        "If you have any questions, comments, or concerns about your order, leave a note below."
+                      }
+                      placeholder="Add any special requests for your order."
+                      multiline
+                      wrapperClassName="w-full max-w-none"
+                      displayClassName="text-sm text-muted-foreground"
+                      editorClassName="w-full max-w-none"
+                      onChange={(value) => studio.onOrderNotePromptChange?.(value)}
+                    />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      {resolvedSettings.checkout_order_note_prompt?.trim() ||
+                        "If you have any questions, comments, or concerns about your order, leave a note below."}
+                    </p>
+                  )}
                   <Textarea
                     value={orderNote}
                     onChange={(event) => setOrderNote(event.target.value)}
@@ -660,26 +903,46 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                 <Button type="button" variant="outline" className={cn("w-full", buttonRadiusClass)} onClick={() => void applyPromoPreview()} disabled={applyingPromo || !promoCode.trim()}>
                   {applyingPromo ? copy.cart.applyingPromo : copy.cart.applyPromo}
                 </Button>
-                <Button type="submit" disabled={pending || cartItems.length === 0} className={cn("h-11 w-full bg-[var(--storefront-accent)] text-[color:var(--storefront-accent-foreground)] hover:opacity-90", buttonRadiusClass)}>
-                  {pending ? copy.cart.processing : copy.cart.checkout}
-                </Button>
+                <div className="relative">
+                  <Button type="submit" disabled={pending || cartItems.length === 0} className={cn("h-11 w-full bg-[var(--storefront-accent)] text-[color:var(--storefront-accent-foreground)] hover:opacity-90", buttonRadiusClass)}>
+                    {pending ? copy.cart.processing : copy.cart.checkout}
+                  </Button>
+                  {studio?.enabled && !pending ? (
+                    <StorefrontStudioEditableButtonLabel
+                      label={copy.cart.checkout}
+                      placeholder="Checkout"
+                      allowPointerThrough
+                      wrapperClassName="absolute inset-0 flex items-center justify-center"
+                      labelClassName="inline-flex items-center justify-center text-sm font-medium text-[color:var(--storefront-accent-foreground)]"
+                      panelClassName="left-1/2 top-[calc(100%+0.5rem)] -translate-x-1/2"
+                      onChange={(value) => studio.onCheckoutLabelChange?.(value)}
+                    />
+                  ) : null}
+                </div>
+                <StorefrontPrivacyCollectionNotice
+                  surface="checkout"
+                  store={resolvedStore}
+                  profile={resolvedPrivacyProfile}
+                />
                 <AppAlert variant="error" compact message={error} />
               </form>
-              <Link href="/products" className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "mx-auto text-sm font-medium")}>
+              <Link href={buildStorefrontProductsPath(resolvedStore.slug)} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "mx-auto text-sm font-medium")}>
                 {copy.cart.continueShopping}
               </Link>
             </aside>
           </div>
         )}
 
-        <StorefrontFooter
-          storeName={store.name}
-          storeSlug={store.slug}
-          viewer={viewer}
-          settings={settings}
-          copy={copy}
-          buttonRadiusClass={buttonRadiusClass}
-          navLinks={footerNavLinks}
+          <StorefrontFooter
+          storeName={resolvedStore.name}
+          storeSlug={resolvedStore.slug}
+          viewer={resolvedViewer}
+          settings={resolvedSettings}
+            copy={copy}
+            buttonRadiusClass={buttonRadiusClass}
+            surfaceRadiusClassName={radiusClass}
+            surfaceCardClassName={cardClass}
+            navLinks={footerNavLinks}
           showBackToTop={themeConfig.showFooterBackToTop}
           showOwnerLogin={themeConfig.showFooterOwnerLogin}
         />

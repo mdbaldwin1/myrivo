@@ -6,19 +6,25 @@ import { notifyOwnersStoreStatusChanged } from "@/lib/notifications/owner-notifi
 import { STORE_GOVERNANCE_REASON_CODES } from "@/lib/platform/store-governance";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
+import { hasStoreLaunchedOnce } from "@/lib/stores/lifecycle";
+import { expirePendingStorefrontCheckoutSessions } from "@/lib/storefront/checkout-finalization";
 
 const payloadSchema = z.object({
-  action: z.enum(["approve", "reject", "suspend"]),
+  action: z.enum(["approve", "request_changes", "reject", "suspend", "restore", "remove"]),
   reasonCode: z.enum(STORE_GOVERNANCE_REASON_CODES).optional(),
   reason: z.string().trim().max(500).optional()
 });
 
-type StoreStatus = "draft" | "pending_review" | "active" | "suspended";
+type StoreStatus = "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
 
 const nextStatusByAction: Record<z.infer<typeof payloadSchema>["action"], StoreStatus> = {
-  approve: "active",
-  reject: "draft",
-  suspend: "suspended"
+  approve: "live",
+  request_changes: "changes_requested",
+  reject: "rejected",
+  suspend: "suspended",
+  restore: "live",
+  remove: "removed"
 };
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ storeId: string }> }) {
@@ -39,11 +45,27 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   const { storeId } = await params;
   const admin = createSupabaseAdminClient();
-  const { data: store, error: storeError } = await admin
+  let { data: store, error: storeError } = await admin
     .from("stores")
-    .select("id,name,slug,status")
+    .select("id,name,slug,status,has_launched_once")
     .eq("id", storeId)
-    .maybeSingle<{ id: string; name: string; slug: string; status: StoreStatus }>();
+    .maybeSingle<{ id: string; name: string; slug: string; status: StoreStatus; has_launched_once: boolean }>();
+
+  if (storeError && isMissingColumnInSchemaCache(storeError, "has_launched_once")) {
+    const legacyStoreResult = await admin
+      .from("stores")
+      .select("id,name,slug,status")
+      .eq("id", storeId)
+      .maybeSingle<{ id: string; name: string; slug: string; status: StoreStatus }>();
+
+    storeError = legacyStoreResult.error;
+    store = legacyStoreResult.data
+      ? {
+          ...legacyStoreResult.data,
+          has_launched_once: hasStoreLaunchedOnce(legacyStoreResult.data.status)
+        }
+      : null;
+  }
 
   if (storeError) {
     return NextResponse.json({ error: storeError.message }, { status: 500 });
@@ -56,12 +78,20 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ error: "Only stores pending review can be approved." }, { status: 409 });
   }
 
-  if (payload.data.action === "reject" && store.status !== "pending_review") {
-    return NextResponse.json({ error: "Only stores pending review can be rejected." }, { status: 409 });
+  if ((payload.data.action === "request_changes" || payload.data.action === "reject") && store.status !== "pending_review") {
+    return NextResponse.json({ error: "Only stores pending review can receive review decisions." }, { status: 409 });
   }
 
-  if ((payload.data.action === "reject" || payload.data.action === "suspend") && !payload.data.reasonCode) {
-    return NextResponse.json({ error: "reasonCode is required for reject and suspend actions." }, { status: 400 });
+  if (payload.data.action === "restore" && !["suspended", "offline"].includes(store.status)) {
+    return NextResponse.json({ error: "Only suspended or offline stores can be restored." }, { status: 409 });
+  }
+
+  if (payload.data.action === "remove" && store.status === "removed") {
+    return NextResponse.json({ error: "Store is already removed." }, { status: 409 });
+  }
+
+  if ((payload.data.action === "request_changes" || payload.data.action === "reject" || payload.data.action === "suspend" || payload.data.action === "remove") && !payload.data.reasonCode) {
+    return NextResponse.json({ error: "reasonCode is required for this action." }, { status: 400 });
   }
 
   const nextStatus = nextStatusByAction[payload.data.action];
@@ -73,12 +103,30 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       ? `reason_code:${normalizedReasonCode}`
       : null);
 
-  const { data: updatedStore, error: updateError } = await admin
+  let { data: updatedStore, error: updateError } = await admin
     .from("stores")
-    .update({ status: nextStatus })
+    .update({
+      status: nextStatus,
+      has_launched_once: nextStatus === "live" ? true : store.has_launched_once,
+      status_reason_code: normalizedReasonCode,
+      status_reason_detail: normalizedReason
+    })
     .eq("id", store.id)
     .select("id,name,slug,status")
     .maybeSingle<{ id: string; name: string; slug: string; status: StoreStatus }>();
+
+  if (updateError && isMissingColumnInSchemaCache(updateError, "has_launched_once")) {
+    ({ data: updatedStore, error: updateError } = await admin
+      .from("stores")
+      .update({
+        status: nextStatus,
+        status_reason_code: normalizedReasonCode,
+        status_reason_detail: normalizedReason
+      })
+      .eq("id", store.id)
+      .select("id,name,slug,status")
+      .maybeSingle<{ id: string; name: string; slug: string; status: StoreStatus }>());
+  }
 
   if (updateError) {
     return NextResponse.json({ error: updateError.message }, { status: 500 });
@@ -103,7 +151,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
   });
 
-  await Promise.allSettled([
+  const backgroundTasks = [
     notifyOwnersStoreStatusChanged({
       storeId: store.id,
       storeSlug: store.slug,
@@ -111,7 +159,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       reason: notifyReason,
       actorUserId: auth.context?.userId ?? undefined
     })
-  ]);
+  ];
+
+  if (nextStatus !== "live") {
+    backgroundTasks.push(expirePendingStorefrontCheckoutSessions(store.id));
+  }
+
+  await Promise.allSettled(backgroundTasks);
 
   return NextResponse.json({ store: updatedStore, ok: true });
 }

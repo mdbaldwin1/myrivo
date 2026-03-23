@@ -15,6 +15,7 @@ type StorefrontImageCarouselProps = {
   showArrows?: boolean;
   showDots?: boolean;
   imageFit?: "cover" | "contain";
+  eagerFirstImage?: boolean;
 };
 
 export function StorefrontImageCarousel(props: StorefrontImageCarouselProps) {
@@ -27,7 +28,8 @@ export function StorefrontImageCarousel(props: StorefrontImageCarouselProps) {
     hoverZoom = false,
     showArrows = true,
     showDots = true,
-    imageFit = "cover"
+    imageFit = "cover",
+    eagerFirstImage = false
   } = props;
   const trackRef = useRef<HTMLDivElement | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -68,11 +70,14 @@ export function StorefrontImageCarousel(props: StorefrontImageCarouselProps) {
               <Image
                 src={image}
                 alt={alt}
-                fill
+                width={1600}
+                height={1600}
+                loading={eagerFirstImage && index === 0 ? "eager" : undefined}
                 unoptimized
                 className={cn(
+                  "h-full w-full",
                   imageFit === "contain" ? "object-contain" : "object-cover",
-                  "transition-transform duration-300",
+                  "transition-transform duration-300 motion-reduce:transition-none",
                   hoverZoom ? "group-hover:scale-105" : ""
                 )}
               />
@@ -82,7 +87,7 @@ export function StorefrontImageCarousel(props: StorefrontImageCarouselProps) {
       ) : (
         <div className="h-full w-full overflow-hidden">
           <div
-            className="flex h-full w-full transition-transform duration-300 ease-out"
+            className="flex h-full w-full transition-transform duration-300 ease-out motion-reduce:transition-none"
             style={{ transform: `translate3d(-${activeIndex * 100}%, 0, 0)` }}
           >
             {images.map((image, index) => (
@@ -90,11 +95,14 @@ export function StorefrontImageCarousel(props: StorefrontImageCarouselProps) {
                 <Image
                   src={image}
                   alt={alt}
-                  fill
+                  width={1600}
+                  height={1600}
+                  loading={eagerFirstImage && index === 0 ? "eager" : undefined}
                   unoptimized
                   className={cn(
+                    "h-full w-full",
                     imageFit === "contain" ? "object-contain" : "object-cover",
-                    "transition-transform duration-300",
+                    "transition-transform duration-300 motion-reduce:transition-none",
                     hoverZoom ? "group-hover:scale-105" : ""
                   )}
                 />

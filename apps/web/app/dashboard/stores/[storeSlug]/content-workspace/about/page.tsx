@@ -1,12 +1,12 @@
-import { ContentWorkspaceAboutForm } from "@/components/dashboard/content-workspace-about-form";
-import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default function StoreWorkspaceContentWorkspaceAboutPage() {
-  return (
-    <section className="flex min-h-0 flex-1 flex-col">
-      <ContentWorkspaceAboutForm header={<DashboardPageHeader title="About Page" description="Brand story article and structured sections." />} />
-    </section>
-  );
+type PageProps = {
+  params: Promise<{ storeSlug: string }>;
+};
+
+export default async function StoreWorkspaceContentWorkspaceAboutPage({ params }: PageProps) {
+  const { storeSlug } = await params;
+  redirect(`/dashboard/stores/${storeSlug}/storefront-studio?surface=about`);
 }

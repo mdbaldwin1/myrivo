@@ -5,7 +5,7 @@ import { getAppUrl } from "@/lib/env";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getStoreShippingConfig } from "@/lib/shipping/store-config";
-import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
+import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const settingsSchema = z.object({
@@ -19,7 +19,7 @@ function createWebhookSecret() {
   return `ship_${randomBytes(18).toString("hex")}`;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user }
@@ -29,7 +29,7 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const bundle = await getOwnedStoreBundle(user.id, "staff");
+  const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, request.nextUrl.searchParams.get("storeSlug"), "staff");
 
   if (!bundle) {
     return NextResponse.json({ error: "No store found for account" }, { status: 404 });
@@ -68,7 +68,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const bundle = await getOwnedStoreBundle(user.id, "staff");
+  const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, request.nextUrl.searchParams.get("storeSlug"), "staff");
 
   if (!bundle) {
     return NextResponse.json({ error: "No store found for account" }, { status: 404 });
@@ -103,5 +103,43 @@ export async function PUT(request: NextRequest) {
     webhookSecret,
     webhookUrl: `${getAppUrl()}/api/shipping/webhook`,
     source: "store"
+  });
+}
+
+export async function DELETE(request: NextRequest) {
+  const trustedOriginResponse = enforceTrustedOrigin(request);
+
+  if (trustedOriginResponse) {
+    return trustedOriginResponse;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, request.nextUrl.searchParams.get("storeSlug"), "staff");
+
+  if (!bundle) {
+    return NextResponse.json({ error: "No store found for account" }, { status: 404 });
+  }
+
+  const { error } = await supabase.from("store_integrations").delete().eq("store_id", bundle.store.id);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    shippingProvider: "none",
+    hasApiKey: false,
+    hasWebhookSecret: false,
+    webhookSecret: null,
+    webhookUrl: `${getAppUrl()}/api/shipping/webhook`,
+    source: "default"
   });
 }

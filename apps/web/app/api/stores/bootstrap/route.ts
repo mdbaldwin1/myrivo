@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
+import { seedStoreLegalDocumentsForStore } from "@/lib/legal/store-documents";
+import { createOrResumeOnboardingSession } from "@/lib/onboarding/session";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { toStoreSlug, withStoreSlugSuffix } from "@/lib/stores/slug";
@@ -51,7 +53,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let createdStore: { id: string; name: string; slug: string; status: "draft" | "pending_review" | "active" | "suspended" } | null = null;
+  let createdStore: { id: string; name: string; slug: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" } | null = null;
   let suffix = 1;
   while (!createdStore && suffix < 100) {
     const nextSlug = withStoreSlugSuffix(baseSlug, suffix);
@@ -64,7 +66,7 @@ export async function POST(request: NextRequest) {
         status: "draft"
       })
       .select("id,name,slug,status")
-      .single<{ id: string; name: string; slug: string; status: "draft" | "pending_review" | "active" | "suspended" }>();
+      .single<{ id: string; name: string; slug: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" }>();
 
     if (!error && data) {
       createdStore = data;
@@ -119,7 +121,42 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const response = NextResponse.json({ store: createdStore }, { status: 201 });
+  try {
+    await seedStoreLegalDocumentsForStore(supabase, {
+      store: createdStore,
+      settings: { support_email: user.email ?? null },
+      publishedByUserId: user.id
+    });
+  } catch (seedError) {
+    await supabase.from("stores").delete().eq("id", createdStore.id).eq("owner_user_id", user.id);
+    return NextResponse.json(
+      {
+        error: seedError instanceof Error ? seedError.message : "Store was created, but legal baseline setup failed. Please contact support."
+      },
+      { status: 500 }
+    );
+  }
+
+  let onboardingSessionId: string;
+
+  try {
+    const session = await createOrResumeOnboardingSession({
+      storeId: createdStore.id,
+      ownerUserId: user.id,
+      storeName: createdStore.name
+    });
+    onboardingSessionId = session.id;
+  } catch (sessionError) {
+    await supabase.from("stores").delete().eq("id", createdStore.id).eq("owner_user_id", user.id);
+    return NextResponse.json(
+      {
+        error: sessionError instanceof Error ? sessionError.message : "Store was created, but onboarding setup failed. Please contact support."
+      },
+      { status: 500 }
+    );
+  }
+
+  const response = NextResponse.json({ store: createdStore, onboardingSessionId }, { status: 201 });
   response.cookies.set(ACTIVE_STORE_COOKIE, createdStore.slug, {
     httpOnly: true,
     sameSite: "lax",

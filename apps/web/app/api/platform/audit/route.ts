@@ -75,8 +75,8 @@ export async function GET(request: NextRequest) {
           .from("stores")
           .select("id,name,slug,status")
           .in("id", storeIds)
-          .returns<Array<{ id: string; name: string; slug: string; status: "draft" | "pending_review" | "active" | "suspended" }>>()
-      : Promise.resolve({ data: [] as Array<{ id: string; name: string; slug: string; status: "draft" | "pending_review" | "active" | "suspended" }> }),
+          .returns<Array<{ id: string; name: string; slug: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" }>>()
+      : Promise.resolve({ data: [] as Array<{ id: string; name: string; slug: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" }> }),
     actorIds.length
       ? admin
           .from("user_profiles")

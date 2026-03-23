@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const enforceTrustedOriginMock = vi.fn<(request: NextRequest) => Response | null>();
-const getOwnedStoreBundleMock = vi.fn();
+const getOwnedStoreBundleForOptionalSlugMock = vi.fn();
 const logAuditEventMock = vi.fn();
 const notifyOwnersStoreSubmittedForReviewMock = vi.fn();
 const notifyPlatformAdminsStoreSubmittedForReviewMock = vi.fn();
@@ -14,7 +14,7 @@ vi.mock("@/lib/security/request-origin", () => ({
 }));
 
 vi.mock("@/lib/stores/owner-store", () => ({
-  getOwnedStoreBundle: (...args: unknown[]) => getOwnedStoreBundleMock(...args)
+  getOwnedStoreBundleForOptionalSlug: (...args: unknown[]) => getOwnedStoreBundleForOptionalSlugMock(...args)
 }));
 
 vi.mock("@/lib/audit/log", () => ({
@@ -47,7 +47,7 @@ vi.mock("@/lib/supabase/server", () => ({
 
 beforeEach(() => {
   enforceTrustedOriginMock.mockReset();
-  getOwnedStoreBundleMock.mockReset();
+  getOwnedStoreBundleForOptionalSlugMock.mockReset();
   logAuditEventMock.mockReset();
   notifyOwnersStoreSubmittedForReviewMock.mockReset();
   notifyPlatformAdminsStoreSubmittedForReviewMock.mockReset();
@@ -60,7 +60,7 @@ beforeEach(() => {
 
 describe("store submit-review route", () => {
   test("submits draft store for review", async () => {
-    getOwnedStoreBundleMock.mockResolvedValue({
+    getOwnedStoreBundleForOptionalSlugMock.mockResolvedValue({
       store: { id: "store-1", slug: "demo-store", name: "Demo Store", status: "draft" }
     });
     storesMaybeSingleMock.mockResolvedValue({
@@ -86,8 +86,8 @@ describe("store submit-review route", () => {
   });
 
   test("returns conflict when store is not draft", async () => {
-    getOwnedStoreBundleMock.mockResolvedValue({
-      store: { id: "store-1", slug: "demo-store", name: "Demo Store", status: "active" }
+    getOwnedStoreBundleForOptionalSlugMock.mockResolvedValue({
+      store: { id: "store-1", slug: "demo-store", name: "Demo Store", status: "live" }
     });
 
     const route = await import("@/app/api/stores/current/submit-review/route");
@@ -98,5 +98,28 @@ describe("store submit-review route", () => {
 
     const response = await route.POST(request);
     expect(response.status).toBe(409);
+  });
+
+  test("allows resubmitting a store with changes requested", async () => {
+    getOwnedStoreBundleForOptionalSlugMock.mockResolvedValue({
+      store: { id: "store-1", slug: "demo-store", name: "Demo Store", status: "changes_requested" }
+    });
+    storesMaybeSingleMock.mockResolvedValue({
+      data: { id: "store-1", name: "Demo Store", slug: "demo-store", status: "pending_review" },
+      error: null
+    });
+
+    const route = await import("@/app/api/stores/current/submit-review/route");
+    const request = new NextRequest("http://localhost:3000/api/stores/current/submit-review", {
+      method: "POST",
+      headers: { origin: "http://localhost:3000", host: "localhost:3000" }
+    });
+
+    const response = await route.POST(request);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      store: { id: "store-1", status: "pending_review" }
+    });
   });
 });

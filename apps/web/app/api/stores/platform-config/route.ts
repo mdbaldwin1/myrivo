@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStorePermission } from "@/lib/auth/authorization";
+import { canAssignBillingPlanKey, formatBillingPlanLabel, isVisibleStoreWorkspaceBillingPlan } from "@/lib/billing/plans";
 import { readJsonBody } from "@/lib/http/read-json-body";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -10,8 +11,9 @@ const updateSchema = z.object({
   billingPlanKey: z.string().trim().min(2).max(40).optional()
 });
 
-export async function GET() {
-  const auth = await requireStorePermission("store.manage_billing");
+export async function GET(request: NextRequest) {
+  const storeSlug = request.nextUrl.searchParams.get("storeSlug");
+  const auth = await requireStorePermission("store.manage_billing", storeSlug);
   if (auth.response) {
     return auth.response;
   }
@@ -26,7 +28,7 @@ export async function GET() {
     supabase.from("stores").select("id").eq("id", auth.context.storeId).single(),
     admin
       .from("store_billing_profiles")
-      .select("store_id,billing_plan_id,test_mode_enabled,metadata_json,billing_plans(key,name,transaction_fee_bps,transaction_fee_fixed_cents)")
+      .select("store_id,billing_plan_id,metadata_json,billing_plans(key,name,transaction_fee_bps,transaction_fee_fixed_cents)")
       .eq("store_id", auth.context.storeId)
       .maybeSingle(),
     admin
@@ -49,6 +51,7 @@ export async function GET() {
   }
 
   const allPlans = plans ?? [];
+  const globalRole = auth.context.globalRole;
   const assignedPlanRaw =
     billing && typeof billing === "object" && !Array.isArray(billing)
       ? ((billing as { billing_plans?: unknown }).billing_plans ?? null)
@@ -64,16 +67,14 @@ export async function GET() {
       ? ((assignedPlan as { key?: unknown }).key as string | undefined)
       : undefined;
 
-  let visiblePlans = auth.context.globalRole === "admin" ? allPlans : allPlans.filter((plan) => plan.key !== "family_friends");
+  let visiblePlans = allPlans.filter((plan) => isVisibleStoreWorkspaceBillingPlan(globalRole, plan.key));
   if (assignedPlan && assignedPlanKey && !visiblePlans.some((plan) => plan.key === assignedPlanKey)) {
     visiblePlans = [
       ...visiblePlans,
       {
         id: "",
         key: assignedPlanKey,
-        name:
-          (assignedPlan as { name?: string }).name ??
-          assignedPlanKey.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()),
+        name: (assignedPlan as { name?: string }).name ?? formatBillingPlanLabel(assignedPlanKey),
         monthly_price_cents: 0,
         transaction_fee_bps: (assignedPlan as { transaction_fee_bps?: number }).transaction_fee_bps ?? 0,
         transaction_fee_fixed_cents: (assignedPlan as { transaction_fee_fixed_cents?: number }).transaction_fee_fixed_cents ?? 0,
@@ -82,7 +83,12 @@ export async function GET() {
     ];
   }
 
-  return NextResponse.json({ store, billing, plans: visiblePlans, canManageBillingPlan: auth.context.globalRole === "admin" });
+  return NextResponse.json({
+    store,
+    billing,
+    plans: visiblePlans,
+    canManageBillingPlan: auth.context.storeRole === "owner" || auth.context.storeRole === "admin" || auth.context.globalRole === "admin"
+  });
 }
 
 export async function PUT(request: NextRequest) {
@@ -91,7 +97,7 @@ export async function PUT(request: NextRequest) {
     return trustedOriginResponse;
   }
 
-  const auth = await requireStorePermission("store.manage_billing");
+  const auth = await requireStorePermission("store.manage_billing", request.nextUrl.searchParams.get("storeSlug"));
   if (auth.response) {
     return auth.response;
   }
@@ -111,8 +117,11 @@ export async function PUT(request: NextRequest) {
 
   let billingPlanId: string | null | undefined;
   if (payload.data.billingPlanKey) {
-    if (auth.context.globalRole !== "admin") {
-      return NextResponse.json({ error: "Only platform admins can assign billing plans." }, { status: 403 });
+    const canManageBillingPlan =
+      auth.context.storeRole === "owner" || auth.context.storeRole === "admin" || auth.context.globalRole === "admin";
+
+    if (!canManageBillingPlan) {
+      return NextResponse.json({ error: "Only store admins can assign billing plans." }, { status: 403 });
     }
 
     const admin = createSupabaseAdminClient();
@@ -131,12 +140,11 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Billing plan not found" }, { status: 400 });
     }
 
-    if (plan.key !== "standard" && plan.key !== "family_friends") {
+    if (!canAssignBillingPlanKey(auth.context.globalRole, plan.key)) {
+      if (plan.key === "family_friends") {
+        return NextResponse.json({ error: "Only platform admins can assign the family & friends plan." }, { status: 403 });
+      }
       return NextResponse.json({ error: "Unsupported billing plan." }, { status: 400 });
-    }
-
-    if (plan.key === "family_friends" && auth.context.globalRole !== "admin") {
-      return NextResponse.json({ error: "Only platform admins can assign the family & friends plan." }, { status: 403 });
     }
 
     billingPlanId = plan.id;
@@ -157,5 +165,5 @@ export async function PUT(request: NextRequest) {
     }
   }
 
-  return GET();
+  return GET(request);
 }

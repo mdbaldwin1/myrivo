@@ -2,7 +2,8 @@
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { MoreHorizontal, Pencil, Plus, RotateCcw, Search, Star, X } from "lucide-react";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +31,7 @@ import {
   type VariantDraft,
   variantStatusOptions
 } from "@/components/dashboard/product-manager-domain";
+import { shouldOpenCatalogProductFromUrl } from "@/lib/dashboard/catalog-url-sync";
 import { formatVariantLabel } from "@/lib/products/variants";
 import { richTextToPlainText } from "@/lib/rich-text";
 import { notify } from "@/lib/feedback/toast";
@@ -507,6 +509,9 @@ function buildNestedVariantsFromParsed(
 }
 
 export function ProductManager({ initialProducts }: ProductManagerProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [products, setProducts] = useState(initialProducts);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | ProductRecord["status"]>("all");
@@ -539,6 +544,17 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   const [createVariantsSnapshotByMode, setCreateVariantsSnapshotByMode] = useState<VariantDraft[] | null>(null);
   const [createPending, setCreatePending] = useState(false);
   const [deletePendingProductId, setDeletePendingProductId] = useState<string | null>(null);
+
+  function updateProductUrl(productId: string | null) {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    if (productId) {
+      nextParams.set("productId", productId);
+    } else {
+      nextParams.delete("productId");
+    }
+    const nextQuery = nextParams.toString();
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+  }
 
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -578,7 +594,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   const [deleteConfirmDescription, setDeleteConfirmDescription] = useState("Are you sure you want to continue?");
   const [deleteConfirmLabel, setDeleteConfirmLabel] = useState("Delete");
   const [catalogError, setCatalogError] = useState<string | null>(null);
-  const [selectedProductId, setSelectedProductId] = useState<string | null>(initialProducts[0]?.id ?? null);
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(searchParams.get("productId") ?? initialProducts[0]?.id ?? null);
   const [catalogInspectorTab, setCatalogInspectorTab] = useState<"overview" | "variants" | "inventory" | "media">("overview");
   const [variantInspectorMode, setVariantInspectorMode] = useState<"flat" | "grouped">("flat");
   const [inventoryAdjustDraft, setInventoryAdjustDraft] = useState<{
@@ -600,6 +616,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   const editActivePanelRef = useRef<HTMLDivElement | null>(null);
   const wasCreateFlyoutOpenRef = useRef(false);
   const wasEditFlyoutOpenRef = useRef(false);
+  const lastHandledProductIdFromUrlRef = useRef<string | null>(null);
 
   const currentCreateSnapshot = useMemo(
     () =>
@@ -747,6 +764,32 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       setSelectedProductId(visibleProducts[0]?.id ?? null);
     }
   }, [selectedProductId, visibleProducts]);
+
+  const openProductFromUrl = useEffectEvent((product: ProductListItem) => {
+    openEditFlyout(product);
+  });
+
+  useEffect(() => {
+    const productIdFromUrl = searchParams.get("productId");
+    if (!productIdFromUrl) {
+      lastHandledProductIdFromUrlRef.current = null;
+      return;
+    }
+
+    const product = products.find((entry) => entry.id === productIdFromUrl);
+    if (!product) {
+      return;
+    }
+
+    if (selectedProductId !== product.id) {
+      setSelectedProductId(product.id);
+    }
+
+    if (shouldOpenCatalogProductFromUrl(productIdFromUrl, lastHandledProductIdFromUrlRef.current)) {
+      lastHandledProductIdFromUrlRef.current = productIdFromUrl;
+      openProductFromUrl(product);
+    }
+  }, [products, searchParams, selectedProductId]);
 
   const flowStepOrder = { product: 0, variant: 1, option: 2 } as const;
 
@@ -1105,8 +1148,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     notify.success("Product deleted.");
 
     if (editingProductId === product.id) {
-      setIsEditFlyoutOpen(false);
-      resetEditComposer();
+      closeEditFlyout();
     }
   }
 
@@ -1323,6 +1365,9 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   }
 
   function openEditFlyout(product: ProductListItem, focus?: { step: "product" | "variant" | "option"; variantId?: string }) {
+    setSelectedProductId(product.id);
+    lastHandledProductIdFromUrlRef.current = product.id;
+    updateProductUrl(product.id);
     setEditOrderedVariantIds(new Set());
     setEditingProductId(product.id);
     setEditTitle(product.title);
@@ -1475,8 +1520,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       return;
     }
 
-    setIsEditFlyoutOpen(false);
-    resetEditComposer();
+    closeEditFlyout();
     notify.success("Product saved.");
   }
 
@@ -1535,6 +1579,12 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     setEditOrderedVariantIds(new Set());
     setEditError(null);
     setEditVariantError(null);
+  }
+
+  function closeEditFlyout() {
+    setIsEditFlyoutOpen(false);
+    updateProductUrl(null);
+    resetEditComposer();
   }
 
   const isCreateDirty = isCreateFlyoutOpen && createBaseline !== "" && currentCreateSnapshot !== createBaseline;
@@ -1819,10 +1869,12 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   }
 
   function handleEditFlyoutOpenChange(open: boolean) {
-    setIsEditFlyoutOpen(open);
-    if (!open) {
-      resetEditComposer();
+    if (open) {
+      setIsEditFlyoutOpen(true);
+      return;
     }
+
+    closeEditFlyout();
   }
 
   function cancelCreateStepChanges() {
@@ -2863,7 +2915,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                   className={createStepIndex === 0 ? "w-full space-y-3 pl-1 pr-3" : "hidden"}
                 >
                 <FormField label="Title">
-                  <Input required minLength={2} placeholder="Whipped Tallow Balm" value={title} onChange={(event) => setTitle(event.target.value)} />
+                  <Input required minLength={2} placeholder="Everyday Hand Cream" value={title} onChange={(event) => setTitle(event.target.value)} />
                 </FormField>
                 <FormField label="Description">
                   <RichTextEditor
@@ -2874,18 +2926,19 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                     value={description}
                     onChange={setDescription}
                     previewLabel="Description preview"
+                    imageUpload={{ folder: "products/rich-text" }}
                   />
                 </FormField>
                 <FormField label="Slug" description="Optional. Leave blank to auto-generate from title.">
-                  <Input placeholder="whipped-tallow-balm" value={productSlug} onChange={(event) => setProductSlug(event.target.value)} />
+                  <Input placeholder="everyday-hand-cream" value={productSlug} onChange={(event) => setProductSlug(event.target.value)} />
                 </FormField>
                 <FormField label="SEO Title" description="Optional override used in page metadata.">
-                  <Input maxLength={120} placeholder="Whipped Tallow Balm | At Home Apothecary" value={seoTitle} onChange={(event) => setSeoTitle(event.target.value)} />
+                  <Input maxLength={120} placeholder="Everyday Hand Cream | Sunset Mercantile" value={seoTitle} onChange={(event) => setSeoTitle(event.target.value)} />
                 </FormField>
                 <FormField label="SEO Description" description="Optional override for meta description.">
                   <Input
                     maxLength={320}
-                    placeholder="Rich, small-batch tallow balm crafted for daily skin support."
+                    placeholder="A lightweight hand cream for everyday moisture and a clean finish."
                     value={seoDescription}
                     onChange={(event) => setSeoDescription(event.target.value)}
                   />
@@ -2893,7 +2946,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                 <FormField label="Primary Image Alt Text" description="Describe the product image for accessibility and SEO.">
                   <Input
                     maxLength={240}
-                    placeholder="Glass jar of whipped tallow balm on a wooden tray."
+                    placeholder="Minimal tube of hand cream beside a folded towel."
                     value={imageAltText}
                     onChange={(event) => setImageAltText(event.target.value)}
                   />
@@ -3787,7 +3840,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                   className={editStepIndex === 0 ? "w-full space-y-3 pl-1 pr-3" : "hidden"}
                 >
                 <FormField label="Title">
-                  <Input required minLength={2} placeholder="Whipped Tallow Balm" value={editTitle} onChange={(event) => setEditTitle(event.target.value)} />
+                  <Input required minLength={2} placeholder="Everyday Hand Cream" value={editTitle} onChange={(event) => setEditTitle(event.target.value)} />
                 </FormField>
                 <FormField label="Description">
                   <RichTextEditor
@@ -3799,11 +3852,12 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                     onChange={setEditDescription}
                     previewLabel="Description preview"
                     disabled={isEditReadOnly || editPending}
+                    imageUpload={{ folder: "products/rich-text" }}
                   />
                 </FormField>
                 <FormField label="Slug" description="Optional. Leave blank to auto-generate from title.">
                   <Input
-                    placeholder="whipped-tallow-balm"
+                    placeholder="everyday-hand-cream"
                     value={editProductSlug}
                     onChange={(event) => setEditProductSlug(event.target.value)}
                     disabled={isEditReadOnly || editPending}
@@ -3812,7 +3866,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                 <FormField label="SEO Title" description="Optional override used in page metadata.">
                   <Input
                     maxLength={120}
-                    placeholder="Whipped Tallow Balm | At Home Apothecary"
+                    placeholder="Everyday Hand Cream | Sunset Mercantile"
                     value={editSeoTitle}
                     onChange={(event) => setEditSeoTitle(event.target.value)}
                     disabled={isEditReadOnly || editPending}
@@ -3821,7 +3875,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                 <FormField label="SEO Description" description="Optional override for meta description.">
                   <Input
                     maxLength={320}
-                    placeholder="Rich, small-batch tallow balm crafted for daily skin support."
+                    placeholder="A lightweight hand cream for everyday moisture and a clean finish."
                     value={editSeoDescription}
                     onChange={(event) => setEditSeoDescription(event.target.value)}
                     disabled={isEditReadOnly || editPending}
@@ -3830,7 +3884,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                 <FormField label="Primary Image Alt Text" description="Describe the product image for accessibility and SEO.">
                   <Input
                     maxLength={240}
-                    placeholder="Glass jar of whipped tallow balm on a wooden tray."
+                    placeholder="Minimal tube of hand cream beside a folded towel."
                     value={editImageAltText}
                     onChange={(event) => setEditImageAltText(event.target.value)}
                     disabled={isEditReadOnly || editPending}

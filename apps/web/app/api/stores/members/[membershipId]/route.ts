@@ -7,7 +7,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { StoreMemberRole } from "@/types/database";
 
 const updateSchema = z.object({
-  role: z.enum(["owner", "admin", "staff", "customer"]).optional(),
+  role: z.enum(["owner", "admin", "staff"]).optional(),
   status: z.enum(["active", "suspended"]).optional()
 });
 
@@ -32,7 +32,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return trustedOriginResponse;
   }
 
-  const auth = await requireStorePermission("store.manage_members");
+  const auth = await requireStorePermission("store.manage_members", request.nextUrl.searchParams.get("storeSlug"));
   if (auth.response) {
     return auth.response;
   }
@@ -126,7 +126,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     return trustedOriginResponse;
   }
 
-  const auth = await requireStorePermission("store.manage_members");
+  const auth = await requireStorePermission("store.manage_members", request.nextUrl.searchParams.get("storeSlug"));
   if (auth.response) {
     return auth.response;
   }

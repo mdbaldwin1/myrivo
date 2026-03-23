@@ -1,6 +1,6 @@
+import { AuthSplitLayout } from "@/components/auth/auth-split-layout";
 import { LoginForm } from "@/components/auth/login-form";
 import { redirect } from "next/navigation";
-import { PageShell } from "@/components/layout/page-shell";
 import { resolveAuthenticatedWorkspacePath } from "@/lib/auth/authenticated-workspace";
 import { sanitizeReturnTo } from "@/lib/auth/return-to";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -24,8 +24,13 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   }
 
   return (
-    <PageShell maxWidthClassName="max-w-lg">
+    <AuthSplitLayout
+      eyebrow="Seller workspace access"
+      title="Pick up where you left off."
+      description="Sign in to manage storefront design, products, orders, payouts, and customer communication from one calmer workspace."
+      highlights={["Storefront Studio", "Catalog and inventory", "Orders and fulfillment", "Analytics and promos"]}
+    >
       <LoginForm returnTo={returnTo} />
-    </PageShell>
+    </AuthSplitLayout>
   );
 }

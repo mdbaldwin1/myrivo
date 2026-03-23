@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { fail, ok } from "@/lib/http/api-response";
+import { isReviewsEnabledForStoreSlug } from "@/lib/reviews/feature-gating";
 import { buildReviewSummary, decodeCursor, listPublishedReviews } from "@/lib/reviews/read";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -55,6 +56,16 @@ export async function GET(request: NextRequest, context: { params: Promise<{ pro
 
   if (!product) {
     return fail(404, "Product not found.");
+  }
+  const { data: store, error: storeError } = await admin.from("stores").select("slug").eq("id", product.store_id).maybeSingle<{ slug: string }>();
+  if (storeError) {
+    return fail(500, storeError.message);
+  }
+  if (!store?.slug) {
+    return fail(404, "Store not found.");
+  }
+  if (!isReviewsEnabledForStoreSlug(store.slug)) {
+    return fail(404, "Reviews are not enabled for this store.");
   }
 
   const query = parsedQuery.data;

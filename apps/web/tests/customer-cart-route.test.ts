@@ -12,6 +12,7 @@ const cartSelectUserEqMock = vi.fn();
 const cartSelectIdEqMock = vi.fn();
 const cartUpdateEqUserMock = vi.fn();
 const cartUpdateEqIdMock = vi.fn();
+const cartUpdateMock = vi.fn();
 
 vi.mock("@/lib/security/request-origin", () => ({
   enforceTrustedOrigin: (...args: unknown[]) => enforceTrustedOriginMock(...args)
@@ -41,6 +42,7 @@ beforeEach(() => {
   cartSelectIdEqMock.mockReset();
   cartUpdateEqUserMock.mockReset();
   cartUpdateEqIdMock.mockReset();
+  cartUpdateMock.mockReset();
 
   enforceTrustedOriginMock.mockReturnValue(null);
   authGetUserMock.mockResolvedValue({ data: { user: { id: "user-1", email: "test@example.com" } } });
@@ -48,16 +50,14 @@ beforeEach(() => {
 });
 
 describe("customer cart route", () => {
-  test("PUT persists validated items with price snapshots", async () => {
-    const cartId = "cart-1";
-
+  test("GET reads the newest active cart without failing on duplicate active carts", async () => {
     serverFromMock.mockImplementation((table: string) => {
       if (table === "stores") {
         return {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
               maybeSingle: vi.fn(async () => ({
-                data: { id: "store-1", slug: "curby", status: "active" },
+                data: { id: "store-1", slug: "curby", status: "live" },
                 error: null
               }))
             }))
@@ -71,8 +71,111 @@ describe("customer cart route", () => {
             eq: vi.fn(() => ({
               eq: vi.fn(() => ({
                 eq: vi.fn(() => ({
-                  maybeSingle: vi.fn(async () => ({ data: { id: cartId }, error: null }))
+                  order: vi.fn(() => ({
+                    limit: vi.fn(() => ({
+                      maybeSingle: vi.fn(async () => ({
+                        data: { id: "cart-newest", created_at: "2026-03-12T00:00:00.000Z" },
+                        error: null
+                      }))
+                    }))
+                  }))
                 }))
+              }))
+            }))
+          }))
+        };
+      }
+
+      if (table === "customer_cart_items") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              returns: vi.fn(async () => ({
+                data: [
+                  {
+                    product_id: "11111111-1111-4111-8111-111111111111",
+                    product_variant_id: "22222222-2222-4222-8222-222222222222",
+                    quantity: 2
+                  }
+                ],
+                error: null
+              }))
+            }))
+          }))
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const route = await import("@/app/api/customer/cart/route");
+    const request = new NextRequest("http://localhost:3000/api/customer/cart?store=curby", {
+      method: "GET"
+    });
+
+    const response = await route.GET(request);
+    const payload = (await response.json()) as {
+      items: Array<{ productId: string; variantId?: string; quantity: number }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.items).toEqual([
+      {
+        productId: "11111111-1111-4111-8111-111111111111",
+        variantId: "22222222-2222-4222-8222-222222222222",
+        quantity: 2
+      }
+    ]);
+  });
+
+  test("PUT persists validated items with price snapshots", async () => {
+    const cartId = "cart-1";
+    cartUpdateEqUserMock.mockResolvedValue({ error: null });
+    cartUpdateEqIdMock.mockReturnValue({ eq: cartUpdateEqUserMock });
+    cartUpdateMock.mockReturnValue({ eq: cartUpdateEqIdMock });
+
+    serverFromMock.mockImplementation((table: string) => {
+      if (table === "stores") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({
+                data: { id: "store-1", slug: "curby", status: "live" },
+                error: null
+              }))
+            }))
+          }))
+        };
+      }
+
+      if (table === "customer_carts") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    limit: vi.fn(() => ({
+                      maybeSingle: vi.fn(async () => ({
+                        data: { id: cartId, created_at: "2026-03-12T00:00:00.000Z", metadata_json: {} },
+                        error: null
+                      }))
+                    }))
+                  }))
+                }))
+              }))
+            }))
+          })),
+          update: cartUpdateMock
+        };
+      }
+
+      if (table === "storefront_sessions") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                maybeSingle: vi.fn(async () => ({ data: { id: "storefront-session-1" }, error: null }))
               }))
             }))
           }))
@@ -128,6 +231,13 @@ describe("customer cart route", () => {
       method: "PUT",
       headers: { "content-type": "application/json", origin: "http://localhost:3000", host: "localhost:3000" },
       body: JSON.stringify({
+        analyticsSessionId: "analytics_session_1234",
+        attribution: {
+          firstTouch: {
+            entryPath: "/s/curby?utm_source=instagram",
+            utmSource: "instagram"
+          }
+        },
         items: [
           {
             productId: "11111111-1111-4111-8111-111111111111",
@@ -153,6 +263,14 @@ describe("customer cart route", () => {
     expect(inserted).toHaveLength(1);
     expect(inserted[0]?.quantity).toBe(3);
     expect(inserted[0]?.unit_price_snapshot_cents).toBe(2500);
+    expect(cartUpdateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        analytics_session_id: "storefront-session-1",
+        analytics_session_key: "analytics_session_1234"
+      })
+    );
+    expect(cartUpdateEqIdMock).toHaveBeenCalledWith("id", cartId);
+    expect(cartUpdateEqUserMock).toHaveBeenCalledWith("user_id", "user-1");
   });
 
   test("DELETE rejects invalid cartId parameter", async () => {

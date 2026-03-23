@@ -4,5 +4,5 @@ type PageProps = { params: Promise<{ storeSlug: string }> };
 
 export default async function LegacyStoreWorkspaceContentStudioOrderSummaryPage({ params }: PageProps) {
   const { storeSlug } = await params;
-  redirect(`/dashboard/stores/${storeSlug}/content-workspace/order-summary`);
+  redirect(`/dashboard/stores/${storeSlug}/storefront-studio?surface=orderSummary`);
 }

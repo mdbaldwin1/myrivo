@@ -5,9 +5,11 @@ import { checkRateLimit } from "@/lib/security/rate-limit";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
+import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 
 const unsubscribeSchema = z.object({
-  email: z.string().email().max(320)
+  email: z.string().email().max(320),
+  source: z.string().trim().max(80).optional().default("unsubscribe_form")
 });
 
 export async function POST(request: NextRequest) {
@@ -32,6 +34,7 @@ export async function POST(request: NextRequest) {
   }
 
   const email = parsed.data.email.trim().toLowerCase();
+  const unsubscribedAt = new Date().toISOString();
   const supabase = createSupabaseAdminClient();
   const storeSlug = await resolveStoreSlugFromRequestAsync(request);
 
@@ -43,13 +46,13 @@ export async function POST(request: NextRequest) {
     .from("stores")
     .select("id,status")
     .eq("slug", storeSlug)
-    .maybeSingle<{ id: string; status: "draft" | "pending_review" | "active" | "suspended" }>();
+    .maybeSingle<{ id: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" }>();
 
   if (storeError) {
     return NextResponse.json({ error: storeError.message }, { status: 500 });
   }
 
-  if (!store || store.status !== "active") {
+  if (!store || !isStorePubliclyAccessibleStatus(store.status)) {
     return NextResponse.json({ success: true });
   }
 
@@ -72,7 +75,12 @@ export async function POST(request: NextRequest) {
     .from("store_email_subscribers")
     .update({
       status: "unsubscribed",
-      unsubscribed_at: new Date().toISOString()
+      unsubscribed_at: unsubscribedAt,
+      metadata_json: {
+        suppression_reason: "user_unsubscribed",
+        suppression_source: parsed.data.source.trim() || "unsubscribe_form",
+        suppression_recorded_at: unsubscribedAt
+      }
     })
     .eq("id", existing.id);
 

@@ -20,6 +20,7 @@ const createSchema = z.object({
   discountValue: z.number().int().positive(),
   minSubtotalCents: z.number().int().nonnegative().default(0),
   maxRedemptions: z.number().int().positive().nullable().optional(),
+  perCustomerRedemptionLimit: z.number().int().positive().nullable().optional(),
   startsAt: z.string().datetime().nullable().optional(),
   endsAt: z.string().datetime().nullable().optional(),
   isActive: z.boolean().default(true)
@@ -66,7 +67,7 @@ export async function GET() {
 
   const { data, error } = await resolved.supabase
     .from("promotions")
-    .select("id,code,discount_type,discount_value,min_subtotal_cents,max_redemptions,times_redeemed,starts_at,ends_at,is_active,created_at")
+    .select("id,code,discount_type,discount_value,min_subtotal_cents,max_redemptions,per_customer_redemption_limit,times_redeemed,starts_at,ends_at,is_active,created_at")
     .eq("store_id", resolved.storeId)
     .order("created_at", { ascending: false });
 
@@ -104,11 +105,12 @@ export async function POST(request: NextRequest) {
       discount_value: payload.data.discountValue,
       min_subtotal_cents: payload.data.minSubtotalCents,
       max_redemptions: payload.data.maxRedemptions ?? null,
+      per_customer_redemption_limit: payload.data.perCustomerRedemptionLimit ?? null,
       starts_at: payload.data.startsAt ?? null,
       ends_at: payload.data.endsAt ?? null,
       is_active: payload.data.isActive
     })
-    .select("id,code,discount_type,discount_value,min_subtotal_cents,max_redemptions,times_redeemed,starts_at,ends_at,is_active,created_at")
+    .select("id,code,discount_type,discount_value,min_subtotal_cents,max_redemptions,per_customer_redemption_limit,times_redeemed,starts_at,ends_at,is_active,created_at")
     .single();
 
   if (error) {
@@ -158,6 +160,7 @@ export async function PATCH(request: NextRequest) {
   if (payload.data.discountValue !== undefined) updates.discount_value = payload.data.discountValue;
   if (payload.data.minSubtotalCents !== undefined) updates.min_subtotal_cents = payload.data.minSubtotalCents;
   if (payload.data.maxRedemptions !== undefined) updates.max_redemptions = payload.data.maxRedemptions;
+  if (payload.data.perCustomerRedemptionLimit !== undefined) updates.per_customer_redemption_limit = payload.data.perCustomerRedemptionLimit;
   if (payload.data.startsAt !== undefined) updates.starts_at = payload.data.startsAt;
   if (payload.data.endsAt !== undefined) updates.ends_at = payload.data.endsAt;
   if (payload.data.isActive !== undefined) updates.is_active = payload.data.isActive;
@@ -167,7 +170,7 @@ export async function PATCH(request: NextRequest) {
     .update(updates)
     .eq("id", payload.data.promotionId)
     .eq("store_id", resolved.storeId)
-    .select("id,code,discount_type,discount_value,min_subtotal_cents,max_redemptions,times_redeemed,starts_at,ends_at,is_active,created_at")
+    .select("id,code,discount_type,discount_value,min_subtotal_cents,max_redemptions,per_customer_redemption_limit,times_redeemed,starts_at,ends_at,is_active,created_at")
     .single();
 
   if (error) {

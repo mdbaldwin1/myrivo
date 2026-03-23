@@ -1,109 +1,155 @@
-# Stripe Tax Setup (Launch Runbook)
+# Stripe Tax Setup (Merchant-Owned Liability Plan)
 
-Myrivo now enables `automatic_tax` on Stripe Checkout sessions in `/api/orders/checkout`.
+Myrivo enables `automatic_tax` on Stripe Checkout sessions in `/api/orders/checkout`.
 
-This runbook is intentionally explicit and click-by-click.
+This document records both:
+- the **current implementation**
+- the **intended target state**
 
-## Important context for this app
+The intended direction for Myrivo is:
 
-- We create Checkout Sessions from the **platform Stripe account** and use **destination charges** to transfer funds to connected stores.
-- We currently set `automatic_tax.enabled=true` and **do not set** `automatic_tax.liability`.
-- Per Stripe, if `automatic_tax.liability` is set, tax settings/registrations are loaded from the referenced account; when omitted, tax configuration comes from the requesting account.
-- In our current code path, that means tax setup is driven by the **platform account** (not each connected account).
+> **Each seller is responsible for their own tax registrations, tax compliance, and filings.**
+> Myrivo should support Stripe Tax calculation, but it should not operate as the tax-liable platform account for merchant storefront sales.
 
 References:
 - [Checkout Session create API](https://docs.stripe.com/api/checkout/sessions/create)
 - [Tax for software platforms](https://docs.stripe.com/tax/tax-for-platforms)
 - [Use Stripe Tax with Connect](https://docs.stripe.com/tax/connect)
+- [Tax settings API](https://docs.stripe.com/tax/settings-api)
+- [Tax settings embedded component](https://docs.stripe.com/connect/supported-embedded-components/tax-settings)
+- [Tax registrations embedded component](https://docs.stripe.com/connect/supported-embedded-components/tax-registrations)
 
-## Phase 1: Turn on Stripe Tax in platform account (required now)
+## Current state
 
-1. Open Stripe Dashboard in the account your backend key belongs to.
-2. Go to [Settings > Tax](https://dashboard.stripe.com/settings/tax).
-3. Click **Get started** if Stripe Tax is not yet enabled.
+Today Myrivo:
+- creates Checkout Sessions from the **platform Stripe account**
+- uses **destination charges** to transfer funds to connected stores
+- sets `automatic_tax.enabled=true`
+- sets `automatic_tax.liability.account = store.stripe_account_id`
 
-What to set:
-- **Head office address**: set your legal business address exactly as registered.
-- **Preset product tax code**: choose the closest default for your catalog.
-- **Preset shipping tax code**: set this if you charge shipping.
-- **Include tax in prices**:
-  - For US-style pricing, set default behavior to **Exclusive**.
-  - Use **Inclusive** only if you want tax included in listed prices.
+That means Stripe Tax is configured to use the connected seller account's tax liability rather than the platform account's configuration.
 
-Reference:
-- [Set up Stripe Tax](https://docs.stripe.com/tax/set-up)
-- [Product tax codes and tax behavior](https://docs.stripe.com/tax/products-prices-tax-codes-tax-behavior)
+What is implemented today:
+- live checkout blocks when a store chooses `Stripe Tax` and the connected-account Stripe Tax setup is not ready
+- merchant settings surface Stripe Tax readiness and missing setup fields
+- merchant settings include embedded Stripe Tax settings and tax registrations components for connected accounts
+- stores must make an explicit tax decision before launch:
+  - `Stripe Tax`
+  - `Seller-attested no-tax`
+- seller-attested no-tax is warning-backed and auditable, but it does **not** mean Myrivo determined the seller has no tax obligation
+- checkout still uses one aggregated line item, which is workable for now but not ideal long term
 
-## Phase 2: Add registrations (critical)
+## Chosen direction
 
-1. Go to [Tax > Registrations](https://dashboard.stripe.com/tax/registrations).
-2. Click **+ Add registration**.
-3. For each jurisdiction where you must collect:
-  - Choose country/state/province.
-  - Choose **I’ve already registered** (or Stripe-assisted registration where available).
-  - Enter registration details exactly as issued by the authority.
-  - Set collection timing:
-    - **Start collecting immediately** if active now.
-    - **Schedule tax collection** with effective date/time if future-dated.
-4. Repeat for all required jurisdictions.
+Myrivo should migrate to:
 
-Notes:
-- If no registration is active for a jurisdiction, Stripe Tax can return `0.00` with non-collecting reasons.
-- Registration decisions are legal/tax decisions; confirm with your tax advisor/CPA.
+### Merchant-owned tax responsibility
 
-Reference:
-- [Register for sales tax/VAT/GST](https://docs.stripe.com/tax/registering)
+For storefront sales:
+- the seller is the tax-liable party
+- the seller's connected Stripe account owns tax settings and registrations
+- Stripe Tax should calculate tax using the connected account's tax setup
+- Myrivo should not require the platform operator to maintain merchant tax registrations or file merchant sales taxes
 
-## Phase 3: Verify in test mode before live mode
+This is the right operating model for Myrivo while it serves independent sellers.
 
-1. Switch Dashboard to **Test mode**.
-2. Ensure Tax is enabled in test mode settings as well.
-3. Add at least one test registration via Tax settings/registrations.
-4. Run checkout scenarios in your app:
-  - Taxable US shipping address
-  - Non-taxable or different state address
-  - Pickup order (if used)
-5. In Stripe, verify:
-  - Checkout Session has `automatic_tax.enabled=true`
-  - Payment/Session tax amounts are non-zero where expected
-  - Tax appears in [Tax transactions](https://dashboard.stripe.com/tax/transactions)
+## Target implementation
 
-References:
-- [Automatic tax for Checkout](https://docs.stripe.com/tax/checkout)
+### Stripe setup target
 
-## Phase 4: Live mode cutover checklist
+Each connected seller account should have:
+- Stripe Tax enabled
+- head office/business address configured
+- default product tax code configured
+- default shipping tax code configured if shipping is charged
+- default tax behavior configured
+- required registrations configured on the connected account
 
-1. In Myrivo env:
-  - `STRIPE_STUB_MODE=false`
-  - `STRIPE_SECRET_KEY` = live key
-  - `STRIPE_WEBHOOK_SECRET` = live webhook signing secret
-2. In Stripe:
-  - Confirm **head office** is correct in live mode.
-  - Confirm all required **registrations** are active/scheduled.
-  - Confirm default **tax behavior** and preset tax codes.
-3. Run one real (or controlled live) transaction and verify tax line items and totals in Stripe.
+### Checkout target
 
-## Connect-specific decision you must make
+Checkout should continue using destination charges, but tax liability should be assigned to the connected account.
 
-Because you use Connect Express, choose one tax-liability model:
+The intended Checkout Session shape is:
 
-### Option A: Platform liable (current behavior)
-- Keep current integration as-is.
-- Maintain tax settings + registrations on platform account.
-- Simpler operationally, but platform is central tax operator.
+```ts
+automatic_tax: {
+  enabled: true,
+  liability: {
+    type: "account",
+    account: store.stripe_account_id
+  }
+}
+```
 
-### Option B: Connected account liable (future)
-- Configure each connected account’s tax settings/registrations (for Express, via Tax Settings/Registrations API or Connect embedded components).
-- Update checkout creation to include:
-  - `automatic_tax[liability][type]=account`
-  - `automatic_tax[liability][account]=<CONNECTED_ACCOUNT_ID>`
-- If invoice creation/issuer is used, set issuer account consistently per Stripe docs.
+That should be used together with the existing destination-charge flow:
 
-Reference:
-- [Tax for software platforms](https://docs.stripe.com/tax/tax-for-platforms)
-- [Checkout Session automatic tax liability](https://docs.stripe.com/api/checkout/sessions/create)
+```ts
+payment_intent_data: {
+  transfer_data: {
+    destination: store.stripe_account_id
+  }
+}
+```
 
-## Current implementation caveat
+### Product/platform target
 
-- Checkout currently sends a single aggregated line item (`<store name> order`) to Stripe.
-- For best tax classification, move to itemized line items with explicit product tax codes/tax behavior per item.
+Myrivo should also:
+- expose connected-account tax readiness in merchant settings
+- require an explicit tax decision before launch
+- block live launch or live payments when a store chooses Stripe Tax and merchant tax setup is incomplete
+- document clearly that merchants are responsible for registrations, tax compliance, and filings
+
+## Tax decision policy
+
+Myrivo now supports two launch paths:
+
+1. `Stripe Tax`
+- Seller configures tax settings and registrations on their connected Stripe account.
+- Myrivo uses the connected account's Stripe Tax setup at checkout.
+- This is the preferred and safer default path.
+
+2. `Seller-attested no-tax`
+- Seller explicitly acknowledges that Myrivo does not provide tax advice.
+- Seller confirms they are responsible for determining whether they must register, collect, remit, and file taxes.
+- Myrivo records the acknowledgement timestamp, actor, and note on the store record.
+
+Important boundaries:
+- Myrivo does **not** determine that a seller is exempt from tax obligations.
+- Myrivo does **not** recommend the no-tax path as generally compliant.
+- The no-tax path exists to avoid forcing immediate Stripe Tax setup for sellers who are making their own compliance decision.
+
+## Remaining implementation work
+
+The following work still needs to land before Myrivo can fully claim merchant-owned tax readiness end to end:
+
+1. Verify test-mode and live-mode flows against connected-account tax configuration.
+2. Decide whether seller-attested no-tax stores should trigger extra admin review/flagging before launch.
+3. Consider future follow-up improvements like itemized Stripe line items and richer tax-code controls.
+
+## Test-mode note
+
+The current local Stripe environment may still point at a test platform account with:
+- no head office configured
+- no default tax code configured
+- no tax registrations configured
+
+That is expected while the readiness work is still in progress, but it also means:
+- merchant-liable tax is not fully launch-ready until connected-account setup is also enforced at go-live
+
+## Line item caveat
+
+Checkout currently sends one aggregated line item (`<store name> order`) to Stripe.
+
+That is acceptable for early validation, but not ideal long term. Better tax classification will come from:
+- itemized line items
+- explicit product tax codes
+- explicit shipping tax behavior where relevant
+
+This is a follow-up improvement, not the first blocker for moving to merchant-owned liability.
+
+## Operational guidance
+
+Current operating guidance:
+
+> Sellers own tax setup, registrations, and filings.
+> Myrivo provides the storefront, checkout, Stripe Tax integration, and an auditable no-tax attestation path, but does not take on merchant tax filing responsibility or make compliance determinations for sellers.

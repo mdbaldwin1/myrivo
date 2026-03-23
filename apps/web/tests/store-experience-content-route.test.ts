@@ -8,8 +8,10 @@ type SupabaseMock = {
 
 let supabaseMock: SupabaseMock;
 let ownedStoreBundleMock: { store: { id: string } } | null = { store: { id: "store-1" } };
+let lastRequestedStoreSlug: string | null = null;
 let originGuardResponse: Response | null = null;
 let lastUpsertPayload: Record<string, unknown> | null = null;
+let lastUpsertConflictTarget: string | null = null;
 let selectErrorMessage: string | null = null;
 let upsertErrorMessage: string | null = null;
 
@@ -18,19 +20,22 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 vi.mock("@/lib/stores/owner-store", () => ({
-  getOwnedStoreBundle: vi.fn(async () => ownedStoreBundleMock)
+  getOwnedStoreBundleForOptionalSlug: vi.fn(async (_userId: string, storeSlug?: string | null) => {
+    lastRequestedStoreSlug = storeSlug ?? null;
+    return ownedStoreBundleMock;
+  })
 }));
 
 vi.mock("@/lib/security/request-origin", () => ({
   enforceTrustedOrigin: vi.fn(() => originGuardResponse)
 }));
 
-async function callGetHandler(): Promise<Response> {
+async function callGetHandler(url = "http://localhost:3000/api/store-experience/content"): Promise<Response> {
   const route = await import("@/app/api/store-experience/content/route");
   if (!route.GET) {
     throw new Error("GET handler is not defined");
   }
-  const response = await route.GET();
+  const response = await route.GET(new NextRequest(url));
   if (!response) {
     throw new Error("GET handler returned no response");
   }
@@ -68,8 +73,9 @@ function buildSupabaseMock() {
             }))
           }))
         })),
-        upsert: vi.fn((payload: Record<string, unknown>) => {
+        upsert: vi.fn((payload: Record<string, unknown>, options?: { onConflict?: string }) => {
           lastUpsertPayload = payload;
+          lastUpsertConflictTarget = options?.onConflict ?? null;
           return {
             select: vi.fn(() => ({
               single: vi.fn(async () => ({
@@ -98,8 +104,10 @@ beforeEach(() => {
   ownedStoreBundleMock = { store: { id: "store-1" } };
   originGuardResponse = null;
   lastUpsertPayload = null;
+  lastUpsertConflictTarget = null;
   selectErrorMessage = null;
   upsertErrorMessage = null;
+  lastRequestedStoreSlug = null;
 });
 
 describe("store experience content route", () => {
@@ -144,6 +152,48 @@ describe("store experience content route", () => {
     expect(lastUpsertPayload).toMatchObject({
       store_id: "store-1",
       home_json: { announcement: "Hello" }
+    });
+  });
+
+  test("GET resolves the requested store slug when provided", async () => {
+    const response = await callGetHandler("http://localhost:3000/api/store-experience/content?storeSlug=second-store");
+
+    expect(response.status).toBe(200);
+    expect(lastRequestedStoreSlug).toBe("second-store");
+  });
+
+  test("PUT resolves the requested store slug and writes only to the resolved store", async () => {
+    ownedStoreBundleMock = { store: { id: "store-2" } };
+
+    const request = new NextRequest("http://localhost:3000/api/store-experience/content?storeSlug=second-store", {
+      method: "PUT",
+      body: JSON.stringify({
+        section: "productsPage",
+        value: {
+          reviews: {
+            showSummary: false
+          }
+        }
+      }),
+      headers: {
+        "content-type": "application/json",
+        origin: "http://localhost:3000",
+        host: "localhost:3000"
+      }
+    });
+
+    const response = await callPutHandler(request);
+
+    expect(response.status).toBe(200);
+    expect(lastRequestedStoreSlug).toBe("second-store");
+    expect(lastUpsertConflictTarget).toBe("store_id");
+    expect(lastUpsertPayload).toMatchObject({
+      store_id: "store-2",
+      products_page_json: {
+        reviews: {
+          showSummary: false
+        }
+      }
     });
   });
 

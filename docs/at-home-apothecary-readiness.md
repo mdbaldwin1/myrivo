@@ -1,4 +1,4 @@
-# At Home Apothecary Readiness
+# Pilot Store Readiness
 
 Last updated: 2026-02-26
 
@@ -6,7 +6,7 @@ Last updated: 2026-02-26
 
 - Single-store mode implemented and wired through app/API.
 - Canonical store slug configured in local env:
-  - `MYRIVO_SINGLE_STORE_SLUG=at-home-apothecary`
+  - `MYRIVO_SINGLE_STORE_SLUG=sunset-mercantile`
 - DB migrations applied to linked hosted Supabase project:
   - `20260226233000_single_store_fulfillment_status.sql`
   - `20260226234000_single_store_zero_platform_fee.sql`
@@ -20,8 +20,8 @@ Last updated: 2026-02-26
 
 ## Current remote data status
 
-- Store slug: `at-home-apothecary`
-- Store name: `At Home Apothecary`
+- Store slug: `sunset-mercantile`
+- Store name: `Sunset Mercantile`
 - Store status: `active`
 - Stripe account connected: `no` (`stripe_account_id` is null)
 - Product count: `0` (active: `0`)
@@ -35,11 +35,11 @@ Last updated: 2026-02-26
 2. Sign in as your sister and connect Stripe in `Dashboard > Account Settings`.
 3. Add products and set them to `active`.
 4. Configure branding, support email, shipping/returns text.
-5. Configure shipping tracking provider + webhook:
-   - `SHIPPING_PROVIDER=easypost`
-   - `EASYPOST_API_KEY=...`
-   - `SHIPPING_WEBHOOK_SECRET=...`
-   - webhook URL: `/api/shipping/webhook?token=<SHIPPING_WEBHOOK_SECRET>`
+5. Configure the store's shipping tracking provider + webhook in Store Settings:
+   - shipping provider: `easypost`
+   - store API key: `...`
+   - store webhook secret: `...`
+   - webhook URL: `/api/shipping/webhook?token=<store webhook secret>`
 6. Run one real checkout test in Stripe test mode, then one low-value live transaction.
 7. Run one shipped-order test and verify webhook-driven `delivered` transition.
 
@@ -59,7 +59,7 @@ supabase db push --linked
 ### Reassign owner to your sister
 
 ```bash
-node scripts/assign-store-owner.mjs <sister_email> at-home-apothecary
+node scripts/assign-store-owner.mjs <owner_email> sunset-mercantile
 ```
 
 ### Local app run

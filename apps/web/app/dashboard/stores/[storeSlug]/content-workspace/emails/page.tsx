@@ -1,14 +1,12 @@
-import { ContentWorkspaceEmailsForm } from "@/components/dashboard/content-workspace-emails-form";
-import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default function StoreWorkspaceContentWorkspaceEmailsPage() {
-  return (
-    <section className="flex min-h-0 flex-1 flex-col">
-      <ContentWorkspaceEmailsForm
-        header={<DashboardPageHeader title="Emails" description="Newsletter and transactional email copy controls." />}
-      />
-    </section>
-  );
+type PageProps = {
+  params: Promise<{ storeSlug: string }>;
+};
+
+export default async function StoreWorkspaceContentWorkspaceEmailsPage({ params }: PageProps) {
+  const { storeSlug } = await params;
+  redirect(`/dashboard/stores/${storeSlug}/email-studio`);
 }

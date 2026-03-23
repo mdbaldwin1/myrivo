@@ -22,6 +22,18 @@ const CATALOG: Record<string, NotificationCatalogEntry> = {
     defaultSeverity: "info",
     defaultTargets: ["in_app"]
   },
+  "order.failed.customer": {
+    eventType: "order.failed.customer",
+    category: "order",
+    defaultSeverity: "warning",
+    defaultTargets: ["in_app"]
+  },
+  "order.cancelled.customer": {
+    eventType: "order.cancelled.customer",
+    category: "order",
+    defaultSeverity: "warning",
+    defaultTargets: ["in_app"]
+  },
   "order.fulfillment.shipped": {
     eventType: "order.fulfillment.shipped",
     category: "order",
@@ -54,6 +66,30 @@ const CATALOG: Record<string, NotificationCatalogEntry> = {
   },
   "order.pickup.updated.customer": {
     eventType: "order.pickup.updated.customer",
+    category: "order",
+    defaultSeverity: "info",
+    defaultTargets: ["in_app"]
+  },
+  "order.shipping_delay.customer": {
+    eventType: "order.shipping_delay.customer",
+    category: "order",
+    defaultSeverity: "warning",
+    defaultTargets: ["in_app"]
+  },
+  "order.refunded.customer": {
+    eventType: "order.refunded.customer",
+    category: "order",
+    defaultSeverity: "info",
+    defaultTargets: ["in_app"]
+  },
+  "order.dispute.opened.customer": {
+    eventType: "order.dispute.opened.customer",
+    category: "order",
+    defaultSeverity: "warning",
+    defaultTargets: ["in_app"]
+  },
+  "order.dispute.resolved.customer": {
+    eventType: "order.dispute.resolved.customer",
     category: "order",
     defaultSeverity: "info",
     defaultTargets: ["in_app"]
@@ -128,6 +164,12 @@ const CATALOG: Record<string, NotificationCatalogEntry> = {
     eventType: "store.review.suspended.owner",
     category: "system",
     defaultSeverity: "critical",
+    defaultTargets: ["in_app", "email"]
+  },
+  "legal.update.required": {
+    eventType: "legal.update.required",
+    category: "system",
+    defaultSeverity: "warning",
     defaultTargets: ["in_app", "email"]
   },
   "team.invite.accepted": {

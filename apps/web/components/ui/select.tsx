@@ -1,6 +1,8 @@
 import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { Check, ChevronDown, ChevronUp, ChevronsUpDown } from "lucide-react";
+import { useOptionalSurfacePortalContainer } from "@/components/ui/surface-portal-context";
+import { useHasMounted } from "@/components/use-has-mounted";
 import { cn } from "@/lib/utils";
 
 type OptionConfig = {
@@ -68,8 +70,41 @@ function extractOptions(children: React.ReactNode) {
 const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
   ({ id, className, children, value, defaultValue, disabled, onOpenChange, onChange, placeholder, icon = "down" }, ref) => {
     const options = React.useMemo(() => extractOptions(children), [children]);
+    const portalContainer = useOptionalSurfacePortalContainer();
+    const hasMounted = useHasMounted();
     const [internalValue, setInternalValue] = React.useState(defaultValue ?? options[0]?.value ?? "");
     const selectedValue = typeof value === "string" ? value : internalValue;
+
+    if (!hasMounted) {
+      return (
+        <select
+          id={id}
+          value={selectedValue}
+          disabled={disabled}
+          className={cn(
+            "flex h-10 w-full items-center justify-between rounded-md border border-border bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+            className
+          )}
+          onChange={(event) => {
+            if (typeof value !== "string") {
+              setInternalValue(event.target.value);
+            }
+            onChange?.({ target: { value: event.target.value } });
+          }}
+        >
+          {placeholder ? (
+            <option value="" disabled>
+              {placeholder}
+            </option>
+          ) : null}
+          {options.map((option) => (
+            <option key={option.value} value={option.value} disabled={option.disabled}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      );
+    }
 
     return (
       <SelectPrimitive.Root
@@ -96,8 +131,8 @@ const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
             {icon === "up-down" ? <ChevronsUpDown className="h-4 w-4 opacity-50" /> : <ChevronDown className="h-4 w-4 opacity-50" />}
           </SelectPrimitive.Icon>
         </SelectPrimitive.Trigger>
-        <SelectPrimitive.Portal>
-          <SelectPrimitive.Content className="relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out">
+        <SelectPrimitive.Portal container={portalContainer ?? undefined}>
+          <SelectPrimitive.Content className="relative z-[100] max-h-96 w-[var(--radix-select-trigger-width)] min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out motion-reduce:transition-none motion-reduce:data-[state=open]:animate-none motion-reduce:data-[state=closed]:animate-none">
             <SelectPrimitive.ScrollUpButton className="flex cursor-default items-center justify-center py-1">
               <ChevronUp className="h-4 w-4" />
             </SelectPrimitive.ScrollUpButton>

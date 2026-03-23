@@ -1,4 +1,7 @@
+import type { StorefrontAttributionSnapshot } from "@/lib/analytics/attribution";
+
 export const STOREFRONT_CART_STORAGE_KEY = "aha-cart:single-store";
+export const STOREFRONT_CART_UPDATED_EVENT = "myrivo:storefront-cart-updated";
 
 export type StorefrontCartEntry = {
   productId: string;
@@ -42,5 +45,37 @@ export function writeStorefrontCart(entries: StorefrontCartEntry[]) {
     return;
   }
   window.localStorage.setItem(STOREFRONT_CART_STORAGE_KEY, JSON.stringify(entries));
+  window.dispatchEvent(
+    new CustomEvent<StorefrontCartEntry[]>(STOREFRONT_CART_UPDATED_EVENT, {
+      detail: entries
+    })
+  );
 }
 
+export async function syncStorefrontCart(
+  entries: StorefrontCartEntry[],
+  storeSlug: string,
+  options?: { analyticsSessionId?: string | null; attribution?: StorefrontAttributionSnapshot | null }
+) {
+  if (typeof window === "undefined" || !storeSlug.trim()) {
+    return;
+  }
+
+  try {
+    await fetch(`/api/customer/cart?store=${encodeURIComponent(storeSlug)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items: entries.map((entry) => ({
+          productId: entry.productId,
+          variantId: entry.variantId,
+          quantity: entry.quantity
+        })),
+        analyticsSessionId: options?.analyticsSessionId ?? undefined,
+        attribution: options?.attribution ?? undefined
+      })
+    });
+  } catch {
+    // Ignore sync failures here and let the local cart remain the immediate source of truth.
+  }
+}

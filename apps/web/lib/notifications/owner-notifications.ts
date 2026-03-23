@@ -101,7 +101,7 @@ type StoreSubmittedForReviewAdminInput = {
 type StoreStatusChangedOwnerInput = {
   storeId: string;
   storeSlug: string;
-  action: "approve" | "reject" | "suspend";
+  action: "approve" | "request_changes" | "reject" | "suspend" | "restore" | "remove" | "go_live" | "go_offline";
   reason?: string | null;
   actorUserId?: string;
 };
@@ -185,12 +185,26 @@ async function loadOrderNotificationRow(orderId: string) {
   } satisfies OrderNotificationRow;
 }
 
+function buildStoreOrdersActionUrl(storeSlug: string | null, orderId: string) {
+  const basePath = storeSlug ? `/dashboard/stores/${storeSlug}/orders` : "/dashboard/stores";
+  return `${basePath}?orderId=${encodeURIComponent(orderId)}`;
+}
+
+function buildTeamMemberActionUrl(storeSlug: string | null, memberUserId: string) {
+  const basePath = storeSlug ? `/dashboard/stores/${storeSlug}/store-settings/team` : "/dashboard/stores";
+  return `${basePath}?memberUserId=${encodeURIComponent(memberUserId)}`;
+}
+
+function buildAdminStoreGovernanceActionUrl(storeId: string) {
+  return `/dashboard/admin/stores?storeId=${encodeURIComponent(storeId)}`;
+}
+
 export async function notifyOwnersOrderCreated(orderId: string) {
   const order = await loadOrderNotificationRow(orderId);
   if (!order) {
     return;
   }
-  const storeOrdersPath = order.store_slug ? `/dashboard/stores/${order.store_slug}/orders` : "/dashboard/stores";
+  const storeOrdersPath = buildStoreOrdersActionUrl(order.store_slug, order.id);
 
   const recipients = await resolveStoreRecipientUserIds(order.store_id);
   await Promise.all(
@@ -242,7 +256,7 @@ export async function notifyOwnersOrderFulfillmentStatus(orderId: string, status
   if (!order) {
     return;
   }
-  const storeOrdersPath = order.store_slug ? `/dashboard/stores/${order.store_slug}/orders` : "/dashboard/stores";
+  const storeOrdersPath = buildStoreOrdersActionUrl(order.store_slug, order.id);
 
   const recipients = await resolveStoreRecipientUserIds(order.store_id);
   const eventType = status === "shipped" ? "order.fulfillment.shipped" : "order.fulfillment.delivered";
@@ -298,7 +312,7 @@ export async function notifyOwnersInventoryLevel(input: InventoryLevelAlertInput
       : `${inventoryLabel} has ${currentQty} units left (threshold: ${threshold}).`;
 
   const storeSlug = input.storeSlug?.trim() || (await resolveStoreSlugById(input.storeId));
-  const catalogPath = storeSlug ? `/dashboard/stores/${storeSlug}/catalog` : "/dashboard/stores";
+  const catalogPath = storeSlug ? `/dashboard/stores/${storeSlug}/catalog?productId=${encodeURIComponent(input.productId)}` : "/dashboard/stores";
   const recipients = await resolveStoreRecipientUserIds(input.storeId);
   await Promise.all(
     recipients.map((recipientUserId) =>
@@ -366,7 +380,7 @@ export async function notifyOwnersSystemSetupWarning(input: SystemSetupWarningIn
 
 export async function notifyOwnersTeamInviteAccepted(input: TeamInviteAcceptedInput) {
   const storeSlug = input.storeSlug?.trim() || (await resolveStoreSlugById(input.storeId));
-  const teamPath = storeSlug ? `/dashboard/stores/${storeSlug}/store-settings/team` : "/dashboard/stores";
+  const teamPath = buildTeamMemberActionUrl(storeSlug, input.acceptedByUserId);
   const recipients = await resolveStoreRecipientUserIds(input.storeId, [input.acceptedByUserId]);
   await Promise.all(
     recipients.map((recipientUserId) =>
@@ -391,7 +405,7 @@ export async function notifyOwnersTeamInviteAccepted(input: TeamInviteAcceptedIn
 
 export async function notifyOwnersReviewCreated(input: ReviewCreatedNotificationInput) {
   const storeSlug = input.storeSlug?.trim() || (await resolveStoreSlugById(input.storeId));
-  const reviewsPath = storeSlug ? `/dashboard/stores/${storeSlug}/notifications` : "/dashboard/stores";
+  const reviewsPath = storeSlug ? `/dashboard/stores/${storeSlug}/reviews?reviewId=${input.reviewId}` : "/dashboard/stores";
   const recipients = await resolveStoreRecipientUserIds(input.storeId);
   const reviewerLabel = input.reviewerName?.trim() || "A customer";
   const reviewScopeLabel = input.productId ? "product review" : "store review";
@@ -511,6 +525,7 @@ export async function notifyOwnersStoreSubmittedForReview(input: StoreSubmittedF
 
 export async function notifyPlatformAdminsStoreSubmittedForReview(input: StoreSubmittedForReviewAdminInput) {
   const recipients = await resolvePlatformAdminRecipientUserIds([input.submittedByUserId]);
+  const governancePath = buildAdminStoreGovernanceActionUrl(input.storeId);
   await Promise.all(
     recipients.map((recipientUserId) =>
       dispatchNotification({
@@ -519,7 +534,7 @@ export async function notifyPlatformAdminsStoreSubmittedForReview(input: StoreSu
         eventType: "store.review.submitted.admin",
         title: "Store approval required",
         body: `${input.storeName} (${input.storeSlug}) was submitted for review.`,
-        actionUrl: "/dashboard/admin",
+        actionUrl: governancePath,
         dedupeKey: `store.review.submitted.admin:${input.storeId}:${recipientUserId}`,
         metadata: {
           storeSlug: input.storeSlug,
@@ -529,7 +544,7 @@ export async function notifyPlatformAdminsStoreSubmittedForReview(input: StoreSu
         email: {
           from: resolvePlatformNotificationFromAddress(),
           subject: "Store approval required",
-          text: `${input.storeName} (${input.storeSlug}) was submitted for review. Open /dashboard/admin to approve or reject.`,
+          text: `${input.storeName} (${input.storeSlug}) was submitted for review. Open ${governancePath} to approve or reject.`,
           replyTo: resolvePlatformNotificationReplyTo()
         }
       })
@@ -548,10 +563,30 @@ export async function notifyOwnersStoreStatusChanged(input: StoreStatusChangedOw
     eventType = "store.review.approved.owner";
     title = "Store approved";
     body = "Your store has been approved and is now live.";
+  } else if (input.action === "request_changes") {
+    eventType = "store.review.rejected.owner";
+    title = "Changes requested";
+    body = `The platform review team requested changes before your store can go live.${reasonText}`;
   } else if (input.action === "reject") {
     eventType = "store.review.rejected.owner";
-    title = "Store review needs updates";
-    body = `Your store was sent back to draft for updates.${reasonText}`;
+    title = "Store application rejected";
+    body = `Your go-live application was rejected.${reasonText}`;
+  } else if (input.action === "go_live") {
+    eventType = "store.review.approved.owner";
+    title = "Store is live again";
+    body = "Your storefront is public again.";
+  } else if (input.action === "go_offline") {
+    eventType = "store.review.suspended.owner";
+    title = "Store taken offline";
+    body = "Your storefront is now offline.";
+  } else if (input.action === "restore") {
+    eventType = "store.review.approved.owner";
+    title = "Store restored";
+    body = "Your storefront is available again.";
+  } else if (input.action === "remove") {
+    eventType = "store.review.suspended.owner";
+    title = "Store removed";
+    body = `Your storefront was removed from the platform.${reasonText}`;
   } else {
     eventType = "store.review.suspended.owner";
     title = "Store suspended";

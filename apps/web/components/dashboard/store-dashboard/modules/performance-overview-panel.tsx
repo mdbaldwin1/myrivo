@@ -1,9 +1,15 @@
+"use client";
+
 import Link from "next/link";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { AppAlert } from "@/components/ui/app-alert";
 import { SectionCard } from "@/components/ui/section-card";
 import type { StoreDashboardData } from "@/lib/dashboard/store-dashboard/store-dashboard-types";
 
 type PerformanceOverviewPanelProps = {
+  filters: StoreDashboardData["filters"];
   performance: StoreDashboardData["performance"];
   errorMessage?: string;
   retryHref: string;
@@ -13,18 +19,142 @@ function formatCurrency(cents: number) {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-function formatDelta(value: number | null | undefined) {
+function formatDelta(value: number | "new" | null | undefined) {
   if (value === null || value === undefined) {
     return "n/a";
+  }
+  if (value === "new") {
+    return "New";
   }
   return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
 }
 
-export function PerformanceOverviewPanel({ performance, errorMessage, retryHref }: PerformanceOverviewPanelProps) {
-  const maxDailyRevenue = Math.max(1, ...performance.dailySeries.map((point) => point.grossRevenueCents));
+function buildYearOptions(selectedYear: number) {
+  const currentYear = new Date().getUTCFullYear();
+  const latestYear = Math.min(selectedYear, currentYear);
+  const earliestYear = Math.max(2000, latestYear - 4);
+  const years: number[] = [];
+
+  for (let year = latestYear; year >= earliestYear; year -= 1) {
+    years.push(year);
+  }
+
+  return years;
+}
+
+export function PerformanceOverviewPanel({
+  filters,
+  performance,
+  errorMessage,
+  retryHref
+}: PerformanceOverviewPanelProps) {
+  const chartContainerRef = useRef<HTMLDivElement | null>(null);
+  const [chartReady, setChartReady] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const chartData = performance.series.map((point) => ({
+    ...point,
+    grossRevenueDollars: point.grossRevenueCents / 100
+  }));
+
+  const yearOptions = useMemo(() => buildYearOptions(filters.performanceYear), [filters.performanceYear]);
+  const chartTitle = performance.seriesGranularity === "month" ? "Monthly Revenue" : "Daily Revenue";
+  const currentMonth = useMemo(() => {
+    const now = new Date();
+    return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  }, []);
+
+  useEffect(() => {
+    const node = chartContainerRef.current;
+    if (!node) {
+      return;
+    }
+
+    const updateChartReady = () => {
+      const nextReady = node.clientWidth > 0 && node.clientHeight > 0;
+      setChartReady((current) => (current === nextReady ? current : nextReady));
+    };
+
+    updateChartReady();
+
+    const observer = new ResizeObserver(() => {
+      updateChartReady();
+    });
+
+    observer.observe(node);
+    window.addEventListener("resize", updateChartReady);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateChartReady);
+    };
+  }, []);
+
+  function pushFilters(next: { view?: "month" | "year"; month?: string; year?: string }) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("view", next.view ?? filters.performanceView);
+    params.set("month", next.month ?? filters.performanceMonth);
+    params.set("year", next.year ?? String(filters.performanceYear));
+    startTransition(() => {
+      router.push(`${pathname}?${params.toString()}`);
+    });
+  }
 
   return (
-    <SectionCard title="Performance Overview" description="Revenue trends, period deltas, and top-selling products.">
+    <SectionCard
+      title="Performance Overview"
+      description={`Revenue trends and top products for ${performance.periodLabel}.`}
+      action={
+        <div className="flex flex-wrap items-end justify-end gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => pushFilters({ view: "month" })}
+              className={`rounded-full border px-3 py-1 text-sm ${filters.performanceView === "month" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}
+            >
+              Month
+            </button>
+            <button
+              type="button"
+              onClick={() => pushFilters({ view: "year" })}
+              className={`rounded-full border px-3 py-1 text-sm ${filters.performanceView === "year" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}
+            >
+              Year
+            </button>
+          </div>
+
+          {filters.performanceView === "month" ? (
+            <label className="space-y-1 text-sm">
+              <span className="block text-xs uppercase tracking-wide text-muted-foreground">Month</span>
+              <input
+                type="month"
+                value={filters.performanceMonth}
+                onChange={(event) => pushFilters({ view: "month", month: event.target.value })}
+                max={currentMonth}
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </label>
+          ) : (
+            <label className="space-y-1 text-sm">
+              <span className="block text-xs uppercase tracking-wide text-muted-foreground">Year</span>
+              <select
+                value={String(filters.performanceYear)}
+                onChange={(event) => pushFilters({ view: "year", year: event.target.value })}
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                {yearOptions.map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+      }
+    >
       <div className="space-y-4">
         <AppAlert
           variant="warning"
@@ -35,6 +165,22 @@ export function PerformanceOverviewPanel({ performance, errorMessage, retryHref 
             </Link>
           }
         />
+
+        <div className="grid gap-2 sm:grid-cols-3">
+          <article className="rounded-md border border-[hsl(var(--brand-secondary))]/20 bg-[hsl(var(--brand-secondary-soft))]/55 p-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Revenue</p>
+            <p className="mt-1 text-xl font-semibold">{formatCurrency(performance.grossRevenueCents)}</p>
+          </article>
+          <article className="rounded-md border border-border bg-muted/20 p-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Paid Orders</p>
+            <p className="mt-1 text-xl font-semibold">{performance.paidOrderCount}</p>
+          </article>
+          <article className="rounded-md border border-border bg-muted/20 p-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Average Order</p>
+            <p className="mt-1 text-xl font-semibold">{formatCurrency(performance.avgOrderValueCents)}</p>
+          </article>
+        </div>
+
         <div className="grid gap-2 sm:grid-cols-3">
           <article className="rounded-md border border-border bg-muted/20 p-3">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Revenue Delta</p>
@@ -51,20 +197,45 @@ export function PerformanceOverviewPanel({ performance, errorMessage, retryHref 
         </div>
 
         <section className="space-y-2">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Daily Revenue</h3>
-          <div className="grid gap-1">
-            {performance.dailySeries.length === 0 ? (
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{chartTitle}</h3>
+          <div className="min-w-0">
+            {chartData.every((point) => point.grossRevenueCents === 0) ? (
               <p className="text-sm text-muted-foreground">No paid orders in this period.</p>
             ) : (
-              performance.dailySeries.map((point) => (
-                <div key={point.date} className="grid grid-cols-[80px_1fr_120px] items-center gap-2 text-xs">
-                  <span>{point.date.slice(5)}</span>
-                  <div className="h-2 overflow-hidden rounded-full bg-muted">
-                    <div className="h-full bg-primary" style={{ width: `${(point.grossRevenueCents / maxDailyRevenue) * 100}%` }} />
+              <div ref={chartContainerRef} className="h-64 w-full min-w-0 min-h-[16rem] rounded-md border border-[hsl(var(--brand-secondary))]/15 bg-gradient-to-br from-[hsl(var(--brand-secondary-soft))]/35 to-background p-3">
+                {chartReady ? (
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
+                    <LineChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/60" />
+                      <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={12} className="fill-muted-foreground" />
+                      <YAxis
+                        tickLine={false}
+                        axisLine={false}
+                        fontSize={12}
+                        className="fill-muted-foreground"
+                        tickFormatter={(value) => `$${value}`}
+                      />
+                      <Tooltip
+                        cursor={{ fill: "hsl(var(--muted) / 0.28)" }}
+                        formatter={(value) => [`$${Number(value ?? 0).toFixed(2)}`, "Revenue"]}
+                        labelFormatter={(label) => `${performance.seriesGranularity === "month" ? "Month" : "Day"}: ${label}`}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="grossRevenueDollars"
+                        stroke="hsl(var(--brand-secondary))"
+                        strokeWidth={2.5}
+                        dot={{ r: 3, strokeWidth: 0, fill: "hsl(var(--brand-secondary))" }}
+                        activeDot={{ r: 5, strokeWidth: 0, fill: "hsl(var(--brand-secondary))" }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex h-full min-h-[220px] items-center justify-center text-sm text-muted-foreground">
+                    Preparing chart...
                   </div>
-                  <span>{formatCurrency(point.grossRevenueCents)}</span>
-                </div>
-              ))
+                )}
+              </div>
             )}
           </div>
         </section>

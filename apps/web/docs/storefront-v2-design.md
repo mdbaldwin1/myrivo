@@ -38,7 +38,7 @@ Create a beautiful, classy, professional storefront that feels curated by defaul
   - `heroSubcopy`
   - `pageWidth`
   - `productGridColumns`
-  - `fontPreset`
+  - `fontFamily`
   - `radiusScale`
   - `showPolicyStrip`
   - `showContentBlocks`
@@ -46,7 +46,6 @@ Create a beautiful, classy, professional storefront that feels curated by defaul
 - Fixed defaults (not user-configurable in UI):
   - `heroLayout = split`
   - `cardStyle = integrated`
-  - `buttonStyle = rounded`
   - `spacingScale = comfortable`
   - Hero eyebrow and badges disabled by default
 
