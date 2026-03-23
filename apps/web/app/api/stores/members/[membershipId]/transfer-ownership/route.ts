@@ -83,14 +83,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: currentOwnerMembershipError.message }, { status: 500 });
   }
 
-  if (!currentOwnerMembership || currentOwnerMembership.role !== "owner" || currentOwnerMembership.status !== "active") {
-    return NextResponse.json({ error: "Current owner membership is invalid." }, { status: 400 });
-  }
-
   const previousTargetRole = targetMembership.role;
   const previousOwnerUserId = context.userId;
   let storeOwnerUpdated = false;
-  let targetPromoted = false;
+  let targetMembershipUpserted = false;
 
   const rollbackStoreOwner = async () => {
     if (!storeOwnerUpdated) {
@@ -99,11 +95,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     await admin.from("stores").update({ owner_user_id: previousOwnerUserId }).eq("id", context.storeId);
   };
 
-  const rollbackTargetRole = async () => {
-    if (!targetPromoted) {
+  const rollbackTargetMembership = async () => {
+    if (!targetMembershipUpserted) {
       return;
     }
-    await admin.from("store_memberships").update({ role: previousTargetRole }).eq("id", targetMembership.id).eq("store_id", context.storeId);
+    await admin
+      .from("store_memberships")
+      .upsert(
+        {
+          store_id: context.storeId,
+          user_id: targetMembership.user_id,
+          role: previousTargetRole,
+          status: targetMembership.status
+        },
+        { onConflict: "store_id,user_id" }
+      );
   };
 
   const { error: storeUpdateError } = await admin
@@ -118,24 +124,36 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const { error: targetUpdateError } = await admin
     .from("store_memberships")
-    .update({ role: "owner" })
-    .eq("id", targetMembership.id)
-    .eq("store_id", context.storeId);
+    .upsert(
+      {
+        store_id: context.storeId,
+        user_id: targetMembership.user_id,
+        role: "owner",
+        status: "active"
+      },
+      { onConflict: "store_id,user_id" }
+    );
 
   if (targetUpdateError) {
     await rollbackStoreOwner();
     return NextResponse.json({ error: targetUpdateError.message }, { status: 500 });
   }
-  targetPromoted = true;
+  targetMembershipUpserted = true;
 
   const { error: currentOwnerUpdateError } = await admin
     .from("store_memberships")
-    .update({ role: "admin" })
-    .eq("id", currentOwnerMembership.id)
-    .eq("store_id", context.storeId);
+    .upsert(
+      {
+        store_id: context.storeId,
+        user_id: previousOwnerUserId,
+        role: "admin",
+        status: "active"
+      },
+      { onConflict: "store_id,user_id" }
+    );
 
   if (currentOwnerUpdateError) {
-    await rollbackTargetRole();
+    await rollbackTargetMembership();
     await rollbackStoreOwner();
     return NextResponse.json({ error: currentOwnerUpdateError.message }, { status: 500 });
   }
@@ -156,7 +174,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   return NextResponse.json({
     ok: true,
     nextOwnerUserId: targetMembership.user_id,
-    downgradedOwnerMembershipId: currentOwnerMembership.id,
+    downgradedOwnerMembershipId: currentOwnerMembership?.id ?? null,
     promotedMembershipId: targetMembership.id
   });
 }

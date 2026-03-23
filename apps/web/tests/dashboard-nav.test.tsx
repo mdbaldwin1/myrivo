@@ -72,4 +72,20 @@ describe("DashboardNav", () => {
     expect(screen.queryByRole("link", { name: "Dashboard" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Admin Workspace" })).toBeNull();
   });
+
+  test("shows the Store Hub link even when the user has no store access yet", () => {
+    usePathnameMock.mockReturnValue("/dashboard");
+
+    render(
+      <DashboardNav
+        activeStoreSlug={null}
+        stores={[]}
+        globalRole="user"
+        analyticsDashboardEnabled={false}
+      />
+    );
+
+    expect(screen.getByRole("link", { name: "Dashboard" }).getAttribute("href")).toBe("/dashboard");
+    expect(screen.getByRole("link", { name: "Store Hub" }).getAttribute("href")).toBe("/dashboard/stores");
+  });
 });

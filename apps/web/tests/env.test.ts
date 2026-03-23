@@ -1,5 +1,13 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { envSchema, publicEnvSchema, serverEnvSchema, shippingEnvSchema, stripeEnvSchema, stripeModeEnvSchema } from "@/lib/env";
+
+afterEach(() => {
+  delete process.env.NEXT_PUBLIC_APP_URL;
+  delete process.env.MYRIVO_PUBLIC_APP_URL;
+  delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  delete process.env.VERCEL_URL;
+  vi.resetModules();
+});
 
 describe("env schema", () => {
   test("public env validates browser-safe keys", () => {
@@ -72,5 +80,22 @@ describe("env schema", () => {
     });
 
     expect(parsed.success).toBe(true);
+  });
+
+  test("prefers the canonical public URL for external links", async () => {
+    process.env.NEXT_PUBLIC_APP_URL = "http://localhost:3000";
+    process.env.MYRIVO_PUBLIC_APP_URL = "https://www.myrivo.app";
+
+    const { getExternalAppUrl } = await import("@/lib/env");
+
+    expect(getExternalAppUrl()).toBe("https://www.myrivo.app");
+  });
+
+  test("falls back to the app URL for external links when no public override is set", async () => {
+    process.env.NEXT_PUBLIC_APP_URL = "https://staging.myrivo.app";
+
+    const { getExternalAppUrl } = await import("@/lib/env");
+
+    expect(getExternalAppUrl()).toBe("https://staging.myrivo.app");
   });
 });

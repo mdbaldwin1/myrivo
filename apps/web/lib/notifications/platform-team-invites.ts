@@ -1,4 +1,4 @@
-import { getAppUrl } from "@/lib/env";
+import { getExternalAppUrl } from "@/lib/env";
 import { sendTransactionalEmail } from "@/lib/notifications/email-provider";
 import { resolvePlatformNotificationFromAddress, resolvePlatformNotificationReplyTo } from "@/lib/notifications/sender";
 
@@ -11,7 +11,7 @@ type SendPlatformTeamInviteEmailInput = {
 };
 
 export async function sendPlatformTeamInviteEmail(input: SendPlatformTeamInviteEmailInput) {
-  const inviteUrl = `${getAppUrl()}/invite/${input.inviteToken}`;
+  const inviteUrl = `${getExternalAppUrl()}/invite/${input.inviteToken}`;
   const inviterLabel = input.inviterName?.trim() || "A Myrivo administrator";
   const subject = "You're invited to join the Myrivo admin team";
   const text = [

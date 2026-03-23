@@ -1,4 +1,4 @@
-import { getAppUrl } from "@/lib/env";
+import { getExternalAppUrl } from "@/lib/env";
 import { sendTransactionalEmail } from "@/lib/notifications/email-provider";
 import { resolvePlatformNotificationFromAddress, resolvePlatformNotificationReplyTo } from "@/lib/notifications/sender";
 
@@ -12,7 +12,7 @@ type SendStoreMembershipInviteEmailInput = {
 };
 
 export async function sendStoreMembershipInviteEmail(input: SendStoreMembershipInviteEmailInput) {
-  const inviteUrl = `${getAppUrl()}/invite/${input.inviteToken}`;
+  const inviteUrl = `${getExternalAppUrl()}/invite/${input.inviteToken}`;
   const inviterLabel = input.inviterName?.trim() || "A store administrator";
   const subject = `You're invited to join ${input.storeName} on Myrivo`;
   const text = [
