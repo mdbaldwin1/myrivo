@@ -163,6 +163,7 @@ export type StorefrontRuntime = StorefrontData & {
   surface: StorefrontSurface;
   themeConfig: StorefrontThemeConfig;
   copy: StorefrontCopyConfig;
+  previewNavigateToHref?: (href: string) => void;
 };
 
 export function createStorefrontRuntime(

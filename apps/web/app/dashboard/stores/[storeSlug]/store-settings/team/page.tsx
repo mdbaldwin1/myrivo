@@ -28,7 +28,7 @@ export default async function StoreWorkspaceTeamSettingsPage({ params }: PagePro
     <section className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         <DashboardPageHeader title="Team" description="Invite teammates and manage store-level access roles." />
-        <TeamManager />
+        <TeamManager currentStoreRole={bundle.role === "owner" ? "owner" : "admin"} currentUserId={user.id} />
       </div>
     </section>
   );

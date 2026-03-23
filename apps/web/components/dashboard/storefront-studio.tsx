@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { StorefrontStudioCanvas } from "@/components/dashboard/storefront-studio-canvas";
 import { StorefrontStudioDocumentProvider } from "@/components/dashboard/storefront-studio-document-provider";
 import { StorefrontStudioEditorTargetMenu } from "@/components/dashboard/storefront-studio-editor-target-menu";
+import { StorefrontStudioPreviewViewport } from "@/components/dashboard/storefront-studio-preview-viewport";
 import {
   StorefrontStudioStorefrontEditorPanel,
   type StorefrontStudioStorefrontEditorTarget
@@ -52,6 +53,7 @@ const viewportOptions: Array<{
   label: string;
   icon: typeof Monitor;
   frameClassName: string;
+  viewportWidthPx?: number;
 }> = [
   {
     id: "fill",
@@ -69,13 +71,15 @@ const viewportOptions: Array<{
     id: "tablet",
     label: "Tablet",
     icon: Tablet,
-    frameClassName: "h-full w-full max-w-[48rem] rounded-[1.25rem]"
+    frameClassName: "h-full w-full max-w-[820px] rounded-[1.25rem]",
+    viewportWidthPx: 820
   },
   {
     id: "mobile",
     label: "Mobile",
     icon: Smartphone,
-    frameClassName: "h-full w-full max-w-[24rem] rounded-[1.5rem]"
+    frameClassName: "h-full w-full max-w-[390px] rounded-[1.5rem]",
+    viewportWidthPx: 390
   }
 ];
 
@@ -265,26 +269,51 @@ export function StorefrontStudio({ storeSlug, initialSurface, initialEditorTarge
               <X className="h-4 w-4" />
             </button>
           ) : null}
-          <StorefrontStudioCanvas
-            storeSlug={storeSlug}
-            surface={activeSurfaceId}
-            initialStorefrontData={initialStorefrontData}
-            activeProductDetailHandle={activeProductDetailHandle}
-            scrollTarget={previewScrollTarget}
-            onNavigateSurface={(nextSurface) => {
-              if (nextSurface !== "emails") {
-                setActiveEditorTarget(nextSurface);
-              }
-              replaceStudioUrl(nextSurface, null);
-            }}
-            onProductDetailChange={(productHandle) => {
-              setActiveProductDetailHandle(productHandle);
-              if (productHandle) {
-                setActiveEditorTarget("productDetail");
-                replaceStudioUrl("products", "productDetail");
-              }
-            }}
-          />
+          {activeViewport.viewportWidthPx ? (
+            <StorefrontStudioPreviewViewport title={`${activeSurface.label} preview`} widthPx={activeViewport.viewportWidthPx}>
+              <StorefrontStudioCanvas
+                storeSlug={storeSlug}
+                surface={activeSurfaceId}
+                initialStorefrontData={initialStorefrontData}
+                activeProductDetailHandle={activeProductDetailHandle}
+                scrollTarget={previewScrollTarget}
+                onNavigateSurface={(nextSurface) => {
+                  if (nextSurface !== "emails") {
+                    setActiveEditorTarget(nextSurface);
+                  }
+                  replaceStudioUrl(nextSurface, null);
+                }}
+                onProductDetailChange={(productHandle) => {
+                  setActiveProductDetailHandle(productHandle);
+                  if (productHandle) {
+                    setActiveEditorTarget("productDetail");
+                    replaceStudioUrl("products", "productDetail");
+                  }
+                }}
+              />
+            </StorefrontStudioPreviewViewport>
+          ) : (
+            <StorefrontStudioCanvas
+              storeSlug={storeSlug}
+              surface={activeSurfaceId}
+              initialStorefrontData={initialStorefrontData}
+              activeProductDetailHandle={activeProductDetailHandle}
+              scrollTarget={previewScrollTarget}
+              onNavigateSurface={(nextSurface) => {
+                if (nextSurface !== "emails") {
+                  setActiveEditorTarget(nextSurface);
+                }
+                replaceStudioUrl(nextSurface, null);
+              }}
+              onProductDetailChange={(productHandle) => {
+                setActiveProductDetailHandle(productHandle);
+                if (productHandle) {
+                  setActiveEditorTarget("productDetail");
+                  replaceStudioUrl("products", "productDetail");
+                }
+              }}
+            />
+          )}
         </div>
       </div>
     );

@@ -62,7 +62,7 @@ export function InsightsPanel({ recentOrders, products, showLowStockWatchlist = 
     <SectionCard title={title} description="Revenue, discounts, and stock health for operational planning.">
       <div className="space-y-4">
         <div className="grid gap-3 md:grid-cols-2">
-          <article className="rounded-md border border-border bg-muted/25 p-3">
+          <article className="rounded-md border border-[hsl(var(--brand-secondary))]/20 bg-[hsl(var(--brand-secondary-soft))]/55 p-3">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Paid Revenue</p>
             <p className="mt-2 text-2xl font-semibold">${(grossCents / 100).toFixed(2)}</p>
           </article>
@@ -97,7 +97,7 @@ export function InsightsPanel({ recentOrders, products, showLowStockWatchlist = 
             {dailyRevenueChartData.length === 0 ? (
               <p className="text-sm text-muted-foreground">No paid orders yet.</p>
             ) : (
-              <div className="h-64 min-w-0 rounded-md border border-border bg-muted/10 p-3">
+              <div className="h-64 min-w-0 rounded-md border border-[hsl(var(--brand-secondary))]/15 bg-gradient-to-br from-[hsl(var(--brand-secondary-soft))]/35 to-background p-3">
                 <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
                   <BarChart data={dailyRevenueChartData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/60" />
@@ -123,7 +123,7 @@ export function InsightsPanel({ recentOrders, products, showLowStockWatchlist = 
                       ]}
                       labelFormatter={(label) => `Date: ${label}`}
                     />
-                    <Bar dataKey="revenueDollars" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="revenueDollars" fill="hsl(var(--brand-secondary))" radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

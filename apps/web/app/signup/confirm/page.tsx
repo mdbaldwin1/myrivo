@@ -1,5 +1,5 @@
+import { AuthSplitLayout } from "@/components/auth/auth-split-layout";
 import { redirect } from "next/navigation";
-import { PageShell } from "@/components/layout/page-shell";
 import { SignupConfirmationCard } from "@/components/auth/signup-confirmation-card";
 import { resolveAuthenticatedWorkspacePath } from "@/lib/auth/authenticated-workspace";
 import { sanitizeReturnTo } from "@/lib/auth/return-to";
@@ -35,8 +35,13 @@ export default async function SignupConfirmationPage({ searchParams }: SignupCon
   }
 
   return (
-    <PageShell maxWidthClassName="max-w-lg">
+    <AuthSplitLayout
+      eyebrow="Almost there"
+      title="Confirm your email to finish account setup."
+      description="Once you open the confirmation link, we’ll send you straight back into Myrivo so you can keep going."
+      highlights={["Secure email verification", "Return to onboarding", "Resend if needed", "Same seller workspace after confirm"]}
+    >
       <SignupConfirmationCard email={email} returnTo={returnTo} />
-    </PageShell>
+    </AuthSplitLayout>
   );
 }

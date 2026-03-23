@@ -1,7 +1,7 @@
 "use client";
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { Copy, RotateCcw, ShieldOff, Trash2, X } from "lucide-react";
+import { Copy, Crown, RotateCcw, ShieldOff, Trash2, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppAlert } from "@/components/ui/app-alert";
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
 import { Select } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useConfirmDialog } from "@/components/ui/use-confirm-dialog";
 import { notify } from "@/lib/feedback/toast";
 import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
 
@@ -52,6 +53,7 @@ type TeamRow =
       rawStatus: MemberRecord["status"];
       membershipId: string;
       canManage: boolean;
+      canTransfer: boolean;
     }
   | {
       kind: "invite";
@@ -78,7 +80,12 @@ function formatInviteStatus(status: InviteRecord["status"]) {
   return "Expired";
 }
 
-export function TeamManager() {
+type TeamManagerProps = {
+  currentStoreRole: "owner" | "admin";
+  currentUserId: string;
+};
+
+export function TeamManager({ currentStoreRole, currentUserId }: TeamManagerProps) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -92,6 +99,7 @@ export function TeamManager() {
   const [inviteRole, setInviteRole] = useState<"admin" | "staff">("staff");
   const [members, setMembers] = useState<MemberRecord[]>([]);
   const [invites, setInvites] = useState<InviteRecord[]>([]);
+  const { requestConfirm, confirmDialog } = useConfirmDialog();
   const highlightedMemberUserId = searchParams.get("memberUserId");
   const highlightedRowRef = useRef<HTMLTableRowElement | null>(null);
 
@@ -132,7 +140,8 @@ export function TeamManager() {
       rawStatus: member.status,
       statusLabel: formatMemberStatus(member.status),
       membershipId: member.id,
-      canManage: member.role !== "owner"
+      canManage: member.role !== "owner",
+      canTransfer: currentStoreRole === "owner" && member.role !== "owner" && member.status === "active" && member.user_id !== currentUserId
     }));
 
     const pendingInviteRows: TeamRow[] = invites
@@ -150,7 +159,7 @@ export function TeamManager() {
       }));
 
     return [...memberRows, ...pendingInviteRows];
-  }, [invites, members]);
+  }, [currentStoreRole, currentUserId, invites, members]);
 
   const highlightedRowId = useMemo(() => {
     if (!highlightedMemberUserId) {
@@ -255,6 +264,45 @@ export function TeamManager() {
     setMembers((current) => current.filter((entry) => entry.id !== membershipId));
     setSaving(false);
     notify.success("Team member removed.");
+  }
+
+  async function transferOwnership(membershipId: string, memberLabel: string) {
+    const confirmed = await requestConfirm({
+      title: `Transfer store ownership to ${memberLabel}?`,
+      description: "You will become an admin after the transfer.",
+      confirmLabel: "Transfer ownership"
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setInviteError(null);
+
+    const response = await fetch(buildStoreScopedApiPath(`/api/stores/members/${membershipId}/transfer-ownership`, storeSlug), {
+      method: "POST"
+    });
+    const payload = (await response.json()) as { ok?: boolean; error?: string };
+
+    if (!response.ok) {
+      setError(payload.error ?? "Unable to transfer ownership.");
+      setSaving(false);
+      return;
+    }
+
+    const refreshed = await fetchMembers();
+    if (!refreshed.ok) {
+      setError(refreshed.payload.error ?? "Ownership transferred, but the refreshed team list could not be loaded.");
+      setSaving(false);
+      return;
+    }
+
+    setMembers(refreshed.payload.members ?? []);
+    setInvites(refreshed.payload.invites ?? []);
+    setSaving(false);
+    notify.success("Store ownership transferred.");
   }
 
   async function copyInviteLink(inviteId: string) {
@@ -434,6 +482,9 @@ export function TeamManager() {
           </DialogPrimitive.Root>
         }
       >
+      {currentStoreRole === "owner" ? (
+        <AppAlert variant="info" message="Owners can transfer store ownership to another active team member from the actions column." />
+      ) : null}
       {loading ? <p className="text-sm text-muted-foreground">Loading team members...</p> : null}
 
       {!loading ? (
@@ -508,6 +559,14 @@ export function TeamManager() {
                               status: row.rawStatus === "suspended" ? "active" : "suspended"
                             })
                         })}
+                        {row.canTransfer
+                          ? renderActionIconButton({
+                              label: "Transfer ownership",
+                              icon: <Crown className="h-4 w-4" />,
+                              disabled: saving,
+                              onClick: () => void transferOwnership(row.membershipId, row.displayName)
+                            })
+                          : null}
                         {renderActionIconButton({
                           label: "Remove member",
                           icon: <Trash2 className="h-4 w-4" />,
@@ -552,6 +611,7 @@ export function TeamManager() {
 
       <AppAlert variant="error" message={error} />
       </SectionCard>
+      {confirmDialog}
     </TooltipProvider>
   );
 }

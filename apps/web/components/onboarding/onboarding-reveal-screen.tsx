@@ -31,9 +31,9 @@ export function OnboardingRevealScreen({ store, sessionId, answers, preview }: O
   return (
     <div className="space-y-6">
       <section>
-        <Card className="border-border/80 bg-gradient-to-br from-background via-background to-primary/5">
+        <Card className="border-[hsl(var(--brand-secondary))]/15 bg-gradient-to-br from-[hsl(var(--brand-secondary-soft))]/90 via-background to-primary/10 shadow-sm">
           <CardHeader className="space-y-4">
-            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-border/70 bg-background/80 px-3 py-1 text-xs font-medium text-muted-foreground">
+            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[hsl(var(--brand-secondary))]/15 bg-background/90 px-3 py-1 text-xs font-medium text-[hsl(var(--brand-secondary-muted-foreground))]">
               <Sparkles className="h-3.5 w-3.5" />
               Preview ready
             </div>
@@ -47,20 +47,20 @@ export function OnboardingRevealScreen({ store, sessionId, answers, preview }: O
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-xl border border-border/70 bg-background px-4 py-3">
+              <div className="rounded-xl border border-[hsl(var(--brand-secondary))]/15 bg-background/95 px-4 py-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Storefront</p>
                 <p className="mt-2 text-sm font-medium">{store.name}</p>
                 <p className="mt-1 text-xs text-muted-foreground">/s/{store.slug}</p>
               </div>
-              <div className="rounded-xl border border-border/70 bg-background px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Direction</p>
+              <div className="rounded-xl border border-[hsl(var(--brand-secondary))]/20 bg-[hsl(var(--brand-secondary-soft))]/70 px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[hsl(var(--brand-secondary-muted-foreground))]">Direction</p>
                 <p className="mt-2 text-sm font-medium capitalize">{directionLabel}</p>
                 <div className="mt-2 flex items-center gap-2">
                   <span className="h-3 w-3 rounded-full border border-border/60" style={{ backgroundColor: preview.primaryColor ?? "#0F7B84" }} />
                   <span className="h-3 w-3 rounded-full border border-border/60" style={{ backgroundColor: preview.accentColor ?? "#1AA3A8" }} />
                 </div>
               </div>
-              <div className="rounded-xl border border-border/70 bg-background px-4 py-3">
+              <div className="rounded-xl border border-[hsl(var(--brand-secondary))]/15 bg-background/95 px-4 py-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Catalog seed</p>
                 <p className="mt-2 text-sm font-medium">{answers.firstProduct.title || "First product pending"}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{preview.productCount} preview-visible product{preview.productCount === 1 ? "" : "s"}</p>
@@ -68,7 +68,7 @@ export function OnboardingRevealScreen({ store, sessionId, answers, preview }: O
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <Button asChild>
+              <Button asChild variant="brand">
                 <OnboardingRevealActionLink
                   href={`/dashboard/stores/${store.slug}/storefront-studio`}
                   storeId={store.id}
@@ -110,7 +110,7 @@ export function OnboardingRevealScreen({ store, sessionId, answers, preview }: O
       <OnboardingStorefrontPreview storeId={store.id} sessionId={sessionId} storeSlug={store.slug} />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card className="border-border/80">
+        <Card className="border-[hsl(var(--brand-secondary))]/15 bg-gradient-to-br from-background to-[hsl(var(--brand-secondary-soft))]/35">
           <CardHeader>
             <CardTitle className="text-lg">Keep shaping the storefront</CardTitle>
             <CardDescription>Refine the look, headlines, sections, and merchandising surfaces.</CardDescription>
@@ -207,7 +207,7 @@ export function OnboardingRevealScreen({ store, sessionId, answers, preview }: O
         </Card>
       </div>
 
-      <div className="flex items-center justify-between gap-3 rounded-2xl border border-border/80 bg-muted/20 px-5 py-4">
+      <div className="flex items-center justify-between gap-3 rounded-2xl border border-[hsl(var(--brand-secondary))]/15 bg-[hsl(var(--brand-secondary-soft))]/45 px-5 py-4">
         <div>
           <p className="text-sm font-medium">Need to step away?</p>
           <p className="text-sm text-muted-foreground">This reveal and your seeded storefront will still be here when you come back.</p>

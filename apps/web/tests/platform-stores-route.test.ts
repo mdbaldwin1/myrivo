@@ -137,6 +137,64 @@ describe("platform stores route", () => {
         };
       }
 
+      if (table === "store_billing_profiles") {
+        return {
+          select: vi.fn(() => ({
+            in: vi.fn(() => ({
+              returns: vi.fn(async () => ({
+                data: [
+                  {
+                    store_id: "store-1",
+                    billing_plan_id: "plan-family",
+                    billing_plans: {
+                      key: "family_friends",
+                      name: "Family & Friends",
+                      transaction_fee_bps: 300,
+                      transaction_fee_fixed_cents: 30
+                    }
+                  }
+                ],
+                error: null
+              }))
+            }))
+          }))
+        };
+      }
+
+      if (table === "billing_plans") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              order: vi.fn(() => ({
+                returns: vi.fn(async () => ({
+                  data: [
+                    {
+                      id: "plan-standard",
+                      key: "standard",
+                      name: "Standard",
+                      monthly_price_cents: 0,
+                      transaction_fee_bps: 600,
+                      transaction_fee_fixed_cents: 30,
+                      active: true
+                    },
+                    {
+                      id: "plan-family",
+                      key: "family_friends",
+                      name: "Family & Friends",
+                      monthly_price_cents: 0,
+                      transaction_fee_bps: 300,
+                      transaction_fee_fixed_cents: 30,
+                      active: true
+                    }
+                  ],
+                  error: null
+                }))
+              }))
+            }))
+          }))
+        };
+      }
+
       throw new Error(`Unexpected table ${table}`);
     });
 
@@ -144,22 +202,39 @@ describe("platform stores route", () => {
     const response = await route.GET();
     const payload = (await response.json()) as {
       summary: { storesTotal: number; liveStoresCount: number; pendingStoresCount: number };
-      stores: Array<{ id: string; activeMemberCount: number; owner: { display_name: string | null } }>;
+      plans: Array<{ key: string; monthly_price_cents: number }>;
+      stores: Array<{
+        id: string;
+        activeMemberCount: number;
+        billingPlan: { key: string; transaction_fee_bps: number; transaction_fee_fixed_cents: number } | null;
+        owner: { display_name: string | null };
+      }>;
     };
 
     expect(response.status).toBe(200);
     expect(payload.summary.storesTotal).toBe(2);
     expect(payload.summary.liveStoresCount).toBe(1);
     expect(payload.summary.pendingStoresCount).toBe(1);
+    expect(payload.plans).toHaveLength(2);
     expect(payload.stores).toHaveLength(2);
     expect(payload.stores[0]).toMatchObject({
       id: "store-1",
       activeMemberCount: 2,
+      billingPlan: {
+        key: "family_friends",
+        transaction_fee_bps: 300,
+        transaction_fee_fixed_cents: 30
+      },
       owner: { display_name: "Owner One" }
     });
     expect(payload.stores[1]).toMatchObject({
       id: "store-2",
       activeMemberCount: 0,
+      billingPlan: {
+        key: "standard",
+        transaction_fee_bps: 600,
+        transaction_fee_fixed_cents: 30
+      },
       owner: { display_name: "Owner Two" }
     });
   });

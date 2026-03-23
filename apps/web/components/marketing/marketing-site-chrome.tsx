@@ -1,7 +1,10 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { User } from "lucide-react";
 import { MarketingAnalyticsProvider } from "@/components/marketing/marketing-analytics-provider";
+import { MarketingMobileNavSheet } from "@/components/marketing/marketing-mobile-nav-sheet";
+import { MarketingScrollReveal } from "@/components/marketing/marketing-scroll-reveal";
 import { MarketingTrackedButtonLink } from "@/components/marketing/marketing-tracked-button-link";
 import { CookiePreferencesButton } from "@/components/privacy/cookie-preferences-button";
 import { Button } from "@/components/ui/button";
@@ -19,16 +22,15 @@ const navItems: Array<{ href: "/" | "/features" | "/pricing" | "/compare" | "/fo
   { href: "/features", label: "Features" },
   { href: "/pricing", label: "Pricing" },
   { href: "/compare", label: "Compare" },
-  { href: "/for", label: "Solutions" }
+  { href: "/for", label: "Use Cases" }
 ];
 
 export function MarketingSiteChrome({ children, activePath, isAuthenticated = false }: MarketingSiteChromeProps) {
   return (
-    <MarketingAnalyticsProvider>
-      <div className="relative min-h-screen overflow-hidden bg-background text-foreground [font-family:'Manrope','Avenir Next','Segoe UI',sans-serif]">
-        <div className="pointer-events-none absolute inset-0 -z-10">
-          <div className="absolute -left-20 top-24 h-64 w-64 rounded-full bg-[hsl(var(--accent))]/20 blur-3xl" />
-          <div className="absolute right-[-6rem] top-[-3rem] h-80 w-80 rounded-full bg-primary/15 blur-3xl" />
+      <MarketingAnalyticsProvider>
+      <MarketingScrollReveal />
+      <div className="relative min-h-[100svh] bg-background text-foreground [font-family:'Manrope','Avenir Next','Segoe UI',sans-serif]">
+        <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
           <div className="absolute bottom-[-6rem] left-1/4 h-96 w-96 rounded-full bg-[hsl(var(--muted-foreground))]/10 blur-3xl" />
         </div>
 
@@ -46,7 +48,9 @@ export function MarketingSiteChrome({ children, activePath, isAuthenticated = fa
                   href={item.href}
                   className={cn(
                     "rounded-full px-3 py-2 text-sm font-medium transition-colors",
-                    activePath === item.href ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-primary/10"
+                    activePath === item.href
+                      ? "bg-[hsl(var(--brand-secondary))] text-[hsl(var(--brand-secondary-foreground))]"
+                      : "text-foreground hover:bg-[hsl(var(--brand-secondary))]/10"
                   )}
                 >
                   {item.label}
@@ -55,6 +59,7 @@ export function MarketingSiteChrome({ children, activePath, isAuthenticated = fa
             </nav>
 
             <div className="flex items-center gap-2">
+              <MarketingMobileNavSheet activePath={activePath} isAuthenticated={isAuthenticated} navItems={navItems} />
               {isAuthenticated ? (
                 <>
                   <MarketingTrackedButtonLink
@@ -66,8 +71,10 @@ export function MarketingSiteChrome({ children, activePath, isAuthenticated = fa
                   >
                     Dashboard
                   </MarketingTrackedButtonLink>
-                  <Button asChild variant="outline" className="hidden h-9 rounded-full px-4 sm:inline-flex">
-                    <Link href="/account">Account</Link>
+                  <Button asChild variant="outline" size="icon" className="hidden h-9 w-9 rounded-full sm:inline-flex">
+                    <Link href="/profile" aria-label="Account">
+                      <User className="h-4 w-4" />
+                    </Link>
                   </Button>
                 </>
               ) : (
@@ -99,7 +106,7 @@ export function MarketingSiteChrome({ children, activePath, isAuthenticated = fa
           <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-8 sm:px-6 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="[font-family:'Fraunces','Iowan Old Style','Palatino Linotype',serif] text-lg font-semibold text-foreground">Myrivo</p>
-              <p className="text-sm text-muted-foreground">Commerce operations OS for serious operators.</p>
+              <p className="text-sm text-muted-foreground">Branded storefront and seller operations in one place.</p>
             </div>
             <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
               <Link href="/features" className="hover:text-foreground">

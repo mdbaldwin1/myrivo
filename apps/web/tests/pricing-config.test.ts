@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatMoney, formatPlatformFeePercent, resolvePricingPlans, type BillingPlanRow } from "@/lib/marketing/pricing";
+import { formatMoney, formatMoneyWithCents, formatPlatformFeePercent, resolvePricingPlans, type BillingPlanRow } from "@/lib/marketing/pricing";
 
 describe("pricing config", () => {
   it("returns live active plans in monthly price order", () => {
@@ -48,6 +48,7 @@ describe("pricing config", () => {
   it("formats money and fee labels consistently", () => {
     expect(formatMoney(14900)).toBe("$149");
     expect(formatMoney(0)).toBe("$0");
+    expect(formatMoneyWithCents(30)).toBe("$0.30");
     expect(formatPlatformFeePercent(600)).toBe("6.00%");
   });
 });

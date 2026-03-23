@@ -1,6 +1,6 @@
+import { AuthSplitLayout } from "@/components/auth/auth-split-layout";
 import { SignupForm } from "@/components/auth/signup-form";
 import { redirect } from "next/navigation";
-import { PageShell } from "@/components/layout/page-shell";
 import { resolveAuthenticatedWorkspacePath } from "@/lib/auth/authenticated-workspace";
 import { sanitizeReturnTo } from "@/lib/auth/return-to";
 import { getSignupLegalRequirements } from "@/lib/legal/documents";
@@ -33,7 +33,12 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
   const legalUnavailable = !legalRequirements.terms || !legalRequirements.privacy;
 
   return (
-    <PageShell maxWidthClassName="max-w-lg">
+    <AuthSplitLayout
+      eyebrow="Start selling"
+      title="Create your Myrivo account and launch from one connected platform."
+      description="Set up your account first, then move into storefront design, catalog setup, checkout, and fulfillment from the same workspace."
+      highlights={["Branded storefront", "Checkout and pickup", "Product workflow", "Order operations"]}
+    >
       <SignupForm
         returnTo={returnTo}
         marketingAttribution={{
@@ -53,6 +58,6 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
         }
         legalUnavailable={legalUnavailable}
       />
-    </PageShell>
+    </AuthSplitLayout>
   );
 }

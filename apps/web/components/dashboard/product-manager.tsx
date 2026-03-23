@@ -31,6 +31,7 @@ import {
   type VariantDraft,
   variantStatusOptions
 } from "@/components/dashboard/product-manager-domain";
+import { shouldOpenCatalogProductFromUrl } from "@/lib/dashboard/catalog-url-sync";
 import { formatVariantLabel } from "@/lib/products/variants";
 import { richTextToPlainText } from "@/lib/rich-text";
 import { notify } from "@/lib/feedback/toast";
@@ -615,6 +616,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   const editActivePanelRef = useRef<HTMLDivElement | null>(null);
   const wasCreateFlyoutOpenRef = useRef(false);
   const wasEditFlyoutOpenRef = useRef(false);
+  const lastHandledProductIdFromUrlRef = useRef<string | null>(null);
 
   const currentCreateSnapshot = useMemo(
     () =>
@@ -770,6 +772,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   useEffect(() => {
     const productIdFromUrl = searchParams.get("productId");
     if (!productIdFromUrl) {
+      lastHandledProductIdFromUrlRef.current = null;
       return;
     }
 
@@ -782,10 +785,11 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       setSelectedProductId(product.id);
     }
 
-    if (!isEditFlyoutOpen || editingProductId !== product.id) {
+    if (shouldOpenCatalogProductFromUrl(productIdFromUrl, lastHandledProductIdFromUrlRef.current)) {
+      lastHandledProductIdFromUrlRef.current = productIdFromUrl;
       openProductFromUrl(product);
     }
-  }, [editingProductId, isEditFlyoutOpen, products, searchParams, selectedProductId]);
+  }, [products, searchParams, selectedProductId]);
 
   const flowStepOrder = { product: 0, variant: 1, option: 2 } as const;
 
@@ -1144,8 +1148,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     notify.success("Product deleted.");
 
     if (editingProductId === product.id) {
-      setIsEditFlyoutOpen(false);
-      resetEditComposer();
+      closeEditFlyout();
     }
   }
 
@@ -1363,6 +1366,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
 
   function openEditFlyout(product: ProductListItem, focus?: { step: "product" | "variant" | "option"; variantId?: string }) {
     setSelectedProductId(product.id);
+    lastHandledProductIdFromUrlRef.current = product.id;
     updateProductUrl(product.id);
     setEditOrderedVariantIds(new Set());
     setEditingProductId(product.id);
@@ -1516,8 +1520,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       return;
     }
 
-    setIsEditFlyoutOpen(false);
-    resetEditComposer();
+    closeEditFlyout();
     notify.success("Product saved.");
   }
 
@@ -1576,6 +1579,12 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     setEditOrderedVariantIds(new Set());
     setEditError(null);
     setEditVariantError(null);
+  }
+
+  function closeEditFlyout() {
+    setIsEditFlyoutOpen(false);
+    updateProductUrl(null);
+    resetEditComposer();
   }
 
   const isCreateDirty = isCreateFlyoutOpen && createBaseline !== "" && currentCreateSnapshot !== createBaseline;
@@ -1860,11 +1869,12 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   }
 
   function handleEditFlyoutOpenChange(open: boolean) {
-    setIsEditFlyoutOpen(open);
-    if (!open) {
-      updateProductUrl(null);
-      resetEditComposer();
+    if (open) {
+      setIsEditFlyoutOpen(true);
+      return;
     }
+
+    closeEditFlyout();
   }
 
   function cancelCreateStepChanges() {

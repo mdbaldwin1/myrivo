@@ -66,7 +66,7 @@ export function OnboardingGeneratingScreen({ storeId, storeSlug, sessionId, stor
   }, [router, sessionId, storeId, storeSlug]);
 
   return (
-    <Card className="border-border/80">
+    <Card className="border-[hsl(var(--brand-secondary))]/15 bg-gradient-to-br from-[hsl(var(--brand-secondary-soft))]/85 via-background to-primary/10">
       <CardHeader>
         <CardTitle>Building the first preview for {storeName}</CardTitle>
         <CardDescription>
@@ -76,7 +76,7 @@ export function OnboardingGeneratingScreen({ storeId, storeSlug, sessionId, stor
       <CardContent className="space-y-5">
         <div className="space-y-3">
           <div className="h-2 overflow-hidden rounded-full bg-muted">
-            <div className="h-full w-2/3 animate-pulse rounded-full bg-primary" />
+            <div className="h-full w-2/3 animate-pulse rounded-full bg-[hsl(var(--brand-secondary))]" />
           </div>
           <p className="text-sm text-muted-foreground">{generationMessages[messageIndex]}</p>
         </div>
@@ -84,7 +84,7 @@ export function OnboardingGeneratingScreen({ storeId, storeSlug, sessionId, stor
         <AppAlert variant="error" message={error} />
 
         {error ? (
-          <Button type="button" onClick={() => window.location.reload()}>
+          <Button type="button" variant="brand" onClick={() => window.location.reload()}>
             Try again
           </Button>
         ) : null}

@@ -1,7 +1,8 @@
 "use client";
 
-import { createContext, useContext, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { StorefrontAnalyticsProvider } from "@/components/storefront/storefront-analytics-provider";
+import { SurfacePortalProvider } from "@/components/ui/surface-portal-context";
 import { StorefrontWelcomePopup } from "@/components/storefront/storefront-welcome-popup";
 import type { StorefrontMode, StorefrontRuntime } from "@/lib/storefront/runtime";
 import { buildStorefrontThemeStyle } from "@/lib/theme/storefront-theme";
@@ -14,7 +15,35 @@ type StorefrontRuntimeProviderProps = {
 };
 
 export function StorefrontRuntimeProvider({ runtime, children }: StorefrontRuntimeProviderProps) {
+  const portalContainerRef = useRef<HTMLDivElement | null>(null);
+  const themeStyle = useMemo(
+    () =>
+      buildStorefrontThemeStyle({
+        primaryColor: runtime.branding?.primary_color,
+        accentColor: runtime.branding?.accent_color,
+        themeConfig: runtime.themeConfig
+      }),
+    [runtime.branding?.accent_color, runtime.branding?.primary_color, runtime.themeConfig]
+  );
+
+  const themeDataset = useMemo(
+    () => ({
+      "data-storefront-theme-active": "true" as const,
+      "data-storefront-slug": runtime.store.slug,
+      "data-storefront-radius-scale": runtime.themeConfig.radiusScale,
+      "data-storefront-card-style": runtime.themeConfig.cardStyle,
+      "data-storefront-page-width": runtime.themeConfig.pageWidth,
+      "data-storefront-spacing-scale": runtime.themeConfig.spacingScale,
+      "data-storefront-mode": runtime.mode satisfies StorefrontMode
+    }),
+    [runtime.mode, runtime.store.slug, runtime.themeConfig.cardStyle, runtime.themeConfig.pageWidth, runtime.themeConfig.radiusScale, runtime.themeConfig.spacingScale]
+  );
+
   useEffect(() => {
+    if (runtime.mode !== "live") {
+      return;
+    }
+
     const body = document.body;
     const previousSlug = body.dataset.storefrontSlug;
     const previousRadiusScale = body.dataset.storefrontRadiusScale;
@@ -22,11 +51,6 @@ export function StorefrontRuntimeProvider({ runtime, children }: StorefrontRunti
     const previousPageWidth = body.dataset.storefrontPageWidth;
     const previousSpacingScale = body.dataset.storefrontSpacingScale;
     const previousThemeFlag = body.dataset.storefrontThemeActive;
-    const themeStyle = buildStorefrontThemeStyle({
-      primaryColor: runtime.branding?.primary_color,
-      accentColor: runtime.branding?.accent_color,
-      themeConfig: runtime.themeConfig
-    });
     const previousThemeEntries = Object.keys(themeStyle).map((key) => [key, body.style.getPropertyValue(key)] as const);
 
     body.dataset.storefrontSlug = runtime.store.slug;
@@ -89,16 +113,19 @@ export function StorefrontRuntimeProvider({ runtime, children }: StorefrontRunti
 
       window.dispatchEvent(new Event("myrivo:storefront-theme-change"));
     };
-  }, [runtime]);
+  }, [runtime.mode, runtime.store.slug, runtime.themeConfig.cardStyle, runtime.themeConfig.pageWidth, runtime.themeConfig.radiusScale, runtime.themeConfig.spacingScale, themeStyle]);
 
   return (
     <StorefrontRuntimeContext.Provider value={runtime}>
-      <StorefrontAnalyticsProvider runtime={runtime}>
-        <div className="relative h-full min-h-full">
-          {children}
-          <StorefrontWelcomePopup runtime={runtime} />
-        </div>
-      </StorefrontAnalyticsProvider>
+      <SurfacePortalProvider value={{ portalContainerRef }}>
+        <StorefrontAnalyticsProvider runtime={runtime}>
+          <div className="relative h-full min-h-full" style={themeStyle} {...themeDataset}>
+            {children}
+            <div ref={portalContainerRef} data-storefront-portal-root="true" />
+            <StorefrontWelcomePopup runtime={runtime} />
+          </div>
+        </StorefrontAnalyticsProvider>
+      </SurfacePortalProvider>
     </StorefrontRuntimeContext.Provider>
   );
 }

@@ -6,6 +6,7 @@ import { DashboardHeaderStoreLifecycleControls } from "@/components/dashboard/da
 import type { StoreOption } from "@/components/dashboard/store-switcher";
 import { DashboardHeaderStoreControl } from "@/components/dashboard/dashboard-header-store-control";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { isStoreWorkspacePath, resolveCurrentStoreWorkspaceSlug } from "@/lib/routes/store-workspace";
 import { getStoreLifecycleLabel, getStoreLifecycleTone } from "@/lib/stores/lifecycle";
 import type { StoreOnboardingProgress } from "@/lib/stores/onboarding";
 import type { StoreStatus } from "@/types/database";
@@ -29,20 +30,17 @@ export function DashboardHeaderStoreSection({
   mode = "identity"
 }: DashboardHeaderStoreSectionProps) {
   const pathname = usePathname();
-  const isStoreWorkspaceRoute = Boolean(
-    activeStoreSlug &&
-      pathname &&
-      (pathname === `/dashboard/stores/${activeStoreSlug}` || pathname.startsWith(`/dashboard/stores/${activeStoreSlug}/`))
-  );
+  const effectiveStoreSlug = resolveCurrentStoreWorkspaceSlug(pathname, activeStoreSlug);
+  const isStoreWorkspaceRoute = isStoreWorkspacePath(pathname, effectiveStoreSlug);
 
-  if (!hasStoreAccess || !activeStoreSlug || !isStoreWorkspaceRoute) {
+  if (!hasStoreAccess || !effectiveStoreSlug || !isStoreWorkspaceRoute) {
     return mode === "identity" ? <h1 className="truncate text-base sm:text-lg">Dashboard</h1> : null;
   }
 
   if (mode === "identity") {
     return (
       <div className="max-w-[min(26rem,62vw)]">
-        <DashboardHeaderStoreControl key={activeStoreSlug} activeStoreSlug={activeStoreSlug} stores={stores} />
+        <DashboardHeaderStoreControl key={effectiveStoreSlug} activeStoreSlug={effectiveStoreSlug} stores={stores} />
       </div>
     );
   }

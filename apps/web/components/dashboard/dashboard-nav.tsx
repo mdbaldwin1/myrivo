@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { withReturnTo } from "@/lib/auth/return-to";
+import { isStoreWorkspacePath, resolveCurrentStoreWorkspaceSlug } from "@/lib/routes/store-workspace";
 import { storeSettingsWorkspaceGroups, storeSettingsWorkspaceNavigationSectionIds } from "@/lib/store-editor/store-settings-workspace";
 import { cn } from "@/lib/utils";
 import type { GlobalUserRole } from "@/types/database";
@@ -111,11 +112,9 @@ export function DashboardNav({
   const pathname = usePathname();
   const normalizedPath = pathname?.replace(/\/$/, "") ?? "";
   const hasAnyStoreAccess = stores.length > 0;
-  const hasActiveStore = Boolean(activeStoreSlug);
-  const isStoreWorkspaceRoute = Boolean(
-    activeStoreSlug &&
-      (normalizedPath === `/dashboard/stores/${activeStoreSlug}` || normalizedPath.startsWith(`/dashboard/stores/${activeStoreSlug}/`))
-  );
+  const routeStoreSlug = resolveCurrentStoreWorkspaceSlug(normalizedPath, activeStoreSlug);
+  const hasActiveStore = Boolean(routeStoreSlug);
+  const isStoreWorkspaceRoute = isStoreWorkspacePath(normalizedPath, routeStoreSlug);
   const canAccessPlatform = globalRole === "support" || globalRole === "admin";
   const initials = getInitials(userDisplayName, userEmail);
   const accountName = userDisplayName?.trim() || "My Account";
@@ -136,7 +135,7 @@ export function DashboardNav({
     window.location.href = "/login";
   }
 
-  const storeWorkspaceBaseHref = activeStoreSlug ? `/dashboard/stores/${activeStoreSlug}` : "/dashboard/stores";
+  const storeWorkspaceBaseHref = routeStoreSlug ? `/dashboard/stores/${routeStoreSlug}` : "/dashboard/stores";
   const accountLevelLinks = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/dashboard/stores", label: "Store Hub", icon: Store }
@@ -228,10 +227,11 @@ export function DashboardNav({
     );
   }
 
+  const isAdminWorkspaceMode = normalizedPath === "/dashboard/admin" || normalizedPath.startsWith("/dashboard/admin/");
+  const canRenderStoreWorkspaceLinks = hasActiveStore && isStoreWorkspaceRoute && !isAdminWorkspaceMode;
   const isStoreSettingsMode =
     normalizedPath === `${storeWorkspaceBaseHref}/store-settings` || normalizedPath.startsWith(`${storeWorkspaceBaseHref}/store-settings/`);
   const isReportsMode = normalizedPath === `${storeWorkspaceBaseHref}/reports` || normalizedPath.startsWith(`${storeWorkspaceBaseHref}/reports/`);
-  const isAdminWorkspaceMode = normalizedPath === "/dashboard/admin" || normalizedPath.startsWith("/dashboard/admin/");
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -245,7 +245,7 @@ export function DashboardNav({
             </div>
           ) : null}
 
-          {hasAnyStoreAccess && hasActiveStore && isStoreWorkspaceRoute && !isAdminWorkspaceMode ? (
+          {canRenderStoreWorkspaceLinks ? (
             <div>
               {isStoreSettingsMode ? (
                 <div className="space-y-1">
@@ -270,7 +270,7 @@ export function DashboardNav({
             </div>
           ) : null}
 
-          {hasAnyStoreAccess && !isStoreWorkspaceRoute && !isAdminWorkspaceMode ? (
+          {hasAnyStoreAccess && !canRenderStoreWorkspaceLinks && !isAdminWorkspaceMode ? (
             <div>
               {showLabels ? <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Myrivo Workspace</p> : null}
               <div className="space-y-1">
@@ -282,7 +282,7 @@ export function DashboardNav({
             </div>
           ) : null}
 
-          {!hasAnyStoreAccess && !isAdminWorkspaceMode && (
+          {!hasAnyStoreAccess && !canRenderStoreWorkspaceLinks && !isAdminWorkspaceMode && (
             <div>
               {showLabels ? <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Myrivo Workspace</p> : null}
               <div className="space-y-1">

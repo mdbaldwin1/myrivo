@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Card, CardContent } from "@/components/ui/card";
 import { StorefrontAboutPage } from "@/components/storefront/storefront-about-page";
@@ -205,8 +205,32 @@ export function StorefrontStudioCanvas({
   onNavigateSurface,
   onProductDetailChange
 }: StorefrontStudioCanvasProps) {
+  const scrollRootRef = useRef<HTMLDivElement | null>(null);
   const studioDocument = useOptionalStorefrontStudioDocument();
   const activeDetailProductHandle = surface === "products" ? activeProductDetailHandle : null;
+
+  const navigatePreviewToHref = useCallback(
+    (href: string) => {
+      const productHandle = getStorefrontStudioProductHandleForHref(href, storeSlug);
+      const nextSurface = getStorefrontStudioSurfaceForHref(href, storeSlug);
+
+      if (productHandle) {
+        onNavigateSurface?.("products");
+        onProductDetailChange?.(productHandle);
+        return;
+      }
+
+      if (nextSurface === "products") {
+        onProductDetailChange?.(null);
+      }
+
+      if (nextSurface) {
+        onNavigateSurface?.(nextSurface);
+      }
+    },
+    [onNavigateSurface, onProductDetailChange, storeSlug]
+  );
+
   const runtime = useMemo(() => {
     if (!initialStorefrontData) {
       return null;
@@ -217,13 +241,14 @@ export function StorefrontStudioCanvas({
       mode: "studio",
       surface: mapSurfaceToRuntimeSurface(surface, activeDetailProductHandle)
     });
+    next.previewNavigateToHref = navigatePreviewToHref;
 
     if (!studioDocument) {
       return next;
     }
 
     return applyStorefrontStudioDraftToRuntime(next, studioDocument.draft);
-  }, [activeDetailProductHandle, studioDocument, initialStorefrontData, surface]);
+  }, [activeDetailProductHandle, initialStorefrontData, navigatePreviewToHref, studioDocument, surface]);
 
   const aboutSection = studioDocument?.getSectionDraft("aboutPage") ?? {};
   const policiesSection = studioDocument?.getSectionDraft("policiesPage") ?? {};
@@ -238,14 +263,16 @@ export function StorefrontStudioCanvas({
       return;
     }
 
-    if (typeof document === "undefined") {
+    const scrollRoot = scrollRootRef.current;
+    const ownerDocument = scrollRoot?.ownerDocument;
+
+    if (!scrollRoot || !ownerDocument) {
       return;
     }
 
-    const scrollRoot = document.querySelector<HTMLElement>("[data-storefront-scroll-root='true']");
-    const target = document.querySelector<HTMLElement>(`[data-storefront-preview-section='${scrollTarget.section}']`);
+    const target = ownerDocument.querySelector<HTMLElement>(`[data-storefront-preview-section='${scrollTarget.section}']`);
 
-    if (!scrollRoot || !target) {
+    if (!target) {
       return;
     }
 
@@ -257,6 +284,94 @@ export function StorefrontStudioCanvas({
       scrollRoot.scrollTo({ top: Math.max(0, nextScroll), behavior: "smooth" });
     });
   }, [scrollTarget]);
+
+  useEffect(() => {
+    const scrollRoot = scrollRootRef.current;
+    const ownerDocument = scrollRoot?.ownerDocument;
+
+    if (!scrollRoot || !ownerDocument) {
+      return;
+    }
+
+    const resolvedOwnerDocument = ownerDocument;
+
+    function handleDocumentClickCapture(event: MouseEvent) {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+
+      if (!target.closest("[data-storefront-preview-nav-sheet='true']")) {
+        return;
+      }
+
+      if (target.closest("[data-studio-ignore-navigation='true']")) {
+        return;
+      }
+
+      const anchor = target.closest("a[href]");
+      if (!(anchor instanceof HTMLAnchorElement)) {
+        return;
+      }
+
+      const productHandle = getStorefrontStudioProductHandleForHref(anchor.href, storeSlug);
+      const nextSurface = getStorefrontStudioSurfaceForHref(anchor.href, storeSlug);
+
+      if (!productHandle && !nextSurface) {
+        return;
+      }
+
+      event.preventDefault();
+
+      if (productHandle) {
+        onNavigateSurface?.("products");
+        onProductDetailChange?.(productHandle);
+        return;
+      }
+
+      if (nextSurface === "products") {
+        onProductDetailChange?.(null);
+      }
+
+      if (nextSurface) {
+        onNavigateSurface?.(nextSurface);
+      }
+    }
+
+    function handlePreviewNavigate(event: Event) {
+      const customEvent = event as CustomEvent<{ href?: string }>;
+      const href = customEvent.detail?.href;
+
+      if (!href) {
+        return;
+      }
+
+      const absoluteHref = new URL(href, resolvedOwnerDocument.defaultView?.location.href ?? "https://myrivo.local").href;
+      const productHandle = getStorefrontStudioProductHandleForHref(absoluteHref, storeSlug);
+      const nextSurface = getStorefrontStudioSurfaceForHref(absoluteHref, storeSlug);
+
+      if (productHandle) {
+        onNavigateSurface?.("products");
+        onProductDetailChange?.(productHandle);
+        return;
+      }
+
+      if (nextSurface === "products") {
+        onProductDetailChange?.(null);
+      }
+
+      if (nextSurface) {
+        onNavigateSurface?.(nextSurface);
+      }
+    }
+
+    resolvedOwnerDocument.addEventListener("click", handleDocumentClickCapture, true);
+    resolvedOwnerDocument.addEventListener("myrivo:storefront-preview-navigate", handlePreviewNavigate as EventListener);
+    return () => {
+      resolvedOwnerDocument.removeEventListener("click", handleDocumentClickCapture, true);
+      resolvedOwnerDocument.removeEventListener("myrivo:storefront-preview-navigate", handlePreviewNavigate as EventListener);
+    };
+  }, [onNavigateSurface, onProductDetailChange, storeSlug]);
 
   if (!runtime || !initialStorefrontData) {
     return (
@@ -312,7 +427,7 @@ export function StorefrontStudioCanvas({
 
   function handleCanvasPointerDownCapture(event: React.PointerEvent<HTMLDivElement>) {
     const target = event.target;
-    if (!(target instanceof Element) || typeof document === "undefined" || !document.getSelection) {
+    if (!(target instanceof Element)) {
       return;
     }
 
@@ -324,12 +439,13 @@ export function StorefrontStudioCanvas({
       return;
     }
 
-    document.getSelection()?.removeAllRanges();
+    target.ownerDocument.getSelection?.()?.removeAllRanges();
   }
 
   return (
     <StorefrontRuntimeProvider runtime={runtime}>
       <div
+        ref={scrollRootRef}
         data-storefront-scroll-root="true"
         onPointerDownCapture={handleCanvasPointerDownCapture}
         onClickCapture={handleCanvasClickCapture}

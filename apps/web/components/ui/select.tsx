@@ -1,6 +1,7 @@
 import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { Check, ChevronDown, ChevronUp, ChevronsUpDown } from "lucide-react";
+import { useOptionalSurfacePortalContainer } from "@/components/ui/surface-portal-context";
 import { useHasMounted } from "@/components/use-has-mounted";
 import { cn } from "@/lib/utils";
 
@@ -69,6 +70,7 @@ function extractOptions(children: React.ReactNode) {
 const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
   ({ id, className, children, value, defaultValue, disabled, onOpenChange, onChange, placeholder, icon = "down" }, ref) => {
     const options = React.useMemo(() => extractOptions(children), [children]);
+    const portalContainer = useOptionalSurfacePortalContainer();
     const hasMounted = useHasMounted();
     const [internalValue, setInternalValue] = React.useState(defaultValue ?? options[0]?.value ?? "");
     const selectedValue = typeof value === "string" ? value : internalValue;
@@ -129,7 +131,7 @@ const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
             {icon === "up-down" ? <ChevronsUpDown className="h-4 w-4 opacity-50" /> : <ChevronDown className="h-4 w-4 opacity-50" />}
           </SelectPrimitive.Icon>
         </SelectPrimitive.Trigger>
-        <SelectPrimitive.Portal>
+        <SelectPrimitive.Portal container={portalContainer ?? undefined}>
           <SelectPrimitive.Content className="relative z-[100] max-h-96 w-[var(--radix-select-trigger-width)] min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out motion-reduce:transition-none motion-reduce:data-[state=open]:animate-none motion-reduce:data-[state=closed]:animate-none">
             <SelectPrimitive.ScrollUpButton className="flex cursor-default items-center justify-center py-1">
               <ChevronUp className="h-4 w-4" />

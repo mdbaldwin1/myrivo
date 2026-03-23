@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Minus, Plus, ShoppingCart, Trash2 } from "lucide-react";
+import { useOptionalStorefrontRuntime } from "@/components/storefront/storefront-runtime-provider";
 import { readStorefrontCart, STOREFRONT_CART_UPDATED_EVENT, syncStorefrontCart, writeStorefrontCart, type StorefrontCartEntry } from "@/lib/storefront/cart";
 import { Button } from "@/components/ui/button";
 import { buildStorefrontCartPath } from "@/lib/storefront/paths";
@@ -37,6 +38,8 @@ export function StorefrontCartButton({
   className,
   ariaLabel = "Open cart"
 }: StorefrontCartButtonProps) {
+  const runtime = useOptionalStorefrontRuntime();
+  const previewNavigateToHref = runtime?.mode === "studio" ? runtime.previewNavigateToHref ?? null : null;
   const [count, setCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
@@ -199,6 +202,14 @@ export function StorefrontCartButton({
         href={resolvedHref}
         className={cn("relative inline-flex h-9 w-9 items-center justify-center transition-opacity hover:opacity-70", buttonRadiusClass, className)}
         aria-label={ariaLabel}
+        onClick={(event) => {
+          if (!previewNavigateToHref) {
+            return;
+          }
+
+          event.preventDefault();
+          previewNavigateToHref(event.currentTarget.href);
+        }}
         onFocus={openPreview}
         onBlur={scheduleClose}
       >

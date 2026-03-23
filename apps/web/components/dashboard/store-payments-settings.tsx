@@ -12,6 +12,7 @@ import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { Flyout } from "@/components/ui/flyout";
 import { SectionCard } from "@/components/ui/section-card";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useConfirmDialog } from "@/components/ui/use-confirm-dialog";
 import { notify } from "@/lib/feedback/toast";
 import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
 import { isStorePaymentsReadyForLaunch, isStoreStripeOperationallyReady } from "@/lib/stores/tax-compliance";
@@ -49,6 +50,7 @@ export function StorePaymentsSettings() {
   const [connectInstance, setConnectInstance] = useState<ReturnType<typeof loadConnectAndInitialize> | null>(null);
   const [paymentsFlyoutOpen, setPaymentsFlyoutOpen] = useState(false);
   const [paymentsFlyoutTab, setPaymentsFlyoutTab] = useState<"stripe" | "tax">("stripe");
+  const { requestConfirm, confirmDialog } = useConfirmDialog();
 
   async function readJsonSafe<T>(response: Response): Promise<T | null> {
     try {
@@ -162,9 +164,13 @@ export function StorePaymentsSettings() {
   }
 
   async function clearStripeSetup() {
-    const confirmed = window.confirm(
-      "Disconnect Stripe for this store? This will clear the saved Stripe connection, reset the local tax setup state, and the next connect will start with a brand-new Stripe account."
-    );
+    const confirmed = await requestConfirm({
+      title: "Disconnect Stripe?",
+      description:
+        "This will clear the saved Stripe connection, reset the local tax setup state, and the next connect will start with a brand-new Stripe account.",
+      confirmLabel: "Disconnect Stripe",
+      confirmVariant: "destructive"
+    });
 
     if (!confirmed) {
       return;
@@ -546,6 +552,7 @@ export function StorePaymentsSettings() {
           )}
         </div>
       </Flyout>
+      {confirmDialog}
 
     </div>
   );

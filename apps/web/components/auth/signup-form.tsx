@@ -3,9 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { AuthSurface } from "@/components/auth/auth-surface";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
@@ -156,63 +156,66 @@ export function SignupForm({ returnTo, legalRequirements, legalUnavailable, mark
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Create account</CardTitle>
-        <CardDescription>Create your account, then set up your first store workspace.</CardDescription>
-        {legalUnavailable ? (
-          <p className="text-sm text-amber-700">Signup is temporarily unavailable while legal documents are being configured.</p>
-        ) : null}
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <FormField label="Email" description="Use an email address you can access for verification and invites.">
-            <Input type="email" required placeholder="owner@yourshop.com" value={email} onChange={(event) => setEmail(event.target.value)} />
-          </FormField>
-          <FormField label="Password" description="Use at least 8 characters and keep it secure.">
-            <Input
-              type="password"
-              minLength={8}
-              required
-              placeholder="At least 8 characters"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-          </FormField>
-          <div className="space-y-2 rounded-md border border-border/70 bg-muted/20 p-3">
-            <label className="flex items-start gap-2 text-sm text-muted-foreground">
-              <Checkbox checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)} />
-              <span>
-                I agree to the{" "}
-                <Link href="/terms" className="font-medium text-foreground underline-offset-4 hover:underline">
-                  Terms and Conditions
-                </Link>
-                .
-              </span>
-            </label>
-            <label className="flex items-start gap-2 text-sm text-muted-foreground">
-              <Checkbox checked={privacyAccepted} onChange={(event) => setPrivacyAccepted(event.target.checked)} />
-              <span>
-                I agree to the{" "}
-                <Link href="/privacy" className="font-medium text-foreground underline-offset-4 hover:underline">
-                  Privacy Policy
-                </Link>
-                .
-              </span>
-            </label>
-          </div>
-          <FeedbackMessage type="error" message={error} />
-          <Button type="submit" disabled={loading || legalUnavailable || !termsAccepted || !privacyAccepted} className="w-full">
-            {loading ? "Creating account..." : "Create account"}
-          </Button>
-          <p className="text-center text-sm text-muted-foreground">
-            Already have an account?{" "}
-            <Link href={withReturnTo("/login", returnTo)} className="font-medium text-foreground underline-offset-4 hover:underline">
-              Sign in
-            </Link>
-          </p>
-        </form>
-      </CardContent>
-    </Card>
+    <AuthSurface
+      title="Create account"
+      description="Create your account, then move into your first store workspace."
+      notice={legalUnavailable ? <p className="text-sm font-medium text-amber-700">Signup is temporarily unavailable while legal documents are being configured.</p> : null}
+    >
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <FormField label="Email" description="Use an email address you can access for verification and invites.">
+          <Input
+            type="email"
+            required
+            placeholder="owner@yourshop.com"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            className="h-12 rounded-2xl border-border/70 bg-white"
+          />
+        </FormField>
+        <FormField label="Password" description="Use at least 8 characters and keep it secure.">
+          <Input
+            type="password"
+            minLength={8}
+            required
+            placeholder="At least 8 characters"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            className="h-12 rounded-2xl border-border/70 bg-white"
+          />
+        </FormField>
+        <div className="space-y-3 rounded-[1.5rem] border border-border/70 bg-[linear-gradient(180deg,rgba(246,250,249,0.95),rgba(241,248,247,0.92))] p-4">
+          <label className="flex items-start gap-3 text-sm leading-6 text-muted-foreground">
+            <Checkbox checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)} className="mt-1" />
+            <span>
+              I agree to the{" "}
+              <Link href="/terms" className="font-medium text-foreground underline-offset-4 hover:underline">
+                Terms and Conditions
+              </Link>
+              .
+            </span>
+          </label>
+          <label className="flex items-start gap-3 text-sm leading-6 text-muted-foreground">
+            <Checkbox checked={privacyAccepted} onChange={(event) => setPrivacyAccepted(event.target.checked)} className="mt-1" />
+            <span>
+              I agree to the{" "}
+              <Link href="/privacy" className="font-medium text-foreground underline-offset-4 hover:underline">
+                Privacy Policy
+              </Link>
+              .
+            </span>
+          </label>
+        </div>
+        <FeedbackMessage type="error" message={error} />
+        <Button type="submit" disabled={loading || legalUnavailable || !termsAccepted || !privacyAccepted} className="h-12 w-full rounded-full">
+          {loading ? "Creating account..." : "Create account"}
+        </Button>
+        <p className="text-center text-sm text-muted-foreground">
+          Already have an account?{" "}
+          <Link href={withReturnTo("/login", returnTo)} className="font-medium text-foreground underline-offset-4 hover:underline">
+            Sign in
+          </Link>
+        </p>
+      </form>
+    </AuthSurface>
   );
 }

@@ -424,6 +424,7 @@ export function StorefrontPage(props: StorefrontPageProps) {
 
   const reviewsStudio = studioEnabled
     ? {
+        enabled: true,
         onSectionTitleChange: (value: string) => updateProductsField("copy.reviews.sectionTitle", value),
         onSummaryTemplateChange: (value: string) => updateProductsField("copy.reviews.summaryTemplate", value),
         onEmptyStateChange: (value: string) => updateProductsField("copy.reviews.emptyState", value),
@@ -1351,7 +1352,7 @@ export function StorefrontPage(props: StorefrontPageProps) {
                   </div>
                 ) : (
                   <div className={productGridClasses[themeConfig.productGridColumns]}>
-                    {filteredProducts.map((product) => {
+                    {filteredProducts.map((product, index) => {
                       const variants = getSortedActiveVariants(product);
                       const defaultVariant = getDefaultVariant(product);
                       const optionNames = getVariantOptionNames(product, variants);
@@ -1378,6 +1379,7 @@ export function StorefrontPage(props: StorefrontPageProps) {
                                 images={cardImages}
                                 alt={product.image_alt_text || `${product.title} image`}
                                 imageClassName={cn("aspect-square w-full", isIntegrated ? "" : "border border-border/60")}
+                                eagerFirstImage={index === 0}
                                 showArrowsOnHover
                                 allowPointerSwipe={false}
                                 hoverZoom={themeConfig.productCardImageHoverZoom}
@@ -1455,7 +1457,7 @@ export function StorefrontPage(props: StorefrontPageProps) {
               reviewCardClassName={cardClass}
               reviewsTheme={themeConfig}
               reviewsCopy={copy.reviews}
-              studio={isProductsView ? reviewsStudio : undefined}
+              studio={studioEnabled ? reviewsStudio : undefined}
             />
           ) : null}
           <StorefrontFooter

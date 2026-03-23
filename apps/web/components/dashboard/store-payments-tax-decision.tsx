@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { Textarea } from "@/components/ui/textarea";
+import { useConfirmDialog } from "@/components/ui/use-confirm-dialog";
 import { buildStoreScopedApiPath } from "@/lib/routes/store-workspace";
 
 type StoreTaxCollectionMode = "unconfigured" | "stripe_tax" | "seller_attested_no_tax";
@@ -40,6 +41,7 @@ export function StorePaymentsTaxDecision({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const { requestConfirm, confirmDialog } = useConfirmDialog();
 
   async function readJsonSafe<T>(response: Response): Promise<T | null> {
     try {
@@ -93,7 +95,12 @@ export function StorePaymentsTaxDecision({
   }
 
   async function clearDecision() {
-    const confirmed = window.confirm("Clear this store's saved tax decision? This will put tax handling back into an unconfigured state.");
+    const confirmed = await requestConfirm({
+      title: "Clear tax decision?",
+      description: "This will put tax handling back into an unconfigured state.",
+      confirmLabel: "Clear decision",
+      confirmVariant: "destructive"
+    });
     if (!confirmed) {
       return;
     }
@@ -212,6 +219,7 @@ export function StorePaymentsTaxDecision({
 
       <FeedbackMessage type="success" message={message} />
       <FeedbackMessage type="error" message={error} />
+      {confirmDialog}
     </div>
   );
 }

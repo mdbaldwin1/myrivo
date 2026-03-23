@@ -81,7 +81,7 @@ export function PlatformConsole({ currentGlobalRole }: PlatformConsoleProps) {
         title="Approval Queue"
         description="Review the stores that still need a platform decision, then move deeper work to Stores."
         action={
-          <Button type="button" size="sm" variant="outline" asChild>
+          <Button type="button" size="sm" variant="brand" asChild>
             <Link href="/dashboard/admin/stores">Open Stores</Link>
           </Button>
         }

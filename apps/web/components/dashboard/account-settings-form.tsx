@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
+import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { DashboardFormActionBar } from "@/components/dashboard/dashboard-form-action-bar";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -110,6 +111,17 @@ export function AccountSettingsForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [pendingEmail, setPendingEmail] = useState("");
+  const [emailCurrentPassword, setEmailCurrentPassword] = useState("");
+  const [emailSaving, setEmailSaving] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [emailMessage, setEmailMessage] = useState<string | null>(null);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
   const hasPreferenceChanges = preferenceKeys.some((key) => preferences[key] !== savedPreferences[key]);
   const isDirty =
     (showProfileFields && (displayName !== savedDisplayName || avatarPath !== savedAvatarPath)) ||
@@ -241,6 +253,68 @@ export function AccountSettingsForm({
     setSaving(false);
   }
 
+  async function handleEmailChange() {
+    setEmailSaving(true);
+    setEmailError(null);
+    setEmailMessage(null);
+
+    const response = await fetch("/api/user/change-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: pendingEmail,
+        currentPassword: emailCurrentPassword
+      })
+    });
+
+    const payload = (await response.json()) as { message?: string; error?: string };
+    setEmailSaving(false);
+
+    if (!response.ok) {
+      setEmailError(payload.error ?? "Unable to change email.");
+      return;
+    }
+
+    setPendingEmail("");
+    setEmailCurrentPassword("");
+    setEmailMessage(payload.message ?? "Email change requested.");
+    notify.success("Email change requested.");
+  }
+
+  async function handlePasswordChange() {
+    if (newPassword !== confirmPassword) {
+      setPasswordError("New passwords do not match.");
+      return;
+    }
+
+    setPasswordSaving(true);
+    setPasswordError(null);
+    setPasswordMessage(null);
+
+    const response = await fetch("/api/user/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        currentPassword,
+        newPassword
+      })
+    });
+
+    const payload = (await response.json()) as { message?: string; error?: string };
+    setPasswordSaving(false);
+
+    if (!response.ok) {
+      setPasswordError(payload.error ?? "Unable to update password.");
+      return;
+    }
+
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordMessage(payload.message ?? "Password updated.");
+    notify.success("Password updated.");
+  }
+
   return (
     <form id="account-settings-form" onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-4">
@@ -272,7 +346,7 @@ export function AccountSettingsForm({
                       />
                     </FormField>
 
-                    <FormField label="Email" description="Sign-in email is managed by your auth provider.">
+                    <FormField label="Email" description="Current sign-in email. Use the security sections below to change it.">
                       <Input value={email ?? ""} readOnly disabled />
                     </FormField>
 
@@ -416,6 +490,99 @@ export function AccountSettingsForm({
               ) : null}
             </div>
           </SectionCard>
+
+          {showProfileFields ? (
+            <SectionCard
+              title="Email Address"
+              description="Change the email you use to sign in. Confirmation may be required before the new address becomes active."
+            >
+              <div className="space-y-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <FormField label="Current email">
+                    <Input value={email ?? ""} readOnly disabled />
+                  </FormField>
+                  <FormField label="New email">
+                    <Input
+                      type="email"
+                      required
+                      placeholder="new-email@yourshop.com"
+                      value={pendingEmail}
+                      onChange={(event) => setPendingEmail(event.target.value)}
+                    />
+                  </FormField>
+                </div>
+                <FormField label="Current password" description="We verify your password before changing your sign-in email.">
+                  <Input
+                    type="password"
+                    required
+                    placeholder="Enter your current password"
+                    value={emailCurrentPassword}
+                    onChange={(event) => setEmailCurrentPassword(event.target.value)}
+                  />
+                </FormField>
+                <AppAlert variant="error" message={emailError} />
+                <AppAlert variant="success" message={emailMessage} />
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    onClick={() => void handleEmailChange()}
+                    disabled={emailSaving || !pendingEmail.trim() || !emailCurrentPassword}
+                  >
+                    {emailSaving ? "Updating..." : "Change email"}
+                  </Button>
+                </div>
+              </div>
+            </SectionCard>
+          ) : null}
+
+          {showProfileFields ? (
+            <SectionCard title="Password" description="Change the password for your account.">
+              <div className="space-y-4">
+                <div className="grid gap-3 md:grid-cols-3">
+                  <FormField label="Current password">
+                    <Input
+                      type="password"
+                      required
+                      placeholder="Current password"
+                      value={currentPassword}
+                      onChange={(event) => setCurrentPassword(event.target.value)}
+                    />
+                  </FormField>
+                  <FormField label="New password" description="Use at least 8 characters.">
+                    <Input
+                      type="password"
+                      required
+                      minLength={8}
+                      placeholder="New password"
+                      value={newPassword}
+                      onChange={(event) => setNewPassword(event.target.value)}
+                    />
+                  </FormField>
+                  <FormField label="Confirm password">
+                    <Input
+                      type="password"
+                      required
+                      minLength={8}
+                      placeholder="Confirm new password"
+                      value={confirmPassword}
+                      onChange={(event) => setConfirmPassword(event.target.value)}
+                    />
+                  </FormField>
+                </div>
+                <AppAlert variant="error" message={passwordError} />
+                <AppAlert variant="success" message={passwordMessage} />
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    onClick={() => void handlePasswordChange()}
+                    disabled={passwordSaving || !currentPassword || !newPassword || !confirmPassword}
+                  >
+                    {passwordSaving ? "Updating..." : "Change password"}
+                  </Button>
+                </div>
+              </div>
+            </SectionCard>
+          ) : null}
         </div>
       </div>
 

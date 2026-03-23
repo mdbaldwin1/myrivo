@@ -30,9 +30,9 @@ export function OnboardingHome({ existingStores }: OnboardingHomeProps) {
     <PageShell maxWidthClassName="max-w-6xl">
       <div className="space-y-6">
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
-          <Card className="border-border/80">
+          <Card className="border-[hsl(var(--brand-secondary))]/15 bg-gradient-to-br from-[hsl(var(--brand-secondary-soft))]/80 via-background to-primary/5">
             <CardHeader className="space-y-3">
-              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-border/70 bg-muted/40 px-3 py-1 text-xs font-medium text-muted-foreground">
+              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[hsl(var(--brand-secondary))]/15 bg-background/90 px-3 py-1 text-xs font-medium text-[hsl(var(--brand-secondary-muted-foreground))]">
                 <Sparkles className="h-3.5 w-3.5" />
                 Store onboarding
               </div>
@@ -44,7 +44,7 @@ export function OnboardingHome({ existingStores }: OnboardingHomeProps) {
             </CardHeader>
             <CardContent className="space-y-5">
               <div className="flex flex-wrap items-center gap-3">
-                <Button asChild>
+                <Button asChild variant="brand">
                   <Link href="/dashboard/stores/onboarding/new">
                     Create store
                     <ArrowRight className="h-4 w-4" />
@@ -55,7 +55,7 @@ export function OnboardingHome({ existingStores }: OnboardingHomeProps) {
 
               <div className="grid gap-2 sm:grid-cols-2">
                 {launchBenefits.map((item) => (
-                  <div key={item} className="rounded-md border border-border/70 bg-muted/20 px-4 py-3 text-sm text-foreground">
+                  <div key={item} className="rounded-md border border-[hsl(var(--brand-secondary))]/15 bg-background/80 px-4 py-3 text-sm text-foreground">
                     {item}
                   </div>
                 ))}

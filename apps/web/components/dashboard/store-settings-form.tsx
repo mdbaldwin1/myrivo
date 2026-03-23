@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/ui/section-card";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { useConfirmDialog } from "@/components/ui/use-confirm-dialog";
 import { notify } from "@/lib/feedback/toast";
 import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
 import { canDeleteStoreFromWorkspace, getStoreLifecycleDescription, getStoreLifecycleLabel } from "@/lib/stores/lifecycle";
@@ -130,6 +131,7 @@ export function StoreSettingsForm({
   const [savedSeoLocationAddressLine1, setSavedSeoLocationAddressLine1] = useState("");
   const [savedSeoLocationAddressLine2, setSavedSeoLocationAddressLine2] = useState("");
   const [savedSeoLocationShowFullAddress, setSavedSeoLocationShowFullAddress] = useState(false);
+  const { requestConfirm, confirmDialog } = useConfirmDialog();
 
   const logoPreview = useMemo(() => {
     if (logoFile) {
@@ -558,9 +560,12 @@ export function StoreSettingsForm({
       return;
     }
 
-    const confirmed = window.confirm(
-      `Permanently delete ${savedName}? This cannot be undone.`
-    );
+    const confirmed = await requestConfirm({
+      title: `Permanently delete ${savedName}?`,
+      description: "This cannot be undone.",
+      confirmLabel: "Delete store",
+      confirmVariant: "destructive"
+    });
 
     if (!confirmed) {
       return;
@@ -843,6 +848,7 @@ export function StoreSettingsForm({
         </form>
       </div>
 
+      {confirmDialog}
       <DashboardFormActionBar
         formId={formId}
         saveLabel="Save profile"

@@ -17,14 +17,14 @@ export function StorefrontAnalyticsEmptyState({ storeSlug }: StorefrontAnalytics
           <Button asChild size="sm" variant="outline">
             <Link href={`/dashboard/stores/${storeSlug}/storefront-studio?surface=home`}>Review storefront</Link>
           </Button>
-          <Button asChild size="sm">
+          <Button asChild size="sm" variant="brand">
             <Link href={`/dashboard/stores/${storeSlug}/catalog`}>Add products</Link>
           </Button>
         </div>
       }
     >
       <div className="grid gap-3 md:grid-cols-3">
-        <div className="rounded-md border border-dashed border-border/70 bg-muted/20 p-4">
+        <div className="rounded-md border border-dashed border-[hsl(var(--brand-secondary))]/20 bg-[hsl(var(--brand-secondary-soft))]/50 p-4">
           <p className="text-sm font-medium">Traffic appears after real storefront visits</p>
           <p className="mt-1 text-sm text-muted-foreground">Page views, product views, and search behavior show up once customers interact with the storefront.</p>
         </div>
