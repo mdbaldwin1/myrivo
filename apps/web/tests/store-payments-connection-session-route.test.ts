@@ -8,16 +8,21 @@ const accountsCreateMock = vi.fn();
 const accountSessionsCreateMock = vi.fn();
 const storesUpdateEqMock = vi.fn();
 
-vi.mock("@/lib/supabase/server", () => ({
-  createSupabaseServerClient: vi.fn(async () => ({
-    auth: {
-      getUser: (...args: unknown[]) => getUserMock(...args)
-    },
+vi.mock("@/lib/supabase/admin", () => ({
+  createSupabaseAdminClient: vi.fn(() => ({
     from: vi.fn(() => ({
       update: vi.fn(() => ({
         eq: (...args: unknown[]) => storesUpdateEqMock(...args)
       }))
     }))
+  }))
+}));
+
+vi.mock("@/lib/supabase/server", () => ({
+  createSupabaseServerClient: vi.fn(async () => ({
+    auth: {
+      getUser: (...args: unknown[]) => getUserMock(...args)
+    }
   }))
 }));
 
@@ -63,6 +68,14 @@ describe("store payments connection session route", () => {
     getOptionalStripePublishableKeyMock.mockReturnValue("pk_test_123");
     accountSessionsCreateMock.mockResolvedValue({
       client_secret: "sess_123_secret_abc"
+    });
+    storesUpdateEqMock.mockReturnValue({
+      select: vi.fn(() => ({
+        maybeSingle: vi.fn(async () => ({
+          data: { id: "store-1" },
+          error: null
+        }))
+      }))
     });
     process.env.STRIPE_SECRET_KEY = "sk_test_123";
     process.env.STRIPE_WEBHOOK_SECRET = "whsec_123";
@@ -111,11 +124,6 @@ describe("store payments connection session route", () => {
       }
     });
     accountsCreateMock.mockResolvedValue({ id: "acct_new" });
-    storesUpdateEqMock.mockReturnValue({
-      eq: vi.fn(async () => ({
-        error: null
-      }))
-    });
 
     const route = await import("@/app/api/stores/payments/connection-session/route");
     const response = await route.POST(
@@ -137,5 +145,35 @@ describe("store payments connection session route", () => {
         account: "acct_new"
       })
     );
+  });
+
+  test("returns a structured error when persisting the created Stripe account fails", async () => {
+    getOwnedStoreBundleForOptionalSlugMock.mockResolvedValue({
+      store: {
+        id: "store-1",
+        stripe_account_id: null
+      }
+    });
+    accountsCreateMock.mockResolvedValue({ id: "acct_new" });
+    storesUpdateEqMock.mockReturnValue({
+      select: vi.fn(() => ({
+        maybeSingle: vi.fn(async () => ({
+          data: null,
+          error: { message: "permission denied" }
+        }))
+      }))
+    });
+
+    const route = await import("@/app/api/stores/payments/connection-session/route");
+    const response = await route.POST(
+      new NextRequest("http://localhost:3000/api/stores/payments/connection-session?storeSlug=test-store", {
+        method: "POST"
+      })
+    );
+    const payload = (await response.json()) as { error: string };
+
+    expect(response.status).toBe(500);
+    expect(payload).toEqual({ error: "permission denied" });
+    expect(accountSessionsCreateMock).not.toHaveBeenCalled();
   });
 });
