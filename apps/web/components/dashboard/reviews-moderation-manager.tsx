@@ -59,6 +59,27 @@ type ReviewsModerationManagerProps = {
   initialReviewId?: string | null;
 };
 
+export function applyReviewModerationToQueue(
+  items: ReviewRow[],
+  reviewId: string,
+  action: ModerationAction,
+  statusTab: "all" | ReviewStatus,
+  reason?: string
+) {
+  const nextStatus: ReviewStatus = action === "reject" ? "rejected" : "published";
+  const nextItems = items.map((item) =>
+    item.id === reviewId
+      ? {
+          ...item,
+          status: nextStatus,
+          moderation_reason: action === "reject" ? reason ?? "rejected" : null
+        }
+      : item
+  );
+
+  return statusTab === "all" ? nextItems : nextItems.filter((item) => item.status === statusTab);
+}
+
 export function ReviewsModerationManager({ storeSlug, initialItems, initialReviewId = null }: ReviewsModerationManagerProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -158,17 +179,9 @@ export function ReviewsModerationManager({ storeSlug, initialItems, initialRevie
 
   function applyOptimisticReviewUpdate(reviewId: string, action: ModerationAction, reason?: string) {
     const previous = items;
-    const nextStatus: ReviewStatus = action === "reject" ? "rejected" : "published";
-    const nextItems = items.map((item) =>
-      item.id === reviewId
-        ? {
-            ...item,
-            status: nextStatus,
-            moderation_reason: action === "reject" ? reason ?? "rejected" : null
-          }
-        : item
-    );
+    const nextItems = applyReviewModerationToQueue(items, reviewId, action, statusTab, reason);
     setItems(nextItems);
+    setSelectedReviewIds((current) => current.filter((id) => id !== reviewId));
     syncSelectedReview(nextItems);
     return previous;
   }

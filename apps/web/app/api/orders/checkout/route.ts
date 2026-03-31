@@ -8,7 +8,16 @@ import { sendOrderCreatedNotifications } from "@/lib/notifications/order-emails"
 import { resolveAvailablePickupLocations } from "@/lib/pickup/availability";
 import { buildPickupSlots } from "@/lib/pickup/scheduling";
 import { formatVariantLabel } from "@/lib/products/variants";
-import { calculateDiscountCents } from "@/lib/promotions/calculate-discount";
+import {
+  applyPromotionSequence,
+  normalizeRequestedPromoCodes,
+  type AppliedPromotionSummary,
+  type PromotionApplicationRecord
+} from "@/lib/promotions/apply-promotions";
+import {
+  persistPromotionRedemptions,
+  type PromotionRedemptionPersistenceClient
+} from "@/lib/promotions/persist-redemptions";
 import { normalizePromotionRedemptionEmail, PROMOTION_CUSTOMER_CAP_REACHED_ERROR } from "@/lib/promotions/redemption";
 import { checkRateLimit } from "@/lib/security/rate-limit";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
@@ -57,6 +66,7 @@ const payloadSchema = z.object({
   pickupWindowEndAt: z.string().datetime().optional(),
   customerNote: z.string().trim().max(1200).optional(),
   promoCode: z.string().trim().min(3).max(40).optional(),
+  promoCodes: z.array(z.string().trim().min(3).max(40)).max(10).optional(),
   analyticsSessionId: z.string().trim().min(16).max(128).optional(),
   attribution: z
     .object({
@@ -250,6 +260,7 @@ export async function POST(request: NextRequest) {
     customerNote,
     items,
     promoCode,
+    promoCodes,
     analyticsSessionId,
     attribution
   } = payload.data;
@@ -320,7 +331,7 @@ export async function POST(request: NextRequest) {
   const { data: checkoutSettings, error: checkoutSettingsError } = await supabase
     .from("store_settings")
     .select(
-      "checkout_enable_local_pickup,checkout_local_pickup_label,checkout_local_pickup_fee_cents,checkout_enable_flat_rate_shipping,checkout_flat_rate_shipping_label,checkout_flat_rate_shipping_fee_cents,checkout_allow_order_note"
+      "checkout_enable_local_pickup,checkout_local_pickup_label,checkout_local_pickup_fee_cents,checkout_enable_flat_rate_shipping,checkout_flat_rate_shipping_label,checkout_flat_rate_shipping_fee_cents,checkout_allow_order_note,checkout_max_promo_codes"
     )
     .eq("store_id", store.id)
     .maybeSingle<{
@@ -331,6 +342,7 @@ export async function POST(request: NextRequest) {
       checkout_flat_rate_shipping_label: string | null;
       checkout_flat_rate_shipping_fee_cents: number | null;
       checkout_allow_order_note: boolean | null;
+      checkout_max_promo_codes: number | null;
     }>();
 
   if (checkoutSettingsError) {
@@ -431,6 +443,17 @@ export async function POST(request: NextRequest) {
   let resolvedPickupWindowStartAt: string | null = null;
   let resolvedPickupWindowEndAt: string | null = null;
   let resolvedPickupTimezone: string | null = null;
+  const resolvedPickupSettings = {
+    pickup_enabled: pickupSettings?.pickup_enabled ?? false,
+    selection_mode: pickupSettings?.selection_mode ?? "buyer_select",
+    geolocation_fallback_mode: pickupSettings?.geolocation_fallback_mode ?? "allow_without_distance",
+    out_of_radius_behavior: pickupSettings?.out_of_radius_behavior ?? "allow_all_locations",
+    eligibility_radius_miles: pickupSettings?.eligibility_radius_miles ?? 100,
+    lead_time_hours: pickupSettings?.lead_time_hours ?? 48,
+    slot_interval_minutes: pickupSettings?.slot_interval_minutes ?? 60,
+    show_pickup_times: pickupSettings?.show_pickup_times ?? true,
+    timezone: pickupSettings?.timezone ?? "America/New_York"
+  } as const;
 
   if (selectedFulfillment.method === "pickup") {
     const buyerCoordinates =
@@ -441,7 +464,7 @@ export async function POST(request: NextRequest) {
           }
         : null;
 
-    if (!pickupSettings?.pickup_enabled) {
+    if ((pickupLocations ?? []).length === 0) {
       return NextResponse.json({ error: "Pickup is unavailable for this store." }, { status: 400 });
     }
 
@@ -451,17 +474,23 @@ export async function POST(request: NextRequest) {
       latitude: location.latitude,
       longitude: location.longitude
     }));
-    const availablePickupLocations = resolveAvailablePickupLocations({
-      buyer: buyerCoordinates,
-      locations: normalizedPickupLocations,
-      radiusMiles: pickupSettings.eligibility_radius_miles,
-      geolocationFallbackMode: pickupSettings.geolocation_fallback_mode,
-      outOfRadiusBehavior: pickupSettings.out_of_radius_behavior
-    });
+    const availablePickupLocations = resolvedPickupSettings.pickup_enabled
+      ? resolveAvailablePickupLocations({
+          buyer: buyerCoordinates,
+          locations: normalizedPickupLocations,
+          radiusMiles: resolvedPickupSettings.eligibility_radius_miles,
+          geolocationFallbackMode: resolvedPickupSettings.geolocation_fallback_mode,
+          outOfRadiusBehavior: resolvedPickupSettings.out_of_radius_behavior
+        })
+      : normalizedPickupLocations.map((location) => ({
+          id: location.id,
+          name: location.name,
+          distanceMiles: 0
+        }));
 
     if (availablePickupLocations.length === 0) {
       const reason = buyerCoordinates
-        ? `No pickup locations are available within ${pickupSettings.eligibility_radius_miles} miles.`
+        ? `No pickup locations are available within ${resolvedPickupSettings.eligibility_radius_miles} miles.`
         : "Enable location access to verify pickup availability.";
       return NextResponse.json(
         { error: reason },
@@ -470,7 +499,7 @@ export async function POST(request: NextRequest) {
     }
 
     resolvedPickupLocationId =
-      pickupSettings.selection_mode === "hidden_nearest"
+      resolvedPickupSettings.selection_mode === "hidden_nearest"
         ? availablePickupLocations[0]?.id ?? null
         : pickupLocationId && availablePickupLocations.some((location) => location.id === pickupLocationId)
           ? pickupLocationId
@@ -528,9 +557,9 @@ export async function POST(request: NextRequest) {
 
     const validSlots = buildPickupSlots({
       now: new Date(),
-      leadTimeHours: pickupSettings.lead_time_hours,
-      slotIntervalMinutes:  pickupSettings.slot_interval_minutes,
-      timezone: pickupSettings.timezone,
+      leadTimeHours: resolvedPickupSettings.lead_time_hours,
+      slotIntervalMinutes: resolvedPickupSettings.slot_interval_minutes,
+      timezone: resolvedPickupSettings.timezone,
       dayHours,
       blackoutWindows: (pickupBlackouts ?? []).map((entry) => ({
         startsAt: new Date(entry.starts_at),
@@ -539,15 +568,15 @@ export async function POST(request: NextRequest) {
       maxSlots: 300
     });
 
-    if (pickupSettings.show_pickup_times && validSlots.length === 0) {
+    if (resolvedPickupSettings.show_pickup_times && validSlots.length === 0) {
       return NextResponse.json({ error: "No pickup times are currently available for the selected location." }, { status: 400 });
     }
 
-    if (pickupSettings.show_pickup_times && (!pickupWindowStartAt || !pickupWindowEndAt)) {
+    if (resolvedPickupSettings.show_pickup_times && (!pickupWindowStartAt || !pickupWindowEndAt)) {
       return NextResponse.json({ error: "Select a pickup time window." }, { status: 400 });
     }
 
-    if (!pickupSettings.show_pickup_times) {
+    if (!resolvedPickupSettings.show_pickup_times) {
       resolvedPickupWindowStartAt = null;
       resolvedPickupWindowEndAt = null;
     } else if (pickupWindowStartAt && pickupWindowEndAt) {
@@ -566,7 +595,7 @@ export async function POST(request: NextRequest) {
       resolvedPickupWindowEndAt = endAt.toISOString();
     }
 
-    resolvedPickupTimezone = pickupSettings.timezone;
+    resolvedPickupTimezone = resolvedPickupSettings.timezone;
   }
 
   const aggregatedVariantItems = new Map<string, { quantity: number; productId: string | null }>();
@@ -704,104 +733,87 @@ export async function POST(request: NextRequest) {
 
   let discountCents = 0;
   let normalizedPromoCode: string | null = null;
+  let normalizedPromoCodes: string[] = [];
+  let appliedPromotions: AppliedPromotionSummary[] = [];
   const normalizedCustomerEmail = normalizePromotionRedemptionEmail(email);
+  let shippingFeeCents = selectedFulfillment.feeCents;
 
-  if (promoCode?.trim()) {
-    normalizedPromoCode = promoCode.trim().toUpperCase();
+  normalizedPromoCodes = normalizeRequestedPromoCodes({ promoCode, promoCodes });
+  normalizedPromoCode = normalizedPromoCodes.length > 0 ? normalizedPromoCodes.join(", ") : null;
 
-    const { data: promotion, error: promotionError } = await supabase
+  if (normalizedPromoCodes.length > 0) {
+    const { data: promotions, error: promotionError } = await supabase
       .from("promotions")
-      .select("id,code,discount_type,discount_value,min_subtotal_cents,max_redemptions,per_customer_redemption_limit,times_redeemed,starts_at,ends_at,is_active")
+      .select("id,code,discount_type,discount_value,min_subtotal_cents,max_redemptions,per_customer_redemption_limit,times_redeemed,starts_at,ends_at,is_active,is_stackable")
       .eq("store_id", store.id)
-      .eq("code", normalizedPromoCode)
-      .maybeSingle<{
-        id: string;
-        code: string;
-        discount_type: "percent" | "fixed";
-        discount_value: number;
-        min_subtotal_cents: number;
-        max_redemptions: number | null;
-        per_customer_redemption_limit: number | null;
-        times_redeemed: number;
-        starts_at: string | null;
-        ends_at: string | null;
-        is_active: boolean;
-      }>();
+      .in("code", normalizedPromoCodes)
+      .returns<Array<PromotionApplicationRecord>>();
 
     if (promotionError) {
       return NextResponse.json({ error: promotionError.message }, { status: 500 });
     }
 
-    if (!promotion || !promotion.is_active) {
-      return NextResponse.json({ error: "Promo code is invalid or inactive." }, { status: 400 });
-    }
+    const promotionsByCode = new Map((promotions ?? []).map((promotion) => [promotion.code, promotion]));
 
-    const now = Date.now();
+    try {
+      const promotionApplication = await applyPromotionSequence({
+        requestedCodes: normalizedPromoCodes,
+        promotionsByCode,
+        subtotalCents,
+        shippingFeeCents: selectedFulfillment.method === "shipping" ? selectedFulfillment.feeCents : 0,
+        maxPromoCodes: checkoutSettings?.checkout_max_promo_codes ?? 1,
+        allowShippingPromotions: selectedFulfillment.method === "shipping",
+        getCustomerRedemptionCount: async (promotion) => {
+          const redemptionIds = new Set<string>();
 
-    if (promotion.starts_at && new Date(promotion.starts_at).getTime() > now) {
-      return NextResponse.json({ error: "Promo code is not active yet." }, { status: 400 });
-    }
+          const { data: emailRedemptions, error: emailRedemptionsError } = await supabase
+            .from("promotion_redemptions")
+            .select("id")
+            .eq("promotion_id", promotion.id)
+            .eq("customer_email_normalized", normalizedCustomerEmail)
+            .returns<Array<{ id: string }>>();
 
-    if (promotion.ends_at && new Date(promotion.ends_at).getTime() < now) {
-      return NextResponse.json({ error: "Promo code has expired." }, { status: 400 });
-    }
+          if (emailRedemptionsError) {
+            throw new Error(emailRedemptionsError.message);
+          }
 
-    if (promotion.max_redemptions !== null && promotion.times_redeemed >= promotion.max_redemptions) {
-      return NextResponse.json({ error: "Promo code redemption limit reached." }, { status: 400 });
-    }
+          for (const redemption of emailRedemptions ?? []) {
+            redemptionIds.add(redemption.id);
+          }
 
-    if (promotion.per_customer_redemption_limit !== null) {
-      const redemptionIds = new Set<string>();
+          if (authenticatedUser?.id) {
+            const { data: userRedemptions, error: userRedemptionsError } = await supabase
+              .from("promotion_redemptions")
+              .select("id")
+              .eq("promotion_id", promotion.id)
+              .eq("customer_user_id", authenticatedUser.id)
+              .returns<Array<{ id: string }>>();
 
-      const { data: emailRedemptions, error: emailRedemptionsError } = await supabase
-        .from("promotion_redemptions")
-        .select("id")
-        .eq("promotion_id", promotion.id)
-        .eq("customer_email_normalized", normalizedCustomerEmail)
-        .returns<Array<{ id: string }>>();
+            if (userRedemptionsError) {
+              throw new Error(userRedemptionsError.message);
+            }
 
-      if (emailRedemptionsError) {
-        return NextResponse.json({ error: emailRedemptionsError.message }, { status: 500 });
-      }
+            for (const redemption of userRedemptions ?? []) {
+              redemptionIds.add(redemption.id);
+            }
+          }
 
-      for (const redemption of emailRedemptions ?? []) {
-        redemptionIds.add(redemption.id);
-      }
-
-      if (authenticatedUser?.id) {
-        const { data: userRedemptions, error: userRedemptionsError } = await supabase
-          .from("promotion_redemptions")
-          .select("id")
-          .eq("promotion_id", promotion.id)
-          .eq("customer_user_id", authenticatedUser.id)
-          .returns<Array<{ id: string }>>();
-
-        if (userRedemptionsError) {
-          return NextResponse.json({ error: userRedemptionsError.message }, { status: 500 });
+          return redemptionIds.size;
         }
+      });
 
-        for (const redemption of userRedemptions ?? []) {
-          redemptionIds.add(redemption.id);
-        }
-      }
-
-      if (redemptionIds.size >= promotion.per_customer_redemption_limit) {
-        return NextResponse.json({ error: PROMOTION_CUSTOMER_CAP_REACHED_ERROR }, { status: 400 });
-      }
-    }
-
-    if (subtotalCents < promotion.min_subtotal_cents) {
+      discountCents = promotionApplication.itemDiscountCents;
+      appliedPromotions = promotionApplication.appliedPromotions;
+      shippingFeeCents = selectedFulfillment.method === "shipping" ? promotionApplication.effectiveShippingFeeCents : selectedFulfillment.feeCents;
+    } catch (error) {
       return NextResponse.json(
-        { error: `Promo requires minimum subtotal of $${(promotion.min_subtotal_cents / 100).toFixed(2)}.` },
+        { error: error instanceof Error ? error.message : PROMOTION_CUSTOMER_CAP_REACHED_ERROR },
         { status: 400 }
       );
     }
-
-    discountCents = calculateDiscountCents(subtotalCents, promotion);
   }
 
   const itemTotalCents = Math.max(0, subtotalCents - discountCents);
-  const shippingFeeCents = selectedFulfillment.feeCents;
   const totalCents = itemTotalCents + shippingFeeCents;
   const feeProfile = await resolveStoreFeeProfile(store.id);
   const platformFeeCents = calculatePlatformFeeCents(totalCents, feeProfile);
@@ -822,7 +834,7 @@ export async function POST(request: NextRequest) {
         items: rpcItems,
         stubPaymentRef: `stub_pi_${Date.now()}`,
         discountCents,
-        promoCode: promoCode ? promoCode.toUpperCase() : null
+        promoCode: null
       })
     );
 
@@ -869,6 +881,7 @@ export async function POST(request: NextRequest) {
         pickup_window_start_at: resolvedPickupWindowStartAt,
         pickup_window_end_at: resolvedPickupWindowEndAt,
         pickup_timezone: resolvedPickupTimezone,
+        promo_code: normalizedPromoCode,
         shipping_fee_cents: shippingFeeCents,
         total_cents: computedTotalCents
       })
@@ -877,6 +890,17 @@ export async function POST(request: NextRequest) {
     if (orderUpdateError) {
       return NextResponse.json({ error: orderUpdateError.message }, { status: 500 });
     }
+
+    const promotionPersistenceClient = supabase as unknown as PromotionRedemptionPersistenceClient;
+
+    await persistPromotionRedemptions({
+      supabase: promotionPersistenceClient,
+      appliedPromotions,
+      storeId: store.id,
+      orderId: result.order_id,
+      customerEmail: email,
+      customerUserId: authenticatedUser?.id ?? null
+    });
 
     await writeOrderFeeBreakdown({
       orderId: result.order_id,
@@ -939,6 +963,7 @@ export async function POST(request: NextRequest) {
       pickup_window_end_at: resolvedPickupWindowEndAt,
       pickup_timezone: resolvedPickupTimezone,
       promo_code: normalizedPromoCode,
+      promo_codes_json: normalizedPromoCodes,
       analytics_session_key: sessionLink?.sessionKey ?? null,
       analytics_session_id: sessionLink?.id ?? null,
       source_cart_id: sourceCartId,
@@ -973,6 +998,7 @@ export async function POST(request: NextRequest) {
       storefront_checkout_id: pendingCheckout.id,
       store_id: store.id,
       store_slug: store.slug,
+      promo_codes: normalizedPromoCodes.join(","),
       pickup_location_id: resolvedPickupLocationId ?? "",
       pickup_window_start_at: resolvedPickupWindowStartAt ?? "",
       pickup_window_end_at: resolvedPickupWindowEndAt ?? ""
@@ -1043,6 +1069,7 @@ export async function POST(request: NextRequest) {
         store_id: store.id,
         store_slug: store.slug,
         promo_code: normalizedPromoCode ?? "",
+        promo_codes: normalizedPromoCodes.join(","),
         pickup_location_id: resolvedPickupLocationId ?? "",
         pickup_window_start_at: resolvedPickupWindowStartAt ?? "",
         pickup_window_end_at: resolvedPickupWindowEndAt ?? ""

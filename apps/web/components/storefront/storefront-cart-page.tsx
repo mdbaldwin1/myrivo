@@ -61,7 +61,11 @@ type CheckoutResponse = {
 
 type PromoPreviewResponse = {
   promoCode?: string;
+  promoCodes?: string[];
+  promotionType?: "percent" | "fixed" | "free_shipping";
   discountCents?: number;
+  shippingDiscountCents?: number;
+  effectiveShippingFeeCents?: number;
   error?: string;
 };
 
@@ -118,6 +122,7 @@ type Props = {
     checkout_flat_rate_shipping_fee_cents?: number | null;
     checkout_allow_order_note?: boolean | null;
     checkout_order_note_prompt?: string | null;
+    checkout_max_promo_codes?: number | null;
   } | null;
   products: StorefrontProduct[];
   studio?: {
@@ -198,7 +203,6 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
     }
     return options;
   })();
-  const hasShippingOption = fulfillmentOptions.some((option) => option.method === "shipping");
 
   const [cart, setCart] = useState<StorefrontCartEntry[]>([]);
   const hasHydratedCartRef = useRef(false);
@@ -214,7 +218,8 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
   const [promoCode, setPromoCode] = useState("");
   const [applyingPromo, setApplyingPromo] = useState(false);
   const [appliedDiscountCents, setAppliedDiscountCents] = useState(0);
-  const [appliedPromoCode, setAppliedPromoCode] = useState<string | null>(null);
+  const [appliedShippingDiscountCents, setAppliedShippingDiscountCents] = useState(0);
+  const [appliedPromoCodes, setAppliedPromoCodes] = useState<string[]>([]);
   const [buyerLatitude, setBuyerLatitude] = useState<number | null>(null);
   const [buyerLongitude, setBuyerLongitude] = useState<number | null>(null);
   const [pickupOptions, setPickupOptions] = useState<PickupOptionsResponse["options"]>([]);
@@ -346,10 +351,6 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
         setSelectedPickupLocationId(null);
         setSelectedPickupSlot(null);
         setPickupStatusMessage(payload.reason ?? "Pickup is currently unavailable.");
-        if (hasShippingOption) {
-          setSelectedFulfillmentMethod("shipping");
-          setError(payload.reason ?? "Pickup is currently unavailable. Shipping has been selected instead.");
-        }
         return;
       }
 
@@ -365,7 +366,6 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
   }, [
     buyerLatitude,
     buyerLongitude,
-    hasShippingOption,
     resolvedSettings?.checkout_enable_local_pickup,
     resolvedStore.slug,
     selectedFulfillmentMethod,
@@ -393,7 +393,9 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
     fulfillmentOptions.find((option) => option.method === selectedFulfillmentMethod) ?? fulfillmentOptions[0]!;
   const shippingFeeCents = selectedFulfillment?.feeCents ?? 0;
   const discountedSubtotalCents = Math.max(0, subtotalCents - appliedDiscountCents);
-  const checkoutTotalCents = discountedSubtotalCents + shippingFeeCents;
+  const effectiveShippingFeeCents = Math.max(0, shippingFeeCents - Math.min(appliedShippingDiscountCents, shippingFeeCents));
+  const checkoutTotalCents = discountedSubtotalCents + effectiveShippingFeeCents;
+  const maxPromoCodes = Math.max(1, resolvedSettings?.checkout_max_promo_codes ?? 1);
 
   useEffect(() => {
     if (!analytics || !hasHydratedCartRef.current || trackedCartViewRef.current) {
@@ -411,11 +413,11 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
         })),
         fulfillmentMethod: selectedFulfillment.method,
         discountCents: appliedDiscountCents,
-        shippingCents: shippingFeeCents
+        shippingCents: effectiveShippingFeeCents
       })
     });
     trackedCartViewRef.current = true;
-  }, [analytics, appliedDiscountCents, cartItems, selectedFulfillment.method, shippingFeeCents]);
+  }, [analytics, appliedDiscountCents, cartItems, effectiveShippingFeeCents, selectedFulfillment.method]);
 
   function updateQuantity(productId: string, variantId: string, quantity: number) {
     if (quantity <= 0) {
@@ -430,10 +432,11 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
     );
   }
 
-  async function applyPromoPreview() {
-    if (!promoCode.trim()) {
+  async function previewPromoCodes(nextPromoCodes: string[]) {
+    if (nextPromoCodes.length === 0) {
       setAppliedDiscountCents(0);
-      setAppliedPromoCode(null);
+      setAppliedShippingDiscountCents(0);
+      setAppliedPromoCodes([]);
       return;
     }
 
@@ -444,8 +447,11 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        promoCode: promoCode.trim(),
-        subtotalCents
+        promoCode: nextPromoCodes[nextPromoCodes.length - 1],
+        promoCodes: nextPromoCodes,
+        subtotalCents,
+        shippingFeeCents,
+        fulfillmentMethod: selectedFulfillment.method
       })
     });
 
@@ -454,13 +460,41 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
 
     if (!response.ok || payload.discountCents === undefined) {
       setAppliedDiscountCents(0);
-      setAppliedPromoCode(null);
+      setAppliedShippingDiscountCents(0);
+      setAppliedPromoCodes([]);
       setError(payload.error ?? copy.cart.applyPromoError);
       return;
     }
 
-    setAppliedPromoCode(payload.promoCode ?? promoCode.trim().toUpperCase());
+    setAppliedPromoCodes(payload.promoCodes ?? nextPromoCodes);
     setAppliedDiscountCents(payload.discountCents);
+    setAppliedShippingDiscountCents(payload.shippingDiscountCents ?? 0);
+  }
+
+  async function applyPromoPreview() {
+    const nextCode = promoCode.trim().toUpperCase();
+
+    if (!nextCode) {
+      await previewPromoCodes([]);
+      return;
+    }
+
+    if (appliedPromoCodes.includes(nextCode)) {
+      setPromoCode("");
+      return;
+    }
+
+    if (appliedPromoCodes.length >= maxPromoCodes) {
+      setError(`Only ${maxPromoCodes} promo code${maxPromoCodes === 1 ? "" : "s"} can be applied to this order.`);
+      return;
+    }
+
+    await previewPromoCodes([...appliedPromoCodes, nextCode]);
+    setPromoCode("");
+  }
+
+  async function removeAppliedPromo(code: string) {
+    await previewPromoCodes(appliedPromoCodes.filter((entry) => entry !== code));
   }
 
   async function checkout(event: React.FormEvent<HTMLFormElement>) {
@@ -499,7 +533,8 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
         pickupWindowStartAt: selectedPickupSlot?.startsAt,
         pickupWindowEndAt: selectedPickupSlot?.endsAt,
         customerNote: resolvedSettings?.checkout_allow_order_note ? orderNote.trim() || undefined : undefined,
-        promoCode: promoCode.trim() || undefined,
+        promoCode: appliedPromoCodes[0] ?? undefined,
+        promoCodes: appliedPromoCodes,
         analyticsSessionId: analytics?.getSessionId() ?? undefined,
         attribution: analytics?.getAttributionSnapshot() ?? undefined,
         items: cartItems.map((item) => ({ productId: item.productId, variantId: item.variantId, quantity: item.quantity }))
@@ -521,7 +556,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
           })),
           fulfillmentMethod: selectedFulfillment.method,
           discountCents: appliedDiscountCents,
-          shippingCents: shippingFeeCents
+          shippingCents: effectiveShippingFeeCents
         })
       });
       void analytics?.flush({ immediate: true, keepalive: true });
@@ -732,6 +767,8 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
               <div className="space-y-3 border-b border-border/40 pb-4">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Input
+                    name="firstName"
+                    autoComplete="given-name"
                     required
                     placeholder="First name"
                     value={firstName}
@@ -739,6 +776,8 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                     className="h-10 border-border/60"
                   />
                   <Input
+                    name="lastName"
+                    autoComplete="family-name"
                     required
                     placeholder="Last name"
                     value={lastName}
@@ -747,14 +786,20 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                   />
                 </div>
                 <Input
+                  name="phone"
                   type="tel"
+                  autoComplete="tel"
+                  inputMode="tel"
                   placeholder="Phone (optional)"
                   value={phone}
                   onChange={(event) => setPhone(event.target.value)}
                   className="h-10 border-border/60"
                 />
                 <Input
+                  name="email"
                   type="email"
+                  autoComplete="email"
+                  inputMode="email"
                   required
                   placeholder={copy.cart.emailPlaceholder}
                   value={email}
@@ -901,14 +946,23 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                   <div className="flex items-center justify-between text-emerald-700">
                     <span>
                       {copy.cart.discountLabel}
-                      {appliedPromoCode ? ` (${appliedPromoCode})` : ""}
+                      {appliedPromoCodes.length > 0 ? ` (${appliedPromoCodes.join(", ")})` : ""}
                     </span>
                     <span>-${(appliedDiscountCents / 100).toFixed(2)}</span>
                   </div>
                 ) : null}
+                {appliedShippingDiscountCents > 0 ? (
+                  <div className="flex items-center justify-between text-emerald-700">
+                    <span>
+                      Shipping discount
+                      {appliedPromoCodes.length > 0 ? ` (${appliedPromoCodes.join(", ")})` : ""}
+                    </span>
+                    <span>-${(Math.min(appliedShippingDiscountCents, shippingFeeCents) / 100).toFixed(2)}</span>
+                  </div>
+                ) : null}
                 <div className="flex items-center justify-between">
                   <span>{selectedFulfillment.label}</span>
-                  <span>${(shippingFeeCents / 100).toFixed(2)}</span>
+                  <span>${(effectiveShippingFeeCents / 100).toFixed(2)}</span>
                 </div>
                 <div className="flex items-center justify-between pt-1 text-base font-semibold">
                   <span>{copy.cart.estimatedTotalLabel}</span>
@@ -924,9 +978,30 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                   onChange={(event) => setPromoCode(event.target.value.toUpperCase())}
                   className="h-10 border-border/60"
                 />
-                <Button type="button" variant="outline" className={cn("w-full", buttonRadiusClass)} onClick={() => void applyPromoPreview()} disabled={applyingPromo || !promoCode.trim()}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={cn("w-full", buttonRadiusClass)}
+                  onClick={() => void applyPromoPreview()}
+                  disabled={applyingPromo || !promoCode.trim() || appliedPromoCodes.length >= maxPromoCodes}
+                >
                   {applyingPromo ? copy.cart.applyingPromo : copy.cart.applyPromo}
                 </Button>
+                {appliedPromoCodes.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {appliedPromoCodes.map((code) => (
+                      <button
+                        key={code}
+                        type="button"
+                        onClick={() => void removeAppliedPromo(code)}
+                        className={cn("border border-border/60 px-2 py-1 text-xs", buttonRadiusClass)}
+                      >
+                        {code} x
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                {maxPromoCodes > 1 ? <p className="text-xs text-muted-foreground">Up to {maxPromoCodes} promo codes can be applied.</p> : null}
                 <div className="relative">
                   <Button type="submit" disabled={pending || cartItems.length === 0} className={cn("h-11 w-full bg-[var(--storefront-accent)] text-[color:var(--storefront-accent-foreground)] hover:opacity-90", buttonRadiusClass)}>
                     {pending ? copy.cart.processing : copy.cart.checkout}

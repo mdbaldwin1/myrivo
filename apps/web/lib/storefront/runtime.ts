@@ -89,6 +89,7 @@ export type StorefrontSettings = {
   checkout_flat_rate_shipping_fee_cents?: number | null;
   checkout_allow_order_note?: boolean | null;
   checkout_order_note_prompt?: string | null;
+  checkout_max_promo_codes?: number | null;
   updated_at?: string | null;
 } | null;
 

@@ -27,6 +27,8 @@ export type StorefrontCopyConfig = {
     noDescriptionYet: string;
     featuredBadge: string;
     addButton: string;
+    addingButton: string;
+    addedButton: string;
     showFiltersAria: string;
     hideFiltersAria: string;
   };
@@ -53,6 +55,8 @@ export type StorefrontCopyConfig = {
     breadcrumbProducts: string;
     optionsLabel: string;
     addToCart: string;
+    addingToCart: string;
+    addedToCart: string;
     addToCartMadeToOrder: string;
     outOfStockButton: string;
     backToAllProducts: string;
@@ -205,6 +209,8 @@ export const DEFAULT_STOREFRONT_COPY: StorefrontCopyConfig = {
     noDescriptionYet: "No description yet.",
     featuredBadge: "Featured",
     addButton: "Add",
+    addingButton: "Adding...",
+    addedButton: "Added to cart",
     showFiltersAria: "Show filters",
     hideFiltersAria: "Hide filters"
   },
@@ -231,6 +237,8 @@ export const DEFAULT_STOREFRONT_COPY: StorefrontCopyConfig = {
     breadcrumbProducts: "Products",
     optionsLabel: "Options",
     addToCart: "Add to cart",
+    addingToCart: "Adding...",
+    addedToCart: "Added to cart",
     addToCartMadeToOrder: "Add to cart (made to order)",
     outOfStockButton: "Out of stock",
     backToAllProducts: "Back to all products"

@@ -66,7 +66,7 @@ describe("PickupSettingsManager", () => {
     cleanup();
   });
 
-  test("disables the storefront pickup option when pickup availability is turned off", async () => {
+  test("keeps the storefront pickup option enabled when pickup availability rules are turned off", async () => {
     const settingsPutBodies: Array<Record<string, unknown>> = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -179,7 +179,7 @@ describe("PickupSettingsManager", () => {
       expect(settingsPutBodies).toHaveLength(1);
     });
 
-    expect(settingsPutBodies[0]?.checkoutEnableLocalPickup).toBe(false);
+    expect(settingsPutBodies[0]?.checkoutEnableLocalPickup).toBe(true);
     expect(notifySuccessMock).toHaveBeenCalledWith("Fulfillment settings saved.");
   });
 
@@ -266,7 +266,73 @@ describe("PickupSettingsManager", () => {
     expect(screen.getByText(/missing 2 required steps/i)).toBeTruthy();
     expect(screen.getByText(/add latitude and longitude to at least one active pickup location/i)).toBeTruthy();
     expect(screen.getByText(/add pickup hours for at least one active location or turn off pickup times/i)).toBeTruthy();
-    expect(screen.getByText("Coordinates missing")).toBeTruthy();
-    expect(screen.getByText("Pickup hours missing")).toBeTruthy();
+    expect(screen.getByText("Pickup Options")).toBeTruthy();
+    expect(screen.getByText(/each pickup option keeps its location details, schedule, and blackout windows together/i)).toBeTruthy();
+  });
+
+  test("hides pickup readiness and setup when the local pickup option is disabled", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url.startsWith("/api/stores/settings") && (!init || init.method === undefined)) {
+        return new Response(
+          JSON.stringify({
+            settings: {
+              checkout_enable_flat_rate_shipping: true,
+              checkout_flat_rate_shipping_label: "Shipping",
+              checkout_flat_rate_shipping_fee_cents: 0,
+              checkout_enable_local_pickup: false,
+              checkout_local_pickup_label: "Local pickup",
+              checkout_local_pickup_fee_cents: 0
+            }
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (url.startsWith("/api/stores/pickup/settings") && (!init || init.method === undefined)) {
+        return new Response(
+          JSON.stringify({
+            settings: {
+              pickup_enabled: true,
+              selection_mode: "buyer_select",
+              geolocation_fallback_mode: "disable_pickup",
+              out_of_radius_behavior: "disable_pickup",
+              eligibility_radius_miles: 100,
+              lead_time_hours: 48,
+              slot_interval_minutes: 15,
+              show_pickup_times: true,
+              timezone: "America/New_York",
+              instructions: null
+            }
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (url.startsWith("/api/stores/pickup/locations") && (!init || init.method === undefined)) {
+        return new Response(JSON.stringify({ locations: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+
+      if (url.startsWith("/api/stores/pickup/hours") && (!init || init.method === undefined)) {
+        return new Response(JSON.stringify({ hours: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+
+      if (url.startsWith("/api/stores/pickup/blackouts") && (!init || init.method === undefined)) {
+        return new Response(JSON.stringify({ blackouts: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+
+      throw new Error(`Unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<PickupSettingsManager showShippingOfferSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/enable the local pickup option above to show pickup setup here/i)).toBeTruthy();
+    });
+
+    expect(screen.queryByText("Pickup readiness")).toBeNull();
   });
 });

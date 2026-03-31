@@ -14,7 +14,7 @@ const NO_PROMOTION_VALUE = "__none__";
 type PromotionOption = {
   id: string;
   code: string;
-  discount_type: "percent" | "fixed";
+  discount_type: "percent" | "fixed" | "free_shipping";
   discount_value: number;
   is_active: boolean;
   starts_at: string | null;
@@ -27,7 +27,12 @@ type PromotionsResponse = {
 };
 
 function formatPromotionLabel(promotion: PromotionOption) {
-  const discountLabel = promotion.discount_type === "percent" ? `${promotion.discount_value}% off` : `$${(promotion.discount_value / 100).toFixed(2)} off`;
+  const discountLabel =
+    promotion.discount_type === "percent"
+      ? `${promotion.discount_value}% off`
+      : promotion.discount_type === "free_shipping"
+        ? "Free shipping"
+        : `$${(promotion.discount_value / 100).toFixed(2)} off`;
   return `${promotion.code} • ${discountLabel}${promotion.is_active ? "" : " • inactive"}`;
 }
 

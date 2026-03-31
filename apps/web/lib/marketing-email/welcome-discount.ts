@@ -52,6 +52,11 @@ function formatPromotionLabel(promotion: WelcomeDiscountPromotion) {
   if (promotion.discount_type === "percent") {
     return `${promotion.discount_value}% off`;
   }
+
+  if (promotion.discount_type === "free_shipping") {
+    return "Free shipping";
+  }
+
   return `${formatCurrency(promotion.discount_value)} off`;
 }
 
