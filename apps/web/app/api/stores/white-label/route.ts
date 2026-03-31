@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireStorePermission } from "@/lib/auth/authorization";
 import { readJsonBody } from "@/lib/http/read-json-body";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const updateSchema = z.object({
   enabled: z.boolean()
@@ -18,8 +18,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase
+  const admin = createSupabaseAdminClient();
+  const { data, error } = await admin
     .from("stores")
     .select("white_label_enabled")
     .eq("id", auth.context.storeId)
@@ -56,8 +56,8 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Invalid payload", details: payload.error.flatten() }, { status: 400 });
   }
 
-  const supabase = await createSupabaseServerClient();
-  const { error } = await supabase
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin
     .from("stores")
     .update({ white_label_enabled: payload.data.enabled })
     .eq("id", auth.context.storeId);

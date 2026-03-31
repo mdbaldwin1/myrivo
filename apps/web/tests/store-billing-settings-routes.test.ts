@@ -40,6 +40,39 @@ beforeEach(() => {
 });
 
 describe("billing settings routes", () => {
+  test("white-label GET returns enabled flag from admin store lookup", async () => {
+    requireStorePermissionMock.mockResolvedValueOnce({
+      context: { storeId: "store-1", globalRole: "user", storeRole: "admin" },
+      response: null
+    });
+
+    adminFromMock.mockImplementation((table: string) => {
+      if (table !== "stores") {
+        throw new Error(`Unexpected admin table ${table}`);
+      }
+
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            maybeSingle: vi.fn(async () => ({
+              data: { white_label_enabled: true },
+              error: null
+            }))
+          }))
+        }))
+      };
+    });
+
+    const route = await import("@/app/api/stores/white-label/route");
+    const request = new NextRequest("http://localhost:3000/api/stores/white-label?storeSlug=at-home-apothecary");
+    const response = await route.GET(request);
+    const payload = (await response.json()) as { enabled: boolean };
+
+    expect(response.status).toBe(200);
+    expect(payload.enabled).toBe(true);
+    expect(serverFromMock).not.toHaveBeenCalled();
+  });
+
   test("platform-config GET returns assigned billing plan without a user-scoped store lookup", async () => {
     requireStorePermissionMock.mockResolvedValueOnce({
       context: { storeId: "store-1", globalRole: "user", storeRole: "admin" },
@@ -310,9 +343,9 @@ describe("billing settings routes", () => {
   test("white-label PUT updates store flag and returns enabled flag", async () => {
     const eqMock = vi.fn(async () => ({ error: null }));
     const updateMock = vi.fn(() => ({ eq: eqMock }));
-    serverFromMock.mockImplementation((table: string) => {
+    adminFromMock.mockImplementation((table: string) => {
       if (table !== "stores") {
-        throw new Error(`Unexpected table ${table}`);
+        throw new Error(`Unexpected admin table ${table}`);
       }
       return { update: updateMock };
     });
@@ -331,5 +364,6 @@ describe("billing settings routes", () => {
     expect(payload.enabled).toBe(false);
     expect(updateMock).toHaveBeenCalledWith({ white_label_enabled: false });
     expect(eqMock).toHaveBeenCalledWith("id", "store-1");
+    expect(serverFromMock).not.toHaveBeenCalled();
   });
 });
