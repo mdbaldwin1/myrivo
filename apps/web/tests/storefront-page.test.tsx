@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 /** @vitest-environment jsdom */
 
 import React from "react";

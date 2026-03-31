@@ -569,8 +569,9 @@ export function StorefrontPage(props: StorefrontPageProps) {
   }, [cart, resolvedProducts]);
 
   useEffect(() => {
+    const resetTimeouts = addToCartResetTimeoutsRef.current;
     return () => {
-      for (const timeout of Object.values(addToCartResetTimeoutsRef.current)) {
+      for (const timeout of Object.values(resetTimeouts)) {
         clearTimeout(timeout);
       }
     };
