@@ -406,6 +406,25 @@ export type StoreEmailSubscriberRecord = {
   updated_at: string;
 };
 
+export type BackInStockAlertStatus = "pending" | "sent" | "cancelled";
+
+export type BackInStockAlertRecord = {
+  id: string;
+  store_id: string;
+  product_id: string;
+  product_variant_id: string;
+  email: string;
+  status: BackInStockAlertStatus;
+  source: string;
+  alert_count: number;
+  requested_at: string;
+  sent_at: string | null;
+  last_alert_sent_at: string | null;
+  metadata_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
 export type StoreContentBlockRecord = {
   id: string;
   store_id: string;

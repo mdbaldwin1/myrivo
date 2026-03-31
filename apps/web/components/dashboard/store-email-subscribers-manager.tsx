@@ -49,7 +49,11 @@ type SubscribersResponse = {
   error?: string;
 };
 
-export function StoreEmailSubscribersManager() {
+type StoreEmailSubscribersManagerProps = {
+  storeSlug: string;
+};
+
+export function StoreEmailSubscribersManager({ storeSlug }: StoreEmailSubscribersManagerProps) {
   const [statusFilter, setStatusFilter] = useState<"all" | "subscribed" | "unsubscribed">("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +64,7 @@ export function StoreEmailSubscribersManager() {
     setLoading(true);
     setError(null);
     const query = new URLSearchParams();
+    query.set("storeSlug", storeSlug);
     if (statusFilter !== "all") {
       query.set("status", statusFilter);
     }
@@ -72,7 +77,7 @@ export function StoreEmailSubscribersManager() {
     }
     setSubscribers(payload.subscribers ?? []);
     setCompliance(payload.compliance ?? null);
-  }, [statusFilter]);
+  }, [statusFilter, storeSlug]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -92,7 +97,11 @@ export function StoreEmailSubscribersManager() {
     [subscribers]
   );
 
-  const exportParams = statusFilter === "all" ? "format=csv" : `format=csv&status=${statusFilter}`;
+  const exportQuery = new URLSearchParams({ format: "csv", storeSlug });
+  if (statusFilter !== "all") {
+    exportQuery.set("status", statusFilter);
+  }
+  const exportParams = exportQuery.toString();
 
   return (
     <SectionCard

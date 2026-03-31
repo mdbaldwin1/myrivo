@@ -3,6 +3,7 @@ import { z } from "zod";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const payloadSchema = z.object({
@@ -25,7 +26,7 @@ async function resolveOwnedStoreId() {
     return { error: NextResponse.json({ error: "No store found for account" }, { status: 404 }) } as const;
   }
 
-  return { supabase, storeId: bundle.store.id } as const;
+  return { supabase: createSupabaseAdminClient(), storeId: bundle.store.id } as const;
 }
 
 export async function POST(request: NextRequest) {

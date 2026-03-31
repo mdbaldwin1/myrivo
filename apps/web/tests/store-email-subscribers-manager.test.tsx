@@ -63,7 +63,7 @@ describe("StoreEmailSubscribersManager", () => {
       })
     );
 
-    render(<StoreEmailSubscribersManager />);
+    render(<StoreEmailSubscribersManager storeSlug="at-home-apothecary" />);
 
     await waitFor(() => {
       expect(screen.getByText("shopper@example.com")).toBeTruthy();
@@ -110,7 +110,7 @@ describe("StoreEmailSubscribersManager", () => {
       })
     );
 
-    render(<StoreEmailSubscribersManager />);
+    render(<StoreEmailSubscribersManager storeSlug="at-home-apothecary" />);
 
     await waitFor(() => {
       expect(screen.getByText(/monitored support email/i)).toBeTruthy();
