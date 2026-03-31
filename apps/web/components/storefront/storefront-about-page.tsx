@@ -137,8 +137,9 @@ export function StorefrontAboutPage({ store, viewer, branding, settings, content
   const resolvedContentBlocks = resolvedPresentation?.contentBlocks ?? contentBlocks;
   const themeConfig = resolvedPresentation?.themeConfig ?? resolveStorefrontThemeConfig(resolvedBranding?.theme_json ?? {});
   const copy = resolvedPresentation?.copy ?? resolveStorefrontCopy(resolvedSettings?.storefront_copy_json ?? {});
-  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, resolvedStore.slug);
-  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, resolvedStore.slug);
+  const routeBasePath = runtime?.routeBasePath ?? "";
+  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, resolvedStore.slug, routeBasePath);
+  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, resolvedStore.slug, routeBasePath);
   const storefrontThemeStyle = buildStorefrontThemeStyle({
     primaryColor: resolvedBranding?.primary_color,
     accentColor: resolvedBranding?.accent_color,
@@ -230,7 +231,7 @@ export function StorefrontAboutPage({ store, viewer, branding, settings, content
               <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">{themeConfig.heroSubcopy}</p>
               <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:flex-wrap sm:items-center">
                 <Link
-                  href={buildStorefrontProductsPath(resolvedStore.slug)}
+                  href={buildStorefrontProductsPath(resolvedStore.slug, routeBasePath)}
                   className={cn(
                     "inline-flex h-10 w-full items-center justify-center border border-border px-4 text-sm font-medium hover:bg-[color:var(--storefront-text)] hover:text-[color:var(--storefront-bg)] sm:w-auto",
                     buttonRadiusClass
@@ -239,7 +240,7 @@ export function StorefrontAboutPage({ store, viewer, branding, settings, content
                   {copy.about.shopProductsCta}
                 </Link>
                 <Link
-                  href={buildStorefrontPoliciesPath(resolvedStore.slug)}
+                  href={buildStorefrontPoliciesPath(resolvedStore.slug, routeBasePath)}
                   className={cn(
                     STOREFRONT_TEXT_LINK_EFFECT_CLASS,
                     "h-10 justify-center px-3 text-sm text-muted-foreground hover:text-[color:var(--storefront-text)] sm:justify-start",
@@ -474,7 +475,7 @@ export function StorefrontAboutPage({ store, viewer, branding, settings, content
             ) : (
               <p className="text-sm leading-relaxed text-muted-foreground">{copy.about.needDetailsBody}</p>
             )}
-            <Link href={buildStorefrontPoliciesPath(resolvedStore.slug)} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "text-sm font-medium")}>
+            <Link href={buildStorefrontPoliciesPath(resolvedStore.slug, routeBasePath)} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "text-sm font-medium")}>
               {copy.about.readPoliciesLink}
             </Link>
           </article>

@@ -148,8 +148,9 @@ export function StorefrontPoliciesPage({ store, viewer, branding, settings, stud
   const resolvedSettings = resolvedPresentation?.settings ?? settings;
   const themeConfig = resolvedPresentation?.themeConfig ?? resolveStorefrontThemeConfig(resolvedBranding?.theme_json ?? {});
   const copy = resolvedPresentation?.copy ?? resolveStorefrontCopy(resolvedSettings?.storefront_copy_json ?? {});
-  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, resolvedStore.slug);
-  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, resolvedStore.slug);
+  const routeBasePath = runtime?.routeBasePath ?? "";
+  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, resolvedStore.slug, routeBasePath);
+  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, resolvedStore.slug, routeBasePath);
   const radiusClass = getStorefrontRadiusClass(themeConfig.radiusScale);
   const buttonRadiusClass = getStorefrontButtonRadiusClass(themeConfig.radiusScale);
   const cardClass = getStorefrontCardStyleClass(themeConfig.cardStyle);
@@ -419,10 +420,10 @@ export function StorefrontPoliciesPage({ store, viewer, branding, settings, stud
             {copy.policies.formalDocumentsLabel}
           </p>
           <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap sm:items-center">
-            <Link href={buildStorefrontPrivacyPath(resolvedStore.slug)} className={STOREFRONT_TEXT_LINK_EFFECT_CLASS}>
+            <Link href={buildStorefrontPrivacyPath(resolvedStore.slug, routeBasePath)} className={STOREFRONT_TEXT_LINK_EFFECT_CLASS}>
               {copy.policies.privacyPolicyLink}
             </Link>
-            <Link href={buildStorefrontTermsPath(resolvedStore.slug)} className={STOREFRONT_TEXT_LINK_EFFECT_CLASS}>
+            <Link href={buildStorefrontTermsPath(resolvedStore.slug, routeBasePath)} className={STOREFRONT_TEXT_LINK_EFFECT_CLASS}>
               {copy.policies.termsConditionsLink}
             </Link>
           </div>
@@ -566,7 +567,7 @@ export function StorefrontPoliciesPage({ store, viewer, branding, settings, stud
         </section>
 
         <div className="text-sm">
-          <Link href={buildStorefrontAboutPath(resolvedStore.slug)} className={`font-medium ${STOREFRONT_TEXT_LINK_EFFECT_CLASS}`}>
+          <Link href={buildStorefrontAboutPath(resolvedStore.slug, routeBasePath)} className={`font-medium ${STOREFRONT_TEXT_LINK_EFFECT_CLASS}`}>
             {copy.policies.backToAbout}
           </Link>
         </div>

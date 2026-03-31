@@ -19,8 +19,8 @@ type StorefrontCookiePolicyPageProps = {
 export function StorefrontCookiePolicyPage({ runtime }: StorefrontCookiePolicyPageProps) {
   const themeConfig = resolveStorefrontThemeConfig(runtime.branding?.theme_json ?? {});
   const copy = resolveStorefrontCopy(runtime.settings?.storefront_copy_json ?? {});
-  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, runtime.store.slug);
-  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, runtime.store.slug);
+  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, runtime.store.slug, runtime.routeBasePath);
+  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, runtime.store.slug, runtime.routeBasePath);
   const storefrontThemeStyle = buildStorefrontThemeStyle({
     primaryColor: runtime.branding?.primary_color,
     accentColor: runtime.branding?.accent_color,

@@ -8,6 +8,7 @@ import { isMissingColumnInSchemaCache, isMissingRelationInSchemaCache } from "@/
 import { mapStoreExperienceContentRow } from "@/lib/store-experience/content";
 import { isRecord, mergeStorefrontCopy } from "@/lib/store-experience/merge";
 import type { StorefrontData } from "@/lib/storefront/runtime";
+import { resolveStorefrontRouteBasePath } from "@/lib/storefront/paths";
 import { buildMergedStorefrontThemeJson } from "@/lib/storefront/theme-overrides";
 import { resolveStoreSlugForServerRender } from "@/lib/stores/active-store";
 import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
@@ -47,11 +48,17 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
   const admin = createSupabaseAdminClient();
   const requestHeaders = await headers();
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+  const currentPath = requestHeaders.get("x-pathname") ?? requestHeaders.get("next-url") ?? "";
   const whiteLabelStoreSlug = await resolveStoreSlugFromDomain(host);
   const singleStoreSlug = await resolveStoreSlugForServerRender(explicitStoreSlug ?? whiteLabelStoreSlug);
   if (!singleStoreSlug) {
     return null;
   }
+  const storeRoutePrefix = `/s/${encodeURIComponent(singleStoreSlug)}`;
+  const routeBasePath =
+    currentPath === storeRoutePrefix || currentPath.startsWith(`${storeRoutePrefix}/`)
+      ? resolveStorefrontRouteBasePath(singleStoreSlug, storeRoutePrefix)
+      : "";
   const {
     data: { user }
   } = await supabase.auth.getUser();
@@ -379,6 +386,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
     contentBlocks:
       normalizedSectionedBlocks ??
       (contentBlocksError ? [] : (contentBlocks ?? [])),
-    products: resolvedProducts ?? []
+    products: resolvedProducts ?? [],
+    routeBasePath
   };
 }

@@ -76,8 +76,9 @@ export function StorefrontLegalPage({
   const resolvedPrivacyProfile = runtime?.privacyProfile ?? privacyProfile;
   const themeConfig = runtime?.themeConfig ?? resolveStorefrontThemeConfig(resolvedBranding?.theme_json ?? {});
   const copy = runtime?.copy ?? resolveStorefrontCopy(resolvedSettings?.storefront_copy_json ?? {});
-  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, resolvedStore.slug);
-  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, resolvedStore.slug);
+  const routeBasePath = runtime?.routeBasePath ?? "";
+  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, resolvedStore.slug, routeBasePath);
+  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, resolvedStore.slug, routeBasePath);
   const storefrontThemeStyle = buildStorefrontThemeStyle({
     primaryColor: resolvedBranding?.primary_color,
     accentColor: resolvedBranding?.accent_color,
@@ -162,14 +163,14 @@ export function StorefrontLegalPage({
                   ) : null}
                   <div className="flex flex-wrap gap-3">
                     <Link
-                      href={buildStorefrontPrivacyRequestPath(resolvedStore.slug)}
+                      href={buildStorefrontPrivacyRequestPath(resolvedStore.slug, routeBasePath)}
                       className="inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted/30"
                     >
                       Submit privacy request
                     </Link>
                     {resolvedPrivacyProfile.showDoNotSellLink ? (
                       <Link
-                        href={`${buildStorefrontPrivacyRequestPath(resolvedStore.slug)}?type=opt_out_sale_share`}
+                        href={`${buildStorefrontPrivacyRequestPath(resolvedStore.slug, routeBasePath)}?type=opt_out_sale_share`}
                         className="inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted/30"
                       >
                         Do Not Sell or Share My Personal Information

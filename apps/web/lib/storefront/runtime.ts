@@ -157,6 +157,7 @@ export type StorefrontData = {
   experienceContent: StoreExperienceContent;
   contentBlocks: StorefrontContentBlock[];
   products: StorefrontProduct[];
+  routeBasePath?: string | null;
 };
 
 export type StorefrontRuntime = StorefrontData & {
@@ -164,6 +165,7 @@ export type StorefrontRuntime = StorefrontData & {
   surface: StorefrontSurface;
   themeConfig: StorefrontThemeConfig;
   copy: StorefrontCopyConfig;
+  routeBasePath: string;
   previewNavigateToHref?: (href: string) => void;
 };
 
@@ -189,6 +191,7 @@ export function createStorefrontRuntime(
     analytics,
     privacyProfile: input.privacyProfile ?? null,
     mode: input.mode ?? "live",
+    routeBasePath: input.routeBasePath?.trim() === "/" ? "" : (input.routeBasePath?.trim() ?? ""),
     themeConfig,
     copy
   };

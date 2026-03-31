@@ -163,8 +163,9 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
   const resolvedPrivacyProfile = runtime?.privacyProfile ?? null;
   const themeConfig = resolvedPresentation?.themeConfig ?? resolveStorefrontThemeConfig(resolvedBranding?.theme_json ?? {});
   const copy = resolvedPresentation?.copy ?? resolveStorefrontCopy(resolvedSettings?.storefront_copy_json ?? {});
-  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, resolvedStore.slug);
-  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, resolvedStore.slug);
+  const routeBasePath = runtime?.routeBasePath ?? "";
+  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, resolvedStore.slug, routeBasePath);
+  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, resolvedStore.slug, routeBasePath);
   const radiusClass = getStorefrontRadiusClass(themeConfig.radiusScale);
   const buttonRadiusClass = getStorefrontButtonRadiusClass(themeConfig.radiusScale);
   const cardClass = getStorefrontCardStyleClass(themeConfig.cardStyle);
@@ -587,7 +588,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
         analyticsSessionId: analytics?.getSessionId() ?? null,
         attribution: analytics?.getAttributionSnapshot() ?? null
       });
-      window.location.assign(`${buildStorefrontCheckoutPath(resolvedStore.slug)}?status=success&orderId=${encodeURIComponent(payload.orderId)}`);
+      window.location.assign(`${buildStorefrontCheckoutPath(resolvedStore.slug, routeBasePath)}?status=success&orderId=${encodeURIComponent(payload.orderId)}`);
       return;
     }
 
@@ -667,7 +668,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
             ) : (
               <p className="text-sm text-muted-foreground">{copy.cart.empty}</p>
             )}
-            <Link href={buildStorefrontProductsPath(resolvedStore.slug)} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "text-sm font-medium")}>
+            <Link href={buildStorefrontProductsPath(resolvedStore.slug, routeBasePath)} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "text-sm font-medium")}>
               {copy.cart.browseProducts}
             </Link>
           </div>
@@ -682,7 +683,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                   >
                     <div className="flex items-start gap-4">
                       <Link
-                        href={buildStorefrontProductPath(resolvedStore.slug, item.product.slug)}
+                        href={buildStorefrontProductPath(resolvedStore.slug, item.product.slug, routeBasePath)}
                         className={cn("relative block h-20 w-20 shrink-0 overflow-hidden border border-border/50 bg-muted/10 sm:h-24 sm:w-24", radiusClass)}
                       >
                         {item.product.image_urls?.[0] ? (
@@ -702,7 +703,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0 space-y-1">
                             <Link
-                              href={buildStorefrontProductPath(resolvedStore.slug, item.product.slug)}
+                              href={buildStorefrontProductPath(resolvedStore.slug, item.product.slug, routeBasePath)}
                               className="block text-base font-medium underline-offset-4 hover:underline"
                             >
                               {item.product.title}
@@ -1025,7 +1026,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                 />
                 <AppAlert variant="error" compact message={error} />
               </form>
-              <Link href={buildStorefrontProductsPath(resolvedStore.slug)} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "mx-auto text-sm font-medium")}>
+              <Link href={buildStorefrontProductsPath(resolvedStore.slug, routeBasePath)} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "mx-auto text-sm font-medium")}>
                 {copy.cart.continueShopping}
               </Link>
             </aside>

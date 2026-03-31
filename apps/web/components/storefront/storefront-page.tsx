@@ -234,9 +234,9 @@ function truncateWithEllipsis(content: string, maxLength: number) {
   return `${content.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
-function buildProductHref(product: StorefrontProduct, storeSlug: string) {
+function buildProductHref(product: StorefrontProduct, storeSlug: string, routeBasePath?: string | null) {
   const key = product.slug || product.id;
-  return buildStorefrontProductPath(storeSlug, key);
+  return buildStorefrontProductPath(storeSlug, key, routeBasePath);
 }
 
 function getAvailabilityLabel(
@@ -339,8 +339,9 @@ export function StorefrontPage(props: StorefrontPageProps) {
   const analytics = useOptionalStorefrontAnalytics();
   const themeConfig = resolvedPresentation?.themeConfig ?? resolveStorefrontThemeConfig(resolvedBranding?.theme_json ?? {});
   const copy = resolvedPresentation?.copy ?? resolveStorefrontCopy(resolvedSettings?.storefront_copy_json ?? {});
-  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, resolvedStore.slug);
-  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, resolvedStore.slug);
+  const routeBasePath = runtime?.routeBasePath ?? "";
+  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, resolvedStore.slug, routeBasePath);
+  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, resolvedStore.slug, routeBasePath);
   const studioEnabled = runtime?.mode === "studio";
   const homeSectionDraft = studioEnabled ? studioDocument?.getSectionDraft("home") ?? null : null;
   const productsSectionDraft = studioEnabled ? studioDocument?.getSectionDraft("productsPage") ?? null : null;
@@ -386,8 +387,8 @@ export function StorefrontPage(props: StorefrontPageProps) {
   const buttonRadiusClass = getStorefrontButtonRadiusClass(themeConfig.radiusScale);
   const isProductsView = view === "products";
   const isCenteredHeroLayout = themeConfig.heroLayout === "centered";
-  const shopProductsHref = copy.home.shopProductsUrl.trim() || buildStorefrontProductsPath(resolvedStore.slug);
-  const aboutBrandHref = copy.home.aboutBrandUrl.trim() || buildStorefrontAboutPath(resolvedStore.slug);
+  const shopProductsHref = copy.home.shopProductsUrl.trim() || buildStorefrontProductsPath(resolvedStore.slug, routeBasePath);
+  const aboutBrandHref = copy.home.aboutBrandUrl.trim() || buildStorefrontAboutPath(resolvedStore.slug, routeBasePath);
 
   const hasFeaturedProducts = resolvedProducts.some((product) => product.is_featured);
   const sortedContentBlocks = [...resolvedContentBlocks].sort((a, b) => a.sort_order - b.sort_order);
@@ -1393,7 +1394,7 @@ export function StorefrontPage(props: StorefrontPageProps) {
                             isIntegrated ? "border-0" : "border border-border/60 p-3 sm:p-4"
                           )}
                         >
-                          <Link href={buildProductHref(product, resolvedStore.slug)} className="block space-y-3">
+                          <Link href={buildProductHref(product, resolvedStore.slug, routeBasePath)} className="block space-y-3">
                             {cardImages.length > 0 ? (
                               <StorefrontImageCarousel
                                 key={`${product.id}:${cardImages.join("|")}`}
@@ -1412,7 +1413,7 @@ export function StorefrontPage(props: StorefrontPageProps) {
                           </Link>
                           <div className="space-y-1">
                             <div className="flex flex-wrap items-center gap-2">
-                              <Link href={buildProductHref(product, resolvedStore.slug)} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "font-semibold")}>
+                              <Link href={buildProductHref(product, resolvedStore.slug, routeBasePath)} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "font-semibold")}>
                                 {product.title}
                               </Link>
                             </div>
