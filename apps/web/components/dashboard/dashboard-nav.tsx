@@ -158,6 +158,7 @@ export function DashboardNav({
     { href: `${storeWorkspaceBaseHref}/reviews`, label: "Reviews", icon: Star },
     { href: `${storeWorkspaceBaseHref}/promotions`, label: "Promotions", icon: BadgePercent },
     { href: `${storeWorkspaceBaseHref}/subscribers`, label: "Subscribers", icon: Mail },
+    { href: `${storeWorkspaceBaseHref}/stock-alerts`, label: "Stock Alerts", icon: Bell },
     { href: `${storeWorkspaceBaseHref}/storefront-studio`, label: "Storefront Studio", icon: Home },
     { href: `${storeWorkspaceBaseHref}/email-studio`, label: "Email Studio", icon: PenSquare },
     { href: `${storeWorkspaceBaseHref}/reports`, label: "Reports", icon: FileText },

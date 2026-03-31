@@ -3,11 +3,16 @@ import { StoreEmailSubscribersManager } from "@/components/dashboard/store-email
 
 export const dynamic = "force-dynamic";
 
-export default function StoreWorkspaceSubscribersPage() {
+type PageProps = {
+  params: Promise<{ storeSlug: string }>;
+};
+
+export default async function StoreWorkspaceSubscribersPage({ params }: PageProps) {
+  const { storeSlug } = await params;
   return (
     <section className="space-y-3 p-3">
       <DashboardPageHeader title="Subscribers" description="Manage newsletter signups captured from your storefront." />
-      <StoreEmailSubscribersManager />
+      <StoreEmailSubscribersManager storeSlug={storeSlug} />
     </section>
   );
 }

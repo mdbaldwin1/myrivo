@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { logAuditEvent } from "@/lib/audit/log";
+import { findRestockedVariantIds, processBackInStockAlertsForVariants } from "@/lib/back-in-stock/alerts";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { notifyOwnersInventoryLevel } from "@/lib/notifications/owner-notifications";
 import { buildProductSlug, normalizeProductSlug } from "@/lib/products/slug";
 import { buildProductVariantRollup, normalizeVariantInputs, type VariantInput } from "@/lib/products/variants";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -132,6 +134,8 @@ type ProductWithVariantsRow = {
     }>;
   }>;
 };
+
+type QueryClient = Pick<Awaited<ReturnType<typeof createSupabaseServerClient>>, "from">;
 
 class VariantConflictError extends Error {
   statusCode: number;
@@ -333,7 +337,7 @@ function formatDuplicateSkuErrorMessage(message: string) {
 }
 
 async function ensureUniqueProductSlug(
-  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  supabase: QueryClient,
   storeId: string,
   title: string,
   requestedSlug?: string | null,
@@ -360,7 +364,7 @@ async function ensureUniqueProductSlug(
 }
 
 async function assertProductCanBeActive(
-  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  supabase: QueryClient,
   storeId: string,
   productId: string
 ) {
@@ -463,7 +467,7 @@ async function assertProductCanBeActive(
 }
 
 async function rollbackCreatedProduct(
-  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  supabase: QueryClient,
   storeId: string,
   productId: string
 ) {
@@ -486,7 +490,7 @@ function normalizePayloadVariants(payload: {
   });
 }
 
-async function selectProductWithVariants(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>, productId: string, storeId: string) {
+async function selectProductWithVariants(supabase: QueryClient, productId: string, storeId: string) {
   let { data, error } = await supabase
     .from("products")
     .select(productSelectWithVariantImages)
@@ -552,7 +556,7 @@ async function selectProductWithVariants(supabase: Awaited<ReturnType<typeof cre
 }
 
 async function replaceProductVariants(
-  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  supabase: QueryClient,
   storeId: string,
   productId: string,
   variants: VariantInput[],
@@ -758,7 +762,7 @@ async function replaceProductVariants(
 }
 
 async function rebuildProductOptionCatalog(
-  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  supabase: QueryClient,
   storeId: string,
   productId: string,
   preferredAxisOrder: string[] = []
@@ -973,10 +977,10 @@ async function rebuildProductOptionCatalog(
 }
 
 async function resolveOwnedStoreId() {
-  const supabase = await createSupabaseServerClient();
+  const authClient = await createSupabaseServerClient();
   const {
     data: { user }
-  } = await supabase.auth.getUser();
+  } = await authClient.auth.getUser();
 
   if (!user) {
     return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) } as const;
@@ -987,7 +991,12 @@ async function resolveOwnedStoreId() {
     return { error: NextResponse.json({ error: "No store found for account" }, { status: 404 }) } as const;
   }
 
-  return { supabase, storeId: bundle.store.id, storeSlug: bundle.store.slug, userId: user.id } as const;
+  return {
+    supabase: createSupabaseAdminClient(),
+    storeId: bundle.store.id,
+    storeSlug: bundle.store.slug,
+    userId: user.id
+  } as const;
 }
 
 export async function GET() {
@@ -1242,6 +1251,7 @@ export async function PATCH(request: NextRequest) {
   const nextStatus = payload.data.status ?? existingProduct.status;
 
   const updates: Record<string, unknown> = {};
+  let previousVariantsForRestock: Array<{ id: string; inventory_qty: number; status: "active" | "archived" }> = [];
 
   if (payload.data.title !== undefined) updates.title = payload.data.title;
   if (payload.data.description !== undefined) updates.description = payload.data.description;
@@ -1269,6 +1279,18 @@ export async function PATCH(request: NextRequest) {
 
   try {
     if (payload.data.variants) {
+      const { data: previousVariants, error: previousVariantsError } = await resolved.supabase
+        .from("product_variants")
+        .select("id,inventory_qty,status")
+        .eq("store_id", resolved.storeId)
+        .eq("product_id", payload.data.productId)
+        .returns<Array<{ id: string; inventory_qty: number; status: "active" | "archived" }>>();
+
+      if (previousVariantsError) {
+        return NextResponse.json({ error: previousVariantsError.message }, { status: 500 });
+      }
+
+      previousVariantsForRestock = previousVariants ?? [];
       const madeToOrderRequested = hasMadeToOrderEnabled(payload.data.variants);
       rollupFromVariants = await replaceProductVariants(
         resolved.supabase,
@@ -1377,6 +1399,31 @@ export async function PATCH(request: NextRequest) {
     });
   } catch {
     // Do not fail product updates if notification dispatch encounters a transient error.
+  }
+
+  try {
+    if (payload.data.variants !== undefined) {
+      const restockedVariantIds = findRestockedVariantIds(
+        previousVariantsForRestock,
+        product.product_variants.map((variant) => ({
+          id: variant.id,
+          inventory_qty: variant.inventory_qty,
+          status: variant.status
+        }))
+      );
+
+      if (restockedVariantIds.length > 0) {
+        await processBackInStockAlertsForVariants(
+          restockedVariantIds.map((variantId) => ({
+            storeId: resolved.storeId,
+            productId: product.id,
+            variantId
+          }))
+        );
+      }
+    }
+  } catch (error) {
+    console.error("back-in-stock alert processing failed after product update", error);
   }
 
   return NextResponse.json({ product });

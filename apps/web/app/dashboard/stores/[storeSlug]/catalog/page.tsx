@@ -1,6 +1,7 @@
 import { ProductManager, type ProductListItem } from "@/components/dashboard/product-manager";
 import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
 import { getOwnedStoreBundleForSlug } from "@/lib/stores/owner-store";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -41,12 +42,14 @@ export default async function StoreWorkspaceCatalogPage({ params }: PageProps) {
     return null;
   }
 
+  const admin = createSupabaseAdminClient();
+
   const selectWithVariantImages =
     "id,title,description,slug,sku,image_urls,image_alt_text,seo_title,seo_description,is_featured,price_cents,inventory_qty,status,created_at,product_variants(id,title,sku,sku_mode,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_made_to_order,is_default,status,sort_order,created_at),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))";
   const selectWithVariantImagesLegacy =
     "id,title,description,sku,image_urls,is_featured,price_cents,inventory_qty,status,created_at,product_variants(id,title,sku,sku_mode,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_default,status,sort_order,created_at),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))";
 
-  const primary = await supabase
+  const primary = await admin
     .from("products")
     .select(selectWithVariantImages)
     .eq("store_id", bundle.store.id)
@@ -62,7 +65,7 @@ export default async function StoreWorkspaceCatalogPage({ params }: PageProps) {
     isMissingColumnInSchemaCache(productsError, "seo_title") ||
     isMissingColumnInSchemaCache(productsError, "seo_description")
   ) {
-    const legacy = await supabase
+    const legacy = await admin
       .from("products")
       .select(selectWithVariantImagesLegacy)
       .eq("store_id", bundle.store.id)

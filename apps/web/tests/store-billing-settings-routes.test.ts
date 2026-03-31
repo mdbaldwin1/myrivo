@@ -40,6 +40,80 @@ beforeEach(() => {
 });
 
 describe("billing settings routes", () => {
+  test("platform-config GET returns assigned billing plan without a user-scoped store lookup", async () => {
+    requireStorePermissionMock.mockResolvedValueOnce({
+      context: { storeId: "store-1", globalRole: "user", storeRole: "admin" },
+      response: null
+    });
+
+    adminFromMock.mockImplementation((table: string) => {
+      if (table === "store_billing_profiles") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({
+                data: {
+                  store_id: "store-1",
+                  billing_plan_id: "plan-family",
+                  metadata_json: null,
+                  billing_plans: {
+                    key: "family_friends",
+                    name: "Family & Friends",
+                    transaction_fee_bps: 290,
+                    transaction_fee_fixed_cents: 30
+                  }
+                },
+                error: null
+              }))
+            }))
+          }))
+        };
+      }
+
+      if (table === "billing_plans") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              order: vi.fn(async () => ({
+                data: [
+                  {
+                    id: "plan-standard",
+                    key: "standard",
+                    name: "Standard",
+                    monthly_price_cents: 0,
+                    transaction_fee_bps: 600,
+                    transaction_fee_fixed_cents: 30,
+                    active: true
+                  }
+                ],
+                error: null
+              }))
+            }))
+          }))
+        };
+      }
+
+      throw new Error(`Unexpected admin table ${table}`);
+    });
+
+    const route = await import("@/app/api/stores/platform-config/route");
+    const request = new NextRequest("http://localhost:3000/api/stores/platform-config?storeSlug=at-home-apothecary");
+    const response = await route.GET(request);
+    const payload = (await response.json()) as {
+      store: { id: string };
+      billing: { billing_plans: { key: string; name: string } };
+      plans: Array<{ key: string }>;
+      canManageBillingPlan: boolean;
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.store.id).toBe("store-1");
+    expect(payload.billing.billing_plans.key).toBe("family_friends");
+    expect(payload.plans.map((plan) => plan.key)).toEqual(["standard", "family_friends"]);
+    expect(payload.canManageBillingPlan).toBe(true);
+    expect(serverFromMock).not.toHaveBeenCalled();
+  });
+
   test("platform-config PUT returns 400 for malformed JSON", async () => {
     const route = await import("@/app/api/stores/platform-config/route");
     const request = new NextRequest("http://localhost:3000/api/stores/platform-config", {

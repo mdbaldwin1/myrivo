@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { logAuditEvent } from "@/lib/audit/log";
+import { processBackInStockAlertsForVariants } from "@/lib/back-in-stock/alerts";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { notifyOwnersInventoryLevel } from "@/lib/notifications/owner-notifications";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const payloadSchema = z
@@ -72,10 +74,10 @@ export async function POST(request: NextRequest) {
     return payload.response;
   }
 
-  const supabase = await createSupabaseServerClient();
+  const authClient = await createSupabaseServerClient();
   const {
     data: { user }
-  } = await supabase.auth.getUser();
+  } = await authClient.auth.getUser();
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -86,6 +88,8 @@ export async function POST(request: NextRequest) {
   if (!bundle) {
     return NextResponse.json({ error: "No store found for account" }, { status: 404 });
   }
+
+  const supabase = createSupabaseAdminClient();
 
   let targetVariant:
     | {
@@ -281,6 +285,20 @@ export async function POST(request: NextRequest) {
     });
   } catch {
     // Inventory updates should still succeed if notifications fail.
+  }
+
+  try {
+    if (targetVariant.inventory_qty <= 0 && nextInventory > 0) {
+      await processBackInStockAlertsForVariants([
+        {
+          storeId: bundle.store.id,
+          productId: targetVariant.product_id,
+          variantId: targetVariant.id
+        }
+      ]);
+    }
+  } catch (error) {
+    console.error("back-in-stock alert processing failed after inventory adjustment", error);
   }
 
   return NextResponse.json({ product: updatedProduct });

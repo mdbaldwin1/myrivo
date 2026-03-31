@@ -5,7 +5,6 @@ import { canAssignBillingPlanKey, formatBillingPlanLabel, isVisibleStoreWorkspac
 import { readJsonBody } from "@/lib/http/read-json-body";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const updateSchema = z.object({
   billingPlanKey: z.string().trim().min(2).max(40).optional()
@@ -21,11 +20,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const supabase = await createSupabaseServerClient();
   const admin = createSupabaseAdminClient();
 
-  const [{ data: store, error: storeError }, { data: billing, error: billingError }, { data: plans, error: plansError }] = await Promise.all([
-    supabase.from("stores").select("id").eq("id", auth.context.storeId).single(),
+  const [{ data: billing, error: billingError }, { data: plans, error: plansError }] = await Promise.all([
     admin
       .from("store_billing_profiles")
       .select("store_id,billing_plan_id,metadata_json,billing_plans(key,name,transaction_fee_bps,transaction_fee_fixed_cents)")
@@ -37,10 +34,6 @@ export async function GET(request: NextRequest) {
       .eq("active", true)
       .order("monthly_price_cents", { ascending: true })
   ]);
-
-  if (storeError) {
-    return NextResponse.json({ error: storeError.message }, { status: 500 });
-  }
 
   if (billingError) {
     return NextResponse.json({ error: billingError.message }, { status: 500 });
@@ -84,7 +77,7 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json({
-    store,
+    store: { id: auth.context.storeId },
     billing,
     plans: visiblePlans,
     canManageBillingPlan: auth.context.storeRole === "owner" || auth.context.storeRole === "admin" || auth.context.globalRole === "admin"
