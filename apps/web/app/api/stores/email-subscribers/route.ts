@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveMarketingEmailComplianceDefaults } from "@/lib/marketing-email/compliance";
+import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type SubscriberRow = {
   id: string;
@@ -16,21 +17,22 @@ type SubscriberRow = {
 };
 
 export async function GET(request: NextRequest) {
-  const supabase = await createSupabaseServerClient();
+  const authClient = await createSupabaseServerClient();
   const {
     data: { user }
-  } = await supabase.auth.getUser();
+  } = await authClient.auth.getUser();
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const bundle = await getOwnedStoreBundle(user.id, "staff");
+  const { searchParams } = new URL(request.url);
+  const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, searchParams.get("storeSlug"), "staff");
   if (!bundle) {
     return NextResponse.json({ error: "No store found for account" }, { status: 404 });
   }
 
-  const { searchParams } = new URL(request.url);
+  const supabase = createSupabaseAdminClient();
   const format = searchParams.get("format");
   const statusFilter = searchParams.get("status");
   const allowedStatus = statusFilter === "subscribed" || statusFilter === "unsubscribed" ? statusFilter : null;

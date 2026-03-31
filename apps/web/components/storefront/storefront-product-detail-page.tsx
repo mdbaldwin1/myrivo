@@ -19,6 +19,7 @@ import { StorefrontHeader } from "@/components/storefront/storefront-header";
 import { StorefrontImageCarousel } from "@/components/storefront/storefront-image-carousel";
 import { StorefrontCartButton } from "@/components/storefront/storefront-cart-button";
 import { StorefrontFooter } from "@/components/storefront/storefront-footer";
+import { StorefrontBackInStockAlertForm } from "@/components/storefront/storefront-back-in-stock-alert-form";
 import { StorefrontReviewsSection } from "@/components/storefront/storefront-reviews-section";
 import { MAIN_CONTENT_ID } from "@/lib/accessibility";
 import { useOptionalStorefrontRuntime } from "@/components/storefront/storefront-runtime-provider";
@@ -618,6 +619,16 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
                 />
               ) : null}
             </div>
+
+            {selectedVariant && !selectedVariant.is_made_to_order && selectedVariant.inventory_qty <= 0 ? (
+              <StorefrontBackInStockAlertForm
+                storeSlug={resolvedStore.slug}
+                productId={resolvedProduct.id}
+                variantId={selectedVariant.id}
+                variantLabel={resolveVariantLabel(selectedVariant)}
+                buttonRadiusClass={buttonRadiusClass}
+              />
+            ) : null}
 
             {studioEnabledWithDocument ? (
               <StorefrontStudioEditableLink

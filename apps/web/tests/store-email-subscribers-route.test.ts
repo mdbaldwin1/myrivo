@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const getOwnedStoreBundleMock = vi.fn();
+const getOwnedStoreBundleForOptionalSlugMock = vi.fn();
 
 let authGetUserMock: ReturnType<typeof vi.fn>;
 let supabaseFromMock: ReturnType<typeof vi.fn>;
+let adminSupabaseFromMock: ReturnType<typeof vi.fn>;
 
 vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient: vi.fn(async () => ({
@@ -15,8 +16,14 @@ vi.mock("@/lib/supabase/server", () => ({
   }))
 }));
 
+vi.mock("@/lib/supabase/admin", () => ({
+  createSupabaseAdminClient: vi.fn(() => ({
+    from: (...args: unknown[]) => adminSupabaseFromMock(...args)
+  }))
+}));
+
 vi.mock("@/lib/stores/owner-store", () => ({
-  getOwnedStoreBundle: (...args: unknown[]) => getOwnedStoreBundleMock(...args)
+  getOwnedStoreBundleForOptionalSlug: (...args: unknown[]) => getOwnedStoreBundleForOptionalSlugMock(...args)
 }));
 
 vi.mock("@/lib/notifications/sender", () => ({
@@ -24,9 +31,11 @@ vi.mock("@/lib/notifications/sender", () => ({
 }));
 
 beforeEach(() => {
+  vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
+  vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "test-anon-key");
   authGetUserMock = vi.fn(async () => ({ data: { user: { id: "user-1" } } }));
-  getOwnedStoreBundleMock.mockReset();
-  getOwnedStoreBundleMock.mockResolvedValue({
+  getOwnedStoreBundleForOptionalSlugMock.mockReset();
+  getOwnedStoreBundleForOptionalSlugMock.mockResolvedValue({
     store: { id: "store-1", slug: "apothecary", name: "Apothecary" },
     settings: {
       support_email: "support@apothecary.test",
@@ -72,6 +81,7 @@ beforeEach(() => {
 
     return chain;
   });
+  adminSupabaseFromMock = supabaseFromMock;
 });
 
 describe("store email subscribers route", () => {
