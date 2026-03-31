@@ -1,9 +1,21 @@
 import Image from "next/image";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { HomepagePrimaryCta } from "@/components/marketing/homepage-primary-cta";
 import { MarketingHomepageStorefrontPreview } from "@/components/marketing/marketing-homepage-storefront-preview";
 import { MarketingSiteChrome } from "@/components/marketing/marketing-site-chrome";
 import { MarketingTrackedButtonLink } from "@/components/marketing/marketing-tracked-button-link";
+import { StorefrontUnavailablePage } from "@/components/storefront/storefront-unavailable-page";
+import { StorefrontPage } from "@/components/storefront/storefront-page";
+import { StorefrontRuntimeProvider } from "@/components/storefront/storefront-runtime-provider";
 import { formatMoney, formatMoneyWithCents, formatPlatformFeePercent, resolvePricingPlans, type BillingPlanRow } from "@/lib/marketing/pricing";
+import { isReviewsEnabledForStoreSlug } from "@/lib/reviews/feature-gating";
+import { buildSearchSuffix } from "@/lib/storefront/legacy-query";
+import { buildStorefrontHomePath } from "@/lib/storefront/paths";
+import { loadStorefrontData } from "@/lib/storefront/load-storefront-data";
+import { createStorefrontRuntime } from "@/lib/storefront/runtime";
+import { resolveStorefrontCanonicalRedirect } from "@/lib/storefront/seo";
+import { loadStorefrontUnavailableData } from "@/lib/storefront/unavailable";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -100,7 +112,54 @@ const pricingReasons = [
   }
 ];
 
-export default async function HomePage() {
+type HomePageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function HomePage({ searchParams }: HomePageProps) {
+  const resolvedSearchParams = await searchParams;
+  const requestHeaders = await headers();
+  const currentPath = requestHeaders.get("x-pathname") ?? requestHeaders.get("next-url") ?? "";
+  const disableStoreCanonicalRedirect = /^\/s\//.test(currentPath);
+  const requestedStoreSlug = typeof resolvedSearchParams.store === "string" ? resolvedSearchParams.store : null;
+  if (requestedStoreSlug && !disableStoreCanonicalRedirect) {
+    redirect(`${buildStorefrontHomePath(requestedStoreSlug)}${buildSearchSuffix(resolvedSearchParams, ["store"])}`);
+  }
+
+  const redirectUrl = await resolveStorefrontCanonicalRedirect("/", requestedStoreSlug);
+  if (redirectUrl) {
+    redirect(redirectUrl);
+  }
+
+  const storefrontData = await loadStorefrontData(requestedStoreSlug);
+  if (storefrontData) {
+    const runtime = createStorefrontRuntime({
+      ...storefrontData,
+      mode: "live",
+      surface: "home"
+    });
+
+    return (
+      <StorefrontRuntimeProvider runtime={runtime}>
+        <StorefrontPage
+          store={storefrontData.store}
+          viewer={storefrontData.viewer}
+          branding={storefrontData.branding}
+          settings={storefrontData.settings}
+          contentBlocks={storefrontData.contentBlocks}
+          products={storefrontData.products}
+          view="home"
+          reviewsEnabled={isReviewsEnabledForStoreSlug(storefrontData.store.slug)}
+        />
+      </StorefrontRuntimeProvider>
+    );
+  }
+
+  const unavailable = await loadStorefrontUnavailableData(requestedStoreSlug);
+  if (unavailable) {
+    return <StorefrontUnavailablePage state={unavailable} />;
+  }
+
   const supabase = await createSupabaseServerClient();
   const {
     data: { user }
