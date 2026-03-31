@@ -89,9 +89,23 @@ export async function POST(request: NextRequest) {
       .returns<Array<{ pickup_location_id: string | null; starts_at: string; ends_at: string }>>()
   ]);
 
-  if (!pickupSettings?.pickup_enabled) {
+  const resolvedPickupSettings = {
+    pickup_enabled: pickupSettings?.pickup_enabled ?? false,
+    selection_mode: pickupSettings?.selection_mode ?? "buyer_select",
+    geolocation_fallback_mode: pickupSettings?.geolocation_fallback_mode ?? "allow_without_distance",
+    out_of_radius_behavior: pickupSettings?.out_of_radius_behavior ?? "allow_all_locations",
+    eligibility_radius_miles: pickupSettings?.eligibility_radius_miles ?? 100,
+    lead_time_hours: pickupSettings?.lead_time_hours ?? 48,
+    slot_interval_minutes: pickupSettings?.slot_interval_minutes ?? 60,
+    show_pickup_times: pickupSettings?.show_pickup_times ?? true,
+    timezone: pickupSettings?.timezone ?? "America/New_York",
+    instructions: pickupSettings?.instructions ?? null
+  } as const;
+
+  if (!locations || locations.length === 0) {
     return NextResponse.json({
       pickupEnabled: false,
+      selectionMode: resolvedPickupSettings.selection_mode,
       options: [],
       selectedLocationId: null,
       slots: [],
@@ -113,22 +127,28 @@ export async function POST(request: NextRequest) {
     latitude: location.latitude,
     longitude: location.longitude
   }));
-  const availableCandidates = resolveAvailablePickupLocations({
-    buyer,
-    locations: normalizedLocations,
-    radiusMiles: pickupSettings.eligibility_radius_miles,
-    geolocationFallbackMode: pickupSettings.geolocation_fallback_mode,
-    outOfRadiusBehavior: pickupSettings.out_of_radius_behavior
-  });
+  const availableCandidates = resolvedPickupSettings.pickup_enabled
+    ? resolveAvailablePickupLocations({
+        buyer,
+        locations: normalizedLocations,
+        radiusMiles: resolvedPickupSettings.eligibility_radius_miles,
+        geolocationFallbackMode: resolvedPickupSettings.geolocation_fallback_mode,
+        outOfRadiusBehavior: resolvedPickupSettings.out_of_radius_behavior
+      })
+    : normalizedLocations.map((location) => ({
+        id: location.id,
+        name: location.name,
+        distanceMiles: 0
+      }));
 
   if (availableCandidates.length === 0) {
     const reason =
-      buyer || pickupSettings.geolocation_fallback_mode === "disable_pickup"
-        ? `No pickup locations found within ${pickupSettings.eligibility_radius_miles} miles.`
+      buyer || resolvedPickupSettings.geolocation_fallback_mode === "disable_pickup"
+        ? `No pickup locations found within ${resolvedPickupSettings.eligibility_radius_miles} miles.`
         : "Enable location sharing to verify pickup availability.";
     return NextResponse.json({
       pickupEnabled: false,
-      selectionMode: pickupSettings.selection_mode,
+      selectionMode: resolvedPickupSettings.selection_mode,
       options: [],
       selectedLocationId: null,
       slots: [],
@@ -137,7 +157,7 @@ export async function POST(request: NextRequest) {
   }
 
   const defaultLocationId =
-    pickupSettings.selection_mode === "hidden_nearest"
+    resolvedPickupSettings.selection_mode === "hidden_nearest"
       ? availableCandidates[0]?.id ?? null
       : payload.data.locationId && availableCandidates.some((location) => location.id === payload.data.locationId)
         ? payload.data.locationId
@@ -155,12 +175,12 @@ export async function POST(request: NextRequest) {
     }, {});
 
   const slots =
-    pickupSettings.show_pickup_times && defaultLocationId
+    resolvedPickupSettings.show_pickup_times && defaultLocationId
       ? buildPickupSlots({
           now: new Date(),
-          leadTimeHours: pickupSettings.lead_time_hours,
-          slotIntervalMinutes: pickupSettings.slot_interval_minutes,
-          timezone: pickupSettings.timezone,
+          leadTimeHours: resolvedPickupSettings.lead_time_hours,
+          slotIntervalMinutes: resolvedPickupSettings.slot_interval_minutes,
+          timezone: resolvedPickupSettings.timezone,
           dayHours,
           blackoutWindows: (blackouts ?? [])
             .filter((blackout) => blackout.pickup_location_id === null || blackout.pickup_location_id === defaultLocationId)
@@ -171,11 +191,11 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     pickupEnabled: true,
-    selectionMode: pickupSettings.selection_mode,
-    radiusMiles: pickupSettings.eligibility_radius_miles,
-    instructions: pickupSettings.instructions,
-    showPickupTimes: pickupSettings.show_pickup_times,
-    timezone: pickupSettings.timezone,
+    selectionMode: resolvedPickupSettings.selection_mode,
+    radiusMiles: resolvedPickupSettings.eligibility_radius_miles,
+    instructions: resolvedPickupSettings.instructions,
+    showPickupTimes: resolvedPickupSettings.show_pickup_times,
+    timezone: resolvedPickupSettings.timezone,
     options: availableCandidates.map((entry) => {
       const location = (locations ?? []).find((item) => item.id === entry.id);
       return {

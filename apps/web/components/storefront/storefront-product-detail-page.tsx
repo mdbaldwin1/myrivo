@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -146,17 +146,18 @@ function getVariantOptionNames(product: StorefrontProduct, variants: StorefrontV
   return names;
 }
 
-function resolveAvailableValuesForOption(
+export function resolveAvailableValuesForOption(
   variants: StorefrontVariant[],
   optionNames: string[],
   selectedValues: Record<string, string>,
   targetOptionName: string
 ) {
   const values = new Set<string>();
+  const targetIndex = optionNames.findIndex((name) => name === targetOptionName);
+  const constrainedOptionNames = targetIndex <= 0 ? [] : optionNames.slice(0, targetIndex);
 
   for (const variant of variants) {
-    const matchesOtherSelections = optionNames
-      .filter((name) => name !== targetOptionName)
+    const matchesOtherSelections = constrainedOptionNames
       .every((name) => {
         const selected = selectedValues[name];
         if (!selected) {
@@ -298,6 +299,8 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
   const optionNames = useMemo(() => getVariantOptionNames(resolvedProduct, variants), [resolvedProduct, variants]);
   const [selectedVariantId, setSelectedVariantId] = useState(defaultVariant?.id ?? "");
   const [quantity, setQuantity] = useState(1);
+  const [addToCartState, setAddToCartState] = useState<"idle" | "adding" | "added">("idle");
+  const addToCartResetTimeoutRef = useRef<number | null>(null);
 
   const selectedVariant = variants.find((variant) => variant.id === selectedVariantId) ?? defaultVariant;
   const selectedOptionValues = selectedVariant?.option_values ?? {};
@@ -306,13 +309,19 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
   const studioEnabledWithDocument = studioEnabled && Boolean(studioDocument);
   const availabilityField = getAvailabilityCopyField(selectedVariant ?? null);
   const availabilityLabel = getAvailabilityLabel(selectedVariant ?? null, resolvedSettings?.fulfillment_message ?? null, copy);
-  const addToCartLabel = !selectedVariant
+  const baseAddToCartLabel = !selectedVariant
     ? copy.productDetail.outOfStockButton
     : selectedVariant.is_made_to_order && selectedVariant.inventory_qty < 1
       ? copy.productDetail.addToCartMadeToOrder
       : selectedVariant.inventory_qty <= 0
         ? copy.productDetail.outOfStockButton
         : copy.productDetail.addToCart;
+  const addToCartLabel =
+    addToCartState === "adding"
+      ? copy.productDetail.addingToCart
+      : addToCartState === "added"
+        ? copy.productDetail.addedToCart
+        : baseAddToCartLabel;
 
   useStorefrontPageView("product_detail", {
     productId: resolvedProduct.id,
@@ -337,10 +346,19 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
       }
     : undefined;
 
-  function addToCart() {
+  useEffect(() => {
+    return () => {
+      if (addToCartResetTimeoutRef.current) {
+        clearTimeout(addToCartResetTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  async function addToCart() {
     if (!selectedVariant) {
       return;
     }
+    setAddToCartState("adding");
     const current = readStorefrontCart();
     const key = `${resolvedProduct.id}:${selectedVariant.id}`;
     const existing = current.find((item) => `${item.productId}:${item.variantId}` === key);
@@ -360,10 +378,18 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
       })
     });
     writeStorefrontCart(next);
-    void syncStorefrontCart(next, resolvedStore.slug, {
+    await syncStorefrontCart(next, resolvedStore.slug, {
       analyticsSessionId: analytics?.getSessionId() ?? null,
       attribution: analytics?.getAttributionSnapshot() ?? null
     });
+    setAddToCartState("added");
+    if (addToCartResetTimeoutRef.current) {
+      clearTimeout(addToCartResetTimeoutRef.current);
+    }
+    addToCartResetTimeoutRef.current = window.setTimeout(() => {
+      setAddToCartState("idle");
+      addToCartResetTimeoutRef.current = null;
+    }, 1600);
   }
 
   return (
@@ -581,8 +607,8 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
             <div className="relative">
               <Button
                 type="button"
-                onClick={addToCart}
-                disabled={!canPurchaseSelectedVariant}
+                onClick={() => void addToCart()}
+                disabled={!canPurchaseSelectedVariant || addToCartState !== "idle"}
                 className={cn(
                   "h-11 w-full bg-[var(--storefront-primary)] text-[color:var(--storefront-primary-foreground)] hover:opacity-90",
                   buttonRadiusClass

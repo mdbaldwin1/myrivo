@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
     | {
         id: string;
         code: string;
-        discount_type: "percent" | "fixed";
+        discount_type: "percent" | "fixed" | "free_shipping";
         discount_value: number;
         min_subtotal_cents: number;
         max_redemptions: number | null;
@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
       .maybeSingle<{
         id: string;
         code: string;
-        discount_type: "percent" | "fixed";
+        discount_type: "percent" | "fixed" | "free_shipping";
         discount_value: number;
         min_subtotal_cents: number;
         max_redemptions: number | null;

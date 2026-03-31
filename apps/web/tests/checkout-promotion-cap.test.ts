@@ -101,7 +101,8 @@ beforeEach(() => {
                 checkout_enable_flat_rate_shipping: true,
                 checkout_flat_rate_shipping_label: "Shipping",
                 checkout_flat_rate_shipping_fee_cents: 0,
-                checkout_allow_order_note: true
+                checkout_allow_order_note: true,
+                checkout_max_promo_codes: 1
               },
               error: null
             }))
@@ -181,21 +182,24 @@ beforeEach(() => {
       return {
         select: vi.fn(() => ({
           eq: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              maybeSingle: vi.fn(async () => ({
-                data: {
-                  id: "22222222-2222-4222-8222-222222222222",
-                  code: "WELCOME10",
-                  discount_type: "percent",
-                  discount_value: 10,
-                  min_subtotal_cents: 0,
-                  max_redemptions: null,
-                  per_customer_redemption_limit: 1,
-                  times_redeemed: 0,
-                  starts_at: null,
-                  ends_at: null,
-                  is_active: true
-                },
+            in: vi.fn(() => ({
+              returns: vi.fn(async () => ({
+                data: [
+                  {
+                    id: "22222222-2222-4222-8222-222222222222",
+                    code: "WELCOME10",
+                    discount_type: "percent",
+                    discount_value: 10,
+                    min_subtotal_cents: 0,
+                    max_redemptions: null,
+                    per_customer_redemption_limit: 1,
+                    times_redeemed: 0,
+                    starts_at: null,
+                    ends_at: null,
+                    is_active: true,
+                    is_stackable: false
+                  }
+                ],
                 error: null
               }))
             }))

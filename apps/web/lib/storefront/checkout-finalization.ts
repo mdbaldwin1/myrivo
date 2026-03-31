@@ -2,6 +2,10 @@ import { calculatePlatformFeeCents, resolveStoreFeeProfile, writeOrderFeeBreakdo
 import { isStripeStubMode } from "@/lib/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { sendOrderCreatedNotifications } from "@/lib/notifications/order-emails";
+import {
+  persistPromotionRedemptions,
+  type PromotionRedemptionPersistenceClient
+} from "@/lib/promotions/persist-redemptions";
 import { buildStubCheckoutRpcPayload } from "@/lib/storefront/stub-checkout";
 import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 import { getStripeClient } from "@/lib/stripe/server";
@@ -27,12 +31,13 @@ type StorefrontCheckoutRecord = {
   pickup_timezone: string | null;
   shipping_fee_cents: number | null;
   promo_code: string | null;
+  promo_codes_json: string[] | null;
   fee_plan_key: string | null;
   fee_bps: number | null;
   fee_fixed_cents: number | null;
   item_total_cents: number | null;
   platform_fee_cents: number | null;
-  items: unknown;
+  items: Array<{ productId?: string; variantId?: string; quantity?: number; unitPriceCents?: number }> | unknown;
   order_id: string | null;
   status: "pending" | "completed" | "failed";
 };
@@ -66,13 +71,77 @@ function resolveCheckoutFeeSnapshot(checkout: StorefrontCheckoutRecord, fallback
   };
 }
 
+function resolveCheckoutPromoCodes(checkout: StorefrontCheckoutRecord) {
+  if (Array.isArray(checkout.promo_codes_json)) {
+    return checkout.promo_codes_json.filter((code): code is string => typeof code === "string" && code.trim().length > 0);
+  }
+
+  if (!checkout.promo_code) {
+    return [];
+  }
+
+  return checkout.promo_code
+    .split(",")
+    .map((code) => code.trim())
+    .filter(Boolean);
+}
+
+function resolveCheckoutDiscountCents(checkout: StorefrontCheckoutRecord) {
+  if (!Array.isArray(checkout.items)) {
+    return 0;
+  }
+
+  const subtotalCents = checkout.items.reduce((sum, item) => {
+    const quantity = Number.isFinite(item.quantity) ? Number(item.quantity) : 0;
+    const unitPriceCents = Number.isFinite(item.unitPriceCents) ? Number(item.unitPriceCents) : 0;
+    return sum + Math.max(0, quantity) * Math.max(0, unitPriceCents);
+  }, 0);
+
+  return Math.max(0, subtotalCents - Math.max(0, checkout.item_total_cents ?? 0));
+}
+
+async function resolveAppliedCheckoutPromotions(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  checkout: StorefrontCheckoutRecord
+) {
+  const promoCodes = resolveCheckoutPromoCodes(checkout);
+
+  if (promoCodes.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("promotions")
+    .select("id,code,discount_type")
+    .eq("store_id", checkout.store_id)
+    .in("code", promoCodes)
+    .returns<Array<{ id: string; code: string; discount_type: "percent" | "fixed" | "free_shipping" }>>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const promotionsByCode = new Map((data ?? []).map((promotion) => [promotion.code, promotion]));
+
+  return promoCodes
+    .map((code) => promotionsByCode.get(code))
+    .filter((promotion): promotion is NonNullable<typeof promotion> => Boolean(promotion))
+    .map((promotion) => ({
+      promotionId: promotion.id,
+      code: promotion.code,
+      discountType: promotion.discount_type,
+      itemDiscountCents: 0,
+      shippingDiscountCents: 0
+    }));
+}
+
 export async function finalizeStorefrontCheckout(checkoutId: string, paymentIntentId: string | null) {
   const supabase = createSupabaseAdminClient();
 
   const { data: checkout, error: checkoutError } = await supabase
     .from("storefront_checkout_sessions")
     .select(
-      "id,store_id,store_slug,analytics_session_id,analytics_session_key,source_cart_id,customer_email,customer_first_name,customer_last_name,customer_phone,customer_note,fulfillment_method,fulfillment_label,pickup_location_id,pickup_location_snapshot_json,pickup_window_start_at,pickup_window_end_at,pickup_timezone,shipping_fee_cents,promo_code,fee_plan_key,fee_bps,fee_fixed_cents,item_total_cents,platform_fee_cents,items,order_id,status"
+      "id,store_id,store_slug,analytics_session_id,analytics_session_key,source_cart_id,customer_email,customer_first_name,customer_last_name,customer_phone,customer_note,fulfillment_method,fulfillment_label,pickup_location_id,pickup_location_snapshot_json,pickup_window_start_at,pickup_window_end_at,pickup_timezone,shipping_fee_cents,promo_code,promo_codes_json,fee_plan_key,fee_bps,fee_fixed_cents,item_total_cents,platform_fee_cents,items,order_id,status"
     )
     .eq("id", checkoutId)
     .maybeSingle<StorefrontCheckoutRecord>();
@@ -154,6 +223,7 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
           analytics_session_key: checkout.analytics_session_key,
           source_cart_id: checkout.source_cart_id,
           storefront_checkout_session_id: checkout.id,
+          promo_code: checkout.promo_code,
           shipping_fee_cents: shippingFeeCents,
           total_cents: computedTotalCents
         })
@@ -162,6 +232,17 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
       if (orderSyncError) {
         throw new Error(orderSyncError.message);
       }
+
+      const promotionPersistenceClient = supabase as unknown as PromotionRedemptionPersistenceClient;
+
+      await persistPromotionRedemptions({
+        supabase: promotionPersistenceClient,
+        appliedPromotions: await resolveAppliedCheckoutPromotions(supabase, checkout),
+        storeId: checkout.store_id,
+        orderId: existingOrder.id,
+        customerEmail: checkout.customer_email,
+        customerUserId: await resolveCheckoutCustomerUserId(supabase, checkout.source_cart_id)
+      });
 
       if (checkout.source_cart_id) {
         await supabase.from("customer_carts").update({ status: "ordered" }).eq("id", checkout.source_cart_id);
@@ -198,16 +279,16 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
 
   const { data: rpcResult, error: rpcError } = await supabase.rpc(
     "stub_checkout_create_paid_order",
-    buildStubCheckoutRpcPayload({
-      storeSlug: checkout.store_slug,
-      customerEmail: checkout.customer_email,
-      customerUserId: await resolveCheckoutCustomerUserId(supabase, checkout.source_cart_id),
-      items: checkout.items,
-      stubPaymentRef: paymentIntentId,
-      discountCents: 0,
-      promoCode: checkout.promo_code
-    })
-  );
+      buildStubCheckoutRpcPayload({
+        storeSlug: checkout.store_slug,
+        customerEmail: checkout.customer_email,
+        customerUserId: await resolveCheckoutCustomerUserId(supabase, checkout.source_cart_id),
+        items: checkout.items,
+        stubPaymentRef: paymentIntentId,
+        discountCents: resolveCheckoutDiscountCents(checkout),
+        promoCode: null
+      })
+    );
 
   if (rpcError) {
     const { error: markFailedError } = await supabase
@@ -265,6 +346,7 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
       analytics_session_key: checkout.analytics_session_key,
       source_cart_id: checkout.source_cart_id,
       storefront_checkout_session_id: checkout.id,
+      promo_code: checkout.promo_code,
       shipping_fee_cents: shippingFeeCents,
       total_cents: computedTotalCents
     })
@@ -273,6 +355,17 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
   if (orderSyncError) {
     throw new Error(orderSyncError.message);
   }
+
+  const promotionPersistenceClient = supabase as unknown as PromotionRedemptionPersistenceClient;
+
+  await persistPromotionRedemptions({
+    supabase: promotionPersistenceClient,
+    appliedPromotions: await resolveAppliedCheckoutPromotions(supabase, checkout),
+    storeId: checkout.store_id,
+    orderId,
+    customerEmail: checkout.customer_email,
+    customerUserId: await resolveCheckoutCustomerUserId(supabase, checkout.source_cart_id)
+  });
 
   if (checkout.source_cart_id) {
     await supabase.from("customer_carts").update({ status: "ordered" }).eq("id", checkout.source_cart_id);

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { calculateDiscountCents } from "@/lib/promotions/calculate-discount";
+import { applyPromotionSequence, normalizeRequestedPromoCodes } from "@/lib/promotions/apply-promotions";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { checkRateLimit } from "@/lib/security/rate-limit";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
@@ -10,7 +10,10 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const payloadSchema = z.object({
   promoCode: z.string().trim().min(3).max(40),
-  subtotalCents: z.number().int().nonnegative()
+  promoCodes: z.array(z.string().trim().min(3).max(40)).optional(),
+  subtotalCents: z.number().int().nonnegative(),
+  shippingFeeCents: z.number().int().nonnegative().optional(),
+  fulfillmentMethod: z.enum(["pickup", "shipping"]).optional()
 });
 
 export async function POST(request: NextRequest) {
@@ -36,7 +39,11 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = createSupabaseAdminClient();
-  const { promoCode, subtotalCents } = payload.data;
+  const { subtotalCents } = payload.data;
+  const requestedCodes = normalizeRequestedPromoCodes({
+    promoCode: payload.data.promoCode,
+    promoCodes: payload.data.promoCodes
+  });
   const storeSlug = await resolveStoreSlugFromRequestAsync(request);
   if (!storeSlug) {
     return NextResponse.json({ error: "Store context is required." }, { status: 400 });
@@ -56,47 +63,49 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Store not found or inactive." }, { status: 404 });
   }
 
-  const { data: promotion, error: promotionError } = await supabase
-    .from("promotions")
-    .select("code,discount_type,discount_value,min_subtotal_cents,max_redemptions,times_redeemed,starts_at,ends_at,is_active")
+  const { data: checkoutSettings, error: checkoutSettingsError } = await supabase
+    .from("store_settings")
+    .select("checkout_max_promo_codes")
     .eq("store_id", store.id)
-    .eq("code", promoCode.toUpperCase())
-    .maybeSingle();
+    .maybeSingle<{ checkout_max_promo_codes: number | null }>();
+
+  if (checkoutSettingsError) {
+    return NextResponse.json({ error: checkoutSettingsError.message }, { status: 500 });
+  }
+
+  const { data: promotions, error: promotionError } = await supabase
+    .from("promotions")
+    .select("id,code,discount_type,discount_value,min_subtotal_cents,max_redemptions,per_customer_redemption_limit,times_redeemed,starts_at,ends_at,is_active,is_stackable")
+    .eq("store_id", store.id)
+    .in("code", requestedCodes);
 
   if (promotionError) {
     return NextResponse.json({ error: promotionError.message }, { status: 500 });
   }
 
-  if (!promotion || !promotion.is_active) {
-    return NextResponse.json({ error: "Promo code is invalid or inactive." }, { status: 400 });
-  }
+  const promotionsByCode = new Map((promotions ?? []).map((promotion) => [promotion.code, promotion]));
 
-  const now = Date.now();
-  if (promotion.starts_at && new Date(promotion.starts_at).getTime() > now) {
-    return NextResponse.json({ error: "Promo code is not active yet." }, { status: 400 });
+  let promotionApplication;
+  try {
+    promotionApplication = await applyPromotionSequence({
+      requestedCodes,
+      promotionsByCode,
+      subtotalCents,
+      shippingFeeCents: payload.data.shippingFeeCents ?? 0,
+      maxPromoCodes: checkoutSettings?.checkout_max_promo_codes ?? 1,
+      allowShippingPromotions: (payload.data.fulfillmentMethod ?? "shipping") === "shipping"
+    });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to apply promo code." }, { status: 400 });
   }
-
-  if (promotion.ends_at && new Date(promotion.ends_at).getTime() < now) {
-    return NextResponse.json({ error: "Promo code has expired." }, { status: 400 });
-  }
-
-  if (promotion.max_redemptions !== null && promotion.times_redeemed >= promotion.max_redemptions) {
-    return NextResponse.json({ error: "Promo code redemption limit reached." }, { status: 400 });
-  }
-
-  if (subtotalCents < promotion.min_subtotal_cents) {
-    return NextResponse.json(
-      { error: `Promo requires minimum subtotal of $${(promotion.min_subtotal_cents / 100).toFixed(2)}.` },
-      { status: 400 }
-    );
-  }
-
-  const discountCents = calculateDiscountCents(subtotalCents, promotion);
-  const discountedTotalCents = Math.max(0, subtotalCents - discountCents);
 
   return NextResponse.json({
-    promoCode: promotion.code,
-    discountCents,
-    discountedTotalCents
+    promoCode: requestedCodes[requestedCodes.length - 1] ?? null,
+    promoCodes: promotionApplication.appliedPromotions.map((promotion) => promotion.code),
+    promotionType: promotionApplication.appliedPromotions[promotionApplication.appliedPromotions.length - 1]?.discountType ?? null,
+    discountCents: promotionApplication.itemDiscountCents,
+    shippingDiscountCents: promotionApplication.shippingDiscountCents,
+    effectiveShippingFeeCents: promotionApplication.effectiveShippingFeeCents,
+    discountedTotalCents: promotionApplication.discountedTotalCents
   });
 }

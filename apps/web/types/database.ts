@@ -250,6 +250,7 @@ export type StoreSettingsRecord = {
   checkout_flat_rate_shipping_fee_cents: number;
   checkout_allow_order_note: boolean;
   checkout_order_note_prompt: string | null;
+  checkout_max_promo_codes: number;
   created_at: string;
   updated_at: string;
 };
@@ -779,7 +780,7 @@ export type InventoryMovementRecord = {
   created_at: string;
 };
 
-export type PromotionDiscountType = "percent" | "fixed";
+export type PromotionDiscountType = "percent" | "fixed" | "free_shipping";
 
 export type PromotionRecord = {
   id: string;
@@ -794,6 +795,7 @@ export type PromotionRecord = {
   starts_at: string | null;
   ends_at: string | null;
   is_active: boolean;
+  is_stackable: boolean;
   created_at: string;
   updated_at: string;
 };

@@ -77,7 +77,8 @@ export default async function StorefrontSlugProductDetailPage({ params }: PagePr
     }
   }
 
-  const defaultVariant = product.product_variants.find((variant) => variant.is_default) ?? product.product_variants[0] ?? null;
+  const activeVariants = product.product_variants.filter((variant) => variant.status === "active");
+  const defaultVariant = activeVariants.find((variant) => variant.is_default) ?? activeVariants[0] ?? product.product_variants[0] ?? null;
   const productImage = (defaultVariant?.image_urls?.[0] ?? defaultVariant?.group_image_urls?.[0] ?? product.image_urls?.[0] ?? null) as string | null;
   const productSchema: Record<string, unknown> = {
     "@context": "https://schema.org",

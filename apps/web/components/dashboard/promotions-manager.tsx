@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,7 @@ import { SectionCard } from "@/components/ui/section-card";
 import { Select } from "@/components/ui/select";
 import { StatusChip } from "@/components/ui/status-chip";
 import { notify } from "@/lib/feedback/toast";
+import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
 import type { PromotionRecord } from "@/types/database";
 
 type PromotionListItem = Pick<
@@ -27,11 +29,13 @@ type PromotionListItem = Pick<
   | "starts_at"
   | "ends_at"
   | "is_active"
+  | "is_stackable"
   | "created_at"
 >;
 
 type PromotionsManagerProps = {
   initialPromotions: PromotionListItem[];
+  initialMaxPromoCodes: number;
 };
 
 type PromotionResponse = {
@@ -52,6 +56,7 @@ type PromotionDraft = {
   maxRedemptionsValue: string;
   perCustomerCapMode: PerCustomerCapMode;
   perCustomerCapValue: string;
+  isStackable: boolean;
 };
 
 function createEmptyDraft(): PromotionDraft {
@@ -63,7 +68,8 @@ function createEmptyDraft(): PromotionDraft {
     maxRedemptionsMode: "unlimited",
     maxRedemptionsValue: "",
     perCustomerCapMode: "unlimited",
-    perCustomerCapValue: ""
+    perCustomerCapValue: "",
+    isStackable: false
   };
 }
 
@@ -85,12 +91,21 @@ function promotionToDraft(promotion: PromotionListItem): PromotionDraft {
     perCustomerCapValue:
       promotion.per_customer_redemption_limit === null || promotion.per_customer_redemption_limit === 1
         ? ""
-        : String(promotion.per_customer_redemption_limit)
+        : String(promotion.per_customer_redemption_limit),
+    isStackable: Boolean(promotion.is_stackable)
   };
 }
 
 function formatDiscount(promotion: PromotionListItem) {
-  return promotion.discount_type === "percent" ? `${promotion.discount_value}%` : `$${(promotion.discount_value / 100).toFixed(2)}`;
+  if (promotion.discount_type === "percent") {
+    return `${promotion.discount_value}%`;
+  }
+
+  if (promotion.discount_type === "free_shipping") {
+    return "Free shipping";
+  }
+
+  return `$${(promotion.discount_value / 100).toFixed(2)}`;
 }
 
 function formatGlobalCap(limit: number | null) {
@@ -122,16 +137,25 @@ function serializeDraft(draft: PromotionDraft) {
     code: draft.code.trim().toUpperCase(),
     discountType: draft.discountType,
     discountValue:
-      draft.discountType === "percent" ? Number.parseInt(draft.discountValue, 10) : Math.round(Number(draft.discountValue) * 100),
+      draft.discountType === "free_shipping"
+        ? 0
+        : draft.discountType === "percent"
+          ? Number.parseInt(draft.discountValue, 10)
+          : Math.round(Number(draft.discountValue) * 100),
     minSubtotalCents: Math.round(Number(draft.minSubtotalDollars) * 100),
     maxRedemptions,
     perCustomerRedemptionLimit,
-    isActive: true
+    isActive: true,
+    isStackable: draft.isStackable
   };
 }
 
-export function PromotionsManager({ initialPromotions }: PromotionsManagerProps) {
+export function PromotionsManager({ initialPromotions, initialMaxPromoCodes }: PromotionsManagerProps) {
+  const pathname = usePathname();
+  const storeSlug = getStoreSlugFromDashboardPathname(pathname);
   const [promotions, setPromotions] = useState(initialPromotions);
+  const [maxPromoCodes, setMaxPromoCodes] = useState(initialMaxPromoCodes);
+  const [savingMaxPromoCodes, setSavingMaxPromoCodes] = useState(false);
   const [isFlyoutOpen, setIsFlyoutOpen] = useState(false);
   const [editingPromotionId, setEditingPromotionId] = useState<string | null>(null);
   const [draft, setDraft] = useState<PromotionDraft>(createEmptyDraft());
@@ -168,6 +192,26 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
     setIsFlyoutOpen(true);
   }
 
+  async function saveMaxPromoCodes() {
+    setSavingMaxPromoCodes(true);
+    setListError(null);
+
+    const response = await fetch(buildStoreScopedApiPath("/api/stores/settings", storeSlug), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ checkoutMaxPromoCodes: maxPromoCodes })
+    });
+    const payload = (await response.json().catch(() => ({}))) as { error?: string };
+    setSavingMaxPromoCodes(false);
+
+    if (!response.ok) {
+      setListError(payload.error ?? "Unable to save promo code limit.");
+      return;
+    }
+
+    notify.success("Promo code limit updated.");
+  }
+
   async function submitPromotion(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -175,7 +219,7 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
     setListError(null);
 
     const payload = serializeDraft(draft);
-    const response = await fetch("/api/promotions", {
+    const response = await fetch(buildStoreScopedApiPath("/api/promotions", storeSlug), {
       method: isEditMode ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(
@@ -208,7 +252,7 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
   async function toggleActive(promotionId: string, isActive: boolean) {
     setListError(null);
 
-    const response = await fetch("/api/promotions", {
+    const response = await fetch(buildStoreScopedApiPath("/api/promotions", storeSlug), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ promotionId, isActive: !isActive })
@@ -228,7 +272,7 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
   async function removePromotion(promotionId: string) {
     setListError(null);
 
-    const response = await fetch("/api/promotions", {
+    const response = await fetch(buildStoreScopedApiPath("/api/promotions", storeSlug), {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ promotionId })
@@ -259,6 +303,22 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
     >
       <div className="space-y-4">
         <AppAlert variant="error" message={listError} />
+        <div className="rounded-md border border-border bg-white p-3">
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+            <FormField label="Max promo codes per order" description="Control how many promo codes customers can combine at checkout.">
+              <Input
+                type="number"
+                min={1}
+                max={10}
+                value={maxPromoCodes}
+                onChange={(event) => setMaxPromoCodes(Math.min(10, Math.max(1, Number.parseInt(event.target.value || "1", 10))))}
+              />
+            </FormField>
+            <Button type="button" variant="outline" onClick={() => void saveMaxPromoCodes()} disabled={savingMaxPromoCodes}>
+              {savingMaxPromoCodes ? "Saving..." : "Save limit"}
+            </Button>
+          </div>
+        </div>
         <ul className="space-y-2">
           {promotions.length === 0 ? (
             <li className="rounded-md border border-border bg-white px-3 py-2 text-sm text-muted-foreground">No promotions yet.</li>
@@ -270,6 +330,7 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
                 <span className="text-xs text-muted-foreground">Min ${(promo.min_subtotal_cents / 100).toFixed(2)}</span>
                 <span className="text-xs text-muted-foreground">{formatGlobalCap(promo.max_redemptions)}</span>
                 <span className="text-xs text-muted-foreground">{formatPerCustomerCap(promo.per_customer_redemption_limit)}</span>
+                <span className="text-xs text-muted-foreground">{promo.is_stackable ? "Stackable" : "Exclusive"}</span>
                 <span className="text-xs text-muted-foreground">Used {promo.times_redeemed}</span>
                 <StatusChip label={promo.is_active ? "active" : "inactive"} tone={promo.is_active ? "success" : "neutral"} />
                 <RowActions>
@@ -319,24 +380,39 @@ export function PromotionsManager({ initialPromotions }: PromotionsManagerProps)
           <FormField label="Promo code" description="What customers enter at checkout. Letters and numbers only works best.">
             <Input required placeholder="WELCOME10" value={draft.code} onChange={(event) => setDraft((current) => ({ ...current, code: event.target.value.toUpperCase() }))} />
           </FormField>
-          <FormField label="Discount type" description="Choose a percent off or a fixed dollar amount off.">
+          <FormField label="Discount type" description="Choose a percent off, a fixed dollar amount off, or free shipping.">
             <Select value={draft.discountType} onChange={(event) => setDraft((current) => ({ ...current, discountType: event.target.value as PromotionRecord["discount_type"] }))}>
               <option value="percent">Percent</option>
               <option value="fixed">Fixed amount ($)</option>
+              <option value="free_shipping">Free shipping</option>
             </Select>
           </FormField>
-          <FormField
-            label={draft.discountType === "percent" ? "Discount percent" : "Discount amount (USD)"}
-            description={draft.discountType === "percent" ? "Example: 10 for 10% off." : "Example: 5.00 for $5 off."}
-          >
-            <Input
-              required
-              inputMode="numeric"
-              placeholder={draft.discountType === "percent" ? "10" : "5.00"}
-              value={draft.discountValue}
-              onChange={(event) => setDraft((current) => ({ ...current, discountValue: event.target.value }))}
+          {draft.discountType === "free_shipping" ? (
+            <FormField label="Discount value" description="Free shipping promotions waive the shipping fee at checkout.">
+              <Input value="Free shipping" readOnly disabled />
+            </FormField>
+          ) : (
+            <FormField
+              label={draft.discountType === "percent" ? "Discount percent" : "Discount amount (USD)"}
+              description={draft.discountType === "percent" ? "Example: 10 for 10% off." : "Example: 5.00 for $5 off."}
+            >
+              <Input
+                required
+                inputMode="numeric"
+                placeholder={draft.discountType === "percent" ? "10" : "5.00"}
+                value={draft.discountValue}
+                onChange={(event) => setDraft((current) => ({ ...current, discountValue: event.target.value }))}
+              />
+            </FormField>
+          )}
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={draft.isStackable}
+              onChange={(event) => setDraft((current) => ({ ...current, isStackable: event.target.checked }))}
             />
-          </FormField>
+            Allow this promo code to stack with other promo codes
+          </label>
           <FormField label="Minimum subtotal (USD)" description="Set to 0.00 if there is no minimum order requirement.">
             <Input
               required
