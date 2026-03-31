@@ -4,6 +4,7 @@ import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
 import { getStripeClient } from "@/lib/stripe/server";
 import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 function resolveAppUrlForRequest(request: NextRequest): string {
@@ -21,6 +22,15 @@ function isPlaceholderStripeKey(secretKey: string | undefined): boolean {
   return secretKey.includes("placeholder") || secretKey.includes("local_placeholder");
 }
 
+function isMissingStoresTaxResetColumn(error: { code?: string; message?: string } | null) {
+  return (
+    isMissingColumnInSchemaCache(error, "tax_collection_mode") ||
+    isMissingColumnInSchemaCache(error, "tax_compliance_acknowledged_at") ||
+    isMissingColumnInSchemaCache(error, "tax_compliance_acknowledged_by_user_id") ||
+    isMissingColumnInSchemaCache(error, "tax_compliance_note")
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
     const trustedOriginResponse = enforceTrustedOrigin(request);
@@ -30,6 +40,7 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = await createSupabaseServerClient();
+    const admin = createSupabaseAdminClient();
     const {
       data: { user }
     } = await supabase.auth.getUser();
@@ -80,14 +91,19 @@ export async function POST(request: NextRequest) {
 
       accountId = account.id;
 
-      const { error: updateError } = await supabase
+      const persistedStore = await admin
         .from("stores")
         .update({ stripe_account_id: accountId })
         .eq("id", bundle.store.id)
-        .eq("owner_user_id", user.id);
+        .select("id")
+        .maybeSingle();
 
-      if (updateError) {
-        return NextResponse.json({ error: updateError.message }, { status: 500 });
+      if (persistedStore.error) {
+        return NextResponse.json({ error: persistedStore.error.message }, { status: 500 });
+      }
+
+      if (!persistedStore.data) {
+        return NextResponse.json({ error: "Unable to save Stripe account for store." }, { status: 500 });
       }
     }
 
@@ -114,6 +130,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     const supabase = await createSupabaseServerClient();
+    const admin = createSupabaseAdminClient();
     const {
       data: { user }
     } = await supabase.auth.getUser();
@@ -128,7 +145,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "No store found for account" }, { status: 404 });
     }
 
-    const resetWithTaxColumns = await supabase
+    const resetWithTaxColumns = await admin
       .from("stores")
       .update({
         stripe_account_id: null,
@@ -141,8 +158,8 @@ export async function DELETE(request: NextRequest) {
       .select("id")
       .maybeSingle();
 
-    if (resetWithTaxColumns.error && isMissingColumnInSchemaCache(resetWithTaxColumns.error, "tax_collection_mode")) {
-      const legacyReset = await supabase
+    if (resetWithTaxColumns.error && isMissingStoresTaxResetColumn(resetWithTaxColumns.error)) {
+      const legacyReset = await admin
         .from("stores")
         .update({ stripe_account_id: null })
         .eq("id", bundle.store.id)
