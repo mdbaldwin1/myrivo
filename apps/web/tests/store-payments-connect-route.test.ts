@@ -5,6 +5,17 @@ const enforceTrustedOriginMock = vi.fn();
 const getUserMock = vi.fn();
 const getOwnedStoreBundleForOptionalSlugMock = vi.fn();
 const storesUpdateEqMock = vi.fn();
+
+vi.mock("@/lib/supabase/admin", () => ({
+  createSupabaseAdminClient: vi.fn(() => ({
+    from: vi.fn(() => ({
+      update: vi.fn(() => ({
+        eq: (...args: unknown[]) => storesUpdateEqMock(...args)
+      }))
+    }))
+  }))
+}));
+
 vi.mock("@/lib/security/request-origin", () => ({
   enforceTrustedOrigin: (...args: unknown[]) => enforceTrustedOriginMock(...args)
 }));
@@ -13,12 +24,7 @@ vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient: vi.fn(async () => ({
     auth: {
       getUser: (...args: unknown[]) => getUserMock(...args)
-    },
-    from: vi.fn(() => ({
-      update: vi.fn(() => ({
-        eq: (...args: unknown[]) => storesUpdateEqMock(...args)
-      }))
-    }))
+    }
   }))
 }));
 
@@ -124,6 +130,41 @@ describe("store payments connect route", () => {
           maybeSingle: vi.fn(async () => ({
             error: {
               message: "column stores.tax_collection_mode does not exist"
+            }
+          }))
+        }))
+      })
+      .mockReturnValueOnce({
+        select: vi.fn(() => ({
+          maybeSingle: vi.fn(async () => ({
+            error: null,
+            data: { id: "store-1" }
+          }))
+        }))
+      });
+
+    const route = await import("@/app/api/stores/payments/connect/route");
+    const response = await route.DELETE(
+      new NextRequest("http://localhost:3000/api/stores/payments/connect?storeSlug=test-store", {
+        method: "DELETE",
+        headers: {
+          origin: "http://localhost:3000",
+          host: "localhost:3000"
+        }
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(storesUpdateEqMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("falls back when another tax reset column is missing from the local schema", async () => {
+    storesUpdateEqMock
+      .mockReturnValueOnce({
+        select: vi.fn(() => ({
+          maybeSingle: vi.fn(async () => ({
+            error: {
+              message: "column stores.tax_compliance_acknowledged_by_user_id does not exist"
             }
           }))
         }))
