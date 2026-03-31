@@ -4,9 +4,10 @@ import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getOwnedStoreBundleForOptionalSlug } from "@/lib/stores/owner-store";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { FUNCTION_SAFE_IMAGE_UPLOAD_MAX_BYTES, FUNCTION_SAFE_IMAGE_UPLOAD_MAX_LABEL } from "@/lib/uploads/image-upload-limits";
 
 const BUCKET = "rich-text-images";
-const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_FILE_SIZE_BYTES = FUNCTION_SAFE_IMAGE_UPLOAD_MAX_BYTES;
 const ALLOWED_MIME = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml", "image/gif"]);
 
 function extensionForMime(mime: string): string {
@@ -36,7 +37,7 @@ async function ensureBucket() {
 
   const { error: createBucketError } = await admin.storage.createBucket(BUCKET, {
     public: true,
-    fileSizeLimit: "5MB",
+    fileSizeLimit: FUNCTION_SAFE_IMAGE_UPLOAD_MAX_LABEL,
     allowedMimeTypes: [...ALLOWED_MIME]
   });
 
@@ -74,7 +75,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (file.size > MAX_FILE_SIZE_BYTES) {
-    return NextResponse.json({ error: "Image must be 5MB or smaller." }, { status: 400 });
+    return NextResponse.json({ error: `Image must be ${FUNCTION_SAFE_IMAGE_UPLOAD_MAX_LABEL} or smaller.` }, { status: 400 });
   }
 
   const bundle = await getOwnedStoreBundleForOptionalSlug(user.id, storeSlug, "staff");

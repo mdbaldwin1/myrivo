@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashboardFormActionBar } from "@/components/dashboard/dashboard-form-action-bar";
+import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FormField } from "@/components/ui/form-field";
@@ -73,6 +74,11 @@ type PickupScheduleDraft = {
   closesAt: string;
 };
 
+type PickupConfigurationIssue = {
+  severity: "error" | "warning";
+  message: string;
+};
+
 const DAY_OPTIONS = [
   { value: 0, label: "Sunday" },
   { value: 1, label: "Monday" },
@@ -128,6 +134,74 @@ function areShippingCheckoutSettingsEqual(left: ShippingCheckoutSettings | null,
     (left.checkout_flat_rate_shipping_label ?? "") === (right.checkout_flat_rate_shipping_label ?? "") &&
     left.checkout_flat_rate_shipping_fee_cents === right.checkout_flat_rate_shipping_fee_cents
   );
+}
+
+function getPickupConfigurationIssues({
+  pickupSettings,
+  checkoutSettings,
+  locations,
+  hours,
+  hideBuilderOfferSettings
+}: {
+  pickupSettings: PickupSettings | null;
+  checkoutSettings: CheckoutPickupSettings | null;
+  locations: PickupLocation[];
+  hours: PickupHoursRow[];
+  hideBuilderOfferSettings: boolean;
+}) {
+  const issues: PickupConfigurationIssue[] = [];
+
+  if (!pickupSettings) {
+    return issues;
+  }
+
+  const activeLocations = locations.filter((location) => location.is_active);
+  const activeLocationIds = new Set(activeLocations.map((location) => location.id));
+  const locationsWithCoordinates = activeLocations.filter(
+    (location) => Number.isFinite(location.latitude) && Number.isFinite(location.longitude)
+  );
+  const locationsWithHours = new Set(hours.filter((row) => activeLocationIds.has(row.pickup_location_id)).map((row) => row.pickup_location_id));
+
+  if (!hideBuilderOfferSettings && checkoutSettings?.checkout_enable_local_pickup && !pickupSettings.pickup_enabled) {
+    issues.push({
+      severity: "warning",
+      message: "Checkout is set to offer pickup, but pickup availability rules are turned off."
+    });
+  }
+
+  if (!pickupSettings.pickup_enabled) {
+    return issues;
+  }
+
+  if (activeLocations.length === 0) {
+    issues.push({
+      severity: "error",
+      message: "Add at least one active pickup location before enabling pickup at checkout."
+    });
+  }
+
+  if (locationsWithCoordinates.length === 0) {
+    issues.push({
+      severity: "error",
+      message: "Add latitude and longitude to at least one active pickup location so buyers can qualify for pickup."
+    });
+  }
+
+  if (pickupSettings.show_pickup_times && locationsWithHours.size === 0) {
+    issues.push({
+      severity: "error",
+      message: "Add pickup hours for at least one active location or turn off pickup times."
+    });
+  }
+
+  if (pickupSettings.show_pickup_times && locationsWithHours.size > 0 && locationsWithHours.size < activeLocations.length) {
+    issues.push({
+      severity: "warning",
+      message: "Some active pickup locations do not have pickup hours yet, so they will not offer time slots."
+    });
+  }
+
+  return issues;
 }
 
 type PickupSettingsManagerProps = {
@@ -329,6 +403,9 @@ export function PickupSettingsManager({
       if (showShippingOfferSettings || (!hideBuilderOfferSettings && checkoutSettings)) {
         const shippingFeeCents = Number.parseInt(String(shippingSettings?.checkout_flat_rate_shipping_fee_cents ?? 0), 10);
         const localPickupFeeCents = Number.parseInt(String(checkoutSettings?.checkout_local_pickup_fee_cents ?? 0), 10);
+        const effectiveCheckoutEnableLocalPickup = pickupSettings.pickup_enabled
+          ? (checkoutSettings?.checkout_enable_local_pickup ?? false)
+          : false;
 
         if (!Number.isInteger(shippingFeeCents) || shippingFeeCents < 0) {
           setError("Shipping fee must be a non-negative integer amount in cents.");
@@ -355,7 +432,7 @@ export function PickupSettingsManager({
               : {}),
             ...(!hideBuilderOfferSettings && checkoutSettings
               ? {
-                  checkoutEnableLocalPickup: checkoutSettings.checkout_enable_local_pickup,
+                  checkoutEnableLocalPickup: effectiveCheckoutEnableLocalPickup,
                   checkoutLocalPickupLabel: checkoutSettings.checkout_local_pickup_label?.trim() || null,
                   checkoutLocalPickupFeeCents: localPickupFeeCents
                 }
@@ -395,7 +472,7 @@ export function PickupSettingsManager({
         if (!hideBuilderOfferSettings && checkoutSettings) {
           nextCheckout = {
             checkout_enable_local_pickup:
-              settingsPayload.settings?.checkout_enable_local_pickup ?? checkoutSettings.checkout_enable_local_pickup,
+              settingsPayload.settings?.checkout_enable_local_pickup ?? effectiveCheckoutEnableLocalPickup,
             checkout_local_pickup_label:
               settingsPayload.settings?.checkout_local_pickup_label ?? checkoutSettings.checkout_local_pickup_label,
             checkout_local_pickup_fee_cents:
@@ -623,6 +700,19 @@ export function PickupSettingsManager({
     () => hours.filter((entry) => entry.pickup_location_id === selectedHoursLocationId),
     [hours, selectedHoursLocationId]
   );
+  const pickupConfigurationIssues = useMemo(
+    () =>
+      getPickupConfigurationIssues({
+        pickupSettings,
+        checkoutSettings,
+        locations,
+        hours,
+        hideBuilderOfferSettings
+      }),
+    [checkoutSettings, hideBuilderOfferSettings, hours, locations, pickupSettings]
+  );
+  const pickupErrorCount = pickupConfigurationIssues.filter((issue) => issue.severity === "error").length;
+  const pickupWarningCount = pickupConfigurationIssues.filter((issue) => issue.severity === "warning").length;
   const showStorefrontPickupSettings = !hideBuilderOfferSettings && checkoutSettings;
   const saveLabel = showShippingOfferSettings ? "Save fulfillment settings" : "Save pickup settings";
 
@@ -694,6 +784,34 @@ export function PickupSettingsManager({
                   : "Configure pickup availability, buyer rules, locations, schedule, and blackout windows."
               }
             >
+              <div className="space-y-3">
+                {pickupConfigurationIssues.length > 0 ? (
+                  <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/70 p-3">
+                    <AppAlert
+                      variant={pickupErrorCount > 0 ? "warning" : "info"}
+                      title="Pickup readiness"
+                      message={
+                        pickupErrorCount > 0
+                          ? `Pickup is missing ${pickupErrorCount} required ${pickupErrorCount === 1 ? "step" : "steps"} before it can work reliably at checkout.`
+                          : `Pickup has ${pickupWarningCount} recommended ${pickupWarningCount === 1 ? "adjustment" : "adjustments"} to review.`
+                      }
+                    />
+                    <ul className="space-y-1 pl-5 text-sm text-amber-900">
+                      {pickupConfigurationIssues.map((issue) => (
+                        <li key={issue.message} className="list-disc">
+                          {issue.message}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <AppAlert
+                    variant="success"
+                    title="Pickup readiness"
+                    message="Pickup has the core pieces needed for checkout: an active location, map coordinates, and pickup hours."
+                  />
+                )}
+
               <div className="grid gap-3 sm:grid-cols-2">
                 {showStorefrontPickupSettings ? (
                   <>
@@ -910,8 +1028,8 @@ export function PickupSettingsManager({
                         <Input value={newLocationCity} onChange={(event) => setNewLocationCity(event.target.value)} placeholder="City" />
                         <Input value={newLocationState} onChange={(event) => setNewLocationState(event.target.value)} placeholder="State/Region" />
                         <Input value={newLocationPostal} onChange={(event) => setNewLocationPostal(event.target.value)} placeholder="Postal code" />
-                        <Input value={newLocationLat} onChange={(event) => setNewLocationLat(event.target.value)} placeholder="Latitude (optional)" />
-                        <Input value={newLocationLng} onChange={(event) => setNewLocationLng(event.target.value)} placeholder="Longitude (optional)" />
+                        <Input value={newLocationLat} onChange={(event) => setNewLocationLat(event.target.value)} placeholder="Latitude" />
+                        <Input value={newLocationLng} onChange={(event) => setNewLocationLng(event.target.value)} placeholder="Longitude" />
                       </div>
                       <Button
                         type="button"
@@ -931,6 +1049,12 @@ export function PickupSettingsManager({
                               <p className="text-xs text-muted-foreground">
                                 {location.address_line1}, {location.city}, {location.state_region} {location.postal_code}
                               </p>
+                              {(!Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)) ? (
+                                <p className="text-xs text-amber-700">Coordinates missing</p>
+                              ) : null}
+                              {pickupSettings.show_pickup_times && !hours.some((entry) => entry.pickup_location_id === location.id) ? (
+                                <p className="text-xs text-amber-700">Pickup hours missing</p>
+                              ) : null}
                             </div>
                             <Button type="button" variant="ghost" size="sm" onClick={() => void removeLocation(location.id)} disabled={saving}>
                               Remove
@@ -1058,6 +1182,7 @@ export function PickupSettingsManager({
                         ))}
                       </ul>
                     </div>
+              </div>
               </div>
             </SectionCard>
           </form>

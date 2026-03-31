@@ -22,6 +22,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { setAtPath, useStoreExperienceSection } from "@/components/dashboard/use-store-experience-section";
 import { Button } from "@/components/ui/button";
 import { buildStoreScopedApiPath, getStoreSlugFromDashboardPathname } from "@/lib/routes/store-workspace";
+import { FUNCTION_SAFE_IMAGE_UPLOAD_MAX_LABEL } from "@/lib/uploads/image-upload-limits";
+import { prepareImageUploadFile } from "@/lib/uploads/prepare-image-upload-file";
 
 type ContentWorkspaceAboutFormProps = {
   header?: ReactNode;
@@ -107,7 +109,7 @@ function AboutSectionImagePicker({ imageUrl, disabled = false, uploading = false
         {imageUrl ? "Click tile to replace." : "Click tile to upload."}
       </p>
       <p className="text-xs text-muted-foreground">
-        PNG, JPG, WEBP, or SVG up to 5MB.
+        PNG, JPG, WEBP, or SVG up to {FUNCTION_SAFE_IMAGE_UPLOAD_MAX_LABEL}. Large photos are optimized automatically.
       </p>
       <input
         ref={inputRef}
@@ -151,11 +153,11 @@ export function ContentWorkspaceAboutForm({ header }: ContentWorkspaceAboutFormP
     setImageUploadError(null);
     setImageUploadMessage(null);
 
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("folder", "about");
-
     try {
+      const preparedFile = await prepareImageUploadFile(file);
+      const formData = new FormData();
+      formData.append("file", preparedFile);
+      formData.append("folder", "about");
       const response = await fetch(buildStoreScopedApiPath("/api/store-experience/image", storeSlug), {
         method: "POST",
         body: formData

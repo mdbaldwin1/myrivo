@@ -8,6 +8,7 @@ import { ensureStorefrontSettingsDraft } from "@/components/dashboard/storefront
 import { Button } from "@/components/ui/button";
 import { notify } from "@/lib/feedback/toast";
 import { buildStoreScopedApiPath } from "@/lib/routes/store-workspace";
+import { prepareImageUploadFile } from "@/lib/uploads/prepare-image-upload-file";
 import { cn } from "@/lib/utils";
 
 type StoreExperienceImageUploadResponse = {
@@ -43,10 +44,11 @@ export function StorefrontStudioEditableWelcomePopupImage({
       return;
     }
 
+    const preparedFile = await prepareImageUploadFile(file);
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append("file", preparedFile);
     formData.append("folder", "welcome-popup");
-    const previewUrl = URL.createObjectURL(file);
+    const previewUrl = URL.createObjectURL(preparedFile);
     setOptimisticImageUrl(previewUrl);
     setIsUploading(true);
 

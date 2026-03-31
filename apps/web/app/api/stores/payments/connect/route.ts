@@ -138,20 +138,28 @@ export async function DELETE(request: NextRequest) {
         tax_compliance_note: null
       })
       .eq("id", bundle.store.id)
-      .eq("owner_user_id", user.id);
+      .select("id")
+      .maybeSingle();
 
     if (resetWithTaxColumns.error && isMissingColumnInSchemaCache(resetWithTaxColumns.error, "tax_collection_mode")) {
       const legacyReset = await supabase
         .from("stores")
         .update({ stripe_account_id: null })
         .eq("id", bundle.store.id)
-        .eq("owner_user_id", user.id);
+        .select("id")
+        .maybeSingle();
 
       if (legacyReset.error) {
         return NextResponse.json({ error: legacyReset.error.message }, { status: 500 });
       }
+
+      if (!legacyReset.data) {
+        return NextResponse.json({ error: "Unable to clear Stripe setup." }, { status: 500 });
+      }
     } else if (resetWithTaxColumns.error) {
       return NextResponse.json({ error: resetWithTaxColumns.error.message }, { status: 500 });
+    } else if (!resetWithTaxColumns.data) {
+      return NextResponse.json({ error: "Unable to clear Stripe setup." }, { status: 500 });
     }
 
     return NextResponse.json({
