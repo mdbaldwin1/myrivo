@@ -5,6 +5,7 @@ import { requireStorePermission } from "@/lib/auth/authorization";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { normalizeDomainInput } from "@/lib/stores/domain-utils";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const createSchema = z.object({
@@ -70,8 +71,8 @@ export async function POST(request: NextRequest) {
   }
   const token = createVerificationToken();
 
-  const supabase = await createSupabaseServerClient();
-  const { data: storeConfig, error: storeConfigError } = await supabase
+  const admin = createSupabaseAdminClient();
+  const { data: storeConfig, error: storeConfigError } = await admin
     .from("stores")
     .select("white_label_enabled")
     .eq("id", auth.context.storeId)
@@ -85,6 +86,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Enable white-label before adding custom domains." }, { status: 400 });
   }
 
+  const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from("store_domains")
     .insert({

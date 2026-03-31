@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 const requireStorePermissionMock = vi.fn();
 const enforceTrustedOriginMock = vi.fn();
 const serverFromMock = vi.fn();
+const adminFromMock = vi.fn();
 const removeVercelProjectDomainMock = vi.fn();
 const removeResendDomainMock = vi.fn();
 
@@ -21,6 +22,12 @@ vi.mock("@/lib/supabase/server", () => ({
   }))
 }));
 
+vi.mock("@/lib/supabase/admin", () => ({
+  createSupabaseAdminClient: vi.fn(() => ({
+    from: (...args: unknown[]) => adminFromMock(...args)
+  }))
+}));
+
 vi.mock("@/lib/vercel/domains", () => ({
   removeVercelProjectDomain: (...args: unknown[]) => removeVercelProjectDomainMock(...args)
 }));
@@ -34,6 +41,7 @@ beforeEach(() => {
   requireStorePermissionMock.mockReset();
   enforceTrustedOriginMock.mockReset();
   serverFromMock.mockReset();
+  adminFromMock.mockReset();
   removeVercelProjectDomainMock.mockReset();
   removeResendDomainMock.mockReset();
 
@@ -48,7 +56,7 @@ beforeEach(() => {
 
 describe("store domains routes", () => {
   test("POST requires white-label to be enabled before adding domain", async () => {
-    serverFromMock.mockImplementation((table: string) => {
+    adminFromMock.mockImplementation((table: string) => {
       if (table === "stores") {
         return {
           select: vi.fn(() => ({
@@ -63,7 +71,7 @@ describe("store domains routes", () => {
           insert: vi.fn()
         };
       }
-      throw new Error(`Unexpected table ${table}`);
+      throw new Error(`Unexpected admin table ${table}`);
     });
 
     const route = await import("@/app/api/stores/domains/route");
@@ -78,6 +86,7 @@ describe("store domains routes", () => {
 
     expect(response.status).toBe(400);
     expect(payload.error).toContain("Enable white-label");
+    expect(serverFromMock).not.toHaveBeenCalled();
   });
 
   test("PATCH rejects setting unverified domain as primary", async () => {
