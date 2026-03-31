@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { notify } from "@/lib/feedback/toast";
 import { RICH_TEXT_IMAGE_ALIGNMENTS } from "@/lib/rich-text-editor";
+import { prepareImageUploadFile } from "@/lib/uploads/prepare-image-upload-file";
 import { cn } from "@/lib/utils";
 
 export type RichTextEditorImageUploadConfig = {
@@ -89,8 +90,9 @@ export function RichTextEditorImageControl({
     setUploading(true);
 
     try {
+      const preparedFile = await prepareImageUploadFile(selectedFile);
       const formData = new FormData();
-      formData.set("file", selectedFile);
+      formData.set("file", preparedFile);
       formData.set("folder", upload?.folder ?? "rich-text");
       if (upload?.storeSlug) {
         formData.set("storeSlug", upload.storeSlug);

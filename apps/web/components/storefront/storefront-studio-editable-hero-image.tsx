@@ -9,6 +9,7 @@ import { notify } from "@/lib/feedback/toast";
 import { buildStoreScopedApiPath } from "@/lib/routes/store-workspace";
 import { setStorefrontStudioHomeField } from "@/lib/storefront/studio-home-edit";
 import type { HeroImageSize } from "@/lib/theme/storefront-theme";
+import { prepareImageUploadFile } from "@/lib/uploads/prepare-image-upload-file";
 import { cn } from "@/lib/utils";
 
 type StoreExperienceImageUploadResponse = {
@@ -48,10 +49,11 @@ export function StorefrontStudioEditableHeroImage({
       return;
     }
 
+    const preparedFile = await prepareImageUploadFile(file);
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append("file", preparedFile);
     formData.append("folder", "home");
-    const previewUrl = URL.createObjectURL(file);
+    const previewUrl = URL.createObjectURL(preparedFile);
     setOptimisticImageUrl(previewUrl);
     setIsUploading(true);
 

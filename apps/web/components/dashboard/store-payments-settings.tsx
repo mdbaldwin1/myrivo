@@ -111,12 +111,9 @@ export function StorePaymentsSettings() {
     };
 
     try {
-      if (connectInstance) {
-        setPaymentsFlyoutTab("stripe");
-        setPaymentsFlyoutOpen(true);
-        await loadStatus();
-        return;
-      }
+      // Always request a fresh embedded session so stale or failed account sessions
+      // cannot get stuck in component state across retries.
+      setConnectInstance(null);
 
       const initialSession = await createConnectionSession();
       let initialClientSecret = initialSession.clientSecret;
@@ -140,6 +137,8 @@ export function StorePaymentsSettings() {
       setPaymentsFlyoutOpen(true);
       await loadStatus();
     } catch (connectError) {
+      setConnectInstance(null);
+      setPaymentsFlyoutOpen(false);
       setError(connectError instanceof Error ? connectError.message : "Unable to start Stripe setup.");
     } finally {
       setPending(null);

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { notify } from "@/lib/feedback/toast";
 import { buildStoreScopedApiPath } from "@/lib/routes/store-workspace";
 import { moveAboutSection, removeAboutSection, updateAboutSection } from "@/lib/storefront/studio-structure";
+import { prepareImageUploadFile } from "@/lib/uploads/prepare-image-upload-file";
 
 type StorefrontStudioAboutSectionActionsProps = {
   sectionId: string;
@@ -41,11 +42,11 @@ export function StorefrontStudioAboutSectionActions({
   async function uploadImage(file: File) {
     setUploading(true);
 
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("folder", "about");
-
     try {
+      const preparedFile = await prepareImageUploadFile(file);
+      const formData = new FormData();
+      formData.append("file", preparedFile);
+      formData.append("folder", "about");
       const response = await fetch(buildStoreScopedApiPath("/api/store-experience/image", studioDocument.storeSlug), {
         method: "POST",
         body: formData
