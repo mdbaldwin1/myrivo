@@ -347,6 +347,8 @@ export function StorefrontPage(props: StorefrontPageProps) {
 
   const [cart, setCart] = useState<StorefrontCartEntry[]>([]);
   const hasHydratedCartRef = useRef(false);
+  const [addToCartStateByProductId, setAddToCartStateByProductId] = useState<Record<string, "idle" | "adding" | "added">>({});
+  const addToCartResetTimeoutsRef = useRef<Record<string, number>>({});
 
   const [searchQuery, setSearchQuery] = useState("");
   const [availabilityFilter, setAvailabilityFilter] = useState<AvailabilityFilterMode>("all");
@@ -566,35 +568,54 @@ export function StorefrontPage(props: StorefrontPageProps) {
     writeStorefrontCart(valid);
   }, [cart, resolvedProducts]);
 
-  function addToCart(productId: string) {
+  useEffect(() => {
+    const resetTimeouts = addToCartResetTimeoutsRef.current;
+    return () => {
+      for (const timeout of Object.values(resetTimeouts)) {
+        clearTimeout(timeout);
+      }
+    };
+  }, []);
+
+  async function addToCart(productId: string) {
     const product = resolvedProducts.find((entry) => entry.id === productId);
     const variant = product ? getDefaultVariant(product) : null;
     if (!product || !variant) return;
 
+    setAddToCartStateByProductId((current) => ({ ...current, [productId]: "adding" }));
+
     const lineItemKey = `${productId}:${variant.id}`;
-    setCart((current) => {
+    const nextCart = (() => {
+      const current = cart;
       const existing = current.find((item) => `${item.productId}:${item.variantId}` === lineItemKey);
-      const next = existing
+      return existing
         ? current.map((item) =>
           `${item.productId}:${item.variantId}` === lineItemKey ? { ...item, quantity: Math.min(item.quantity + 1, 99) } : item
         )
         : [...current, { productId, variantId: variant.id, quantity: 1 }];
-      analytics?.track({
-        eventType: "add_to_cart",
-        productId,
-        value: buildStorefrontAddToCartValue({
-          variantId: variant.id,
-          quantity: 1,
-          unitPriceCents: variant.price_cents,
-          source: isProductsView ? "products" : "home"
-        })
-      });
-      void syncStorefrontCart(next, resolvedStore.slug, {
-        analyticsSessionId: analytics?.getSessionId() ?? null,
-        attribution: analytics?.getAttributionSnapshot() ?? null
-      });
-      return next;
+    })();
+
+    setCart(nextCart);
+    analytics?.track({
+      eventType: "add_to_cart",
+      productId,
+      value: buildStorefrontAddToCartValue({
+        variantId: variant.id,
+        quantity: 1,
+        unitPriceCents: variant.price_cents,
+        source: isProductsView ? "products" : "home"
+      })
     });
+    await syncStorefrontCart(nextCart, resolvedStore.slug, {
+      analyticsSessionId: analytics?.getSessionId() ?? null,
+      attribution: analytics?.getAttributionSnapshot() ?? null
+    });
+    setAddToCartStateByProductId((current) => ({ ...current, [productId]: "added" }));
+    clearTimeout(addToCartResetTimeoutsRef.current[productId]);
+    addToCartResetTimeoutsRef.current[productId] = window.setTimeout(() => {
+      setAddToCartStateByProductId((current) => ({ ...current, [productId]: "idle" }));
+      delete addToCartResetTimeoutsRef.current[productId];
+    }, 1600);
   }
 
   const shouldShowHomeHero = view === "home" && themeConfig.homeShowHero;
@@ -1416,17 +1437,29 @@ export function StorefrontPage(props: StorefrontPageProps) {
                               ) : null}
                             </div>
                             {themeConfig.productCardShowQuickAdd ? (
+                              (() => {
+                                const addToCartState = addToCartStateByProductId[product.id] ?? "idle";
+                                const addToCartLabel =
+                                  addToCartState === "adding"
+                                    ? copy.home.addingButton
+                                    : addToCartState === "added"
+                                      ? copy.home.addedButton
+                                      : copy.home.addButton;
+
+                                return (
                               <Button
                                 type="button"
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  addToCart(product.id);
+                                  void addToCart(product.id);
                                 }}
-                                disabled={!canQuickAdd}
+                                disabled={!canQuickAdd || addToCartState !== "idle"}
                                 className={cn("h-9 w-full px-3 bg-[var(--storefront-primary)] text-[color:var(--storefront-primary-foreground)] hover:opacity-90 sm:w-auto", buttonRadiusClass)}
                               >
-                                {copy.home.addButton}
+                                {addToCartLabel}
                               </Button>
+                                );
+                              })()
                             ) : null}
                           </div>
                           {themeConfig.productCardShowFeaturedBadge && product.is_featured ? (

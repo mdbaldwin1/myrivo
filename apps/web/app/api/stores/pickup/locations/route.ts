@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireStoreRole } from "@/lib/auth/authorization";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
+import { resolvePickupCoordinatesFromAddress } from "@/lib/pickup/geocode";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -61,6 +62,17 @@ export async function POST(request: NextRequest) {
     return payload.response;
   }
 
+  const resolvedCoordinates =
+    payload.data.latitude === null || payload.data.longitude === null
+      ? await resolvePickupCoordinatesFromAddress({
+          addressLine1: payload.data.addressLine1,
+          city: payload.data.city,
+          stateRegion: payload.data.stateRegion,
+          postalCode: payload.data.postalCode,
+          countryCode: payload.data.countryCode
+        })
+      : null;
+
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from("pickup_locations")
@@ -73,8 +85,8 @@ export async function POST(request: NextRequest) {
       state_region: payload.data.stateRegion,
       postal_code: payload.data.postalCode,
       country_code: payload.data.countryCode,
-      latitude: payload.data.latitude ?? null,
-      longitude: payload.data.longitude ?? null,
+      latitude: payload.data.latitude ?? resolvedCoordinates?.latitude ?? null,
+      longitude: payload.data.longitude ?? resolvedCoordinates?.longitude ?? null,
       notes: payload.data.notes ?? null,
       is_active: payload.data.isActive
     })

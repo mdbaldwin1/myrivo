@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 
 const enforceTrustedOriginMock = vi.fn();
 const logAuditEventMock = vi.fn();
-const getOwnedStoreBundleMock = vi.fn();
+const getOwnedStoreBundleForOptionalSlugMock = vi.fn();
 
 let insertedPromotionPayload: Record<string, unknown> | null = null;
 let updatedPromotionPayload: Record<string, unknown> | null = null;
@@ -83,7 +83,7 @@ vi.mock("@/lib/audit/log", () => ({
 }));
 
 vi.mock("@/lib/stores/owner-store", () => ({
-  getOwnedStoreBundle: (...args: unknown[]) => getOwnedStoreBundleMock(...args)
+  getOwnedStoreBundleForOptionalSlug: (...args: unknown[]) => getOwnedStoreBundleForOptionalSlugMock(...args)
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -95,7 +95,7 @@ beforeEach(() => {
   updatedPromotionPayload = null;
   enforceTrustedOriginMock.mockReset();
   logAuditEventMock.mockReset();
-  getOwnedStoreBundleMock.mockReset();
+  getOwnedStoreBundleForOptionalSlugMock.mockReset();
   supabaseMock.auth.getUser.mockReset();
   supabaseMock.from.mockClear();
 
@@ -103,7 +103,7 @@ beforeEach(() => {
   supabaseMock.auth.getUser.mockResolvedValue({
     data: { user: { id: "user-1" } }
   });
-  getOwnedStoreBundleMock.mockResolvedValue({
+  getOwnedStoreBundleForOptionalSlugMock.mockResolvedValue({
     store: { id: "store-1", slug: "demo-store" },
     role: "owner"
   });
