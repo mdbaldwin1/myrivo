@@ -281,8 +281,9 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
     runtime?.products.find((entry) => entry.id === product.id || entry.slug === product.slug || entry.slug === product.id) ?? product;
   const themeConfig = resolvedPresentation?.themeConfig ?? resolveStorefrontThemeConfig(resolvedBranding?.theme_json ?? {});
   const copy = resolvedPresentation?.copy ?? resolveStorefrontCopy(resolvedSettings?.storefront_copy_json ?? {});
-  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, resolvedStore.slug);
-  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, resolvedStore.slug);
+  const routeBasePath = runtime?.routeBasePath ?? "";
+  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, resolvedStore.slug, routeBasePath);
+  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, resolvedStore.slug, routeBasePath);
   const radiusClass = getStorefrontRadiusClass(themeConfig.radiusScale);
   const buttonRadiusClass = getStorefrontButtonRadiusClass(themeConfig.radiusScale);
   const cardClass = getStorefrontCardStyleClass(themeConfig.cardStyle);
@@ -434,7 +435,7 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
             {studioEnabledWithDocument ? (
               <StorefrontStudioEditableLink
                 label={copy.productDetail.breadcrumbProducts}
-                url={buildStorefrontProductsPath(resolvedStore.slug)}
+                url={buildStorefrontProductsPath(resolvedStore.slug, routeBasePath)}
                 hideUrlField
                 allowNavigation
                 labelPlaceholder="Products"
@@ -445,7 +446,7 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
                 onChange={(next) => updateProductsField("copy.productDetail.breadcrumbProducts", next.label)}
               />
             ) : (
-              <Link href={buildStorefrontProductsPath(resolvedStore.slug)} className={STOREFRONT_TEXT_LINK_EFFECT_CLASS}>
+              <Link href={buildStorefrontProductsPath(resolvedStore.slug, routeBasePath)} className={STOREFRONT_TEXT_LINK_EFFECT_CLASS}>
                 {copy.productDetail.breadcrumbProducts}
               </Link>
             )}
@@ -659,7 +660,7 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
             {studioEnabledWithDocument ? (
               <StorefrontStudioEditableLink
                 label={copy.productDetail.backToAllProducts}
-                url={buildStorefrontProductsPath(resolvedStore.slug)}
+                url={buildStorefrontProductsPath(resolvedStore.slug, routeBasePath)}
                 hideUrlField
                 allowNavigation
                 labelPlaceholder="Back to all products"
@@ -670,7 +671,7 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
                 onChange={(next) => updateProductsField("copy.productDetail.backToAllProducts", next.label)}
               />
             ) : (
-              <Link href={buildStorefrontProductsPath(resolvedStore.slug)} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "text-sm font-medium")}>
+              <Link href={buildStorefrontProductsPath(resolvedStore.slug, routeBasePath)} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "text-sm font-medium")}>
                 {copy.productDetail.backToAllProducts}
               </Link>
             )}

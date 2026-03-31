@@ -86,6 +86,7 @@ export function StorefrontFooter({
   const [subscribeError, setSubscribeError] = useState<string | null>(null);
   const [subscribeSuccess, setSubscribeSuccess] = useState<string | null>(null);
   const resolvedPrivacyProfile = runtime?.privacyProfile ?? null;
+  const routeBasePath = runtime?.routeBasePath ?? "";
   const pageWidthClass = getStorefrontPageWidthClass(runtime?.themeConfig.pageWidth ?? "standard");
 
   const footerLinks = [
@@ -116,21 +117,21 @@ export function StorefrontFooter({
   const legalLinks = [
     {
       label: copy.footer.privacyLink,
-      href: normalizedStoreSlug ? buildStorefrontPrivacyPath(normalizedStoreSlug) : "/privacy"
+      href: normalizedStoreSlug ? buildStorefrontPrivacyPath(normalizedStoreSlug, routeBasePath) : "/privacy"
     },
     {
       label: "Cookie Policy",
-      href: normalizedStoreSlug ? buildStorefrontCookiesPath(normalizedStoreSlug) : "/cookies"
+      href: normalizedStoreSlug ? buildStorefrontCookiesPath(normalizedStoreSlug, routeBasePath) : "/cookies"
     },
     {
       label: copy.footer.termsLink,
-      href: normalizedStoreSlug ? buildStorefrontTermsPath(normalizedStoreSlug) : "/terms"
+      href: normalizedStoreSlug ? buildStorefrontTermsPath(normalizedStoreSlug, routeBasePath) : "/terms"
     },
     ...(resolvedPrivacyProfile?.showCaliforniaNotice
       ? [
           {
             label: "California Privacy Rights",
-            href: normalizedStoreSlug ? `${buildStorefrontPrivacyPath(normalizedStoreSlug)}#california-privacy-notice` : "/privacy#california-privacy-notice"
+            href: normalizedStoreSlug ? `${buildStorefrontPrivacyPath(normalizedStoreSlug, routeBasePath)}#california-privacy-notice` : "/privacy#california-privacy-notice"
           }
         ]
       : []),
@@ -139,7 +140,7 @@ export function StorefrontFooter({
           {
             label: "Do Not Sell / Share",
             href: normalizedStoreSlug
-              ? `${buildStorefrontPrivacyRequestPath(normalizedStoreSlug)}?type=opt_out_sale_share`
+              ? `${buildStorefrontPrivacyRequestPath(normalizedStoreSlug, routeBasePath)}?type=opt_out_sale_share`
               : "/privacy/request?type=opt_out_sale_share"
           }
         ]
