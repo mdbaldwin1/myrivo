@@ -35,6 +35,7 @@ import { shouldOpenCatalogProductFromUrl } from "@/lib/dashboard/catalog-url-syn
 import { formatVariantLabel } from "@/lib/products/variants";
 import { richTextToPlainText } from "@/lib/rich-text";
 import { notify } from "@/lib/feedback/toast";
+import { prepareImageUploadFile } from "@/lib/uploads/prepare-image-upload-file";
 import { ProductRecord } from "@/types/database";
 
 export type { ProductListItem } from "@/components/dashboard/product-manager-domain";
@@ -816,8 +817,9 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   }
 
   async function uploadProductImage(file: File) {
+    const preparedFile = await prepareImageUploadFile(file);
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append("file", preparedFile);
 
     const response = await fetch("/api/products/image", {
       method: "POST",

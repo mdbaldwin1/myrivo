@@ -1,24 +1,139 @@
-import { describe, expect, test } from "vitest";
-import { isMissingRelationInSchemaCache } from "@/lib/supabase/error-classifiers";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
-describe("owner store relation fallback", () => {
-  test("returns true for PostgREST missing relation code", () => {
-    expect(isMissingRelationInSchemaCache({ code: "PGRST205", message: "any" })).toBe(true);
-  });
+const serverFromMock = vi.fn();
+const adminFromMock = vi.fn();
 
-  test("returns true for schema cache table missing message", () => {
-    expect(
-      isMissingRelationInSchemaCache({
-        message: "Could not find the table 'public.store_settings' in the schema cache"
+vi.mock("next/headers", () => ({
+  cookies: vi.fn(async () => ({
+    get: vi.fn(() => undefined)
+  }))
+}));
+
+vi.mock("@/lib/supabase/server", () => ({
+  createSupabaseServerClient: vi.fn(async () => ({
+    from: (...args: unknown[]) => serverFromMock(...args)
+  }))
+}));
+
+vi.mock("@/lib/supabase/admin", () => ({
+  createSupabaseAdminClient: vi.fn(() => ({
+    from: (...args: unknown[]) => adminFromMock(...args)
+  }))
+}));
+
+beforeEach(() => {
+  serverFromMock.mockReset();
+  adminFromMock.mockReset();
+});
+
+describe("getOwnedStoreBundle", () => {
+  test("includes active admin-member stores in available stores", async () => {
+    serverFromMock.mockImplementation((table: string) => {
+      if (table === "store_memberships") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                returns: vi.fn(async () => ({
+                  data: [
+                    {
+                      store_id: "store-1",
+                      role: "admin",
+                      status: "active",
+                      permissions_json: {}
+                    }
+                  ],
+                  error: null
+                }))
+              }))
+            }))
+          }))
+        };
+      }
+
+      if (table === "stores") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              order: vi.fn(async () => ({
+                data: [],
+                error: null
+              }))
+            }))
+          }))
+        };
+      }
+
+      if (table === "store_branding") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({ data: null, error: null }))
+            }))
+          }))
+        };
+      }
+
+      if (table === "store_settings") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({ data: null, error: null }))
+            }))
+          }))
+        };
+      }
+
+      if (table === "store_content_blocks") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              order: vi.fn(async () => ({ data: [], error: null }))
+            }))
+          }))
+        };
+      }
+
+      throw new Error(`Unexpected server table ${table}`);
+    });
+
+    adminFromMock.mockImplementation((table: string) => {
+      if (table === "stores") {
+        return {
+          select: vi.fn(() => ({
+            in: vi.fn(() => ({
+              order: vi.fn(async () => ({
+                data: [
+                  {
+                    id: "store-1",
+                    name: "At Home Apothecary",
+                    slug: "at-home-apothecary",
+                    status: "live",
+                    has_launched_once: true,
+                    stripe_account_id: null
+                  }
+                ],
+                error: null
+              }))
+            }))
+          }))
+        };
+      }
+
+      throw new Error(`Unexpected admin table ${table}`);
+    });
+
+    const { getOwnedStoreBundle } = await import("@/lib/stores/owner-store");
+    const bundle = await getOwnedStoreBundle("user-1", "staff");
+
+    expect(bundle?.store.slug).toBe("at-home-apothecary");
+    expect(bundle?.role).toBe("admin");
+    expect(bundle?.availableStores).toEqual([
+      expect.objectContaining({
+        id: "store-1",
+        slug: "at-home-apothecary",
+        role: "admin"
       })
-    ).toBe(true);
-  });
-
-  test("returns false for unrelated query errors", () => {
-    expect(isMissingRelationInSchemaCache({ code: "42501", message: "permission denied" })).toBe(false);
-  });
-
-  test("returns false for null input", () => {
-    expect(isMissingRelationInSchemaCache(null)).toBe(false);
+    ]);
   });
 });

@@ -4,6 +4,7 @@ import Image from "next/image";
 import { Pencil, Plus, X } from "lucide-react";
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
+import { FUNCTION_SAFE_IMAGE_UPLOAD_MAX_LABEL } from "@/lib/uploads/image-upload-limits";
 
 type StorefrontStudioImagePickerProps = {
   imageUrl: string;
@@ -85,7 +86,9 @@ export function StorefrontStudioImagePicker({
       </div>
 
       <p className="text-xs text-muted-foreground">{imageUrl ? "Click image to replace." : "Click to upload an image."}</p>
-      <p className="text-xs text-muted-foreground">PNG, JPG, WEBP, or SVG up to 5MB.</p>
+      <p className="text-xs text-muted-foreground">
+        PNG, JPG, WEBP, or SVG up to {FUNCTION_SAFE_IMAGE_UPLOAD_MAX_LABEL}. Large photos are optimized automatically.
+      </p>
 
       <input
         ref={inputRef}

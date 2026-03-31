@@ -1,4 +1,4 @@
-import { getAppUrl, getServerEnv } from "@/lib/env";
+import { getExternalAppUrl, getServerEnv } from "@/lib/env";
 import { createEmailStudioDocumentFromSection, type EmailStudioDocument, type EmailStudioTemplateId } from "@/lib/email-studio/model";
 import { renderEmailStudioTemplate } from "@/lib/email-studio/render";
 import { dispatchNotification } from "@/lib/notifications/dispatcher";
@@ -273,8 +273,9 @@ function buildTemplateValues(context: OrderEmailContext, values: Record<string, 
     context.supportEmail,
     getServerEnv().MYRIVO_EMAIL_REPLY_TO
   );
-  const orderUrl = `${getAppUrl()}/dashboard/customer-orders/${context.orderId}`;
-  const storeUrl = context.primaryDomain ? `https://${context.primaryDomain}` : context.storeSlug ? `${getAppUrl()}/s/${context.storeSlug}` : getAppUrl();
+  const appUrl = getExternalAppUrl();
+  const orderUrl = `${appUrl}/dashboard/customer-orders/${context.orderId}`;
+  const storeUrl = context.primaryDomain ? `https://${context.primaryDomain}` : context.storeSlug ? `${appUrl}/s/${context.storeSlug}` : appUrl;
   const policiesUrl = `${storeUrl.replace(/\/$/, "")}/policies`;
   const fallbackTrackingUrl = context.trackingUrl?.trim() || orderUrl;
 
@@ -997,8 +998,9 @@ export async function sendOrderCreatedNotifications(orderId: string) {
     }
 
     const orderSummary = context.items.map((item) => buildOrderLine(item, context.currency)).join("\n");
-    const ownerDashboardLink = context.storeSlug ? `${getAppUrl()}/dashboard/stores/${context.storeSlug}/orders` : `${getAppUrl()}/dashboard/stores`;
-    const customerDashboardLink = `${getAppUrl()}/dashboard/customer-orders/${context.orderId}`;
+    const appUrl = getExternalAppUrl();
+    const ownerDashboardLink = context.storeSlug ? `${appUrl}/dashboard/stores/${context.storeSlug}/orders` : `${appUrl}/dashboard/stores`;
+    const customerDashboardLink = `${appUrl}/dashboard/customer-orders/${context.orderId}`;
     const pickupSummary = buildPickupSummaryText(context);
     const ownerTemplateValues = buildTemplateValues(context, {
       items: orderSummary,

@@ -40,7 +40,7 @@ beforeEach(() => {
 describe("store member ownership transfer route", () => {
   test("POST transfers store ownership to another active member", async () => {
     const storeUpdates: Array<Record<string, unknown>> = [];
-    const membershipUpdates: Array<Record<string, unknown>> = [];
+    const membershipUpserts: Array<Record<string, unknown>> = [];
     let membershipSelectCount = 0;
 
     adminFromMock.mockImplementation((table: string) => {
@@ -94,13 +94,9 @@ describe("store member ownership transfer route", () => {
               }))
             }))
           })),
-          update: vi.fn((payload: Record<string, unknown>) => {
-            membershipUpdates.push(payload);
-            return {
-              eq: vi.fn(() => ({
-                eq: vi.fn(async () => ({ error: null }))
-              }))
-            };
+          upsert: vi.fn((payload: Record<string, unknown>) => {
+            membershipUpserts.push(payload);
+            return Promise.resolve({ error: null });
           })
         };
       }
@@ -122,8 +118,109 @@ describe("store member ownership transfer route", () => {
     expect(payload.ok).toBe(true);
     expect(payload.nextOwnerUserId).toBe("admin-2");
     expect(storeUpdates).toEqual([{ owner_user_id: "admin-2" }]);
-    expect(membershipUpdates).toEqual([{ role: "owner" }, { role: "admin" }]);
+    expect(membershipUpserts).toEqual([
+      {
+        store_id: "store-1",
+        user_id: "admin-2",
+        role: "owner",
+        status: "active"
+      },
+      {
+        store_id: "store-1",
+        user_id: "owner-1",
+        role: "admin",
+        status: "active"
+      }
+    ]);
     expect(logAuditEventMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("POST preserves previous owner access when the owner lacks a membership row", async () => {
+    const membershipUpserts: Array<Record<string, unknown>> = [];
+    let membershipSelectCount = 0;
+
+    adminFromMock.mockImplementation((table: string) => {
+      if (table === "stores") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              single: vi.fn(async () => ({ data: { id: "store-1", owner_user_id: "owner-1" }, error: null }))
+            }))
+          })),
+          update: vi.fn(() => ({
+            eq: vi.fn(async () => ({ error: null }))
+          }))
+        };
+      }
+
+      if (table === "store_memberships") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                maybeSingle: vi.fn(async () => {
+                  membershipSelectCount += 1;
+
+                  if (membershipSelectCount === 1) {
+                    return {
+                      data: {
+                        id: "membership-2",
+                        store_id: "store-1",
+                        user_id: "admin-2",
+                        role: "admin",
+                        status: "active"
+                      },
+                      error: null
+                    };
+                  }
+
+                  return { data: null, error: null };
+                })
+              }))
+            }))
+          })),
+          upsert: vi.fn((payload: Record<string, unknown>) => {
+            membershipUpserts.push(payload);
+            return Promise.resolve({ error: null });
+          }),
+          delete: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(async () => ({ error: null }))
+            }))
+          }))
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const route = await import("@/app/api/stores/members/[membershipId]/transfer-ownership/route");
+    const response = await route.POST(
+      new NextRequest("http://localhost:3000/api/stores/members/membership-2/transfer-ownership?storeSlug=demo-store", {
+        method: "POST",
+        headers: { origin: "http://localhost:3000", host: "localhost:3000" }
+      }),
+      { params: Promise.resolve({ membershipId: "membership-2" }) }
+    );
+    const payload = (await response.json()) as { ok: boolean; downgradedOwnerMembershipId: string | null };
+
+    expect(response.status).toBe(200);
+    expect(payload.ok).toBe(true);
+    expect(payload.downgradedOwnerMembershipId).toBeNull();
+    expect(membershipUpserts).toEqual([
+      {
+        store_id: "store-1",
+        user_id: "admin-2",
+        role: "owner",
+        status: "active"
+      },
+      {
+        store_id: "store-1",
+        user_id: "owner-1",
+        role: "admin",
+        status: "active"
+      }
+    ]);
   });
 
   test("POST rejects non-owner actors", async () => {

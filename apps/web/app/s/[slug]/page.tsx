@@ -9,6 +9,7 @@ import { loadStorefrontData } from "@/lib/storefront/load-storefront-data";
 import { createStorefrontRuntime } from "@/lib/storefront/runtime";
 import { buildAggregateRatingSchema, buildReviewSchemaList, resolveStorefrontReviewSeoConfig } from "@/lib/storefront/reviews-seo";
 import { buildStorefrontCanonicalUrl, resolveStorefrontCanonicalRedirect } from "@/lib/storefront/seo";
+import { buildStorefrontBrandMetadata } from "@/lib/storefront/metadata";
 import { loadStorefrontUnavailableData } from "@/lib/storefront/unavailable";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isMissingRelationInSchemaCache } from "@/lib/supabase/error-classifiers";
@@ -47,16 +48,19 @@ export async function generateMetadata({ params }: StorefrontRouteParams): Promi
 
   const canonical = await buildStorefrontCanonicalUrl("/", resolvedParams.slug);
   const publicLocation = buildPublicLocationLabel(data.settings ?? {});
+  const title = data.settings?.seo_title || data.store.name;
+  const description =
+    data.settings?.seo_description ||
+    data.settings?.announcement ||
+    (publicLocation ? `Shop ${data.store.name} in ${publicLocation}.` : `Shop ${data.store.name}.`);
 
   return {
-    title: data.settings?.seo_title || data.store.name,
-    description:
-      data.settings?.seo_description ||
-      data.settings?.announcement ||
-      (publicLocation ? `Shop ${data.store.name} in ${publicLocation}.` : `Shop ${data.store.name}.`),
-    alternates: {
-      canonical
-    },
+    ...buildStorefrontBrandMetadata({
+      title,
+      description,
+      canonical,
+      branding: data.branding
+    }),
     robots: data.settings?.seo_noindex ? { index: false, follow: false } : undefined
   };
 }

@@ -49,12 +49,16 @@ describe("store payments connect route", () => {
     getOwnedStoreBundleForOptionalSlugMock.mockResolvedValue({
       store: {
         id: "store-1",
-        stripe_account_id: "acct_123"
+        stripe_account_id: "acct_123",
+        owner_user_id: "owner-1"
       }
     });
     storesUpdateEqMock.mockReturnValue({
-      eq: vi.fn(async () => ({
-        error: null
+      select: vi.fn(() => ({
+        maybeSingle: vi.fn(async () => ({
+          error: null,
+          data: { id: "store-1" }
+        }))
       }))
     });
     process.env.STRIPE_SECRET_KEY = "sk_test_123";
@@ -84,18 +88,52 @@ describe("store payments connect route", () => {
     });
   });
 
+  test("allows a non-owner admin to clear the saved Stripe connection", async () => {
+    getUserMock.mockResolvedValue({
+      data: {
+        user: { id: "admin-user" }
+      }
+    });
+    getOwnedStoreBundleForOptionalSlugMock.mockResolvedValue({
+      store: {
+        id: "store-1",
+        stripe_account_id: "acct_123",
+        owner_user_id: "owner-user"
+      }
+    });
+
+    const route = await import("@/app/api/stores/payments/connect/route");
+    const response = await route.DELETE(
+      new NextRequest("http://localhost:3000/api/stores/payments/connect?storeSlug=test-store", {
+        method: "DELETE",
+        headers: {
+          origin: "http://localhost:3000",
+          host: "localhost:3000"
+        }
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(storesUpdateEqMock).toHaveBeenCalledTimes(1);
+  });
+
   test("falls back to clearing only stripe_account_id when tax columns are unavailable", async () => {
     storesUpdateEqMock
       .mockReturnValueOnce({
-        eq: vi.fn(async () => ({
-          error: {
-            message: "column stores.tax_collection_mode does not exist"
-          }
+        select: vi.fn(() => ({
+          maybeSingle: vi.fn(async () => ({
+            error: {
+              message: "column stores.tax_collection_mode does not exist"
+            }
+          }))
         }))
       })
       .mockReturnValueOnce({
-        eq: vi.fn(async () => ({
-          error: null
+        select: vi.fn(() => ({
+          maybeSingle: vi.fn(async () => ({
+            error: null,
+            data: { id: "store-1" }
+          }))
         }))
       });
 

@@ -198,6 +198,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
     }
     return options;
   })();
+  const hasShippingOption = fulfillmentOptions.some((option) => option.method === "shipping");
 
   const [cart, setCart] = useState<StorefrontCartEntry[]>([]);
   const hasHydratedCartRef = useRef(false);
@@ -338,6 +339,20 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
         return;
       }
 
+      if (payload.pickupEnabled === false) {
+        setPickupSelectionMode(payload.selectionMode ?? "buyer_select");
+        setPickupOptions([]);
+        setPickupSlots([]);
+        setSelectedPickupLocationId(null);
+        setSelectedPickupSlot(null);
+        setPickupStatusMessage(payload.reason ?? "Pickup is currently unavailable.");
+        if (hasShippingOption) {
+          setSelectedFulfillmentMethod("shipping");
+          setError(payload.reason ?? "Pickup is currently unavailable. Shipping has been selected instead.");
+        }
+        return;
+      }
+
       setPickupSelectionMode(payload.selectionMode ?? "buyer_select");
       setPickupOptions(payload.options ?? []);
       setPickupSlots(payload.slots ?? []);
@@ -347,7 +362,16 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
       }
       setPickupStatusMessage(payload.reason ?? null);
     })();
-  }, [buyerLatitude, buyerLongitude, resolvedSettings?.checkout_enable_local_pickup, resolvedStore.slug, selectedFulfillmentMethod, selectedPickupLocationId, selectedPickupSlot]);
+  }, [
+    buyerLatitude,
+    buyerLongitude,
+    hasShippingOption,
+    resolvedSettings?.checkout_enable_local_pickup,
+    resolvedStore.slug,
+    selectedFulfillmentMethod,
+    selectedPickupLocationId,
+    selectedPickupSlot
+  ]);
 
   const cartItems = useMemo(() => {
     return cart
