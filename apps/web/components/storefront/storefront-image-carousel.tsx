@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -51,28 +51,25 @@ export function StorefrontImageCarousel(props: StorefrontImageCarouselProps) {
     setActiveIndex(clamped);
   }
 
-  const onTouchStart = useCallback((event: React.TouchEvent) => {
+  function onTouchStart(event: React.TouchEvent) {
     const touch = event.touches[0] as Touch | undefined;
     if (!touch) return;
     touchStartRef.current = { x: touch.clientX, y: touch.clientY };
-  }, []);
+  }
 
-  const onTouchEnd = useCallback(
-    (event: React.TouchEvent) => {
-      if (!touchStartRef.current) return;
-      const touch = event.changedTouches[0] as Touch | undefined;
-      if (!touch) return;
-      const dx = touch.clientX - touchStartRef.current.x;
-      const dy = touch.clientY - touchStartRef.current.y;
-      touchStartRef.current = null;
-      // Only count horizontal swipes where x-distance exceeds y-distance
-      if (Math.abs(dx) > 30 && Math.abs(dx) > Math.abs(dy)) {
-        event.preventDefault();
-        scrollToIndex(dx < 0 ? activeIndex + 1 : activeIndex - 1);
-      }
-    },
-    [activeIndex, images.length] // eslint-disable-line react-hooks/exhaustive-deps
-  );
+  function onTouchEnd(event: React.TouchEvent) {
+    if (!touchStartRef.current) return;
+    const touch = event.changedTouches[0] as Touch | undefined;
+    if (!touch) return;
+    const dx = touch.clientX - touchStartRef.current.x;
+    const dy = touch.clientY - touchStartRef.current.y;
+    touchStartRef.current = null;
+    // Only count horizontal swipes where x-distance exceeds y-distance
+    if (Math.abs(dx) > 30 && Math.abs(dx) > Math.abs(dy)) {
+      event.preventDefault();
+      scrollToIndex(dx < 0 ? activeIndex + 1 : activeIndex - 1);
+    }
+  }
 
   return (
     <div className={cn("group relative overflow-hidden", imageClassName)}>
