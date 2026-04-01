@@ -527,7 +527,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
       body: JSON.stringify({
         firstName,
         lastName,
-        phone: phone.trim() || undefined,
+        phone: phone.trim(),
         email,
         buyerLatitude: buyerLatitude ?? undefined,
         buyerLongitude: buyerLongitude ?? undefined,
@@ -793,7 +793,8 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                   type="tel"
                   autoComplete="tel"
                   inputMode="tel"
-                  placeholder="Phone (optional)"
+                  required
+                  placeholder="Phone"
                   value={phone}
                   onChange={(event) => setPhone(event.target.value)}
                   className="h-10 border-border/60"

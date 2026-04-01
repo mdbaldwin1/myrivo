@@ -246,6 +246,7 @@ describe("checkout pickup enforcement", () => {
       buildRequest({
         firstName: "Alice",
         lastName: "Buyer",
+        phone: "555-0100",
         email: "alice@example.com",
         fulfillmentMethod: "pickup",
         buyerLatitude: 34.0522,
@@ -266,6 +267,7 @@ describe("checkout pickup enforcement", () => {
       buildRequest({
         firstName: "Alice",
         lastName: "Buyer",
+        phone: "555-0100",
         email: "alice@example.com",
         fulfillmentMethod: "pickup",
         buyerLatitude: 36.8508,
@@ -286,6 +288,7 @@ describe("checkout pickup enforcement", () => {
       buildRequest({
         firstName: "Alice",
         lastName: "Buyer",
+        phone: "555-0100",
         email: "alice@example.com",
         fulfillmentMethod: "pickup",
         buyerLatitude: 36.8508,
