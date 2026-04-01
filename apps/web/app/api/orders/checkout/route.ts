@@ -464,138 +464,153 @@ export async function POST(request: NextRequest) {
           }
         : null;
 
-    if ((pickupLocations ?? []).length === 0) {
-      return NextResponse.json({ error: "Pickup is unavailable for this store." }, { status: 400 });
+    // When availability rules are off and no locations exist, allow pickup as a
+    // simple fulfillment method (e.g. "Porch pickup") with no location required.
+    const locationlessPickup = !resolvedPickupSettings.pickup_enabled && (pickupLocations ?? []).length === 0;
+
+    if (!locationlessPickup) {
+      if ((pickupLocations ?? []).length === 0) {
+        return NextResponse.json({ error: "Pickup is unavailable for this store." }, { status: 400 });
+      }
+
+      const normalizedPickupLocations = (pickupLocations ?? []).map((location) => ({
+        id: location.id,
+        name: location.name,
+        latitude: location.latitude,
+        longitude: location.longitude
+      }));
+      const availablePickupLocations = resolvedPickupSettings.pickup_enabled
+        ? resolveAvailablePickupLocations({
+            buyer: buyerCoordinates,
+            locations: normalizedPickupLocations,
+            radiusMiles: resolvedPickupSettings.eligibility_radius_miles,
+            geolocationFallbackMode: resolvedPickupSettings.geolocation_fallback_mode,
+            outOfRadiusBehavior: resolvedPickupSettings.out_of_radius_behavior
+          })
+        : normalizedPickupLocations.map((location) => ({
+            id: location.id,
+            name: location.name,
+            distanceMiles: 0
+          }));
+
+      if (availablePickupLocations.length === 0) {
+        const reason = buyerCoordinates
+          ? `No pickup locations are available within ${resolvedPickupSettings.eligibility_radius_miles} miles.`
+          : "Enable location access to verify pickup availability.";
+        return NextResponse.json(
+          { error: reason },
+          { status: 400 }
+        );
+      }
+
+      resolvedPickupLocationId =
+        resolvedPickupSettings.selection_mode === "hidden_nearest"
+          ? availablePickupLocations[0]?.id ?? null
+          : pickupLocationId && availablePickupLocations.some((location) => location.id === pickupLocationId)
+            ? pickupLocationId
+            : null;
+
+      if (!resolvedPickupLocationId) {
+        return NextResponse.json({ error: "Select a pickup location." }, { status: 400 });
+      }
     }
 
-    const normalizedPickupLocations = (pickupLocations ?? []).map((location) => ({
-      id: location.id,
-      name: location.name,
-      latitude: location.latitude,
-      longitude: location.longitude
-    }));
-    const availablePickupLocations = resolvedPickupSettings.pickup_enabled
-      ? resolveAvailablePickupLocations({
-          buyer: buyerCoordinates,
-          locations: normalizedPickupLocations,
-          radiusMiles: resolvedPickupSettings.eligibility_radius_miles,
-          geolocationFallbackMode: resolvedPickupSettings.geolocation_fallback_mode,
-          outOfRadiusBehavior: resolvedPickupSettings.out_of_radius_behavior
-        })
-      : normalizedPickupLocations.map((location) => ({
-          id: location.id,
-          name: location.name,
-          distanceMiles: 0
-        }));
-
-    if (availablePickupLocations.length === 0) {
-      const reason = buyerCoordinates
-        ? `No pickup locations are available within ${resolvedPickupSettings.eligibility_radius_miles} miles.`
-        : "Enable location access to verify pickup availability.";
-      return NextResponse.json(
-        { error: reason },
-        { status: 400 }
-      );
-    }
-
-    resolvedPickupLocationId =
-      resolvedPickupSettings.selection_mode === "hidden_nearest"
-        ? availablePickupLocations[0]?.id ?? null
-        : pickupLocationId && availablePickupLocations.some((location) => location.id === pickupLocationId)
-          ? pickupLocationId
-          : null;
-
-    if (!resolvedPickupLocationId) {
-      return NextResponse.json({ error: "Select a pickup location." }, { status: 400 });
-    }
-
-    const chosenLocation = (pickupLocations ?? []).find((location) => location.id === resolvedPickupLocationId);
-    if (!chosenLocation) {
-      return NextResponse.json({ error: "Selected pickup location is unavailable." }, { status: 400 });
-    }
-
-    resolvedPickupLocationSnapshot = {
-      id: chosenLocation.id,
-      name: chosenLocation.name,
-      addressLine1: chosenLocation.address_line1,
-      addressLine2: chosenLocation.address_line2,
-      city: chosenLocation.city,
-      stateRegion: chosenLocation.state_region,
-      postalCode: chosenLocation.postal_code,
-      countryCode: chosenLocation.country_code
-    };
-
-    const [{ data: pickupLocationHours, error: pickupLocationHoursError }, { data: pickupBlackouts, error: pickupBlackoutsError }] =
-      await Promise.all([
-        supabase
-          .from("pickup_location_hours")
-          .select("pickup_location_id,day_of_week,opens_at,closes_at")
-          .eq("pickup_location_id", resolvedPickupLocationId)
-          .returns<Array<{ pickup_location_id: string; day_of_week: number; opens_at: string; closes_at: string }>>(),
-        supabase
-          .from("pickup_blackout_dates")
-          .select("pickup_location_id,starts_at,ends_at")
-          .eq("store_id", store.id)
-          .or(`pickup_location_id.is.null,pickup_location_id.eq.${resolvedPickupLocationId}`)
-          .returns<Array<{ pickup_location_id: string | null; starts_at: string; ends_at: string }>>()
-      ]);
-
-    if (pickupLocationHoursError) {
-      return NextResponse.json({ error: pickupLocationHoursError.message }, { status: 500 });
-    }
-
-    if (pickupBlackoutsError) {
-      return NextResponse.json({ error: pickupBlackoutsError.message }, { status: 500 });
-    }
-
-    const dayHours = (pickupLocationHours ?? []).reduce<Record<number, Array<{ opensAt: string; closesAt: string }>>>((acc, entry) => {
-      const bucket = acc[entry.day_of_week] ?? [];
-      bucket.push({ opensAt: entry.opens_at, closesAt: entry.closes_at });
-      acc[entry.day_of_week] = bucket;
-      return acc;
-    }, {});
-
-    const validSlots = buildPickupSlots({
-      now: new Date(),
-      leadTimeHours: resolvedPickupSettings.lead_time_hours,
-      slotIntervalMinutes: resolvedPickupSettings.slot_interval_minutes,
-      timezone: resolvedPickupSettings.timezone,
-      dayHours,
-      blackoutWindows: (pickupBlackouts ?? []).map((entry) => ({
-        startsAt: new Date(entry.starts_at),
-        endsAt: new Date(entry.ends_at)
-      })),
-      maxSlots: 300
-    });
-
-    if (resolvedPickupSettings.show_pickup_times && validSlots.length === 0) {
-      return NextResponse.json({ error: "No pickup times are currently available for the selected location." }, { status: 400 });
-    }
-
-    if (resolvedPickupSettings.show_pickup_times && (!pickupWindowStartAt || !pickupWindowEndAt)) {
-      return NextResponse.json({ error: "Select a pickup time window." }, { status: 400 });
-    }
-
-    if (!resolvedPickupSettings.show_pickup_times) {
+    if (locationlessPickup) {
+      // No location or time slot — seller coordinates pickup details via email.
+      resolvedPickupLocationId = null;
+      resolvedPickupLocationSnapshot = null;
       resolvedPickupWindowStartAt = null;
       resolvedPickupWindowEndAt = null;
-    } else if (pickupWindowStartAt && pickupWindowEndAt) {
-      const startAt = new Date(pickupWindowStartAt);
-      const endAt = new Date(pickupWindowEndAt);
-      if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime()) || startAt >= endAt) {
-        return NextResponse.json({ error: "Pickup window is invalid." }, { status: 400 });
+      resolvedPickupTimezone = resolvedPickupSettings.timezone;
+    } else {
+      const chosenLocation = (pickupLocations ?? []).find((location) => location.id === resolvedPickupLocationId);
+      if (!chosenLocation) {
+        return NextResponse.json({ error: "Selected pickup location is unavailable." }, { status: 400 });
       }
 
-      const isValidSlot = validSlots.some((slot) => slot.startsAt === startAt.toISOString() && slot.endsAt === endAt.toISOString());
-      if (!isValidSlot) {
-        return NextResponse.json({ error: "Selected pickup time is no longer available. Please choose another slot." }, { status: 400 });
+      resolvedPickupLocationSnapshot = {
+        id: chosenLocation.id,
+        name: chosenLocation.name,
+        addressLine1: chosenLocation.address_line1,
+        addressLine2: chosenLocation.address_line2,
+        city: chosenLocation.city,
+        stateRegion: chosenLocation.state_region,
+        postalCode: chosenLocation.postal_code,
+        countryCode: chosenLocation.country_code
+      };
+
+      const [{ data: pickupLocationHours, error: pickupLocationHoursError }, { data: pickupBlackouts, error: pickupBlackoutsError }] =
+        await Promise.all([
+          supabase
+            .from("pickup_location_hours")
+            .select("pickup_location_id,day_of_week,opens_at,closes_at")
+            .eq("pickup_location_id", resolvedPickupLocationId)
+            .returns<Array<{ pickup_location_id: string; day_of_week: number; opens_at: string; closes_at: string }>>(),
+          supabase
+            .from("pickup_blackout_dates")
+            .select("pickup_location_id,starts_at,ends_at")
+            .eq("store_id", store.id)
+            .or(`pickup_location_id.is.null,pickup_location_id.eq.${resolvedPickupLocationId}`)
+            .returns<Array<{ pickup_location_id: string | null; starts_at: string; ends_at: string }>>()
+        ]);
+
+      if (pickupLocationHoursError) {
+        return NextResponse.json({ error: pickupLocationHoursError.message }, { status: 500 });
       }
 
-      resolvedPickupWindowStartAt = startAt.toISOString();
-      resolvedPickupWindowEndAt = endAt.toISOString();
+      if (pickupBlackoutsError) {
+        return NextResponse.json({ error: pickupBlackoutsError.message }, { status: 500 });
+      }
+
+      const dayHours = (pickupLocationHours ?? []).reduce<Record<number, Array<{ opensAt: string; closesAt: string }>>>((acc, entry) => {
+        const bucket = acc[entry.day_of_week] ?? [];
+        bucket.push({ opensAt: entry.opens_at, closesAt: entry.closes_at });
+        acc[entry.day_of_week] = bucket;
+        return acc;
+      }, {});
+
+      const validSlots = buildPickupSlots({
+        now: new Date(),
+        leadTimeHours: resolvedPickupSettings.lead_time_hours,
+        slotIntervalMinutes: resolvedPickupSettings.slot_interval_minutes,
+        timezone: resolvedPickupSettings.timezone,
+        dayHours,
+        blackoutWindows: (pickupBlackouts ?? []).map((entry) => ({
+          startsAt: new Date(entry.starts_at),
+          endsAt: new Date(entry.ends_at)
+        })),
+        maxSlots: 300
+      });
+
+      if (resolvedPickupSettings.show_pickup_times && validSlots.length === 0) {
+        return NextResponse.json({ error: "No pickup times are currently available for the selected location." }, { status: 400 });
+      }
+
+      if (resolvedPickupSettings.show_pickup_times && (!pickupWindowStartAt || !pickupWindowEndAt)) {
+        return NextResponse.json({ error: "Select a pickup time window." }, { status: 400 });
+      }
+
+      if (!resolvedPickupSettings.show_pickup_times) {
+        resolvedPickupWindowStartAt = null;
+        resolvedPickupWindowEndAt = null;
+      } else if (pickupWindowStartAt && pickupWindowEndAt) {
+        const startAt = new Date(pickupWindowStartAt);
+        const endAt = new Date(pickupWindowEndAt);
+        if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime()) || startAt >= endAt) {
+          return NextResponse.json({ error: "Pickup window is invalid." }, { status: 400 });
+        }
+
+        const isValidSlot = validSlots.some((slot) => slot.startsAt === startAt.toISOString() && slot.endsAt === endAt.toISOString());
+        if (!isValidSlot) {
+          return NextResponse.json({ error: "Selected pickup time is no longer available. Please choose another slot." }, { status: 400 });
+        }
+
+        resolvedPickupWindowStartAt = startAt.toISOString();
+        resolvedPickupWindowEndAt = endAt.toISOString();
+      }
+
+      resolvedPickupTimezone = resolvedPickupSettings.timezone;
     }
-
-    resolvedPickupTimezone = resolvedPickupSettings.timezone;
   }
 
   const aggregatedVariantItems = new Map<string, { quantity: number; productId: string | null }>();
