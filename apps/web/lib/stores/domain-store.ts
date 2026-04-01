@@ -1,4 +1,5 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getAppUrl } from "@/lib/env";
 import { normalizeHost } from "@/lib/stores/domain-utils";
 import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 
@@ -49,6 +50,19 @@ export async function resolveStoreSlugFromDomain(
   const normalizedHost = normalizeHost(host);
   if (!normalizedHost) {
     return null;
+  }
+
+  // Never resolve the app's own domain as a custom storefront domain.
+  try {
+    const appHost = new URL(getAppUrl()).hostname;
+    const bare = normalizedHost.startsWith("www.") ? normalizedHost.slice(4) : normalizedHost;
+    const bareApp = appHost.startsWith("www.") ? appHost.slice(4) : appHost;
+    if (bare === bareApp) {
+      return null;
+    }
+  } catch {
+    // If getAppUrl() throws (missing env), fall through — dev environments
+    // without the env var won't accidentally match production domains.
   }
 
   const exactMatch = await lookupStoreSlugForDomain(normalizedHost, options);
