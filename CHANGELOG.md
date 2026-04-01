@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Fixed custom-domain storefront routing so verified domains keep clean paths like `/`, `/products`, `/about`, `/cart`, and `/checkout` instead of leaking back to `/s/:storeSlug/...`.
+- Fixed storefront cart/checkout accessibility metadata and stabilized merchant E2E flows so release validation matches the current store-scoped dashboard, onboarding, and draft/live storefront behavior.
+
 ### Added
 - Added a preview-first store onboarding system with resumable setup sessions, onboarding-first first-product creation, AI/deterministic storefront generation, reveal-to-workspace handoff, launch-readiness guidance, and platform onboarding analytics.
 - Added configurable per-customer promotion redemption caps with race-safe checkout enforcement, redemption ledger tracking, and merchant promotion controls for unlimited, one-per-customer, or custom customer limits.

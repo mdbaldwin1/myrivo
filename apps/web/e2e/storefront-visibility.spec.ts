@@ -5,20 +5,15 @@ test("storefront is hidden in draft and visible when store is active", async ({ 
   const identity = await signupAndOnboard(page);
 
   await setStoreStatus(page, "draft");
-
-  await page.goto("/dashboard");
-  await expect(page.getByRole("link", { name: /preview storefront/i })).toBeVisible();
-
-  await page.goto("/dashboard");
-  await page.getByRole("button", { name: /sign out/i }).click();
-  await expect(page).toHaveURL(/\/login/);
+  await page.context().clearCookies();
+  await page.goto("/login");
   await page.goto(`/s/${identity.storeSlug}`);
-  await expect(page.getByText(/this page could not be found/i)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /this storefront is coming soon/i })).toBeVisible();
 
   await login(page, identity.email, identity.password);
   await activateStore(page);
-  await page.goto("/dashboard");
+  await page.goto(`/dashboard/stores/${identity.storeSlug}`);
   await expect(page.getByRole("link", { name: /view storefront/i })).toBeVisible();
   await page.goto(`/s/${identity.storeSlug}`);
-  await expect(page.getByRole("button", { name: /^add$/i }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: /shop products/i })).toBeVisible();
 });

@@ -40,6 +40,7 @@ export function StorefrontCartButton({
 }: StorefrontCartButtonProps) {
   const runtime = useOptionalStorefrontRuntime();
   const previewNavigateToHref = runtime?.mode === "studio" ? runtime.previewNavigateToHref ?? null : null;
+  const routeBasePath = runtime?.routeBasePath ?? "";
   const [count, setCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
@@ -47,7 +48,7 @@ export function StorefrontCartButton({
   const [previewSubtotalCents, setPreviewSubtotalCents] = useState(0);
   const [closeTimeout, setCloseTimeout] = useState<number | null>(null);
   const [isUpdatingPreview, setIsUpdatingPreview] = useState(false);
-  const resolvedHref = href ?? (storeSlug ? buildStorefrontCartPath(storeSlug) : "/cart");
+  const resolvedHref = href ?? (storeSlug ? buildStorefrontCartPath(storeSlug, routeBasePath) : "/cart");
 
   function syncCount() {
     const nextCount = readStorefrontCart().reduce((sum, entry) => sum + entry.quantity, 0);

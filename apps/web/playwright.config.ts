@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 const PORT = Number(process.env.E2E_PORT ?? 3000);
 const BASE_URL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${PORT}`;
-const MANAGED_SERVER = process.env.E2E_MANAGED_SERVER === "true";
+const MANAGED_SERVER = process.env.E2E_MANAGED_SERVER !== "false";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -25,7 +25,7 @@ export default defineConfig({
   ],
   webServer: MANAGED_SERVER
     ? {
-        command: `npm run dev -- --port ${PORT}`,
+        command: `npm run build && npm run start -- --port ${PORT}`,
         cwd: __dirname,
         url: BASE_URL,
         reuseExistingServer: !process.env.CI,

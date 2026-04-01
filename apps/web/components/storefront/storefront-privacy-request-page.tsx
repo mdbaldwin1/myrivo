@@ -3,6 +3,7 @@
 import { StorefrontCartButton } from "@/components/storefront/storefront-cart-button";
 import { StorefrontFooter } from "@/components/storefront/storefront-footer";
 import { StorefrontHeader } from "@/components/storefront/storefront-header";
+import { useOptionalStorefrontRuntime } from "@/components/storefront/storefront-runtime-provider";
 import { LegalMarkdown } from "@/components/legal/legal-markdown";
 import { StorefrontPrivacyRequestForm } from "@/components/storefront/storefront-privacy-request-form";
 import type { ResolvedStorePrivacyProfile } from "@/lib/privacy/store-privacy";
@@ -55,13 +56,19 @@ export function StorefrontPrivacyRequestPage({
   settings,
   privacyProfile
 }: StorefrontPrivacyRequestPageProps) {
-  const themeConfig = resolveStorefrontThemeConfig(branding?.theme_json ?? {});
-  const copy = resolveStorefrontCopy(settings?.storefront_copy_json ?? {});
-  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, store.slug);
-  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, store.slug);
+  const runtime = useOptionalStorefrontRuntime();
+  const resolvedStore = runtime?.store ?? store;
+  const resolvedViewer = runtime?.viewer ?? viewer;
+  const resolvedBranding = runtime?.branding ?? branding;
+  const resolvedSettings = runtime?.settings ?? settings;
+  const themeConfig = resolveStorefrontThemeConfig(resolvedBranding?.theme_json ?? {});
+  const copy = resolveStorefrontCopy(resolvedSettings?.storefront_copy_json ?? {});
+  const routeBasePath = runtime?.routeBasePath ?? "";
+  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, resolvedStore.slug, routeBasePath);
+  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, resolvedStore.slug, routeBasePath);
   const storefrontThemeStyle = buildStorefrontThemeStyle({
-    primaryColor: branding?.primary_color,
-    accentColor: branding?.accent_color,
+    primaryColor: resolvedBranding?.primary_color,
+    accentColor: resolvedBranding?.accent_color,
     themeConfig
   });
 
@@ -70,28 +77,28 @@ export function StorefrontPrivacyRequestPage({
       style={storefrontThemeStyle}
       className="min-h-screen w-full bg-[color:var(--storefront-bg)] text-[color:var(--storefront-text)] [font-family:var(--storefront-font-body)]"
     >
-      {themeConfig.showPolicyStrip && settings?.announcement ? (
+      {themeConfig.showPolicyStrip && resolvedSettings?.announcement ? (
         <section className="fixed inset-x-0 top-0 z-[70] w-full bg-[var(--storefront-accent)] px-4 py-2 text-center text-xs font-medium text-[color:var(--storefront-accent-foreground)] sm:px-6">
-          {settings.announcement}
+          {resolvedSettings.announcement}
         </section>
       ) : null}
 
       <StorefrontHeader
-        storeName={store.name}
-        logoPath={branding?.logo_path}
+        storeName={resolvedStore.name}
+        logoPath={resolvedBranding?.logo_path}
         showLogo={themeConfig.headerShowLogo}
         showTitle={themeConfig.headerShowTitle}
         containerClassName={getStorefrontPageWidthClass(themeConfig.pageWidth)}
         navItems={headerNavLinks}
         buttonRadiusClass={getStorefrontButtonRadiusClass(themeConfig.radiusScale)}
-        topOffsetPx={themeConfig.showPolicyStrip && settings?.announcement ? 32 : 0}
-        rightContent={<StorefrontCartButton storeSlug={store.slug} ariaLabel={copy.nav.openCartAria} />}
+        topOffsetPx={themeConfig.showPolicyStrip && resolvedSettings?.announcement ? 32 : 0}
+        rightContent={<StorefrontCartButton storeSlug={resolvedStore.slug} ariaLabel={copy.nav.openCartAria} />}
       />
 
       <main className={`mx-auto w-full ${getStorefrontPageWidthClass(themeConfig.pageWidth)} space-y-6 px-4 py-7 sm:px-6 sm:py-9 lg:py-10`}>
         <section className="mx-auto max-w-3xl space-y-6">
           <header className="space-y-3 border-b border-border/40 pb-5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{store.name}</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{resolvedStore.name}</p>
             <h1 className="text-3xl font-semibold leading-tight sm:text-4xl [font-family:var(--storefront-font-heading)]">
               Privacy request
             </h1>
@@ -106,19 +113,19 @@ export function StorefrontPrivacyRequestPage({
             </div>
           ) : null}
 
-          <StorefrontPrivacyRequestForm
-            storeSlug={store.slug}
-            storeName={store.name}
+            <StorefrontPrivacyRequestForm
+            storeSlug={resolvedStore.slug}
+            storeName={resolvedStore.name}
             privacyProfile={privacyProfile}
           />
         </section>
       </main>
 
       <StorefrontFooter
-        storeName={store.name}
-        storeSlug={store.slug}
-        viewer={viewer}
-        settings={settings}
+        storeName={resolvedStore.name}
+        storeSlug={resolvedStore.slug}
+        viewer={resolvedViewer}
+        settings={resolvedSettings}
         copy={copy}
         navLinks={footerNavLinks}
       />

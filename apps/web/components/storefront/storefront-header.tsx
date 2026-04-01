@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { isStorefrontNavLinkActive, StorefrontMobileNavSheet } from "@/components/storefront/storefront-mobile-nav-sheet";
 import { StorefrontStudioEditableLogo } from "@/components/storefront/storefront-studio-editable-logo";
 import { useOptionalStorefrontRuntime } from "@/components/storefront/storefront-runtime-provider";
+import { buildStorefrontHomePath } from "@/lib/storefront/paths";
 import { resolveStorefrontThemeConfig } from "@/lib/theme/storefront-theme";
 import { cn } from "@/lib/utils";
 import { STOREFRONT_TEXT_LINK_EFFECT_CLASS } from "@/lib/storefront/link-effects";
@@ -56,12 +57,13 @@ export function StorefrontHeader(props: StorefrontHeaderProps) {
   const currentStoreParam = searchParams?.get("store")?.trim() ?? "";
   const previewPathMatch = pathname?.match(/^\/s\/([^/]+)$/);
   const previewStoreSlug = previewPathMatch?.[1]?.trim() ?? "";
+  const routeBasePath = runtime?.routeBasePath ?? (previewStoreSlug ? `/s/${encodeURIComponent(previewStoreSlug)}` : "");
   const homeHref = previewStoreSlug
-    ? `/s/${encodeURIComponent(previewStoreSlug)}`
+    ? buildStorefrontHomePath(previewStoreSlug, routeBasePath)
     : runtimeStoreSlug
-      ? `/s/${encodeURIComponent(runtimeStoreSlug)}`
+      ? buildStorefrontHomePath(runtimeStoreSlug, routeBasePath)
       : currentStoreParam
-        ? `/s/${encodeURIComponent(currentStoreParam)}`
+        ? buildStorefrontHomePath(currentStoreParam)
       : "/";
   const headerMeasurementSignature = [studioEnabled ? "studio" : "live", pathname ?? "", storeName, logoPath ?? "", showLogo ? "logo" : "no-logo", showTitle ? "title" : "no-title", containerClassName, String(topOffsetPx)].join("|");
 

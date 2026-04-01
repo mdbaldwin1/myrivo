@@ -78,8 +78,9 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
   const resolvedSettings = resolvedPresentation?.settings ?? settings;
   const themeConfig = resolvedPresentation?.themeConfig ?? resolveStorefrontThemeConfig(resolvedBranding?.theme_json ?? {});
   const copy = resolvedPresentation?.copy ?? resolveStorefrontCopy(resolvedSettings?.storefront_copy_json ?? {});
-  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, resolvedStore.slug);
-  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, resolvedStore.slug);
+  const routeBasePath = runtime?.routeBasePath ?? "";
+  const headerNavLinks = resolveHeaderNavLinks(themeConfig, copy, resolvedStore.slug, routeBasePath);
+  const footerNavLinks = resolveFooterNavLinks(themeConfig, copy, resolvedStore.slug, routeBasePath);
   const radiusClass = getStorefrontRadiusClass(themeConfig.radiusScale);
   const buttonRadiusClass = getStorefrontButtonRadiusClass(themeConfig.radiusScale);
   const cardClass = getStorefrontCardStyleClass(themeConfig.cardStyle);
@@ -311,10 +312,10 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
             <AppAlert variant="error" message={previewError} />
           )}
           <div className="flex flex-col gap-3 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
-            <Link href={buildStorefrontCartPath(resolvedStore.slug)} className={`font-medium ${STOREFRONT_TEXT_LINK_EFFECT_CLASS}`}>
+            <Link href={buildStorefrontCartPath(resolvedStore.slug, routeBasePath)} className={`font-medium ${STOREFRONT_TEXT_LINK_EFFECT_CLASS}`}>
               {copy.checkout.backToCart}
             </Link>
-            <Link href={buildStorefrontProductsPath(resolvedStore.slug)} className={`font-medium ${STOREFRONT_TEXT_LINK_EFFECT_CLASS}`}>
+            <Link href={buildStorefrontProductsPath(resolvedStore.slug, routeBasePath)} className={`font-medium ${STOREFRONT_TEXT_LINK_EFFECT_CLASS}`}>
               {copy.checkout.continueShopping}
             </Link>
           </div>
