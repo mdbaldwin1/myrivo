@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { StorefrontUnavailablePage } from "@/components/storefront/storefront-unavailable-page";
 import { StorefrontCheckoutPage } from "@/components/storefront/storefront-checkout-page";
@@ -12,6 +13,29 @@ type PageProps = {
 };
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const data = await loadStorefrontData(slug);
+
+  if (!data) {
+    const unavailable = await loadStorefrontUnavailableData(slug);
+    if (unavailable) {
+      return {
+        title: `${unavailable.store.name} | ${unavailable.kind === "offline" ? "Temporarily Offline" : "Coming Soon"}`
+      };
+    }
+
+    return {
+      title: "Checkout | Myrivo"
+    };
+  }
+
+  return {
+    title: `${data.store.name} Checkout`,
+    description: `Complete your order with ${data.store.name}.`
+  };
+}
 
 export default async function StorefrontSlugCheckoutPage({ params, searchParams }: PageProps) {
   const { slug } = await params;

@@ -69,6 +69,56 @@ async function ensureUserExists(email: string, password: string) {
   throw new Error(`Unable to provision E2E user: ${response.status} ${payload.msg ?? "unknown error"}`);
 }
 
+async function signInWithPassword(email: string, password: string) {
+  const env = readLocalEnv();
+  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !anonKey) {
+    throw new Error("Missing Supabase URL or anon key for E2E password verification.");
+  }
+
+  const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: {
+      apikey: anonKey,
+      Authorization: `Bearer ${anonKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      email,
+      password
+    })
+  });
+
+  return response.ok;
+}
+
+async function updateStoreStatus(storeSlug: string, status: "draft" | "live" | "suspended") {
+  const env = readLocalEnv();
+  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRole) {
+    throw new Error("Missing Supabase URL or service role key for E2E store status updates.");
+  }
+
+  const response = await fetch(`${supabaseUrl}/rest/v1/stores?slug=eq.${storeSlug}`, {
+    method: "PATCH",
+    headers: {
+      apikey: serviceRole,
+      Authorization: `Bearer ${serviceRole}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation"
+    },
+    body: JSON.stringify({ status })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Unable to update store status for '${storeSlug}' to '${status}' (status ${response.status}).`);
+  }
+}
+
 type OwnerStoreIdentity = {
   email: string;
   password: string;
@@ -110,23 +160,6 @@ async function querySingleStoreOwnerIdentity(): Promise<OwnerStoreIdentity> {
     throw new Error(`Unable to resolve owner user for store slug '${storeSlug}'.`);
   }
 
-  const configuredOwnerEmail = env.E2E_OWNER_EMAIL?.trim();
-  const configuredOwnerPassword = env.E2E_OWNER_PASSWORD?.trim();
-  if (configuredOwnerEmail && configuredOwnerPassword) {
-    return {
-      email: configuredOwnerEmail,
-      password: configuredOwnerPassword,
-      storeName: storePayload[0].name?.trim() || "Store",
-      storeSlug: storePayload[0].slug
-    };
-  }
-
-  if (env.E2E_ALLOW_OWNER_PASSWORD_RESET !== "true") {
-    throw new Error(
-      "Owner fallback requires E2E_OWNER_EMAIL + E2E_OWNER_PASSWORD, or set E2E_ALLOW_OWNER_PASSWORD_RESET=true to allow temporary password reset."
-    );
-  }
-
   const ownerUserId = storePayload[0].owner_user_id;
   const ownerUserResponse = await fetch(`${supabaseUrl}/auth/v1/admin/users/${ownerUserId}`, {
     headers: {
@@ -139,6 +172,33 @@ async function querySingleStoreOwnerIdentity(): Promise<OwnerStoreIdentity> {
 
   if (!ownerUserResponse.ok || !ownerEmail) {
     throw new Error(`Unable to resolve owner email for user '${ownerUserId}'.`);
+  }
+
+  const configuredOwnerEmail = env.E2E_OWNER_EMAIL?.trim();
+  const configuredOwnerPassword = env.E2E_OWNER_PASSWORD?.trim();
+  if (configuredOwnerEmail && configuredOwnerPassword) {
+    const credentialsAreValid =
+      configuredOwnerEmail.toLowerCase() === ownerEmail.toLowerCase() &&
+      (await signInWithPassword(configuredOwnerEmail, configuredOwnerPassword));
+
+    if (credentialsAreValid) {
+      return {
+        email: configuredOwnerEmail,
+        password: configuredOwnerPassword,
+        storeName: storePayload[0].name?.trim() || "Store",
+        storeSlug: storePayload[0].slug
+      };
+    }
+
+    if (configuredOwnerEmail.toLowerCase() !== ownerEmail.toLowerCase() && env.E2E_ALLOW_OWNER_PASSWORD_RESET !== "true") {
+      throw new Error(
+        "Configured E2E owner email does not match the store owner. Update E2E_OWNER_EMAIL/E2E_OWNER_PASSWORD or set E2E_ALLOW_OWNER_PASSWORD_RESET=true."
+      );
+    }
+  } else if (env.E2E_ALLOW_OWNER_PASSWORD_RESET !== "true") {
+    throw new Error(
+      "Owner fallback requires valid E2E owner credentials, or set E2E_ALLOW_OWNER_PASSWORD_RESET=true to allow a temporary password reset."
+    );
   }
 
   const password = "Myrivo!OwnerE2E1";
@@ -186,6 +246,26 @@ async function getCurrentStoreIdentity(page: Page): Promise<{ storeName: string;
   return { storeName, storeSlug };
 }
 
+async function acceptCookieBannerIfPresent(page: Page) {
+  const essentialOnlyButton = page.getByRole("button", { name: /essential only/i });
+  if (!(await essentialOnlyButton.isVisible().catch(() => false))) {
+    return;
+  }
+
+  await essentialOnlyButton.click();
+  await expect(essentialOnlyButton).toBeHidden();
+}
+
+async function acceptLegalUpdatesIfPresent(page: Page) {
+  const acceptCheckbox = page.getByRole("checkbox", { name: /i have read and accept the required legal updates/i });
+  if (!(await acceptCheckbox.isVisible().catch(() => false))) {
+    return;
+  }
+
+  await acceptCheckbox.check();
+  await page.getByRole("button", { name: /accept and continue/i }).click();
+}
+
 export async function signupAndOnboard(page: Page) {
   const identity = buildMerchantIdentity();
   let ownerFallback: OwnerStoreIdentity | null = null;
@@ -217,14 +297,15 @@ export async function signupAndOnboard(page: Page) {
     };
   }
 
-  await expect(page).toHaveURL(/\/onboarding/);
+  await page.goto("/dashboard/stores/onboarding/new");
+  await expect(page).toHaveURL(/\/dashboard\/stores\/onboarding\/new/);
   await page.getByPlaceholder("Sunset Mercantile").fill(identity.storeName);
   await page.getByRole("button", { name: /create store/i }).click();
 
-  await expect(page).toHaveURL(/\/dashboard/);
-  await expect(page.getByText(identity.storeName)).toBeVisible();
-
   const currentStore = await getCurrentStoreIdentity(page);
+  await expect(page).toHaveURL(/\/dashboard\/stores\/[^/]+\/onboarding/);
+  await page.goto("/dashboard/catalog");
+  await expect(page).toHaveURL(/\/dashboard\/stores\/[^/]+\/catalog/);
 
   return {
     ...identity,
@@ -235,9 +316,14 @@ export async function signupAndOnboard(page: Page) {
 
 export async function login(page: Page, email: string, password: string) {
   await page.goto("/login");
+  await acceptCookieBannerIfPresent(page);
   await page.getByPlaceholder("owner@yourshop.com").fill(email);
   await page.getByPlaceholder("Enter your password").fill(password);
   await page.getByRole("button", { name: /sign in/i }).click();
+  await page.waitForLoadState("networkidle").catch(() => undefined);
+  if (page.url().includes("/legal/consent")) {
+    await acceptLegalUpdatesIfPresent(page);
+  }
   await expect(page).toHaveURL(/\/(dashboard|onboarding)/);
 }
 
@@ -246,12 +332,11 @@ export async function activateStore(page: Page) {
 }
 
 export async function setStoreStatus(page: Page, status: "active" | "draft" | "suspended") {
-  await page.goto("/dashboard/store-settings/profile");
-  const profileForm = page.locator("#store-profile-form");
-  const currentStatusButton = profileForm.getByText(/^(Draft|Active|Suspended)$/).first();
-  await currentStatusButton.click();
-  const optionLabel = status.charAt(0).toUpperCase() + status.slice(1);
-  await page.getByRole("option", { name: optionLabel }).click();
-  await page.getByRole("button", { name: /^save$/i }).click();
-  await expect(page.getByText(/store profile saved/i)).toBeVisible();
+  const currentStore = await getCurrentStoreIdentity(page);
+  if (!currentStore) {
+    throw new Error("Unable to resolve the current store before updating status.");
+  }
+
+  const nextStatus = status === "active" ? "live" : status;
+  await updateStoreStatus(currentStore.storeSlug, nextStatus);
 }

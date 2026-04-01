@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { StorefrontUnavailablePage } from "@/components/storefront/storefront-unavailable-page";
@@ -14,6 +15,30 @@ export const dynamic = "force-dynamic";
 type CartPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
+
+export async function generateMetadata({ searchParams }: CartPageProps): Promise<Metadata> {
+  const resolvedSearchParams = await searchParams;
+  const requestedStoreSlug = typeof resolvedSearchParams.store === "string" ? resolvedSearchParams.store : null;
+  const data = await loadStorefrontData(requestedStoreSlug);
+
+  if (!data) {
+    const unavailable = await loadStorefrontUnavailableData(requestedStoreSlug);
+    if (unavailable) {
+      return {
+        title: `${unavailable.store.name} | ${unavailable.kind === "offline" ? "Temporarily Offline" : "Coming Soon"}`
+      };
+    }
+
+    return {
+      title: "Cart | Myrivo"
+    };
+  }
+
+  return {
+    title: `${data.store.name} Cart`,
+    description: `Review the items in your cart from ${data.store.name}.`
+  };
+}
 
 export default async function CartPage({ searchParams }: CartPageProps) {
   const resolvedSearchParams = await searchParams;

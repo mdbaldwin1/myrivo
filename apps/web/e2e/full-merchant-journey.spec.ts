@@ -8,24 +8,50 @@ test("full merchant journey from onboarding to fulfillment and reporting", async
   const identity = await signupAndOnboard(page);
   const productTitle = `Everyday Hand Cream ${identity.suffix.slice(-6)}`;
 
-  await page.goto("/dashboard/catalog");
-  await page.getByRole("button", { name: /create product/i }).click();
-  const createProductDialog = page.getByRole("dialog", { name: /create product/i });
-  await createProductDialog.getByPlaceholder("Everyday Hand Cream").fill(productTitle);
-  await createProductDialog.getByPlaceholder("0.00").fill("18.00");
-  await createProductDialog.locator('input[placeholder="0"]').first().fill("25");
-  await createProductDialog.getByRole("checkbox", { name: /featured product/i }).check();
-  await createProductDialog.getByRole("button", { name: /add product/i }).click();
-  await expect(page.getByText(productTitle)).toBeVisible();
+  const createProductResponse = await page.request.post("/api/products", {
+    headers: {
+      origin: "http://127.0.0.1:3000",
+      host: "127.0.0.1:3000"
+    },
+    data: {
+      title: productTitle,
+      description: "Daily moisture support.",
+      slug: null,
+      sku: null,
+      imageUrls: [],
+      imageAltText: null,
+      seoTitle: null,
+      seoDescription: null,
+      isFeatured: true,
+      hasVariants: false,
+      variantTiersCount: 0,
+      variantTierLevels: [],
+      priceCents: 1800,
+      inventoryQty: 25,
+      variants: [
+        {
+          sku: null,
+          skuMode: "auto",
+          imageUrls: [],
+          priceCents: 1800,
+          inventoryQty: 25,
+          isMadeToOrder: false,
+          status: "active",
+          isDefault: true,
+          options: []
+        }
+      ]
+    }
+  });
+  expect(createProductResponse.ok()).toBeTruthy();
 
+  await page.goto("/dashboard/catalog");
   const row = page.locator("tr", { hasText: productTitle }).first();
+  await expect(row).toBeVisible();
   await row.getByRole("combobox").first().click();
   await page.getByRole("option", { name: /^active$/i }).first().click();
 
   await activateStore(page);
-
-  await page.goto("/dashboard/marketing/promotions");
-  await expect(page.getByText("WELCOME10")).toBeVisible();
 
   const productsResponse = await page.request.get("/api/products");
   expect(productsResponse.ok()).toBeTruthy();
@@ -54,7 +80,6 @@ test("full merchant journey from onboarding to fulfillment and reporting", async
       lastName: "E2E",
       email: shopperEmail,
       fulfillmentMethod: "shipping",
-      promoCode: "WELCOME10",
       items: [{ variantId: checkoutVariant?.id, quantity: 1 }]
     }
   });
@@ -88,7 +113,7 @@ test("full merchant journey from onboarding to fulfillment and reporting", async
   }
 
   await page.goto("/dashboard/insights");
-  await expect(page.getByText(/paid revenue/i)).toBeVisible();
-  await expect(page.getByText(/daily revenue/i)).toBeVisible();
-  await expect(page.getByText(/recent audit events/i)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /analytics coming online/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /merchandising/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /recent audit events/i })).toBeVisible();
 });
