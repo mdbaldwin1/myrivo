@@ -50,7 +50,14 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
   const currentPath = requestHeaders.get("x-pathname") ?? requestHeaders.get("next-url") ?? "";
   const whiteLabelStoreSlug = await resolveStoreSlugFromDomain(host);
-  const singleStoreSlug = await resolveStoreSlugForServerRender(explicitStoreSlug ?? whiteLabelStoreSlug);
+  // When there is no explicit store slug and the domain is not a custom
+  // storefront domain, skip the cookie-based fallback so the app's own
+  // domain (myrivo.app) renders the marketing homepage instead of a
+  // storefront the user previously visited from the dashboard.
+  const resolvedStoreHint = explicitStoreSlug ?? whiteLabelStoreSlug;
+  const singleStoreSlug = resolvedStoreHint
+    ? await resolveStoreSlugForServerRender(resolvedStoreHint)
+    : null;
   if (!singleStoreSlug) {
     return null;
   }
