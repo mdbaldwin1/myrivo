@@ -268,21 +268,25 @@ function getPickupConfigurationIssues({
     return issues;
   }
 
-  if (activeLocations.length === 0) {
+  // When availability rules are off and no locations exist, pickup works as a
+  // simple fulfillment option (e.g. "Porch pickup") — no setup required.
+  const rulesOff = !pickupSettings.pickup_enabled;
+
+  if (activeLocations.length === 0 && !rulesOff) {
     issues.push({
       severity: "error",
       message: "Add at least one active pickup location before enabling pickup at checkout."
     });
   }
 
-  if (locationsWithCoordinates.length === 0) {
+  if (activeLocations.length > 0 && locationsWithCoordinates.length === 0 && !rulesOff) {
     issues.push({
       severity: "error",
       message: "Add latitude and longitude to at least one active pickup location so buyers can qualify for pickup."
     });
   }
 
-  if (pickupSettings.show_pickup_times && locationsWithHours.size === 0) {
+  if (pickupSettings.show_pickup_times && activeLocations.length > 0 && locationsWithHours.size === 0) {
     issues.push({
       severity: "error",
       message: "Add pickup hours for at least one active location or turn off pickup times."

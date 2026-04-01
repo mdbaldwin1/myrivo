@@ -103,6 +103,20 @@ export async function POST(request: NextRequest) {
   } as const;
 
   if (!locations || locations.length === 0) {
+    // When availability rules are off and no locations exist, allow pickup as a
+    // simple fulfillment method (e.g. "Porch pickup") — no location or slot
+    // selection required.  The seller coordinates details out-of-band.
+    if (!resolvedPickupSettings.pickup_enabled) {
+      return NextResponse.json({
+        pickupEnabled: true,
+        selectionMode: resolvedPickupSettings.selection_mode,
+        instructions: resolvedPickupSettings.instructions,
+        showPickupTimes: false,
+        options: [],
+        selectedLocationId: null,
+        slots: []
+      });
+    }
     return NextResponse.json({
       pickupEnabled: false,
       selectionMode: resolvedPickupSettings.selection_mode,

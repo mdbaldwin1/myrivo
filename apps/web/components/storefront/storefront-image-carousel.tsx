@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +32,7 @@ export function StorefrontImageCarousel(props: StorefrontImageCarouselProps) {
     eagerFirstImage = false
   } = props;
   const trackRef = useRef<HTMLDivElement | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const hasMultiple = images.length > 1;
 
@@ -49,6 +50,29 @@ export function StorefrontImageCarousel(props: StorefrontImageCarouselProps) {
     trackRef.current.scrollTo({ left, behavior: "smooth" });
     setActiveIndex(clamped);
   }
+
+  const onTouchStart = useCallback((event: React.TouchEvent) => {
+    const touch = event.touches[0] as Touch | undefined;
+    if (!touch) return;
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+  }, []);
+
+  const onTouchEnd = useCallback(
+    (event: React.TouchEvent) => {
+      if (!touchStartRef.current) return;
+      const touch = event.changedTouches[0] as Touch | undefined;
+      if (!touch) return;
+      const dx = touch.clientX - touchStartRef.current.x;
+      const dy = touch.clientY - touchStartRef.current.y;
+      touchStartRef.current = null;
+      // Only count horizontal swipes where x-distance exceeds y-distance
+      if (Math.abs(dx) > 30 && Math.abs(dx) > Math.abs(dy)) {
+        event.preventDefault();
+        scrollToIndex(dx < 0 ? activeIndex + 1 : activeIndex - 1);
+      }
+    },
+    [activeIndex, images.length] // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   return (
     <div className={cn("group relative overflow-hidden", imageClassName)}>
@@ -85,7 +109,7 @@ export function StorefrontImageCarousel(props: StorefrontImageCarouselProps) {
           ))}
         </div>
       ) : (
-        <div className="h-full w-full overflow-hidden">
+        <div className="h-full w-full overflow-hidden" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
           <div
             className="flex h-full w-full transition-transform duration-300 ease-out motion-reduce:transition-none"
             style={{ transform: `translate3d(-${activeIndex * 100}%, 0, 0)` }}
@@ -124,6 +148,7 @@ export function StorefrontImageCarousel(props: StorefrontImageCarouselProps) {
                   showArrowsOnHover ? "opacity-0 transition-opacity group-hover:opacity-100" : ""
                 )}
                 onClick={(event) => {
+                  event.preventDefault();
                   event.stopPropagation();
                   scrollToIndex(activeIndex - 1);
                 }}
@@ -138,6 +163,7 @@ export function StorefrontImageCarousel(props: StorefrontImageCarouselProps) {
                   showArrowsOnHover ? "opacity-0 transition-opacity group-hover:opacity-100" : ""
                 )}
                 onClick={(event) => {
+                  event.preventDefault();
                   event.stopPropagation();
                   scrollToIndex(activeIndex + 1);
                 }}
