@@ -234,6 +234,7 @@ describe("checkout promotion caps", () => {
       buildRequest({
         firstName: "Taylor",
         lastName: "Shopper",
+        phone: "555-0100",
         email: "taylor@example.com",
         fulfillmentMethod: "shipping",
         promoCode: "WELCOME10",
