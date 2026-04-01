@@ -106,5 +106,17 @@ export async function resolvePrimaryDomainForStoreSlug(storeSlug: string): Promi
     return null;
   }
 
+  // Never return the app's own domain as a primary storefront domain.
+  try {
+    const appHost = new URL(getAppUrl()).hostname;
+    const bareDomain = domainRow.domain.startsWith("www.") ? domainRow.domain.slice(4) : domainRow.domain;
+    const bareApp = appHost.startsWith("www.") ? appHost.slice(4) : appHost;
+    if (bareDomain === bareApp) {
+      return null;
+    }
+  } catch {
+    // fall through
+  }
+
   return domainRow.domain;
 }
