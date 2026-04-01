@@ -506,7 +506,9 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
     }
 
     if (selectedFulfillment.method === "pickup") {
-      if (!selectedPickupLocationId) {
+      // When there are pickup options to choose from, a location must be selected.
+      // When there are no options (locationless pickup), skip this validation.
+      if ((pickupOptions ?? []).length > 0 && !selectedPickupLocationId) {
         setError("Select a pickup location before checkout.");
         return;
       }
@@ -834,30 +836,32 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
 
               {selectedFulfillment.method === "pickup" ? (
                 <div className="space-y-2 border-b border-border/40 pb-4">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      if (!navigator.geolocation) {
-                        setPickupStatusMessage("Location services are unavailable in this browser.");
-                        return;
-                      }
-
-                      navigator.geolocation.getCurrentPosition(
-                        (position) => {
-                          setBuyerLatitude(position.coords.latitude);
-                          setBuyerLongitude(position.coords.longitude);
-                          setPickupStatusMessage(null);
-                        },
-                        () => {
-                          setPickupStatusMessage("We couldn't read your location. Try again or choose shipping.");
+                  {(pickupOptions ?? []).length > 0 ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (!navigator.geolocation) {
+                          setPickupStatusMessage("Location services are unavailable in this browser.");
+                          return;
                         }
-                      );
-                    }}
-                  >
-                    Use my location for pickup
-                  </Button>
+
+                        navigator.geolocation.getCurrentPosition(
+                          (position) => {
+                            setBuyerLatitude(position.coords.latitude);
+                            setBuyerLongitude(position.coords.longitude);
+                            setPickupStatusMessage(null);
+                          },
+                          () => {
+                            setPickupStatusMessage("We couldn't read your location. Try again or choose shipping.");
+                          }
+                        );
+                      }}
+                    >
+                      Use my location for pickup
+                    </Button>
+                  ) : null}
 
                   {pickupSelectionMode === "buyer_select" && pickupOptions && pickupOptions.length > 0 ? (
                     <div className="space-y-2">
