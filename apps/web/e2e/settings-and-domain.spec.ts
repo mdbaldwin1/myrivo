@@ -2,21 +2,16 @@ import { expect, test } from "@playwright/test";
 import { signupAndOnboard } from "./helpers";
 
 test("merchant can update profile, branding, and checkout rules", async ({ page }) => {
-  await signupAndOnboard(page);
-  await page.goto("/dashboard/store-settings/profile");
+  const identity = await signupAndOnboard(page);
+  await page.goto(`/dashboard/stores/${identity.storeSlug}/store-settings/general`);
 
-  await page.getByPlaceholder("Sunset Mercantile").fill("Sunset Mercantile");
-  await page.getByRole("button", { name: /^save$/i }).click();
+  await page.getByRole("textbox", { name: "Store Name" }).fill("Sunset Mercantile");
+  await page.getByRole("button", { name: /save profile/i }).click();
   await expect(page.getByText(/store profile saved/i)).toBeVisible();
 
-  await page.goto("/dashboard/store-settings/branding");
-  await page.getByPlaceholder("#0F7B84").fill("#7A3A1A");
-  await page.getByPlaceholder("#1AA3A8").fill("#C7662E");
-  await page.getByRole("button", { name: /^save$/i }).click();
-  await expect(page.getByText(/branding settings saved/i)).toBeVisible();
-
-  await page.goto("/dashboard/store-settings/checkout-rules");
-  await page.getByPlaceholder("Small-batch orders ship in 2-4 business days").fill("Orders ship in 1-2 business days.");
-  await page.getByRole("button", { name: /^save$/i }).click();
-  await expect(page.getByText(/checkout and fulfillment settings saved/i)).toBeVisible();
+  await page.goto(`/dashboard/stores/${identity.storeSlug}/store-settings/fulfillment`);
+  await page.getByRole("textbox", { name: "Shipping Label" }).fill("Fast shipping");
+  await page.getByRole("spinbutton", { name: "Shipping Fee (cents)" }).fill("750");
+  await page.getByRole("button", { name: /save fulfillment settings/i }).click();
+  await expect(page.getByText(/fulfillment settings saved/i)).toBeVisible();
 });

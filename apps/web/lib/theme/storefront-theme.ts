@@ -333,13 +333,25 @@ function getRelativeLuminance(hex: string) {
   );
 }
 
+function getContrastRatio(foregroundHex: string, backgroundHex: string) {
+  const foregroundLuminance = getRelativeLuminance(foregroundHex);
+  const backgroundLuminance = getRelativeLuminance(backgroundHex);
+  const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+  const darker = Math.min(foregroundLuminance, backgroundLuminance);
+
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 function resolveAccessibleForeground(backgroundHex: string, preferredForegroundHex: string | null | undefined) {
+  const normalizedBackground = normalizeHex(backgroundHex) ?? "#000000";
   const preferred = normalizeHex(preferredForegroundHex ?? null);
-  if (preferred) {
+
+  // Preserve an explicit theme foreground only when it still meets WCAG AA contrast.
+  if (preferred && getContrastRatio(preferred, normalizedBackground) >= 4.5) {
     return preferred;
   }
 
-  return resolveContrastingForeground(backgroundHex);
+  return resolveContrastingForeground(normalizedBackground);
 }
 
 function pickStringOption<T extends readonly string[]>(value: unknown, options: T, fallback: T[number]): T[number] {
