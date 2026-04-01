@@ -286,6 +286,7 @@ describe("checkout Stripe tax liability", () => {
       buildRequest({
         firstName: "Alice",
         lastName: "Buyer",
+        phone: "555-0100",
         email: "alice@example.com",
         items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
       })
@@ -355,6 +356,7 @@ describe("checkout Stripe tax liability", () => {
       buildRequest({
         firstName: "Alice",
         lastName: "Buyer",
+        phone: "555-0100",
         email: "alice@example.com",
         items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
       })
@@ -509,6 +511,7 @@ describe("checkout Stripe tax liability", () => {
       buildRequest({
         firstName: "Alice",
         lastName: "Buyer",
+        phone: "555-0100",
         email: "alice@example.com",
         items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
       })

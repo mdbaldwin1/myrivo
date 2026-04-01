@@ -56,7 +56,7 @@ const attributionTouchSchema = z.object({
 const payloadSchema = z.object({
   firstName: z.string().trim().min(1).max(80),
   lastName: z.string().trim().min(1).max(80),
-  phone: z.string().trim().max(40).optional(),
+  phone: z.string().trim().min(1).max(40),
   email: z.string().email(),
   buyerLatitude: z.number().min(-90).max(90).optional(),
   buyerLongitude: z.number().min(-180).max(180).optional(),
@@ -437,7 +437,7 @@ export async function POST(request: NextRequest) {
   }
 
   const normalizedCustomerNote = checkoutSettings?.checkout_allow_order_note ? customerNote?.trim() || null : null;
-  const normalizedPhone = phone?.trim() || null;
+  const normalizedPhone = phone.trim();
   let resolvedPickupLocationId: string | null = null;
   let resolvedPickupLocationSnapshot: Record<string, unknown> | null = null;
   let resolvedPickupWindowStartAt: string | null = null;
