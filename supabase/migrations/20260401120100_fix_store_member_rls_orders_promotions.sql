@@ -346,40 +346,7 @@ with check (
   )
 );
 
--- ── subscriptions ───────────────────────────────────────────────────────────
-
-drop policy if exists subscriptions_owner_all on public.subscriptions;
-
-create policy subscriptions_store_member_all on public.subscriptions
-for all
-using (
-  exists (
-    select 1 from public.store_memberships sm
-    where sm.store_id = subscriptions.store_id
-      and sm.user_id = auth.uid()
-      and sm.status = 'active'
-      and sm.role in ('owner', 'admin', 'staff')
-  )
-  or exists (
-    select 1 from public.stores s
-    where s.id = subscriptions.store_id
-      and s.owner_user_id = auth.uid()
-  )
-)
-with check (
-  exists (
-    select 1 from public.store_memberships sm
-    where sm.store_id = subscriptions.store_id
-      and sm.user_id = auth.uid()
-      and sm.status = 'active'
-      and sm.role in ('owner', 'admin', 'staff')
-  )
-  or exists (
-    select 1 from public.stores s
-    where s.id = subscriptions.store_id
-      and s.owner_user_id = auth.uid()
-  )
-);
+-- ── subscriptions (skipped — table does not exist in production) ────────────
 
 -- ── store_domains (drop legacy policy; store_domains_manage already exists) ─
 
@@ -595,40 +562,7 @@ with check (
   )
 );
 
--- ── store_customers ─────────────────────────────────────────────────────────
-
-drop policy if exists store_customers_owner_all on public.store_customers;
-
-create policy store_customers_store_member_all on public.store_customers
-for all
-using (
-  exists (
-    select 1 from public.store_memberships sm
-    where sm.store_id = store_customers.store_id
-      and sm.user_id = auth.uid()
-      and sm.status = 'active'
-      and sm.role in ('owner', 'admin', 'staff')
-  )
-  or exists (
-    select 1 from public.stores s
-    where s.id = store_customers.store_id
-      and s.owner_user_id = auth.uid()
-  )
-)
-with check (
-  exists (
-    select 1 from public.store_memberships sm
-    where sm.store_id = store_customers.store_id
-      and sm.user_id = auth.uid()
-      and sm.status = 'active'
-      and sm.role in ('owner', 'admin', 'staff')
-  )
-  or exists (
-    select 1 from public.stores s
-    where s.id = store_customers.store_id
-      and s.owner_user_id = auth.uid()
-  )
-);
+-- ── store_customers (skipped — table dropped in 20260227120000) ─────────────
 
 -- ── audit_events ────────────────────────────────────────────────────────────
 
