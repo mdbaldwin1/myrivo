@@ -15,8 +15,11 @@ function normalizeFeeProfile(profile: FeeProfile): FeeProfile {
 }
 
 export function calculatePlatformFeeCents(subtotalCents: number, feeProfile: FeeProfile) {
+  if (subtotalCents <= 0) {
+    return 0;
+  }
   const normalizedProfile = normalizeFeeProfile(feeProfile);
-  const variable = Math.round((Math.max(0, subtotalCents) * normalizedProfile.feeBps) / 10000);
+  const variable = Math.round((subtotalCents * normalizedProfile.feeBps) / 10000);
   return Math.max(0, variable + normalizedProfile.feeFixedCents);
 }
 
