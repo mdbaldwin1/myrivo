@@ -54,10 +54,10 @@ const attributionTouchSchema = z.object({
 });
 
 const payloadSchema = z.object({
-  firstName: z.string().trim().min(1).max(80),
-  lastName: z.string().trim().min(1).max(80),
-  phone: z.string().trim().min(1).max(40),
-  email: z.string().email(),
+  firstName: z.string().trim().min(1, "First name is required").max(80),
+  lastName: z.string().trim().min(1, "Last name is required").max(80),
+  phone: z.string().trim().min(1, "Phone number is required").max(40),
+  email: z.string().email("A valid email address is required"),
   buyerLatitude: z.number().min(-90).max(90).optional(),
   buyerLongitude: z.number().min(-180).max(180).optional(),
   fulfillmentMethod: z.enum(["pickup", "shipping"]).optional(),
@@ -285,8 +285,47 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: storeError.message }, { status: 500 });
   }
 
-  if (!store || !isStorePubliclyAccessibleStatus(store.status)) {
+  if (!store) {
     return NextResponse.json({ error: "Store not found or inactive." }, { status: 404 });
+  }
+
+  const serverSupabase = await createSupabaseServerClient();
+  const {
+    data: { user: authenticatedUser }
+  } = await serverSupabase.auth.getUser();
+
+  let isStoreTeamMember = false;
+  if (!isStorePubliclyAccessibleStatus(store.status)) {
+    if (authenticatedUser) {
+      const adminClient = createSupabaseAdminClient();
+      const isOwner = store.id && authenticatedUser.id
+        ? await adminClient
+            .from("stores")
+            .select("id")
+            .eq("id", store.id)
+            .eq("owner_user_id", authenticatedUser.id)
+            .maybeSingle()
+            .then(({ data }) => Boolean(data))
+        : false;
+
+      if (!isOwner) {
+        const { data: membership } = await adminClient
+          .from("store_memberships")
+          .select("role")
+          .eq("store_id", store.id)
+          .eq("user_id", authenticatedUser.id)
+          .eq("status", "active")
+          .maybeSingle<{ role: string }>();
+
+        isStoreTeamMember = Boolean(membership && ["owner", "admin", "staff"].includes(membership.role));
+      } else {
+        isStoreTeamMember = true;
+      }
+    }
+
+    if (!isStoreTeamMember) {
+      return NextResponse.json({ error: "Store not found or inactive." }, { status: 404 });
+    }
   }
 
   const { data: taxDecision, error: taxDecisionError } = await supabase
@@ -307,11 +346,6 @@ export async function POST(request: NextRequest) {
     storeId: store.id,
     sessionKey: analyticsSessionId
   });
-
-  const serverSupabase = await createSupabaseServerClient();
-  const {
-    data: { user: authenticatedUser }
-  } = await serverSupabase.auth.getUser();
 
   let sourceCartId: string | null = null;
   if (authenticatedUser) {
@@ -833,11 +867,12 @@ export async function POST(request: NextRequest) {
   const feeProfile = await resolveStoreFeeProfile(store.id);
   const platformFeeCents = calculatePlatformFeeCents(totalCents, feeProfile);
 
-  if (totalCents <= 0) {
-    return NextResponse.json({ error: "Order total must be greater than $0.00." }, { status: 400 });
+  if (totalCents < 0) {
+    return NextResponse.json({ error: "Order total must not be negative." }, { status: 400 });
   }
 
-  const shouldUseStubMode = isStripeStubMode();
+  const isFreeOrder = totalCents === 0;
+  const shouldUseStubMode = isStripeStubMode() || isFreeOrder || (isStoreTeamMember && !isStorePubliclyAccessibleStatus(store.status));
 
   if (shouldUseStubMode) {
     const { data, error } = await supabase.rpc(

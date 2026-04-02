@@ -170,7 +170,7 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
     throw new Error(storeError.message);
   }
 
-  if (!store || !isStorePubliclyAccessibleStatus(store.status)) {
+  if (!store || (!isStorePubliclyAccessibleStatus(store.status) && store.status !== "offline")) {
     await markStorefrontCheckoutFailed(checkout.id, "Store is no longer live. Checkout cannot be completed.", paymentIntentId);
     return { status: "failed" as const, orderId: null, errorMessage: "Store is no longer live. Checkout cannot be completed." };
   }
