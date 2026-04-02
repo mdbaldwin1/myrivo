@@ -49,6 +49,7 @@ type OrderEmailContext = {
   pickupTimezone: string | null;
   items: OrderEmailItem[];
   emailDocument: EmailStudioDocument;
+  customerHasAccount: boolean;
 };
 
 type PickupSummaryInput = Pick<
@@ -275,6 +276,11 @@ function buildTemplateValues(context: OrderEmailContext, values: Record<string, 
   );
   const appUrl = getExternalAppUrl();
   const orderUrl = `${appUrl}/order/${context.orderId}`;
+  const orderSignupUrl = `${appUrl}/signup?returnTo=${encodeURIComponent(`/order/${context.orderId}`)}&email=${encodeURIComponent(context.customerEmail)}`;
+  const orderActionLabel = "View order";
+  const orderAccountNote = context.customerHasAccount
+    ? ""
+    : `Don't have an account yet? Create one at ${orderSignupUrl} to track your order.`;
   const storeUrl = context.primaryDomain ? `https://${context.primaryDomain}` : context.storeSlug ? `${appUrl}/s/${context.storeSlug}` : appUrl;
   const policiesUrl = `${storeUrl.replace(/\/$/, "")}/policies`;
   const fallbackTrackingUrl = context.trackingUrl?.trim() || orderUrl;
@@ -294,6 +300,8 @@ function buildTemplateValues(context: OrderEmailContext, values: Record<string, 
     total: formatMoney(context.totalCents, context.currency),
     promoCode: context.promoCode ?? "",
     orderUrl,
+    orderActionLabel,
+    orderAccountNote,
     storeUrl,
     policiesUrl,
     fulfillmentMethod: context.fulfillmentMethod ?? "",
@@ -430,7 +438,7 @@ async function loadOrderEmailContext(orderId: string): Promise<OrderEmailContext
     return null;
   }
 
-  const [{ data: store }, { data: settings }, { data: experienceContent }, { data: items, error: itemsError }, { data: primaryDomain }] = await Promise.all([
+  const [{ data: store }, { data: settings }, { data: experienceContent }, { data: items, error: itemsError }, { data: primaryDomain }, { data: customerUserLookup }] = await Promise.all([
     supabase.from("stores").select("id,name,slug").eq("id", order.store_id).maybeSingle<{ id: string; name: string; slug: string | null }>(),
     supabase.from("store_settings").select("support_email").eq("store_id", order.store_id).maybeSingle<{ support_email: string | null }>(),
     supabase
@@ -449,7 +457,13 @@ async function loadOrderEmailContext(orderId: string): Promise<OrderEmailContext
       .eq("store_id", order.store_id)
       .eq("is_primary", true)
       .eq("verification_status", "verified")
-      .maybeSingle<{ domain: string; email_sender_enabled: boolean; email_status: "pending" | "provisioning" | "ready" | "failed" | "not_configured" }>()
+      .maybeSingle<{ domain: string; email_sender_enabled: boolean; email_status: "pending" | "provisioning" | "ready" | "failed" | "not_configured" }>(),
+    supabase
+      .from("user_profiles")
+      .select("id")
+      .ilike("email", order.customer_email.trim().toLowerCase())
+      .limit(1)
+      .maybeSingle<{ id: string }>()
   ]);
 
   if (itemsError) {
@@ -503,7 +517,8 @@ async function loadOrderEmailContext(orderId: string): Promise<OrderEmailContext
         unitPriceCents: item.unit_price_cents
       };
     }),
-    emailDocument: createEmailStudioDocumentFromSection(emailsSection, store?.name ?? "Your store")
+    emailDocument: createEmailStudioDocumentFromSection(emailsSection, store?.name ?? "Your store"),
+    customerHasAccount: Boolean(customerUserLookup?.id)
   };
 }
 
