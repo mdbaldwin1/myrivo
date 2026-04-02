@@ -274,7 +274,7 @@ function buildTemplateValues(context: OrderEmailContext, values: Record<string, 
     getServerEnv().MYRIVO_EMAIL_REPLY_TO
   );
   const appUrl = getExternalAppUrl();
-  const orderUrl = `${appUrl}/dashboard/customer-orders/${context.orderId}`;
+  const orderUrl = `${appUrl}/order/${context.orderId}`;
   const storeUrl = context.primaryDomain ? `https://${context.primaryDomain}` : context.storeSlug ? `${appUrl}/s/${context.storeSlug}` : appUrl;
   const policiesUrl = `${storeUrl.replace(/\/$/, "")}/policies`;
   const fallbackTrackingUrl = context.trackingUrl?.trim() || orderUrl;
