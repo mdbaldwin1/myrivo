@@ -26,9 +26,18 @@ export async function parseJsonRequest<TSchema extends z.ZodTypeAny>(
 
   const parsed = schema.safeParse(rawBody.data);
   if (!parsed.success) {
+    const flat = parsed.error.flatten();
+    const fieldMessages = Object.entries(flat.fieldErrors)
+      .map(([field, errors]) => {
+        const msgs = errors as string[];
+        if (!msgs || msgs.length === 0) return null;
+        return `${field}: ${msgs[0]}`;
+      })
+      .filter(Boolean);
+    const summary = fieldMessages.length > 0 ? fieldMessages.join("; ") : "Invalid payload";
     return {
       ok: false,
-      response: fail(400, "Invalid payload", parsed.error.flatten())
+      response: fail(400, summary, flat)
     };
   }
 

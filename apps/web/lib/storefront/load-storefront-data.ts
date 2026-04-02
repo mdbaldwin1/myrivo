@@ -104,7 +104,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
     }
   }
 
-  if (!isStorePubliclyAccessibleStatus(store.status) && !isOwnerPreview) {
+  if (!isStorePubliclyAccessibleStatus(store.status) && !canManageStore) {
     return null;
   }
 
