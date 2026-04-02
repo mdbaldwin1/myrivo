@@ -15,7 +15,8 @@ const ALLOWED_PREFIXES = [
   "/policies",
   "/pricing",
   "/legal",
-  "/invite/"
+  "/invite/",
+  "/order/"
 ] as const;
 
 function startsWithAllowedPrefix(pathname: string) {
