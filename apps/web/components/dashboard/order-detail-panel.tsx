@@ -21,6 +21,9 @@ type OrderDetailResponse = {
   order?: {
     id: string;
     customer_email: string;
+    customer_first_name: string | null;
+    customer_last_name: string | null;
+    customer_phone: string | null;
     subtotal_cents: number;
     total_cents: number;
     status: OrderFinancialStatus;
@@ -213,7 +216,11 @@ export function OrderDetailPanel({ orderId, onReschedulePickup, refreshToken = 0
                   <StatusChip label={formatFulfillmentStatus(order.fulfillment_status)} tone={orderTone(order.fulfillment_status)} />
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  {order.customer_email} • Created {new Date(order.created_at).toLocaleString()}
+                  {[order.customer_first_name, order.customer_last_name].filter(Boolean).join(" ")}
+                  {(order.customer_first_name || order.customer_last_name) ? " • " : ""}
+                  {order.customer_email}
+                  {order.customer_phone ? ` • ${order.customer_phone}` : ""}
+                  {" • "}Created {new Date(order.created_at).toLocaleString()}
                 </p>
               </div>
               {order.fulfillment_method === "pickup" && order.fulfillment_status !== "delivered" && onReschedulePickup ? (
