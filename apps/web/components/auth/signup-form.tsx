@@ -30,6 +30,7 @@ type SignupMarketingAttribution = {
 
 type SignupFormProps = {
   returnTo: string;
+  prefillEmail?: string | null;
   legalRequirements: { terms: LegalRequirement; privacy: LegalRequirement } | null;
   legalUnavailable: boolean;
   marketingAttribution: SignupMarketingAttribution;
@@ -51,8 +52,8 @@ function readMarketingSessionKey() {
   return cookieEntry?.slice(`${MARKETING_ANALYTICS_COOKIE_NAME}=`.length) ?? null;
 }
 
-export function SignupForm({ returnTo, legalRequirements, legalUnavailable, marketingAttribution }: SignupFormProps) {
-  const [email, setEmail] = useState("");
+export function SignupForm({ returnTo, prefillEmail, legalRequirements, legalUnavailable, marketingAttribution }: SignupFormProps) {
+  const [email, setEmail] = useState(prefillEmail ?? "");
   const [password, setPassword] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
