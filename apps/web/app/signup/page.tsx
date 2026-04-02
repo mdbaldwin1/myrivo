@@ -41,6 +41,7 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
     >
       <SignupForm
         returnTo={returnTo}
+        prefillEmail={getSingleParam(resolvedSearchParams, "email")}
         marketingAttribution={{
           source: getSingleParam(resolvedSearchParams, "source"),
           marketingPage: getSingleParam(resolvedSearchParams, "marketingPage"),
