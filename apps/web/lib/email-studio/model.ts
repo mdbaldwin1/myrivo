@@ -63,7 +63,8 @@ export const EMAIL_STUDIO_TOKENS: readonly EmailStudioFieldToken[] = [
   { token: "{items}", label: "Items summary", description: "Line-item summary text.", category: "order" },
   { token: "{dashboardUrl}", label: "Dashboard URL", description: "Owner or customer dashboard deep link.", category: "links" },
   { token: "{orderUrl}", label: "Order URL", description: "Customer order details URL.", category: "links" },
-  { token: "{orderActionLabel}", label: "Order action label", description: "\"View order\" if customer has an account, or \"Create an account to view your order\" if not.", category: "links" },
+  { token: "{orderActionLabel}", label: "Order action label", description: "\"View order\" — button text for the order CTA.", category: "links" },
+  { token: "{orderAccountNote}", label: "Account note", description: "Empty if customer has an account, or a prompt to create one if not.", category: "links" },
   { token: "{storeUrl}", label: "Store URL", description: "Storefront URL.", category: "links" },
   { token: "{policiesUrl}", label: "Policies URL", description: "Store policies page URL.", category: "links" },
   { token: "{fulfillmentMethod}", label: "Fulfillment method", description: "Pickup or shipping.", category: "fulfillment" },
@@ -242,9 +243,9 @@ function buildDefaultTemplateMap(storeName: string): Record<EmailStudioTemplateI
           "Total: {total}"
         ])
       ),
-      ctaLabel: "{orderActionLabel}",
+      ctaLabel: "View order",
       ctaUrl: "{orderUrl}",
-      footerNote: "Need help? Reply to {replyToEmail}."
+      footerNote: "Need help? Reply to {replyToEmail}. {orderAccountNote}"
     },
     ownerNewOrder: {
       id: "ownerNewOrder",

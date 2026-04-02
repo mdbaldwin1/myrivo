@@ -275,10 +275,12 @@ function buildTemplateValues(context: OrderEmailContext, values: Record<string, 
     getServerEnv().MYRIVO_EMAIL_REPLY_TO
   );
   const appUrl = getExternalAppUrl();
-  const orderViewUrl = `${appUrl}/order/${context.orderId}`;
+  const orderUrl = `${appUrl}/order/${context.orderId}`;
   const orderSignupUrl = `${appUrl}/signup?returnTo=${encodeURIComponent(`/order/${context.orderId}`)}&email=${encodeURIComponent(context.customerEmail)}`;
-  const orderUrl = context.customerHasAccount ? orderViewUrl : orderSignupUrl;
-  const orderActionLabel = context.customerHasAccount ? "View order" : "Create an account to view your order";
+  const orderActionLabel = "View order";
+  const orderAccountNote = context.customerHasAccount
+    ? ""
+    : `Don't have an account yet? Create one at ${orderSignupUrl} to track your order.`;
   const storeUrl = context.primaryDomain ? `https://${context.primaryDomain}` : context.storeSlug ? `${appUrl}/s/${context.storeSlug}` : appUrl;
   const policiesUrl = `${storeUrl.replace(/\/$/, "")}/policies`;
   const fallbackTrackingUrl = context.trackingUrl?.trim() || orderUrl;
@@ -299,6 +301,7 @@ function buildTemplateValues(context: OrderEmailContext, values: Record<string, 
     promoCode: context.promoCode ?? "",
     orderUrl,
     orderActionLabel,
+    orderAccountNote,
     storeUrl,
     policiesUrl,
     fulfillmentMethod: context.fulfillmentMethod ?? "",
