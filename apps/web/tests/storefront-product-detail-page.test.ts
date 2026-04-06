@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { resolveAvailableValuesForOption } from "@/components/storefront/storefront-product-detail-page";
+import { getProductDetailDisplayPrice, resolveAvailableValuesForOption } from "@/components/storefront/storefront-product-detail-page";
 
 describe("storefront product detail option availability", () => {
   test("keeps top-level option values available even when a lower-level selection is archived away", () => {
@@ -37,5 +37,13 @@ describe("storefront product detail option availability", () => {
     const values = resolveAvailableValuesForOption(variants, ["Scent", "Size"], { Size: "2 oz" }, "Scent");
 
     expect(values).toEqual(["Lavender", "Unscented"]);
+  });
+
+  test("multiplies the displayed price by selected quantity", () => {
+    expect(getProductDetailDisplayPrice(1200, 3)).toEqual({
+      unitPriceCents: 1200,
+      quantity: 3,
+      totalPriceCents: 3600
+    });
   });
 });

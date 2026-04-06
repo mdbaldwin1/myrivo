@@ -122,6 +122,17 @@ function getDefaultVariant(product: StorefrontProduct) {
   return variants.find((variant) => variant.is_default) ?? variants[0] ?? null;
 }
 
+export function getProductDetailDisplayPrice(unitPriceCents: number, quantity: number) {
+  const normalizedUnitPriceCents = Math.max(0, unitPriceCents);
+  const normalizedQuantity = Math.max(1, Math.min(99, Math.trunc(quantity || 1)));
+
+  return {
+    unitPriceCents: normalizedUnitPriceCents,
+    quantity: normalizedQuantity,
+    totalPriceCents: normalizedUnitPriceCents * normalizedQuantity
+  };
+}
+
 function getVariantOptionNames(product: StorefrontProduct, variants: StorefrontVariant[]) {
   const configuredAxes = [...(product.product_option_axes ?? [])]
     .sort((left, right) => left.sort_order - right.sort_order)
@@ -304,6 +315,7 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
   const addToCartResetTimeoutRef = useRef<number | null>(null);
 
   const selectedVariant = variants.find((variant) => variant.id === selectedVariantId) ?? defaultVariant;
+  const displayPrice = getProductDetailDisplayPrice(selectedVariant?.price_cents ?? 0, quantity);
   const selectedOptionValues = selectedVariant?.option_values ?? {};
   const images = getVariantImages(selectedVariant, resolvedProduct);
   const canPurchaseSelectedVariant = Boolean(selectedVariant && (selectedVariant.is_made_to_order || selectedVariant.inventory_qty > 0));
@@ -523,7 +535,12 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
 
           <div className={cn("space-y-4 p-4 sm:p-5", radiusClass, cardClass, isIntegrated ? "border border-border/60 bg-[color:var(--storefront-surface)] shadow-sm" : "")}>
             <div className="space-y-2">
-              <p className="text-2xl font-semibold sm:text-[1.8rem]">${((selectedVariant?.price_cents ?? 0) / 100).toFixed(2)}</p>
+              <p className="text-2xl font-semibold sm:text-[1.8rem]">${(displayPrice.totalPriceCents / 100).toFixed(2)}</p>
+              {displayPrice.quantity > 1 ? (
+                <p className="text-sm text-muted-foreground">
+                  {displayPrice.quantity} x ${(displayPrice.unitPriceCents / 100).toFixed(2)} each
+                </p>
+              ) : null}
               {studioEnabledWithDocument ? (
                 availabilityField === "madeToOrderWithFulfillmentTemplate" ? (
                   <StorefrontStudioEditableTemplateText
