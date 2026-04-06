@@ -7,6 +7,8 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - Fixed custom-domain storefront routing so verified domains keep clean paths like `/`, `/products`, `/about`, `/cart`, and `/checkout` instead of leaking back to `/s/:storeSlug/...`.
 - Fixed storefront cart/checkout accessibility metadata and stabilized merchant E2E flows so release validation matches the current store-scoped dashboard, onboarding, and draft/live storefront behavior.
+- Fixed merchant order flyouts so customer-entered order notes now appear in the order summary when present.
+- Fixed storefront product detail pricing so changing quantity updates the displayed total before the item is added to cart.
 
 ### Added
 - Added a preview-first store onboarding system with resumable setup sessions, onboarding-first first-product creation, AI/deterministic storefront generation, reveal-to-workspace handoff, launch-readiness guidance, and platform onboarding analytics.

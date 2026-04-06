@@ -24,6 +24,7 @@ type OrderDetailResponse = {
     customer_first_name: string | null;
     customer_last_name: string | null;
     customer_phone: string | null;
+    customer_note: string | null;
     subtotal_cents: number;
     total_cents: number;
     status: OrderFinancialStatus;
@@ -256,6 +257,12 @@ export function OrderDetailPanel({ orderId, onReschedulePickup, refreshToken = 0
                     <dt className="text-muted-foreground">Shipment status</dt>
                     <dd className="text-right font-medium">{order.shipment_status ?? "-"}</dd>
                   </div>
+                  {order.customer_note ? (
+                    <div className="border-t border-border/60 pt-3">
+                      <dt className="text-muted-foreground">Customer note</dt>
+                      <dd className="mt-1 whitespace-pre-wrap font-medium text-foreground">{order.customer_note}</dd>
+                    </div>
+                  ) : null}
                   {order.tracking_url ? (
                     <div className="pt-1">
                       <a href={order.tracking_url} target="_blank" rel="noreferrer" className="text-primary hover:underline">
