@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- Fixed shipping-order checkout capture so Stripe-collected shipping addresses are saved onto orders and shown in the merchant order flyout.
 - Fixed custom-domain storefront routing so verified domains keep clean paths like `/`, `/products`, `/about`, `/cart`, and `/checkout` instead of leaking back to `/s/:storeSlug/...`.
 - Fixed storefront cart/checkout accessibility metadata and stabilized merchant E2E flows so release validation matches the current store-scoped dashboard, onboarding, and draft/live storefront behavior.
 - Fixed merchant order flyouts so customer-entered order notes now appear in the order summary when present.
