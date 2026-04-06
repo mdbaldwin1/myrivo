@@ -58,7 +58,11 @@ export async function GET(request: NextRequest) {
         const paymentIntentId =
           typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
 
-        const finalized = await finalizeStorefrontCheckout(checkout.id, paymentIntentId);
+        const finalized = await finalizeStorefrontCheckout(
+          checkout.id,
+          paymentIntentId,
+          session as unknown as { shipping_details?: { name?: string | null; address?: { line1?: string | null; line2?: string | null; city?: string | null; state?: string | null; postal_code?: string | null; country?: string | null } | null } | null }
+        );
 
         if (finalized.status === "completed") {
           return NextResponse.json({ status: "completed", orderId: finalized.orderId });

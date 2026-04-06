@@ -25,6 +25,7 @@ type OrderDetailResponse = {
     customer_last_name: string | null;
     customer_phone: string | null;
     customer_note: string | null;
+    shipping_address_json: Record<string, unknown> | null;
     subtotal_cents: number;
     total_cents: number;
     status: OrderFinancialStatus;
@@ -103,6 +104,22 @@ function buildPickupAddress(snapshot: Record<string, unknown> | null): string | 
   return [line1, line2, [city, stateRegion, postalCode].filter(Boolean).join(", "), countryCode].filter(Boolean).join(" • ") || null;
 }
 
+function buildShippingAddress(snapshot: Record<string, unknown> | null): string | null {
+  if (!snapshot) {
+    return null;
+  }
+
+  const recipientName = typeof snapshot.recipientName === "string" ? snapshot.recipientName.trim() : "";
+  const line1 = typeof snapshot.addressLine1 === "string" ? snapshot.addressLine1.trim() : "";
+  const line2 = typeof snapshot.addressLine2 === "string" ? snapshot.addressLine2.trim() : "";
+  const city = typeof snapshot.city === "string" ? snapshot.city.trim() : "";
+  const stateRegion = typeof snapshot.stateRegion === "string" ? snapshot.stateRegion.trim() : "";
+  const postalCode = typeof snapshot.postalCode === "string" ? snapshot.postalCode.trim() : "";
+  const countryCode = typeof snapshot.countryCode === "string" ? snapshot.countryCode.trim() : "";
+
+  return [recipientName, line1, line2, [city, stateRegion, postalCode].filter(Boolean).join(", "), countryCode].filter(Boolean).join(" • ") || null;
+}
+
 export function OrderDetailPanel({ orderId, onReschedulePickup, refreshToken = 0 }: OrderDetailPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -169,6 +186,7 @@ export function OrderDetailPanel({ orderId, onReschedulePickup, refreshToken = 0
         : payload.order.order_fee_breakdowns
       : null;
   const pickupAddress = buildPickupAddress(payload?.order?.pickup_location_snapshot_json ?? null);
+  const shippingAddress = buildShippingAddress(payload?.order?.shipping_address_json ?? null);
   const pickupWindow =
     payload?.order?.pickup_window_start_at && payload.order.pickup_window_end_at
       ? `${new Date(payload.order.pickup_window_start_at).toLocaleString()} - ${new Date(payload.order.pickup_window_end_at).toLocaleString()}${
@@ -261,6 +279,12 @@ export function OrderDetailPanel({ orderId, onReschedulePickup, refreshToken = 0
                     <div className="border-t border-border/60 pt-3">
                       <dt className="text-muted-foreground">Customer note</dt>
                       <dd className="mt-1 whitespace-pre-wrap font-medium text-foreground">{order.customer_note}</dd>
+                    </div>
+                  ) : null}
+                  {order.fulfillment_method === "shipping" ? (
+                    <div className="border-t border-border/60 pt-3">
+                      <dt className="text-muted-foreground">Shipping address</dt>
+                      <dd className="mt-1 whitespace-pre-wrap font-medium text-foreground">{shippingAddress ?? "-"}</dd>
                     </div>
                   ) : null}
                   {order.tracking_url ? (

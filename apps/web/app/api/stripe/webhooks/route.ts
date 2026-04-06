@@ -47,7 +47,11 @@ export async function POST(request: Request) {
         if (checkoutId) {
           const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
           if (session.payment_status === "paid") {
-            await finalizeStorefrontCheckout(checkoutId, paymentIntentId);
+            await finalizeStorefrontCheckout(
+              checkoutId,
+              paymentIntentId,
+              session as unknown as { shipping_details?: { name?: string | null; address?: { line1?: string | null; line2?: string | null; city?: string | null; state?: string | null; postal_code?: string | null; country?: string | null } | null } | null }
+            );
           }
         }
 

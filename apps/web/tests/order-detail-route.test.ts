@@ -49,6 +49,14 @@ describe("order detail route", () => {
                     id: ORDER_ID,
                     customer_email: "buyer@example.com",
                     customer_note: "Leave at the side gate, please.",
+                    shipping_address_json: {
+                      recipientName: "Bruce Baldwin",
+                      addressLine1: "12 Main St",
+                      city: "Nashville",
+                      stateRegion: "TN",
+                      postalCode: "37201",
+                      countryCode: "US"
+                    },
                     subtotal_cents: 3000,
                     total_cents: 3000,
                     status: "paid",
@@ -246,7 +254,7 @@ describe("order detail route", () => {
       params: Promise.resolve({ orderId: ORDER_ID })
     });
     const payload = (await response.json()) as {
-      order?: { customer_note: string | null };
+      order?: { customer_note: string | null; shipping_address_json: Record<string, unknown> | null };
       refunds?: Array<{ id: string; amount_cents: number }>;
       disputes?: Array<{ id: string; status: string }>;
       shippingDelays?: Array<{ id: string; status: string; customer_path: string }>;
@@ -255,6 +263,11 @@ describe("order detail route", () => {
 
     expect(response.status).toBe(200);
     expect(payload.order?.customer_note).toBe("Leave at the side gate, please.");
+    expect(payload.order?.shipping_address_json).toMatchObject({
+      recipientName: "Bruce Baldwin",
+      addressLine1: "12 Main St",
+      city: "Nashville"
+    });
     expect(payload.refunds).toHaveLength(1);
     expect(payload.refunds?.[0]).toMatchObject({ id: "refund-1", amount_cents: 1200 });
     expect(payload.disputes).toHaveLength(1);

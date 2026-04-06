@@ -16,6 +16,14 @@ describe("OrderDetailPanel", () => {
           customer_last_name: "Buyer",
           customer_phone: null,
           customer_note: "Please include a gift note.",
+          shipping_address_json: {
+            recipientName: "Taylor Buyer",
+            addressLine1: "12 Main St",
+            city: "Nashville",
+            stateRegion: "TN",
+            postalCode: "37201",
+            countryCode: "US"
+          },
           subtotal_cents: 2800,
           total_cents: 2800,
           status: "paid",
@@ -65,5 +73,15 @@ describe("OrderDetailPanel", () => {
     });
 
     expect(screen.getByText("Please include a gift note.")).toBeTruthy();
+  });
+
+  test("renders the shipping address for shipping orders", async () => {
+    render(<OrderDetailPanel orderId="order-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Shipping address")).toBeTruthy();
+    });
+
+    expect(screen.getByText("Taylor Buyer • 12 Main St • Nashville, TN, 37201 • US")).toBeTruthy();
   });
 });
