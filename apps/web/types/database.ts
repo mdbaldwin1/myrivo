@@ -452,6 +452,7 @@ export type OrderRecord = {
   customer_phone: string | null;
   customer_email: string;
   customer_note: string | null;
+  shipping_address_json: Record<string, unknown> | null;
   fulfillment_method: "pickup" | "shipping" | null;
   fulfillment_label: string | null;
   pickup_location_id: string | null;

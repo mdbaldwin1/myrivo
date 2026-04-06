@@ -10,6 +10,30 @@ import { buildStubCheckoutRpcPayload } from "@/lib/storefront/stub-checkout";
 import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 import { getStripeClient } from "@/lib/stripe/server";
 
+type ShippingAddressSnapshot = {
+  recipientName?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  stateRegion?: string;
+  postalCode?: string;
+  countryCode?: string;
+};
+
+type StripeSessionShippingDetails = {
+  shipping_details?: {
+    name?: string | null;
+    address?: {
+      line1?: string | null;
+      line2?: string | null;
+      city?: string | null;
+      state?: string | null;
+      postal_code?: string | null;
+      country?: string | null;
+    } | null;
+  } | null;
+};
+
 type StorefrontCheckoutRecord = {
   id: string;
   store_id: string;
@@ -22,6 +46,7 @@ type StorefrontCheckoutRecord = {
   customer_last_name: string | null;
   customer_phone: string | null;
   customer_note: string | null;
+  shipping_address_json: ShippingAddressSnapshot | null;
   fulfillment_method: "pickup" | "shipping" | null;
   fulfillment_label: string | null;
   pickup_location_id: string | null;
@@ -41,6 +66,32 @@ type StorefrontCheckoutRecord = {
   order_id: string | null;
   status: "pending" | "completed" | "failed";
 };
+
+function normalizeAddressField(value: string | null | undefined) {
+  const next = value?.trim();
+  return next ? next : undefined;
+}
+
+export function extractShippingAddressSnapshot(
+  session: StripeSessionShippingDetails | null | undefined
+): ShippingAddressSnapshot | null {
+  const details = session?.shipping_details;
+  if (!details?.address) {
+    return null;
+  }
+
+  const snapshot: ShippingAddressSnapshot = {
+    recipientName: normalizeAddressField(details.name),
+    addressLine1: normalizeAddressField(details.address.line1),
+    addressLine2: normalizeAddressField(details.address.line2),
+    city: normalizeAddressField(details.address.city),
+    stateRegion: normalizeAddressField(details.address.state),
+    postalCode: normalizeAddressField(details.address.postal_code),
+    countryCode: normalizeAddressField(details.address.country)?.toUpperCase()
+  };
+
+  return Object.values(snapshot).some(Boolean) ? snapshot : null;
+}
 
 async function resolveCheckoutCustomerUserId(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
@@ -135,13 +186,18 @@ async function resolveAppliedCheckoutPromotions(
     }));
 }
 
-export async function finalizeStorefrontCheckout(checkoutId: string, paymentIntentId: string | null) {
+export async function finalizeStorefrontCheckout(
+  checkoutId: string,
+  paymentIntentId: string | null,
+  stripeSession: StripeSessionShippingDetails | null = null
+) {
   const supabase = createSupabaseAdminClient();
+  const shippingAddressSnapshot = extractShippingAddressSnapshot(stripeSession);
 
   const { data: checkout, error: checkoutError } = await supabase
     .from("storefront_checkout_sessions")
     .select(
-      "id,store_id,store_slug,analytics_session_id,analytics_session_key,source_cart_id,customer_email,customer_first_name,customer_last_name,customer_phone,customer_note,fulfillment_method,fulfillment_label,pickup_location_id,pickup_location_snapshot_json,pickup_window_start_at,pickup_window_end_at,pickup_timezone,shipping_fee_cents,promo_code,promo_codes_json,fee_plan_key,fee_bps,fee_fixed_cents,item_total_cents,platform_fee_cents,items,order_id,status"
+      "id,store_id,store_slug,analytics_session_id,analytics_session_key,source_cart_id,customer_email,customer_first_name,customer_last_name,customer_phone,customer_note,shipping_address_json,fulfillment_method,fulfillment_label,pickup_location_id,pickup_location_snapshot_json,pickup_window_start_at,pickup_window_end_at,pickup_timezone,shipping_fee_cents,promo_code,promo_codes_json,fee_plan_key,fee_bps,fee_fixed_cents,item_total_cents,platform_fee_cents,items,order_id,status"
     )
     .eq("id", checkoutId)
     .maybeSingle<StorefrontCheckoutRecord>();
@@ -153,6 +209,8 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
   if (!checkout) {
     return { status: "missing" as const, orderId: null };
   }
+
+  const resolvedShippingAddressSnapshot = checkout.shipping_address_json ?? shippingAddressSnapshot;
 
   if (checkout.status === "completed" && checkout.order_id) {
     return { status: "completed" as const, orderId: checkout.order_id };
@@ -212,6 +270,7 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
           customer_last_name: checkout.customer_last_name,
           customer_phone: checkout.customer_phone,
           customer_note: checkout.customer_note,
+          shipping_address_json: resolvedShippingAddressSnapshot,
           fulfillment_method: checkout.fulfillment_method,
           fulfillment_label: checkout.fulfillment_label,
           pickup_location_id: checkout.pickup_location_id,
@@ -254,6 +313,7 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
           status: "completed",
           order_id: existingOrder.id,
           stripe_payment_intent_id: paymentIntentId,
+          shipping_address_json: resolvedShippingAddressSnapshot,
           error_message: null
         })
         .eq("id", checkout.id);
@@ -335,6 +395,7 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
       customer_last_name: checkout.customer_last_name,
       customer_phone: checkout.customer_phone,
       customer_note: checkout.customer_note,
+      shipping_address_json: resolvedShippingAddressSnapshot,
       fulfillment_method: checkout.fulfillment_method,
       fulfillment_label: checkout.fulfillment_label,
       pickup_location_id: checkout.pickup_location_id,
@@ -377,6 +438,7 @@ export async function finalizeStorefrontCheckout(checkoutId: string, paymentInte
       status: "completed",
       order_id: orderId,
       stripe_payment_intent_id: paymentIntentId,
+      shipping_address_json: resolvedShippingAddressSnapshot,
       error_message: null
     })
     .eq("id", checkout.id);
