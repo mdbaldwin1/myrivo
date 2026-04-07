@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { resolveStoreSlugForServerRender } from "@/lib/stores/active-store";
+import { resolveStoreSlugForServerRender, resolveStorefrontServerRenderHint } from "@/lib/stores/active-store";
 import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
 import type { StorefrontBranding, StorefrontSettings, StorefrontStore, StorefrontViewer } from "@/lib/storefront/runtime";
 
@@ -27,7 +27,10 @@ export async function loadStorefrontUnavailableData(explicitStoreSlug?: string |
   const requestHeaders = await headers();
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
   const whiteLabelStoreSlug = await resolveStoreSlugFromDomain(host, { includeNonPublic: true });
-  const singleStoreSlug = await resolveStoreSlugForServerRender(explicitStoreSlug ?? whiteLabelStoreSlug);
+  const resolvedStoreHint = resolveStorefrontServerRenderHint(explicitStoreSlug, whiteLabelStoreSlug);
+  const singleStoreSlug = resolvedStoreHint
+    ? await resolveStoreSlugForServerRender(resolvedStoreHint)
+    : null;
   if (!singleStoreSlug) {
     return null;
   }

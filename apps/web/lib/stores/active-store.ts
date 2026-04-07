@@ -21,6 +21,10 @@ function extractStoreSlugFromDashboardPath(pathname: string | null | undefined):
   return normalizeSlug(match?.[1] ?? null);
 }
 
+export function resolveStorefrontServerRenderHint(explicitSlug?: string | null, whiteLabelStoreSlug?: string | null) {
+  return normalizeSlug(explicitSlug) ?? normalizeSlug(whiteLabelStoreSlug);
+}
+
 export async function resolveStoreSlugFromCurrentDashboardRoute(): Promise<string | null> {
   const requestHeaders = await headers();
   const candidates = [
