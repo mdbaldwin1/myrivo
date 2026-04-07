@@ -94,6 +94,36 @@ const CATALOG: Record<string, NotificationCatalogEntry> = {
     defaultSeverity: "info",
     defaultTargets: ["in_app"]
   },
+  "order.failed.owner": {
+    eventType: "order.failed.owner",
+    category: "order",
+    defaultSeverity: "warning",
+    defaultTargets: ["in_app", "email"]
+  },
+  "order.cancelled.owner": {
+    eventType: "order.cancelled.owner",
+    category: "order",
+    defaultSeverity: "warning",
+    defaultTargets: ["in_app", "email"]
+  },
+  "order.refunded.owner": {
+    eventType: "order.refunded.owner",
+    category: "order",
+    defaultSeverity: "warning",
+    defaultTargets: ["in_app", "email"]
+  },
+  "order.dispute.opened.owner": {
+    eventType: "order.dispute.opened.owner",
+    category: "order",
+    defaultSeverity: "critical",
+    defaultTargets: ["in_app", "email"]
+  },
+  "order.dispute.resolved.owner": {
+    eventType: "order.dispute.resolved.owner",
+    category: "order",
+    defaultSeverity: "info",
+    defaultTargets: ["in_app", "email"]
+  },
   "inventory.low_stock": {
     eventType: "inventory.low_stock",
     category: "inventory",

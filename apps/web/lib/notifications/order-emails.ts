@@ -9,7 +9,13 @@ import {
   type OrderShippingDelayCustomerPath,
   type OrderShippingDelayReasonKey
 } from "@/lib/orders/shipping-delays";
-import { notifyOwnersOrderCreated, notifyOwnersOrderFulfillmentStatus } from "@/lib/notifications/owner-notifications";
+import {
+  notifyOwnersOrderCreated,
+  notifyOwnersOrderFulfillmentStatus,
+  notifyOwnersOrderStatusChanged,
+  notifyOwnersOrderRefunded,
+  notifyOwnersOrderDispute
+} from "@/lib/notifications/owner-notifications";
 import { getDisputeStatusLabel, getRefundReasonLabel, type DisputeStatus, type MerchantRefundReason } from "@/lib/orders/refunds";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -712,6 +718,8 @@ export async function sendOrderStatusNotification(orderId: string, status: "fail
         ? `There was a problem finalizing order ${context.orderId.slice(0, 8)}.`
         : `Order ${context.orderId.slice(0, 8)} was cancelled.`
     );
+
+    await notifyOwnersOrderStatusChanged(orderId, status);
   } catch (error) {
     console.error("sendOrderStatusNotification failed", error);
   }
@@ -960,6 +968,11 @@ export async function sendOrderRefundNotification(
       "Refund issued",
       `A refund of ${formatMoney(options.amountCents, context.currency)} was issued for order ${context.orderId.slice(0, 8)}.`
     );
+
+    await notifyOwnersOrderRefunded(orderId, {
+      refundId: options.refundId,
+      amountFormatted: formatMoney(options.amountCents, context.currency)
+    });
   } catch (error) {
     console.error("sendOrderRefundNotification failed", error);
   }
@@ -1036,6 +1049,14 @@ export async function sendOrderDisputeNotification(
         ? `There is an update on the payment dispute for order ${context.orderId.slice(0, 8)}.`
         : `A payment dispute was opened for order ${context.orderId.slice(0, 8)}.`
     );
+
+    await notifyOwnersOrderDispute(orderId, {
+      disputeId: options.disputeId,
+      status: options.status,
+      amountFormatted: formatMoney(options.amountCents, context.currency),
+      reason: options.reason,
+      isResolved: isResolvedDisputeStatus(options.status)
+    });
   } catch (error) {
     console.error("sendOrderDisputeNotification failed", error);
   }
