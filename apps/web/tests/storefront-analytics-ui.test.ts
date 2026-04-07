@@ -77,7 +77,14 @@ describe("storefront analytics dashboard ui", () => {
   });
 
   test("renders acquisition reporting and tab links", () => {
-    const panelMarkup = renderToStaticMarkup(StorefrontAnalyticsAcquisitionPanel({ summary }));
+    const panelMarkup = renderToStaticMarkup(
+      StorefrontAnalyticsAcquisitionPanel({
+        summary,
+        storeSlug: "at-home-apothecary",
+        appUrl: "https://app.myrivo.com",
+        primaryDomain: "athomeapothecary.com"
+      })
+    );
     const tabMarkup = renderToStaticMarkup(
       StorefrontAnalyticsTabNav({ storeSlug: "at-home-apothecary", range: "30d", compare: true, activeTab: "acquisition" })
     );
@@ -86,6 +93,8 @@ describe("storefront analytics dashboard ui", () => {
     expect(panelMarkup).toContain("Top Referrers");
     expect(panelMarkup).toContain("instagram.com");
     expect(panelMarkup).toContain("spring-launch");
+    expect(panelMarkup).toContain("Campaign Share Link Builder");
+    expect(panelMarkup).toContain("https://athomeapothecary.com/");
     expect(tabMarkup).toContain('href="/dashboard/stores/at-home-apothecary/analytics"');
     expect(tabMarkup).toContain('href="/dashboard/stores/at-home-apothecary/analytics?tab=acquisition"');
   });

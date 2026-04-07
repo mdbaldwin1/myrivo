@@ -1,9 +1,13 @@
 import { DataStat } from "@/components/ui/data-stat";
 import { SectionCard } from "@/components/ui/section-card";
 import type { StorefrontAnalyticsSummary } from "@/lib/analytics/query";
+import { StorefrontShareLinkBuilder } from "@/components/dashboard/storefront-share-link-builder";
 
 type StorefrontAnalyticsAcquisitionPanelProps = {
   summary: StorefrontAnalyticsSummary;
+  storeSlug: string;
+  appUrl: string;
+  primaryDomain?: string | null;
 };
 
 function formatPercent(value: number) {
@@ -52,7 +56,7 @@ function AcquisitionBreakdownTable({ title, description, rows, emptyLabel }: Acq
   );
 }
 
-export function StorefrontAnalyticsAcquisitionPanel({ summary }: StorefrontAnalyticsAcquisitionPanelProps) {
+export function StorefrontAnalyticsAcquisitionPanel({ summary, storeSlug, appUrl, primaryDomain }: StorefrontAnalyticsAcquisitionPanelProps) {
   return (
     <SectionCard
       title="Acquisition"
@@ -94,6 +98,8 @@ export function StorefrontAnalyticsAcquisitionPanel({ summary }: StorefrontAnaly
             emptyLabel="No UTM campaigns were captured in this range."
           />
         </section>
+
+        <StorefrontShareLinkBuilder storeSlug={storeSlug} appUrl={appUrl} primaryDomain={primaryDomain} />
       </div>
     </SectionCard>
   );

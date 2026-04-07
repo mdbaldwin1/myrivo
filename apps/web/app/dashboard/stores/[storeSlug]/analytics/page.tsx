@@ -14,6 +14,8 @@ import { buttonVariants } from "@/components/ui/button";
 import { resolveStoreAnalyticsAccessByStoreId } from "@/lib/analytics/access";
 import { getStorefrontMerchandisingSummary } from "@/lib/analytics/merchandising";
 import { getStorefrontAnalyticsSummary, type StorefrontAnalyticsRange } from "@/lib/analytics/query";
+import { getExternalAppUrl } from "@/lib/env";
+import { resolvePrimaryDomainForStoreSlug } from "@/lib/stores/domain-store";
 import { getOwnedStoreBundleForSlug } from "@/lib/stores/owner-store";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isMissingRelationInSchemaCache } from "@/lib/supabase/error-classifiers";
@@ -57,6 +59,8 @@ export default async function StoreWorkspaceAnalyticsPage({ params, searchParams
   const range = resolveRange(filters?.range);
   const compare = filters?.compare !== "0";
   const tab = resolveTab(filters?.tab);
+  const primaryDomain = await resolvePrimaryDomainForStoreSlug(storeSlug);
+  const appUrl = getExternalAppUrl();
 
   if (!analyticsAccess.dashboardEnabled) {
     return (
@@ -121,7 +125,7 @@ export default async function StoreWorkspaceAnalyticsPage({ params, searchParams
       <StorefrontAnalyticsTabNav storeSlug={storeSlug} range={range} compare={compare} activeTab={tab} />
       {hasTrafficData ? (
         tab === "acquisition" ? (
-          <StorefrontAnalyticsAcquisitionPanel summary={analyticsSummary} />
+          <StorefrontAnalyticsAcquisitionPanel summary={analyticsSummary} storeSlug={storeSlug} appUrl={appUrl} primaryDomain={primaryDomain} />
         ) : (
           <>
             <StorefrontAnalyticsPanel summary={analyticsSummary} />
