@@ -144,6 +144,18 @@ function dedupeEmails(emails: Array<string | null | undefined>) {
   return [...unique];
 }
 
+export function resolveOwnerNotificationEmails({
+  supportEmail,
+  configuredOwnerEmails,
+  membershipEmails
+}: {
+  supportEmail?: string | null;
+  configuredOwnerEmails?: string[];
+  membershipEmails?: Array<string | null | undefined>;
+}) {
+  return dedupeEmails([supportEmail, ...(configuredOwnerEmails ?? []), ...(membershipEmails ?? [])]);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -474,12 +486,41 @@ async function loadOrderEmailContext(orderId: string): Promise<OrderEmailContext
   const emailsSection = isRecord(experienceContent?.emails_json) ? experienceContent?.emails_json : {};
   const sectionSupportEmail = typeof policiesPage.supportEmail === "string" ? policiesPage.supportEmail : null;
 
+  const { data: ownerMemberships, error: ownerMembershipsError } = await supabase
+    .from("store_memberships")
+    .select("user_id,role")
+    .eq("store_id", order.store_id)
+    .eq("status", "active")
+    .in("role", ["owner", "admin"])
+    .returns<Array<{ user_id: string; role: "owner" | "admin" }>>();
+
+  if (ownerMembershipsError) {
+    throw new Error(ownerMembershipsError.message);
+  }
+
+  const ownerUserIds = Array.from(new Set((ownerMemberships ?? []).map((membership) => membership.user_id).filter(Boolean)));
+  let membershipEmails: string[] = [];
+  if (ownerUserIds.length > 0) {
+    const { data: ownerProfiles, error: ownerProfilesError } = await supabase
+      .from("user_profiles")
+      .select("email")
+      .in("id", ownerUserIds)
+      .returns<Array<{ email: string | null }>>();
+
+    if (ownerProfilesError) {
+      throw new Error(ownerProfilesError.message);
+    }
+
+    membershipEmails = (ownerProfiles ?? []).map((profile) => profile.email ?? null).filter((email): email is string => Boolean(email));
+  }
+
   const env = getServerEnv();
   const configuredOwnerEmails = parseEmailList(env.MYRIVO_ORDER_ALERT_EMAILS);
-  const ownerEmails = dedupeEmails([
-    sectionSupportEmail ?? settings?.support_email ?? null,
-    ...configuredOwnerEmails
-  ]);
+  const ownerEmails = resolveOwnerNotificationEmails({
+    supportEmail: sectionSupportEmail ?? settings?.support_email ?? null,
+    configuredOwnerEmails,
+    membershipEmails
+  });
 
   return {
     orderId: order.id,
