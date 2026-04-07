@@ -238,12 +238,21 @@ export async function notifyOwnersOrderCreated(orderId: string) {
               ? `Order ${order.id.slice(0, 8)} has a pickup window scheduled.`
               : `Order ${order.id.slice(0, 8)} is marked for pickup.`,
           actionUrl: storeOrdersPath,
-          channelTargets: ["in_app"],
           dedupeKey: `order.pickup.updated:${order.id}:${recipientUserId}`,
           metadata: {
             orderId: order.id,
             pickupWindowStartAt: order.pickup_window_start_at,
             pickupWindowEndAt: order.pickup_window_end_at
+          },
+          email: {
+            from: resolvePlatformNotificationFromAddress(),
+            subject: "Pickup order scheduled",
+            text: `${
+              order.pickup_window_start_at && order.pickup_window_end_at
+                ? `Order ${order.id.slice(0, 8)} has a pickup window scheduled.`
+                : `Order ${order.id.slice(0, 8)} is marked for pickup.`
+            }\n\nView order: ${storeOrdersPath}`,
+            replyTo: resolvePlatformNotificationReplyTo()
           }
         })
       )
@@ -271,11 +280,16 @@ export async function notifyOwnersOrderFulfillmentStatus(orderId: string, status
         title,
         body,
         actionUrl: storeOrdersPath,
-        channelTargets: ["in_app"],
         dedupeKey: `${eventType}:${order.id}:${recipientUserId}`,
         metadata: {
           orderId: order.id,
           fulfillmentStatus: status
+        },
+        email: {
+          from: resolvePlatformNotificationFromAddress(),
+          subject: title,
+          text: `${body}\n\nView order: ${storeOrdersPath}`,
+          replyTo: resolvePlatformNotificationReplyTo()
         }
       })
     )
@@ -545,6 +559,128 @@ export async function notifyPlatformAdminsStoreSubmittedForReview(input: StoreSu
           from: resolvePlatformNotificationFromAddress(),
           subject: "Store approval required",
           text: `${input.storeName} (${input.storeSlug}) was submitted for review. Open ${governancePath} to approve or reject.`,
+          replyTo: resolvePlatformNotificationReplyTo()
+        }
+      })
+    )
+  );
+}
+
+export async function notifyOwnersOrderStatusChanged(orderId: string, status: "failed" | "cancelled") {
+  const order = await loadOrderNotificationRow(orderId);
+  if (!order) {
+    return;
+  }
+  const storeOrdersPath = buildStoreOrdersActionUrl(order.store_slug, order.id);
+  const eventType = status === "failed" ? "order.failed.owner" : "order.cancelled.owner";
+  const title = status === "failed" ? "Order payment failed" : "Order cancelled";
+  const body =
+    status === "failed"
+      ? `Payment failed for order ${order.id.slice(0, 8)} from ${order.customer_email}.`
+      : `Order ${order.id.slice(0, 8)} from ${order.customer_email} was cancelled.`;
+
+  const recipients = await resolveStoreRecipientUserIds(order.store_id);
+  await Promise.all(
+    recipients.map((recipientUserId) =>
+      dispatchNotification({
+        recipientUserId,
+        storeId: order.store_id,
+        eventType,
+        title,
+        body,
+        actionUrl: storeOrdersPath,
+        dedupeKey: `${eventType}:${order.id}:${recipientUserId}`,
+        metadata: {
+          orderId: order.id,
+          status
+        },
+        email: {
+          from: resolvePlatformNotificationFromAddress(),
+          subject: title,
+          text: `${body}\n\nView order: ${storeOrdersPath}`,
+          replyTo: resolvePlatformNotificationReplyTo()
+        }
+      })
+    )
+  );
+}
+
+export async function notifyOwnersOrderRefunded(
+  orderId: string,
+  options: { refundId: string; amountFormatted: string }
+) {
+  const order = await loadOrderNotificationRow(orderId);
+  if (!order) {
+    return;
+  }
+  const storeOrdersPath = buildStoreOrdersActionUrl(order.store_slug, order.id);
+  const title = "Refund issued";
+  const body = `A refund of ${options.amountFormatted} was issued for order ${order.id.slice(0, 8)}.`;
+
+  const recipients = await resolveStoreRecipientUserIds(order.store_id);
+  await Promise.all(
+    recipients.map((recipientUserId) =>
+      dispatchNotification({
+        recipientUserId,
+        storeId: order.store_id,
+        eventType: "order.refunded.owner",
+        title,
+        body,
+        actionUrl: storeOrdersPath,
+        dedupeKey: `order.refunded.owner:${order.id}:${options.refundId}:${recipientUserId}`,
+        metadata: {
+          orderId: order.id,
+          refundId: options.refundId,
+          amountFormatted: options.amountFormatted
+        },
+        email: {
+          from: resolvePlatformNotificationFromAddress(),
+          subject: title,
+          text: `${body}\n\nView order: ${storeOrdersPath}`,
+          replyTo: resolvePlatformNotificationReplyTo()
+        }
+      })
+    )
+  );
+}
+
+export async function notifyOwnersOrderDispute(
+  orderId: string,
+  options: { disputeId: string; status: string; amountFormatted: string; reason: string; isResolved: boolean }
+) {
+  const order = await loadOrderNotificationRow(orderId);
+  if (!order) {
+    return;
+  }
+  const storeOrdersPath = buildStoreOrdersActionUrl(order.store_slug, order.id);
+  const eventType = options.isResolved ? "order.dispute.resolved.owner" : "order.dispute.opened.owner";
+  const title = options.isResolved ? "Dispute resolved" : "Payment dispute opened";
+  const body = options.isResolved
+    ? `The payment dispute for order ${order.id.slice(0, 8)} (${options.amountFormatted}) has been resolved.`
+    : `A ${options.amountFormatted} payment dispute was opened for order ${order.id.slice(0, 8)}. Reason: ${options.reason.replaceAll("_", " ")}.`;
+
+  const recipients = await resolveStoreRecipientUserIds(order.store_id);
+  await Promise.all(
+    recipients.map((recipientUserId) =>
+      dispatchNotification({
+        recipientUserId,
+        storeId: order.store_id,
+        eventType,
+        title,
+        body,
+        actionUrl: storeOrdersPath,
+        dedupeKey: `${eventType}:${order.id}:${options.disputeId}:${options.status}:${recipientUserId}`,
+        metadata: {
+          orderId: order.id,
+          disputeId: options.disputeId,
+          status: options.status,
+          amountFormatted: options.amountFormatted,
+          reason: options.reason
+        },
+        email: {
+          from: resolvePlatformNotificationFromAddress(),
+          subject: title,
+          text: `${body}\n\nView order: ${storeOrdersPath}`,
           replyTo: resolvePlatformNotificationReplyTo()
         }
       })
