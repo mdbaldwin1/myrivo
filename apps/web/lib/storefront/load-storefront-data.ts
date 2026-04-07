@@ -10,7 +10,7 @@ import { isRecord, mergeStorefrontCopy } from "@/lib/store-experience/merge";
 import type { StorefrontData } from "@/lib/storefront/runtime";
 import { resolveStorefrontRouteBasePath } from "@/lib/storefront/paths";
 import { buildMergedStorefrontThemeJson } from "@/lib/storefront/theme-overrides";
-import { resolveStoreSlugForServerRender } from "@/lib/stores/active-store";
+import { resolveStoreSlugForServerRender, resolveStorefrontServerRenderHint } from "@/lib/stores/active-store";
 import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
 import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 
@@ -54,7 +54,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
   // storefront domain, skip the cookie-based fallback so the app's own
   // domain (myrivo.app) renders the marketing homepage instead of a
   // storefront the user previously visited from the dashboard.
-  const resolvedStoreHint = explicitStoreSlug ?? whiteLabelStoreSlug;
+  const resolvedStoreHint = resolveStorefrontServerRenderHint(explicitStoreSlug, whiteLabelStoreSlug);
   const singleStoreSlug = resolvedStoreHint
     ? await resolveStoreSlugForServerRender(resolvedStoreHint)
     : null;

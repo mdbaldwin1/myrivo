@@ -39,4 +39,11 @@ describe("active store resolver", () => {
     const request = new NextRequest("https://example.com/api/promotions/preview");
     expect(resolveStoreSlugFromRequest(request)).toBeNull();
   });
+
+  test("does not create a storefront render hint from cookies alone", async () => {
+    const { resolveStorefrontServerRenderHint } = await import("@/lib/stores/active-store");
+    expect(resolveStorefrontServerRenderHint(null, null)).toBeNull();
+    expect(resolveStorefrontServerRenderHint(undefined, "white-label-store")).toBe("white-label-store");
+    expect(resolveStorefrontServerRenderHint("explicit-store", "white-label-store")).toBe("explicit-store");
+  });
 });
