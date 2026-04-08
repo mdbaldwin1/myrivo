@@ -5,6 +5,7 @@ import { HomepagePrimaryCta } from "@/components/marketing/homepage-primary-cta"
 import { MarketingHomepageStorefrontPreview } from "@/components/marketing/marketing-homepage-storefront-preview";
 import { MarketingSiteChrome } from "@/components/marketing/marketing-site-chrome";
 import { MarketingTrackedButtonLink } from "@/components/marketing/marketing-tracked-button-link";
+import { MarketingFeaturedStores, type FeaturedStoreData } from "@/components/marketing/marketing-featured-stores";
 import { StorefrontUnavailablePage } from "@/components/storefront/storefront-unavailable-page";
 import { StorefrontPage } from "@/components/storefront/storefront-page";
 import { StorefrontRuntimeProvider } from "@/components/storefront/storefront-runtime-provider";
@@ -112,6 +113,71 @@ const pricingReasons = [
   }
 ];
 
+async function loadFeaturedStores(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>): Promise<FeaturedStoreData[]> {
+  const { data: stores } = await supabase
+    .from("stores")
+    .select("id,name,slug,status")
+    .eq("is_featured", true)
+    .in("status", ["live", "offline"])
+    .order("created_at", { ascending: false })
+    .limit(4);
+
+  if (!stores || stores.length === 0) {
+    return [];
+  }
+
+  const storeIds = stores.map((store) => store.id);
+
+  const [{ data: brandings }, { data: settings }, { data: products }] = await Promise.all([
+    supabase
+      .from("store_branding")
+      .select("store_id,logo_path,primary_color,accent_color")
+      .in("store_id", storeIds),
+    supabase
+      .from("store_settings")
+      .select("store_id,footer_tagline,seo_description")
+      .in("store_id", storeIds),
+    supabase
+      .from("products")
+      .select("id,store_id,title,image_urls,price_cents,is_featured")
+      .in("store_id", storeIds)
+      .eq("status", "active")
+      .eq("is_featured", true)
+      .limit(12)
+  ]);
+
+  const brandingByStoreId = new Map((brandings ?? []).map((b) => [b.store_id, b]));
+  const settingsByStoreId = new Map((settings ?? []).map((s) => [s.store_id, s]));
+  const productsByStoreId = new Map<string, typeof products>();
+  for (const product of products ?? []) {
+    const existing = productsByStoreId.get(product.store_id) ?? [];
+    existing.push(product);
+    productsByStoreId.set(product.store_id, existing);
+  }
+
+  return stores.map((store) => {
+    const branding = brandingByStoreId.get(store.id);
+    const storeSettings = settingsByStoreId.get(store.id);
+    const storeProducts = (productsByStoreId.get(store.id) ?? []).slice(0, 3);
+
+    return {
+      id: store.id,
+      name: store.name,
+      slug: store.slug,
+      logo_path: branding?.logo_path ?? null,
+      primary_color: branding?.primary_color ?? null,
+      accent_color: branding?.accent_color ?? null,
+      tagline: storeSettings?.footer_tagline?.trim() || storeSettings?.seo_description?.trim() || null,
+      products: storeProducts.map((product) => ({
+        id: product.id,
+        title: product.title,
+        image_url: (product.image_urls as string[] | null)?.[0] ?? null,
+        price_cents: product.price_cents
+      }))
+    };
+  });
+}
+
 type HomePageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
@@ -174,6 +240,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const publicPlanName = standardPlan?.name ?? "Standard";
   const monthlyPriceLabel = standardPlan ? formatMoney(standardPlan.monthlyPriceCents) : "$0";
   const feeLabel = standardPlan ? `${formatPlatformFeePercent(standardPlan.feeBps)} + ${formatMoneyWithCents(standardPlan.feeFixedCents)}` : "6.00% + $0.30";
+
+  const featuredStores = await loadFeaturedStores(supabase);
+
   const sellerFit = [
     {
       title: "Made for small product brands",
@@ -355,6 +424,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           ))}
         </div>
       </section>
+
+      <MarketingFeaturedStores stores={featuredStores} />
 
       <section className="marketing-rise marketing-delay-2 mt-20 rounded-[2.5rem] bg-[linear-gradient(145deg,hsl(var(--primary)),hsl(var(--brand-secondary))_62%,hsl(var(--accent)))] p-8 text-primary-foreground shadow-[0_34px_90px_rgba(70,61,134,0.26)] sm:p-10 lg:p-12">
         <div className="grid gap-10 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-start">
