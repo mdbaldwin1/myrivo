@@ -17,6 +17,7 @@ import { loadStorefrontData } from "@/lib/storefront/load-storefront-data";
 import { createStorefrontRuntime } from "@/lib/storefront/runtime";
 import { resolveStorefrontCanonicalRedirect } from "@/lib/storefront/seo";
 import { loadStorefrontUnavailableData } from "@/lib/storefront/unavailable";
+import { getExternalAppUrl } from "@/lib/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -129,55 +130,23 @@ async function loadFeaturedStores(): Promise<FeaturedStoreData[]> {
   }
 
   const storeIds = stores.map((store) => store.id);
+  const { data: domains } = await admin
+    .from("store_domains")
+    .select("store_id,domain")
+    .in("store_id", storeIds)
+    .eq("is_primary", true)
+    .eq("verification_status", "verified");
 
-  const [{ data: brandings }, { data: settings }, { data: products }] = await Promise.all([
-    admin
-      .from("store_branding")
-      .select("store_id,logo_path,primary_color,accent_color")
-      .in("store_id", storeIds),
-    admin
-      .from("store_settings")
-      .select("store_id,footer_tagline,seo_description")
-      .in("store_id", storeIds),
-    admin
-      .from("products")
-      .select("id,store_id,title,image_urls,price_cents,is_featured")
-      .in("store_id", storeIds)
-      .eq("status", "active")
-      .eq("is_featured", true)
-      .limit(12)
-  ]);
+  const domainByStoreId = new Map((domains ?? []).map((d) => [d.store_id, d.domain]));
+  const appUrl = getExternalAppUrl();
 
-  const brandingByStoreId = new Map((brandings ?? []).map((b) => [b.store_id, b]));
-  const settingsByStoreId = new Map((settings ?? []).map((s) => [s.store_id, s]));
-  const productsByStoreId = new Map<string, typeof products>();
-  for (const product of products ?? []) {
-    const existing = productsByStoreId.get(product.store_id) ?? [];
-    existing.push(product);
-    productsByStoreId.set(product.store_id, existing);
-  }
-
-  return stores.map((store) => {
-    const branding = brandingByStoreId.get(store.id);
-    const storeSettings = settingsByStoreId.get(store.id);
-    const storeProducts = (productsByStoreId.get(store.id) ?? []).slice(0, 3);
-
-    return {
-      id: store.id,
-      name: store.name,
-      slug: store.slug,
-      logo_path: branding?.logo_path ?? null,
-      primary_color: branding?.primary_color ?? null,
-      accent_color: branding?.accent_color ?? null,
-      tagline: storeSettings?.footer_tagline?.trim() || storeSettings?.seo_description?.trim() || null,
-      products: storeProducts.map((product) => ({
-        id: product.id,
-        title: product.title,
-        image_url: (product.image_urls as string[] | null)?.[0] ?? null,
-        price_cents: product.price_cents
-      }))
-    };
-  });
+  return stores.map((store) => ({
+    id: store.id,
+    name: store.name,
+    slug: store.slug,
+    storefrontUrl: `${appUrl}/s/${store.slug}`,
+    customDomain: domainByStoreId.get(store.id) ?? null
+  }));
 }
 
 type HomePageProps = {
