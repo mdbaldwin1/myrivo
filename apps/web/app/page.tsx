@@ -17,6 +17,7 @@ import { loadStorefrontData } from "@/lib/storefront/load-storefront-data";
 import { createStorefrontRuntime } from "@/lib/storefront/runtime";
 import { resolveStorefrontCanonicalRedirect } from "@/lib/storefront/seo";
 import { loadStorefrontUnavailableData } from "@/lib/storefront/unavailable";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -113,8 +114,9 @@ const pricingReasons = [
   }
 ];
 
-async function loadFeaturedStores(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>): Promise<FeaturedStoreData[]> {
-  const { data: stores } = await supabase
+async function loadFeaturedStores(): Promise<FeaturedStoreData[]> {
+  const admin = createSupabaseAdminClient();
+  const { data: stores } = await admin
     .from("stores")
     .select("id,name,slug,status")
     .eq("is_featured", true)
@@ -129,15 +131,15 @@ async function loadFeaturedStores(supabase: Awaited<ReturnType<typeof createSupa
   const storeIds = stores.map((store) => store.id);
 
   const [{ data: brandings }, { data: settings }, { data: products }] = await Promise.all([
-    supabase
+    admin
       .from("store_branding")
       .select("store_id,logo_path,primary_color,accent_color")
       .in("store_id", storeIds),
-    supabase
+    admin
       .from("store_settings")
       .select("store_id,footer_tagline,seo_description")
       .in("store_id", storeIds),
-    supabase
+    admin
       .from("products")
       .select("id,store_id,title,image_urls,price_cents,is_featured")
       .in("store_id", storeIds)
@@ -241,7 +243,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const monthlyPriceLabel = standardPlan ? formatMoney(standardPlan.monthlyPriceCents) : "$0";
   const feeLabel = standardPlan ? `${formatPlatformFeePercent(standardPlan.feeBps)} + ${formatMoneyWithCents(standardPlan.feeFixedCents)}` : "6.00% + $0.30";
 
-  const featuredStores = await loadFeaturedStores(supabase);
+  const featuredStores = await loadFeaturedStores();
 
   const sellerFit = [
     {
