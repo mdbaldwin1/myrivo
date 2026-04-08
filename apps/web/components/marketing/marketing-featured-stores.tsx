@@ -1,22 +1,13 @@
-import Image from "next/image";
-import Link from "next/link";
+"use client";
 
-type FeaturedProduct = {
-  id: string;
-  title: string;
-  image_url: string | null;
-  price_cents: number;
-};
+import { useState } from "react";
 
 type FeaturedStoreData = {
   id: string;
   name: string;
   slug: string;
-  logo_path: string | null;
-  primary_color: string | null;
-  accent_color: string | null;
-  tagline: string | null;
-  products: FeaturedProduct[];
+  storefrontUrl: string;
+  customDomain: string | null;
 };
 
 export function MarketingFeaturedStores({ stores }: { stores: FeaturedStoreData[] }) {
@@ -36,7 +27,7 @@ export function MarketingFeaturedStores({ stores }: { stores: FeaturedStoreData[
         </p>
       </div>
 
-      <div className="mt-10 grid gap-6 lg:grid-cols-2">
+      <div className={`mt-10 grid gap-6 ${stores.length === 1 ? "grid-cols-1" : "lg:grid-cols-2"}`}>
         {stores.map((store) => (
           <FeaturedStoreCard key={store.id} store={store} />
         ))}
@@ -46,81 +37,41 @@ export function MarketingFeaturedStores({ stores }: { stores: FeaturedStoreData[
 }
 
 function FeaturedStoreCard({ store }: { store: FeaturedStoreData }) {
-  const storeHref = `/s/${store.slug}`;
-  const primaryColor = store.primary_color || "#0F7B84";
+  const [hovered, setHovered] = useState(false);
+  const visitUrl = store.customDomain ? `https://${store.customDomain}` : store.storefrontUrl;
 
   return (
-    <article className="group overflow-hidden rounded-[2rem] border border-border/60 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.06)] transition-shadow hover:shadow-[0_20px_50px_rgba(15,23,42,0.10)]">
-      <div
-        className="flex items-center gap-4 px-6 py-5"
-        style={{ borderBottom: `2px solid ${primaryColor}18` }}
-      >
-        {store.logo_path ? (
-          <Image
-            src={store.logo_path}
-            alt={`${store.name} logo`}
-            width={200}
-            height={80}
-            unoptimized
-            className="h-10 w-auto max-w-[120px] object-contain"
-          />
-        ) : (
-          <span
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
-            style={{ backgroundColor: primaryColor }}
-          >
-            {store.name.charAt(0)}
-          </span>
-        )}
-        <div className="min-w-0">
-          <h3 className="truncate text-lg font-semibold text-foreground">{store.name}</h3>
-          {store.tagline ? (
-            <p className="truncate text-sm text-muted-foreground">{store.tagline}</p>
-          ) : null}
-        </div>
-      </div>
+    <div
+      className="group relative overflow-hidden rounded-[2rem] border border-border/60 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.06)]"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div className="relative aspect-[16/10] w-full overflow-hidden">
+        <iframe
+          src={store.storefrontUrl}
+          title={`${store.name} storefront`}
+          className="pointer-events-none h-[200%] w-[200%] origin-top-left scale-50 border-0"
+          loading="lazy"
+          tabIndex={-1}
+          sandbox="allow-same-origin"
+        />
 
-      {store.products.length > 0 ? (
-        <div className="grid grid-cols-3 gap-3 px-6 py-5">
-          {store.products.slice(0, 3).map((product) => (
-            <div key={product.id} className="space-y-2">
-              <div className="relative aspect-square overflow-hidden rounded-xl border border-border/40 bg-muted/10">
-                {product.image_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={product.image_url}
-                    alt={product.title}
-                    className="h-full w-full object-cover"
-                    loading="lazy"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
-                    No image
-                  </div>
-                )}
-              </div>
-              <div>
-                <p className="truncate text-xs font-medium text-foreground">{product.title}</p>
-                <p className="text-xs text-muted-foreground">${(product.price_cents / 100).toFixed(2)}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      <div className="border-t border-border/40 px-6 py-4">
-        <Link
-          href={storeHref}
-          className="inline-flex items-center gap-1.5 text-sm font-medium transition-colors hover:opacity-80"
-          style={{ color: primaryColor }}
+        <a
+          href={visitUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`absolute inset-0 z-10 flex items-end justify-end p-5 transition-opacity duration-200 ${hovered ? "opacity-100" : "opacity-0"}`}
+          style={{ backgroundColor: "rgba(255, 255, 255, 0.35)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)" }}
         >
-          Visit store
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="transition-transform group-hover:translate-x-0.5">
-            <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </Link>
+          <span className="inline-flex items-center gap-2 rounded-full bg-foreground px-5 py-2.5 text-sm font-semibold text-background shadow-lg transition-transform group-hover:scale-105">
+            Visit store
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M4 12L12 4M12 4H6M12 4v6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+        </a>
       </div>
-    </article>
+    </div>
   );
 }
 
