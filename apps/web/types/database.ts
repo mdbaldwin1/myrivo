@@ -17,6 +17,7 @@ export type StoreRecord = {
   tax_compliance_acknowledged_at: string | null;
   tax_compliance_acknowledged_by_user_id: string | null;
   tax_compliance_note: string | null;
+  is_featured: boolean;
   created_at: string;
   updated_at: string;
 };
