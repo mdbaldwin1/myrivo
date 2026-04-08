@@ -53,7 +53,7 @@ function FeaturedStoreCard({ store }: { store: FeaturedStoreData }) {
           className="pointer-events-none h-[200%] w-[200%] origin-top-left scale-50 border-0"
           loading="lazy"
           tabIndex={-1}
-          sandbox="allow-same-origin"
+          sandbox="allow-same-origin allow-scripts"
         />
 
         <a
