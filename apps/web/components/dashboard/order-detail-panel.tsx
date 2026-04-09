@@ -7,7 +7,9 @@ import { OrderRefundRequestPanel } from "@/components/dashboard/order-refund-req
 import { OrderShippingDelayPanel } from "@/components/dashboard/order-shipping-delay-panel";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { StatusChip } from "@/components/ui/status-chip";
+import { notify } from "@/lib/feedback/toast";
 import { OrderDisputeRecord, OrderRefundRecord, OrderShippingDelayRecord } from "@/types/database";
 import { OrderFinancialStatus } from "@/lib/orders/refunds";
 
@@ -335,21 +337,17 @@ export function OrderDetailPanel({ orderId, onReschedulePickup, refreshToken = 0
           </section>
 
           {order.fulfillment_method === "pickup" ? (
-            <section className="space-y-3">
-              <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Pickup details</h3>
-              <div className="rounded-xl border border-border/70 bg-background p-4">
-                <dl className="grid gap-2">
-                  <div className="flex items-start justify-between gap-3">
-                    <dt className="text-muted-foreground">Pickup location</dt>
-                    <dd className="text-right font-medium">{pickupAddress ?? "-"}</dd>
-                  </div>
-                  <div className="flex items-start justify-between gap-3">
-                    <dt className="text-muted-foreground">Pickup window</dt>
-                    <dd className="text-right font-medium">{pickupWindow ?? "-"}</dd>
-                  </div>
-                </dl>
-              </div>
-            </section>
+            <PickupDetailsSection
+              key={`${order.pickup_window_start_at}:${order.pickup_window_end_at}`}
+              orderId={order.id}
+              pickupAddress={pickupAddress}
+              pickupWindow={pickupWindow}
+              pickupWindowStartAt={order.pickup_window_start_at}
+              pickupWindowEndAt={order.pickup_window_end_at}
+              pickupTimezone={order.pickup_timezone}
+              isDelivered={order.fulfillment_status === "delivered"}
+              onSaved={refreshOrderDetail}
+            />
           ) : null}
 
           {order.fulfillment_method === "shipping" ? (
@@ -385,5 +383,111 @@ export function OrderDetailPanel({ orderId, onReschedulePickup, refreshToken = 0
         </div>
       ) : null}
     </div>
+  );
+}
+
+function toLocalDatetimeValue(isoString: string | null): string {
+  if (!isoString) return "";
+  const date = new Date(isoString);
+  const offset = date.getTimezoneOffset();
+  const local = new Date(date.getTime() - offset * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function PickupDetailsSection({
+  orderId,
+  pickupAddress,
+  pickupWindow,
+  pickupWindowStartAt,
+  pickupWindowEndAt,
+  pickupTimezone,
+  isDelivered,
+  onSaved
+}: {
+  orderId: string;
+  pickupAddress: string | null;
+  pickupWindow: string | null;
+  pickupWindowStartAt: string | null;
+  pickupWindowEndAt: string | null;
+  pickupTimezone: string | null;
+  isDelivered: boolean;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [startAt, setStartAt] = useState(() => toLocalDatetimeValue(pickupWindowStartAt));
+  const [endAt, setEndAt] = useState(() => toLocalDatetimeValue(pickupWindowEndAt));
+
+  async function save() {
+    if (!startAt || !endAt) return;
+    setSaving(true);
+
+    const response = await fetch("/api/orders", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        orderId,
+        pickupWindowStartAt: new Date(startAt).toISOString(),
+        pickupWindowEndAt: new Date(endAt).toISOString(),
+        pickupTimezone: pickupTimezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+      })
+    });
+
+    setSaving(false);
+
+    if (response.ok) {
+      notify.success("Pickup window updated.");
+      setEditing(false);
+      onSaved();
+    } else {
+      const data = await response.json().catch(() => ({}));
+      notify.error(data.error ?? "Failed to update pickup window.");
+    }
+  }
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Pickup details</h3>
+        {!isDelivered && !editing ? (
+          <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(true)}>
+            Edit
+          </Button>
+        ) : null}
+      </div>
+      <div className="rounded-xl border border-border/70 bg-background p-4">
+        {editing ? (
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Pickup start</label>
+              <Input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Pickup end</label>
+              <Input type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <Button type="button" size="sm" onClick={save} disabled={saving || !startAt || !endAt}>
+                {saving ? "Saving..." : "Save"}
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)} disabled={saving}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <dl className="grid gap-2">
+            <div className="flex items-start justify-between gap-3">
+              <dt className="text-muted-foreground">Pickup location</dt>
+              <dd className="text-right font-medium">{pickupAddress ?? "-"}</dd>
+            </div>
+            <div className="flex items-start justify-between gap-3">
+              <dt className="text-muted-foreground">Pickup window</dt>
+              <dd className="text-right font-medium">{pickupWindow ?? "-"}</dd>
+            </div>
+          </dl>
+        )}
+      </div>
+    </section>
   );
 }

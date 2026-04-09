@@ -90,6 +90,7 @@ export type StorefrontSettings = {
   checkout_allow_order_note?: boolean | null;
   checkout_order_note_prompt?: string | null;
   checkout_max_promo_codes?: number | null;
+  checkout_notice?: string | null;
   updated_at?: string | null;
 } | null;
 

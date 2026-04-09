@@ -6,6 +6,8 @@ import { useOptionalStorefrontStudioDocument } from "@/components/dashboard/stor
 import { StorefrontStudioStorefrontEditorPanelTabContainer } from "@/components/dashboard/storefront-studio-storefront-editor-panel-tab-container";
 import { StorefrontStudioStorefrontEditorPanelTabSection } from "@/components/dashboard/storefront-studio-storefront-editor-panel-tab-section";
 import { StorefrontStudioStorefrontEditorPanelToggleRow } from "@/components/dashboard/storefront-studio-storefront-editor-panel-toggle-row";
+import { FormField } from "@/components/ui/form-field";
+import { Textarea } from "@/components/ui/textarea";
 import type { StorefrontSettings } from "@/lib/storefront/runtime";
 
 function ensureCartSettingsDraft(current: StorefrontSettings): NonNullable<StorefrontSettings> {
@@ -48,6 +50,7 @@ function ensureCartSettingsDraft(current: StorefrontSettings): NonNullable<Store
       checkout_flat_rate_shipping_fee_cents: 0,
       checkout_allow_order_note: false,
       checkout_order_note_prompt: null,
+      checkout_notice: null,
       updated_at: null
     }
   );
@@ -84,6 +87,26 @@ export function StorefrontStudioStorefrontEditorCartTab() {
             }))
           }
         />
+      </StorefrontStudioStorefrontEditorPanelTabSection>
+
+      <StorefrontStudioStorefrontEditorPanelTabSection title="Checkout Notice">
+        <FormField
+          label="Checkout message"
+          description="Display a notice on the checkout page. Use this for fulfillment delays, seasonal hours, or other important info."
+        >
+          <Textarea
+            rows={3}
+            maxLength={500}
+            placeholder="e.g. Orders placed June 1–21 will ship after June 22."
+            value={document.settingsDraft?.checkout_notice ?? ""}
+            onChange={(event) =>
+              document.setSettingsDraft((current) => ({
+                ...ensureCartSettingsDraft(current),
+                checkout_notice: event.target.value || null
+              }))
+            }
+          />
+        </FormField>
       </StorefrontStudioStorefrontEditorPanelTabSection>
     </StorefrontStudioStorefrontEditorPanelTabContainer>
   );
