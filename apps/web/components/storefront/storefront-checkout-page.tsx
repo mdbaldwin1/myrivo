@@ -55,6 +55,7 @@ type Props = {
     facebook_url: string | null;
     tiktok_url: string | null;
     storefront_copy_json?: Record<string, unknown> | null;
+    checkout_notice?: string | null;
   } | null;
   studio?: {
     enabled: boolean;
@@ -242,6 +243,12 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
         tabIndex={-1}
         className={`mx-auto w-full ${getStorefrontPageWidthClass(themeConfig.pageWidth)} space-y-6 px-4 py-7 focus:outline-none sm:px-6 sm:py-9 lg:py-10`}
       >
+        {resolvedSettings?.checkout_notice ? (
+          <div className={cn("mx-auto max-w-3xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-900", radiusClass)}>
+            {resolvedSettings.checkout_notice}
+          </div>
+        ) : null}
+
         <div className={cn("mx-auto max-w-3xl space-y-5 p-4 sm:space-y-6 sm:p-6", radiusClass, cardClass, isIntegrated ? "border border-border/60 bg-[color:var(--storefront-surface)]/70 shadow-sm" : "")}>
           {studioEnabled ? (
             <StorefrontStudioCheckoutPreviewStatePicker
