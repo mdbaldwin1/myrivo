@@ -338,6 +338,7 @@ export function OrderDetailPanel({ orderId, onReschedulePickup, refreshToken = 0
 
           {order.fulfillment_method === "pickup" ? (
             <PickupDetailsSection
+              key={`${order.pickup_window_start_at}:${order.pickup_window_end_at}`}
               orderId={order.id}
               pickupAddress={pickupAddress}
               pickupWindow={pickupWindow}
@@ -416,11 +417,6 @@ function PickupDetailsSection({
   const [saving, setSaving] = useState(false);
   const [startAt, setStartAt] = useState(() => toLocalDatetimeValue(pickupWindowStartAt));
   const [endAt, setEndAt] = useState(() => toLocalDatetimeValue(pickupWindowEndAt));
-
-  useEffect(() => {
-    setStartAt(toLocalDatetimeValue(pickupWindowStartAt));
-    setEndAt(toLocalDatetimeValue(pickupWindowEndAt));
-  }, [pickupWindowStartAt, pickupWindowEndAt]);
 
   async function save() {
     if (!startAt || !endAt) return;
