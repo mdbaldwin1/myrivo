@@ -252,6 +252,7 @@ export type StoreSettingsRecord = {
   checkout_allow_order_note: boolean;
   checkout_order_note_prompt: string | null;
   checkout_max_promo_codes: number;
+  checkout_notice: string | null;
   created_at: string;
   updated_at: string;
 };
