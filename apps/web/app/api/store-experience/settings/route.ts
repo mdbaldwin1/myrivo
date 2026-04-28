@@ -81,6 +81,15 @@ const settingsUpdateSchema = z.object({
       imagePath: z.string().max(500).nullable().optional(),
       promotionId: z.string().uuid().nullable().optional()
     })
+    .optional(),
+  storeAlert: z
+    .object({
+      enabled: z.boolean().optional(),
+      title: z.string().max(120).nullable().optional(),
+      message: z.string().max(500).nullable().optional(),
+      delaySeconds: z.number().int().min(0).max(60).optional(),
+      dismissDays: z.number().int().min(1).max(365).optional()
+    })
     .optional()
 });
 
@@ -307,6 +316,35 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
     updatedAreas.push("welcomePopup");
+  }
+
+  if (payload.data.storeAlert) {
+    const current = bundle.settings;
+    const next = payload.data.storeAlert;
+    const { error } = await supabase
+      .from("store_settings")
+      .upsert(
+        {
+          store_id: bundle.store.id,
+          store_alert_enabled: next.enabled ?? current?.store_alert_enabled ?? false,
+          store_alert_title: next.title ?? current?.store_alert_title ?? null,
+          store_alert_message: next.message ?? current?.store_alert_message ?? null,
+          store_alert_delay_seconds: next.delaySeconds ?? current?.store_alert_delay_seconds ?? 8,
+          store_alert_dismiss_days: next.dismissDays ?? current?.store_alert_dismiss_days ?? 7
+        },
+        { onConflict: "store_id" }
+      );
+
+    if (error) {
+      if (isMissingColumnInSchemaCache(error, "store_alert_enabled")) {
+        return NextResponse.json(
+          { error: "Store alert settings require the latest database migration. Please run migrations and try again." },
+          { status: 400 }
+        );
+      }
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    updatedAreas.push("storeAlert");
   }
 
   return NextResponse.json({ ok: true, updatedAreas });

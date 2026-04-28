@@ -429,6 +429,18 @@ export const STOREFRONT_SETTINGS_INVENTORY = [
     notes: "Pure storefront behavior/prompt copy."
   }),
   item({
+    id: "settings.storeAlertPopup",
+    label: "Store alert popup enablement, title, message, delay, and dismiss window",
+    storageModel: "store_settings",
+    storageKey: "store_alert_enabled,store_alert_title,store_alert_message,store_alert_delay_seconds,store_alert_dismiss_days",
+    runtimeUsage: ["Customer-facing alert modal across all storefront pages"],
+    currentEditor: ["Storefront Studio > Alert tab"],
+    targetHome: "storefront_studio",
+    status: "active",
+    disposition: "editable",
+    notes: "Sequenced after the welcome popup so the two never overlap."
+  }),
+  item({
     id: "settings.storefrontCopy",
     label: "Storefront copy families",
     storageModel: "storefront_copy_json",

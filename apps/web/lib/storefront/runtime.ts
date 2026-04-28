@@ -91,6 +91,11 @@ export type StorefrontSettings = {
   checkout_order_note_prompt?: string | null;
   checkout_max_promo_codes?: number | null;
   checkout_notice?: string | null;
+  store_alert_enabled?: boolean | null;
+  store_alert_title?: string | null;
+  store_alert_message?: string | null;
+  store_alert_delay_seconds?: number | null;
+  store_alert_dismiss_days?: number | null;
   updated_at?: string | null;
 } | null;
 

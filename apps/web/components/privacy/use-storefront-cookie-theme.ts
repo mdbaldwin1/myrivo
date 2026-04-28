@@ -9,26 +9,13 @@ import {
 import { getStorefrontPageWidthClass } from "@/lib/storefront/layout";
 
 export function useStorefrontCookieTheme() {
-  const [storefrontThemeState, setStorefrontThemeState] = useState(() => {
-    if (typeof document === "undefined") {
-      return {
-        slug: null as string | null,
-        radiusScale: null as string | null,
-        cardStyle: null as string | null,
-        pageWidth: null as string | null,
-        spacingScale: null as string | null,
-        isActive: false
-      };
-    }
-
-    return {
-      slug: document.body.dataset.storefrontSlug ?? null,
-      radiusScale: document.body.dataset.storefrontRadiusScale ?? null,
-      cardStyle: document.body.dataset.storefrontCardStyle ?? null,
-      pageWidth: document.body.dataset.storefrontPageWidth ?? null,
-      spacingScale: document.body.dataset.storefrontSpacingScale ?? null,
-      isActive: document.body.dataset.storefrontThemeActive === "true"
-    };
+  const [storefrontThemeState, setStorefrontThemeState] = useState({
+    slug: null as string | null,
+    radiusScale: null as string | null,
+    cardStyle: null as string | null,
+    pageWidth: null as string | null,
+    spacingScale: null as string | null,
+    isActive: false
   });
 
   useEffect(() => {

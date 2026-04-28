@@ -253,6 +253,11 @@ export type StoreSettingsRecord = {
   checkout_order_note_prompt: string | null;
   checkout_max_promo_codes: number;
   checkout_notice: string | null;
+  store_alert_enabled: boolean;
+  store_alert_title: string | null;
+  store_alert_message: string | null;
+  store_alert_delay_seconds: number;
+  store_alert_dismiss_days: number;
   created_at: string;
   updated_at: string;
 };

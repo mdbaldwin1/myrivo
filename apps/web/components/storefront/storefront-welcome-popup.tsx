@@ -14,6 +14,7 @@ import {
   getWelcomePopupStudioPreview,
   resolveWelcomePopupConfig,
   setWelcomePopupStudioPreview,
+  STOREFRONT_WELCOME_POPUP_CLOSED_EVENT,
   STOREFRONT_WELCOME_POPUP_PREVIEW_EVENT,
   STOREFRONT_WELCOME_POPUP_SOURCE,
   STOREFRONT_WELCOME_POPUP_SURFACES
@@ -115,6 +116,8 @@ export function StorefrontWelcomePopup({ runtime }: StorefrontWelcomePopupProps)
       setWelcomePopupStudioPreview(runtime.store.slug, false);
       return;
     }
+
+    window.dispatchEvent(new CustomEvent(STOREFRONT_WELCOME_POPUP_CLOSED_EVENT, { detail: { reason } }));
 
     if (reason === "subscribed") {
       window.localStorage.setItem(buildConvertedKey(runtime.store.slug), "true");

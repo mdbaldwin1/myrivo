@@ -70,7 +70,12 @@ const settingsSchema = z.object({
   checkoutAllowOrderNote: z.boolean().optional(),
   checkoutOrderNotePrompt: z.string().max(300).nullable().optional(),
   checkoutMaxPromoCodes: z.number().int().min(1).max(10).optional(),
-  checkoutNotice: z.string().max(500).nullable().optional()
+  checkoutNotice: z.string().max(500).nullable().optional(),
+  storeAlertEnabled: z.boolean().optional(),
+  storeAlertTitle: z.string().max(120).nullable().optional(),
+  storeAlertMessage: z.string().max(500).nullable().optional(),
+  storeAlertDelaySeconds: z.number().int().min(0).max(60).optional(),
+  storeAlertDismissDays: z.number().int().min(1).max(365).optional()
 });
 
 export async function GET(request: NextRequest) {
@@ -267,12 +272,37 @@ export async function PUT(request: NextRequest) {
           payload.data.checkoutMaxPromoCodes ?? 1,
           existing?.checkout_max_promo_codes ?? 1
         ),
-        checkout_notice: resolveValue("checkoutNotice", payload.data.checkoutNotice ?? null, existing?.checkout_notice ?? null)
+        checkout_notice: resolveValue("checkoutNotice", payload.data.checkoutNotice ?? null, existing?.checkout_notice ?? null),
+        store_alert_enabled: resolveValue(
+          "storeAlertEnabled",
+          payload.data.storeAlertEnabled ?? false,
+          existing?.store_alert_enabled ?? false
+        ),
+        store_alert_title: resolveValue(
+          "storeAlertTitle",
+          payload.data.storeAlertTitle ?? null,
+          existing?.store_alert_title ?? null
+        ),
+        store_alert_message: resolveValue(
+          "storeAlertMessage",
+          payload.data.storeAlertMessage ?? null,
+          existing?.store_alert_message ?? null
+        ),
+        store_alert_delay_seconds: resolveValue(
+          "storeAlertDelaySeconds",
+          payload.data.storeAlertDelaySeconds ?? 8,
+          existing?.store_alert_delay_seconds ?? 8
+        ),
+        store_alert_dismiss_days: resolveValue(
+          "storeAlertDismissDays",
+          payload.data.storeAlertDismissDays ?? 7,
+          existing?.store_alert_dismiss_days ?? 7
+        )
       },
       { onConflict: "store_id" }
     )
     .select(
-      "support_email,fulfillment_message,shipping_policy,return_policy,announcement,footer_tagline,footer_note,instagram_url,facebook_url,tiktok_url,policy_faqs,about_article_html,about_sections,storefront_copy_json,email_capture_enabled,email_capture_heading,email_capture_description,email_capture_success_message,welcome_popup_enabled,welcome_popup_eyebrow,welcome_popup_headline,welcome_popup_body,welcome_popup_email_placeholder,welcome_popup_cta_label,welcome_popup_decline_label,welcome_popup_image_layout,welcome_popup_delay_seconds,welcome_popup_dismiss_days,welcome_popup_image_path,welcome_popup_promotion_id,checkout_enable_local_pickup,checkout_local_pickup_label,checkout_local_pickup_fee_cents,checkout_enable_flat_rate_shipping,checkout_flat_rate_shipping_label,checkout_flat_rate_shipping_fee_cents,checkout_allow_order_note,checkout_order_note_prompt,checkout_max_promo_codes,checkout_notice"
+      "support_email,fulfillment_message,shipping_policy,return_policy,announcement,footer_tagline,footer_note,instagram_url,facebook_url,tiktok_url,policy_faqs,about_article_html,about_sections,storefront_copy_json,email_capture_enabled,email_capture_heading,email_capture_description,email_capture_success_message,welcome_popup_enabled,welcome_popup_eyebrow,welcome_popup_headline,welcome_popup_body,welcome_popup_email_placeholder,welcome_popup_cta_label,welcome_popup_decline_label,welcome_popup_image_layout,welcome_popup_delay_seconds,welcome_popup_dismiss_days,welcome_popup_image_path,welcome_popup_promotion_id,checkout_enable_local_pickup,checkout_local_pickup_label,checkout_local_pickup_fee_cents,checkout_enable_flat_rate_shipping,checkout_flat_rate_shipping_label,checkout_flat_rate_shipping_fee_cents,checkout_allow_order_note,checkout_order_note_prompt,checkout_max_promo_codes,checkout_notice,store_alert_enabled,store_alert_title,store_alert_message,store_alert_delay_seconds,store_alert_dismiss_days"
     )
     .single();
 

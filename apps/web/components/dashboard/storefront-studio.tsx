@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Expand, ExternalLink, Gift, Monitor, Package, PanelBottom, PanelLeftClose, PanelLeftOpen, PanelTop, Smartphone, SwatchBook, Tablet, X } from "lucide-react";
+import { Bell, Expand, ExternalLink, Gift, Monitor, Package, PanelBottom, PanelLeftClose, PanelLeftOpen, PanelTop, Smartphone, SwatchBook, Tablet, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { StorefrontStudioCanvas } from "@/components/dashboard/storefront-studio-canvas";
@@ -24,6 +24,7 @@ import {
   storefrontStudioSurfaces,
   type StorefrontStudioSurfaceId
 } from "@/lib/store-editor/storefront-studio";
+import { setStoreAlertStudioPreview } from "@/lib/storefront/store-alert";
 import { setWelcomePopupStudioPreview, STOREFRONT_WELCOME_POPUP_SURFACES } from "@/lib/storefront/welcome-popup";
 import type { StorefrontData } from "@/lib/storefront/runtime";
 import { cn } from "@/lib/utils";
@@ -172,6 +173,12 @@ export function StorefrontStudio({ storeSlug, initialSurface, initialEditorTarge
         label: "Welcome Popup",
         description: "First-visit email capture campaign shown across eligible storefront entry pages.",
         icon: Gift
+      },
+      {
+        id: "storeAlert" as const,
+        label: "Store Alert",
+        description: "Site-wide popup for time-sensitive notices like fulfillment delays.",
+        icon: Bell
       }
     ],
     []
@@ -220,6 +227,13 @@ export function StorefrontStudio({ storeSlug, initialSurface, initialEditorTarge
     setWelcomePopupStudioPreview(storeSlug, resolvedActiveEditorTarget === "welcomePopup");
     return () => {
       setWelcomePopupStudioPreview(storeSlug, false);
+    };
+  }, [resolvedActiveEditorTarget, storeSlug]);
+
+  useEffect(() => {
+    setStoreAlertStudioPreview(storeSlug, resolvedActiveEditorTarget === "storeAlert");
+    return () => {
+      setStoreAlertStudioPreview(storeSlug, false);
     };
   }, [resolvedActiveEditorTarget, storeSlug]);
 
@@ -328,7 +342,14 @@ export function StorefrontStudio({ storeSlug, initialSurface, initialEditorTarge
     const currentHref = buildStorefrontStudioSurfaceHref(pathname, currentParams, normalizeStorefrontStudioSurface(currentSurfaceParam));
     const nextParams = new URLSearchParams(searchParams.toString());
 
-    if (editorTarget === "brand" || editorTarget === "header" || editorTarget === "footer" || editorTarget === "productDetail" || editorTarget === "welcomePopup") {
+    if (
+      editorTarget === "brand" ||
+      editorTarget === "header" ||
+      editorTarget === "footer" ||
+      editorTarget === "productDetail" ||
+      editorTarget === "welcomePopup" ||
+      editorTarget === "storeAlert"
+    ) {
       nextParams.set("editor", editorTarget);
     } else {
       nextParams.delete("editor");
@@ -354,6 +375,12 @@ export function StorefrontStudio({ storeSlug, initialSurface, initialEditorTarge
       const nextSurface = (STOREFRONT_WELCOME_POPUP_SURFACES as readonly string[]).includes(activePageSurfaceId) ? activePageSurfaceId : "home";
       setActiveEditorTarget("welcomePopup");
       replaceStudioUrl(nextSurface as PageSurfaceId, "welcomePopup");
+      return;
+    }
+
+    if (targetId === "storeAlert") {
+      setActiveEditorTarget("storeAlert");
+      replaceStudioUrl(activePageSurfaceId, "storeAlert");
       return;
     }
 
