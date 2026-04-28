@@ -41,6 +41,7 @@ export const STOREFRONT_WELCOME_POPUP_SURFACES = ["home", "products", "productDe
 
 export const STOREFRONT_WELCOME_POPUP_SOURCE = "storefront_welcome_popup";
 export const STOREFRONT_WELCOME_POPUP_PREVIEW_EVENT = "myrivo:welcome-popup-preview";
+export const STOREFRONT_WELCOME_POPUP_CLOSED_EVENT = "myrivo:welcome-popup-closed";
 
 function buildStudioPreviewKey(storeSlug: string) {
   return `myrivo:welcome-popup:studio-preview:${storeSlug}`;
