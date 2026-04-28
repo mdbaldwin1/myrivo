@@ -74,6 +74,11 @@ export type OwnedStoreBundle = {
     | "checkout_order_note_prompt"
     | "checkout_max_promo_codes"
     | "checkout_notice"
+    | "store_alert_enabled"
+    | "store_alert_title"
+    | "store_alert_message"
+    | "store_alert_delay_seconds"
+    | "store_alert_dismiss_days"
   > | null;
   contentBlocks: Array<
     Pick<StoreContentBlockRecord, "id" | "sort_order" | "eyebrow" | "title" | "body" | "cta_label" | "cta_url" | "is_active">
@@ -338,7 +343,7 @@ async function buildOwnedStoreBundleFromResolvedStore(
     const full = await supabase
       .from("store_settings")
       .select(
-        "support_email,fulfillment_message,shipping_policy,return_policy,announcement,seo_title,seo_description,seo_noindex,seo_location_city,seo_location_region,seo_location_state,seo_location_postal_code,seo_location_country_code,seo_location_address_line1,seo_location_address_line2,seo_location_show_full_address,footer_tagline,footer_note,instagram_url,facebook_url,tiktok_url,policy_faqs,about_article_html,about_sections,storefront_copy_json,email_capture_enabled,email_capture_heading,email_capture_description,email_capture_success_message,welcome_popup_enabled,welcome_popup_eyebrow,welcome_popup_headline,welcome_popup_body,welcome_popup_email_placeholder,welcome_popup_cta_label,welcome_popup_decline_label,welcome_popup_image_layout,welcome_popup_delay_seconds,welcome_popup_dismiss_days,welcome_popup_image_path,welcome_popup_promotion_id,checkout_enable_local_pickup,checkout_local_pickup_label,checkout_local_pickup_fee_cents,checkout_enable_flat_rate_shipping,checkout_flat_rate_shipping_label,checkout_flat_rate_shipping_fee_cents,checkout_allow_order_note,checkout_order_note_prompt,checkout_max_promo_codes,checkout_notice"
+        "support_email,fulfillment_message,shipping_policy,return_policy,announcement,seo_title,seo_description,seo_noindex,seo_location_city,seo_location_region,seo_location_state,seo_location_postal_code,seo_location_country_code,seo_location_address_line1,seo_location_address_line2,seo_location_show_full_address,footer_tagline,footer_note,instagram_url,facebook_url,tiktok_url,policy_faqs,about_article_html,about_sections,storefront_copy_json,email_capture_enabled,email_capture_heading,email_capture_description,email_capture_success_message,welcome_popup_enabled,welcome_popup_eyebrow,welcome_popup_headline,welcome_popup_body,welcome_popup_email_placeholder,welcome_popup_cta_label,welcome_popup_decline_label,welcome_popup_image_layout,welcome_popup_delay_seconds,welcome_popup_dismiss_days,welcome_popup_image_path,welcome_popup_promotion_id,checkout_enable_local_pickup,checkout_local_pickup_label,checkout_local_pickup_fee_cents,checkout_enable_flat_rate_shipping,checkout_flat_rate_shipping_label,checkout_flat_rate_shipping_fee_cents,checkout_allow_order_note,checkout_order_note_prompt,checkout_max_promo_codes,checkout_notice,store_alert_enabled,store_alert_title,store_alert_message,store_alert_delay_seconds,store_alert_dismiss_days"
       )
       .eq("store_id", resolvedStore.id)
       .maybeSingle();
@@ -353,7 +358,8 @@ async function buildOwnedStoreBundleFromResolvedStore(
       isMissingColumnInSchemaCache(full.error, "welcome_popup_eyebrow") ||
       isMissingColumnInSchemaCache(full.error, "welcome_popup_promotion_id") ||
       isMissingColumnInSchemaCache(full.error, "welcome_popup_decline_label") ||
-      isMissingColumnInSchemaCache(full.error, "welcome_popup_image_layout")
+      isMissingColumnInSchemaCache(full.error, "welcome_popup_image_layout") ||
+      isMissingColumnInSchemaCache(full.error, "store_alert_enabled")
     ) {
       const legacy = await supabase
         .from("store_settings")
@@ -390,7 +396,12 @@ async function buildOwnedStoreBundleFromResolvedStore(
               welcome_popup_dismiss_days: 14,
               welcome_popup_image_path: null,
               welcome_popup_promotion_id: null,
-              checkout_notice: null
+              checkout_notice: null,
+              store_alert_enabled: false,
+              store_alert_title: null,
+              store_alert_message: null,
+              store_alert_delay_seconds: 8,
+              store_alert_dismiss_days: 7
             }
           : null,
         error: legacy.error

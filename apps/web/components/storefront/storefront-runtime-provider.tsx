@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { StorefrontAnalyticsProvider } from "@/components/storefront/storefront-analytics-provider";
 import { SurfacePortalProvider } from "@/components/ui/surface-portal-context";
+import { StorefrontStoreAlert } from "@/components/storefront/storefront-store-alert";
 import { StorefrontWelcomePopup } from "@/components/storefront/storefront-welcome-popup";
 import type { StorefrontMode, StorefrontRuntime } from "@/lib/storefront/runtime";
 import { buildStorefrontThemeStyle } from "@/lib/theme/storefront-theme";
@@ -123,6 +124,7 @@ export function StorefrontRuntimeProvider({ runtime, children }: StorefrontRunti
             {children}
             <div ref={portalContainerRef} data-storefront-portal-root="true" />
             <StorefrontWelcomePopup runtime={runtime} />
+            <StorefrontStoreAlert runtime={runtime} />
           </div>
         </StorefrontAnalyticsProvider>
       </SurfacePortalProvider>

@@ -85,6 +85,12 @@ export function ensureStorefrontSettingsDraft(current: StorefrontSettings): NonN
       checkout_flat_rate_shipping_fee_cents: 0,
       checkout_allow_order_note: false,
       checkout_order_note_prompt: null,
+      checkout_notice: null,
+      store_alert_enabled: false,
+      store_alert_title: null,
+      store_alert_message: null,
+      store_alert_delay_seconds: 8,
+      store_alert_dismiss_days: 7,
       updated_at: null
     }
   );

@@ -11,12 +11,20 @@ import { StorefrontStudioStorefrontEditorOrderSummaryTab } from "@/components/da
 import { StorefrontStudioStorefrontEditorPoliciesTab } from "@/components/dashboard/storefront-studio-storefront-editor-policies-tab";
 import { StorefrontStudioStorefrontEditorProductDetailTab } from "@/components/dashboard/storefront-studio-storefront-editor-product-detail-tab";
 import { StorefrontStudioStorefrontEditorProductsTab } from "@/components/dashboard/storefront-studio-storefront-editor-products-tab";
+import { StorefrontStudioStorefrontEditorStoreAlertTab } from "@/components/dashboard/storefront-studio-storefront-editor-store-alert-tab";
 import { StorefrontStudioStorefrontEditorWelcomePopupTab } from "@/components/dashboard/storefront-studio-storefront-editor-welcome-popup-tab";
 import type { StorefrontStudioSurfaceId } from "@/lib/store-editor/storefront-studio";
 
 type PageSurfaceId = Exclude<StorefrontStudioSurfaceId, "emails">;
 
-export type StorefrontStudioStorefrontEditorTarget = "brand" | "header" | "footer" | PageSurfaceId | "productDetail" | "welcomePopup";
+export type StorefrontStudioStorefrontEditorTarget =
+  | "brand"
+  | "header"
+  | "footer"
+  | PageSurfaceId
+  | "productDetail"
+  | "welcomePopup"
+  | "storeAlert";
 
 type StorefrontStudioStorefrontEditorPanelProps = {
   editorTarget: StorefrontStudioStorefrontEditorTarget;
@@ -38,6 +46,8 @@ export function StorefrontStudioStorefrontEditorPanel({ editorTarget }: Storefro
       return <StorefrontStudioStorefrontEditorProductDetailTab />;
     case "welcomePopup":
       return <StorefrontStudioStorefrontEditorWelcomePopupTab />;
+    case "storeAlert":
+      return <StorefrontStudioStorefrontEditorStoreAlertTab />;
     case "about":
       return <StorefrontStudioStorefrontEditorAboutTab />;
     case "policies":

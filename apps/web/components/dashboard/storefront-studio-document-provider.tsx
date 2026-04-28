@@ -507,6 +507,13 @@ export function StorefrontStudioDocumentProvider({
             dismissDays: settingsDraftSnapshot?.welcome_popup_dismiss_days ?? 14,
             imagePath: settingsDraftSnapshot?.welcome_popup_image_path ?? null,
             promotionId: settingsDraftSnapshot?.welcome_popup_promotion_id ?? null
+          },
+          storeAlert: {
+            enabled: settingsDraftSnapshot?.store_alert_enabled ?? false,
+            title: settingsDraftSnapshot?.store_alert_title ?? null,
+            message: settingsDraftSnapshot?.store_alert_message ?? null,
+            delaySeconds: settingsDraftSnapshot?.store_alert_delay_seconds ?? 8,
+            dismissDays: settingsDraftSnapshot?.store_alert_dismiss_days ?? 7
           }
         })
       });
