@@ -32,6 +32,30 @@ type StripeSessionShippingDetails = {
       country?: string | null;
     } | null;
   } | null;
+  collected_information?: {
+    shipping_details?: {
+      name?: string | null;
+      address?: {
+        line1?: string | null;
+        line2?: string | null;
+        city?: string | null;
+        state?: string | null;
+        postal_code?: string | null;
+        country?: string | null;
+      } | null;
+    } | null;
+  } | null;
+  customer_details?: {
+    name?: string | null;
+    address?: {
+      line1?: string | null;
+      line2?: string | null;
+      city?: string | null;
+      state?: string | null;
+      postal_code?: string | null;
+      country?: string | null;
+    } | null;
+  } | null;
 };
 
 type StorefrontCheckoutRecord = {
@@ -75,7 +99,12 @@ function normalizeAddressField(value: string | null | undefined) {
 export function extractShippingAddressSnapshot(
   session: StripeSessionShippingDetails | null | undefined
 ): ShippingAddressSnapshot | null {
-  const details = session?.shipping_details;
+  const details =
+    session?.shipping_details ??
+    session?.collected_information?.shipping_details ??
+    session?.customer_details ??
+    null;
+
   if (!details?.address) {
     return null;
   }
