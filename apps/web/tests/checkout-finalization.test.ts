@@ -56,6 +56,35 @@ describe("finalizeStorefrontCheckout", () => {
     persistPromotionRedemptionsMock.mockResolvedValue(undefined);
   });
 
+  test("extracts Stripe-collected shipping details from the current Checkout Session shape", async () => {
+    const { extractShippingAddressSnapshot } = await import("@/lib/storefront/checkout-finalization");
+
+    expect(
+      extractShippingAddressSnapshot({
+        collected_information: {
+          shipping_details: {
+            name: "Sandra Terwey",
+            address: {
+              line1: "44 Garden Way",
+              line2: null,
+              city: "Nashville",
+              state: "TN",
+              postal_code: "37201",
+              country: "us"
+            }
+          }
+        }
+      })
+    ).toEqual({
+      recipientName: "Sandra Terwey",
+      addressLine1: "44 Garden Way",
+      city: "Nashville",
+      stateRegion: "TN",
+      postalCode: "37201",
+      countryCode: "US"
+    });
+  });
+
   test("persists the Stripe shipping address onto the order and checkout session", async () => {
     const orderUpdateMock = vi.fn(() => ({
       eq: vi.fn(async () => ({ error: null }))
