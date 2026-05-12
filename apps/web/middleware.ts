@@ -20,7 +20,13 @@ export function middleware(request: NextRequest) {
   const dashboardStoreSlug = decodeURIComponent(dashboardMatch?.[1] ?? "").trim().toLowerCase();
   const storefrontStoreSlug = storeQuerySlug;
 
-  const response = NextResponse.next();
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-pathname", pathname);
+  const response = NextResponse.next({
+    request: {
+      headers: requestHeaders
+    }
+  });
   let wroteCookie = false;
 
   if (dashboardStoreSlug && request.cookies.get(ACTIVE_STORE_COOKIE)?.value !== dashboardStoreSlug) {
@@ -42,7 +48,7 @@ export function middleware(request: NextRequest) {
   }
 
   if (!wroteCookie) {
-    return NextResponse.next();
+    return response;
   }
 
   return response;
