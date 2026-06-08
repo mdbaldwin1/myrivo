@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { getPlatformStorefrontPrivacySettings } from "@/lib/privacy/platform-storefront-privacy";
 import { resolveStoreAnalyticsAccessByStoreId } from "@/lib/analytics/access";
 import { resolveStorePrivacyProfile } from "@/lib/privacy/store-privacy";
+import { getAppUrl } from "@/lib/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isMissingColumnInSchemaCache, isMissingRelationInSchemaCache } from "@/lib/supabase/error-classifiers";
@@ -11,8 +12,10 @@ import type { StorefrontData } from "@/lib/storefront/runtime";
 import { resolveStorefrontRouteBasePath } from "@/lib/storefront/paths";
 import { buildMergedStorefrontThemeJson } from "@/lib/storefront/theme-overrides";
 import { resolveStoreSlugForServerRender, resolveStorefrontServerRenderHint } from "@/lib/stores/active-store";
+import { normalizeHost } from "@/lib/stores/domain-utils";
 import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
 import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
+import { getSingleStoreSlug } from "@/lib/stores/single-store";
 
 function getValueAtPath(record: Record<string, unknown>, key: string): unknown {
   return key.split(".").reduce<unknown>((current, part) => {
@@ -43,6 +46,31 @@ export function resolveStorefrontProductStatuses(canManageStore: boolean) {
   return canManageStore ? (["active", "draft"] as const) : (["active"] as const);
 }
 
+export function resolveSingleStoreCustomHostFallback(input: {
+  host?: string | null;
+  appUrl?: string | null;
+  singleStoreSlug?: string | null;
+}) {
+  const normalizedHost = normalizeHost(input.host);
+  const singleStoreSlug = input.singleStoreSlug?.trim().toLowerCase();
+  if (!normalizedHost || !singleStoreSlug) {
+    return null;
+  }
+
+  try {
+    const appHost = normalizeHost(new URL(input.appUrl ?? "").hostname);
+    const bareHost = normalizedHost.startsWith("www.") ? normalizedHost.slice(4) : normalizedHost;
+    const bareAppHost = appHost?.startsWith("www.") ? appHost.slice(4) : appHost;
+    if (!bareAppHost || bareHost === bareAppHost) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  return singleStoreSlug;
+}
+
 export async function loadStorefrontData(explicitStoreSlug?: string | null): Promise<StorefrontData | null> {
   const supabase = await createSupabaseServerClient();
   const admin = createSupabaseAdminClient();
@@ -50,11 +78,19 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
   const currentPath = requestHeaders.get("x-pathname") ?? requestHeaders.get("next-url") ?? "";
   const whiteLabelStoreSlug = await resolveStoreSlugFromDomain(host);
+  const singleStoreCustomHostFallback =
+    !explicitStoreSlug && !whiteLabelStoreSlug
+      ? resolveSingleStoreCustomHostFallback({
+          host,
+          appUrl: getAppUrl(),
+          singleStoreSlug: getSingleStoreSlug()
+        })
+      : null;
   // When there is no explicit store slug and the domain is not a custom
   // storefront domain, skip the cookie-based fallback so the app's own
   // domain (myrivo.app) renders the marketing homepage instead of a
   // storefront the user previously visited from the dashboard.
-  const resolvedStoreHint = resolveStorefrontServerRenderHint(explicitStoreSlug, whiteLabelStoreSlug);
+  const resolvedStoreHint = resolveStorefrontServerRenderHint(explicitStoreSlug, whiteLabelStoreSlug ?? singleStoreCustomHostFallback);
   const singleStoreSlug = resolvedStoreHint
     ? await resolveStoreSlugForServerRender(resolvedStoreHint)
     : null;
