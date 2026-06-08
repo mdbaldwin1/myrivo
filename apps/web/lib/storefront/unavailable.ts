@@ -25,7 +25,7 @@ export async function loadStorefrontUnavailableData(explicitStoreSlug?: string |
   const supabase = await createSupabaseServerClient();
   const admin = createSupabaseAdminClient();
   const requestHeaders = await headers();
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+  const host = requestHeaders.get("host") ?? requestHeaders.get("x-forwarded-host");
   const whiteLabelStoreSlug = await resolveStoreSlugFromDomain(host, { includeNonPublic: true });
   const resolvedStoreHint = resolveStorefrontServerRenderHint(explicitStoreSlug, whiteLabelStoreSlug);
   const singleStoreSlug = resolvedStoreHint

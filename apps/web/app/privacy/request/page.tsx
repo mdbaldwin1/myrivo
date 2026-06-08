@@ -24,7 +24,7 @@ async function resolveRequestedStoreSlug(searchParams: Record<string, string | s
   }
 
   const requestHeaders = await headers();
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+  const host = requestHeaders.get("host") ?? requestHeaders.get("x-forwarded-host");
   return resolveStoreSlugFromDomain(host, { includeNonPublic: true });
 }
 

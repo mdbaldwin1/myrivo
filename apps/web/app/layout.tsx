@@ -56,7 +56,7 @@ function defaultMetadata(): Metadata {
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+  const host = requestHeaders.get("host") ?? requestHeaders.get("x-forwarded-host");
   const headerStoreSlug =
     [
       requestHeaders.get("next-url"),
@@ -149,7 +149,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const cookieStore = await cookies();
   const initialConsent = resolveCookieConsent(cookieStore.get(COOKIE_CONSENT_COOKIE_NAME)?.value ?? null);
   const initialBrowserPrivacySignals = resolveBrowserPrivacySignalsFromHeaders(requestHeaders);
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+  const host = requestHeaders.get("host") ?? requestHeaders.get("x-forwarded-host");
   const headerStoreSlug =
     [
       requestHeaders.get("next-url"),
