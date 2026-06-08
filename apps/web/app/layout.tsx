@@ -6,6 +6,9 @@ import { SkipLink } from "@/components/ui/skip-link";
 import { Toaster } from "@/components/ui/toaster";
 import { COOKIE_CONSENT_COOKIE_NAME, resolveCookieConsent } from "@/lib/privacy/cookies";
 import { resolveBrowserPrivacySignalsFromHeaders } from "@/lib/privacy/signals";
+import { getExternalAppUrl } from "@/lib/env";
+import { getSingleStoreSlug } from "@/lib/stores/single-store";
+import { buildCustomDomainUnavailableState, isNonPlatformCustomHost } from "@/lib/storefront/custom-domain-fallback";
 import { mapStoreExperienceContentRow } from "@/lib/store-experience/content";
 import { buildMergedStorefrontThemeJson } from "@/lib/storefront/theme-overrides";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -54,6 +57,19 @@ function defaultMetadata(): Metadata {
   };
 }
 
+function customHostFallbackMetadata(host: string | null): Metadata | null {
+  if (!host || !isNonPlatformCustomHost({ host, appUrl: getExternalAppUrl() })) {
+    return null;
+  }
+
+  const state = buildCustomDomainUnavailableState({ host, storeSlug: getSingleStoreSlug() });
+  return {
+    title: state.store.name,
+    description: "This storefront is temporarily unavailable.",
+    icons: defaultMetadata().icons
+  };
+}
+
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
   const host = requestHeaders.get("host") ?? requestHeaders.get("x-forwarded-host");
@@ -67,11 +83,23 @@ export async function generateMetadata(): Promise<Metadata> {
     ]
       .map((value) => extractStorefrontSlugFromPath(value))
       .find((value): value is string => Boolean(value)) ?? null;
-  const storeSlug = headerStoreSlug ?? (await resolveStoreSlugFromDomain(host, { includeNonPublic: true }));
+  const fallbackMetadata = customHostFallbackMetadata(host);
+  let domainStoreSlug: string | null = null;
+  try {
+    domainStoreSlug = await resolveStoreSlugFromDomain(host, { includeNonPublic: true });
+  } catch (error) {
+    if (fallbackMetadata) {
+      console.error("Unable to resolve metadata store slug for custom host.", error);
+      return fallbackMetadata;
+    }
+
+    throw error;
+  }
+  const storeSlug = headerStoreSlug ?? domainStoreSlug;
   const isPathBasedStorefront = Boolean(headerStoreSlug);
 
   if (!storeSlug) {
-    return defaultMetadata();
+    return fallbackMetadata ?? defaultMetadata();
   }
 
   const admin = createSupabaseAdminClient();
@@ -87,7 +115,7 @@ export async function generateMetadata(): Promise<Metadata> {
     }>();
 
   if (error || !store || !isStorePubliclyAccessibleStatus(store.status) || (!isPathBasedStorefront && !store.white_label_enabled)) {
-    return defaultMetadata();
+    return fallbackMetadata ?? defaultMetadata();
   }
 
   const brandingQuery = await admin
@@ -160,7 +188,17 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     ]
       .map((value) => extractStorefrontSlugFromPath(value))
       .find((value): value is string => Boolean(value)) ?? null;
-  const storeSlug = headerStoreSlug ?? (await resolveStoreSlugFromDomain(host, { includeNonPublic: true }));
+  let domainStoreSlug: string | null = null;
+  try {
+    domainStoreSlug = await resolveStoreSlugFromDomain(host, { includeNonPublic: true });
+  } catch (error) {
+    if (host && isNonPlatformCustomHost({ host, appUrl: getExternalAppUrl() })) {
+      console.error("Unable to resolve layout store slug for custom host.", error);
+    } else {
+      throw error;
+    }
+  }
+  const storeSlug = headerStoreSlug ?? domainStoreSlug;
 
   let storefrontBodyStyle: CSSProperties | undefined;
   let storefrontBodyDataset:
