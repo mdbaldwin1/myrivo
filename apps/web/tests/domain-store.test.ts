@@ -68,6 +68,31 @@ describe("resolveStoreSlugFromDomain", () => {
     expect(slug).toBe("at-home-apothecary");
   });
 
+  test("falls back from apex host to www domain when exact apex record is missing", async () => {
+    let callCount = 0;
+    adminFromMock.mockImplementation((table: string) => {
+      if (table !== "store_domains") throw new Error(`Unexpected table ${table}`);
+      callCount += 1;
+      if (callCount === 1) {
+        return buildStoreDomainsQuery({
+          data: null,
+          error: null
+        });
+      }
+      return buildStoreDomainsQuery({
+        data: {
+          domain: "www.siftr.app",
+          verification_status: "verified",
+          stores: { slug: "at-home-apothecary", status: "live" }
+        },
+        error: null
+      });
+    });
+
+    const slug = await resolveStoreSlugFromDomain("siftr.app");
+    expect(slug).toBe("at-home-apothecary");
+  });
+
   test("can resolve verified offline domains when includeNonPublic is enabled", async () => {
     adminFromMock.mockImplementation((table: string) => {
       if (table !== "store_domains") throw new Error(`Unexpected table ${table}`);
