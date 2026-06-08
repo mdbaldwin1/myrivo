@@ -199,7 +199,21 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
   let resolvedProductsError = productsError;
   let resolvedSettings = settings;
   let resolvedSettingsError = settingsError;
-  if (
+  if (isMissingRelationInSchemaCache(productsError)) {
+    const standaloneProducts = await admin
+      .from("products")
+      .select("id,title,description,slug,image_urls,image_alt_text,seo_title,seo_description,is_featured,created_at,price_cents,inventory_qty")
+      .eq("store_id", store.id)
+      .in("status", [...visibleProductStatuses])
+      .order("created_at", { ascending: false });
+
+    resolvedProducts = (standaloneProducts.data ?? []).map((product) => ({
+      ...product,
+      product_variants: [],
+      product_option_axes: []
+    }));
+    resolvedProductsError = standaloneProducts.error;
+  } else if (
     isMissingColumnInSchemaCache(productsError, "slug") ||
     isMissingColumnInSchemaCache(productsError, "image_alt_text") ||
     isMissingColumnInSchemaCache(productsError, "seo_title") ||
