@@ -4,7 +4,8 @@ import {
   getNumber,
   getString,
   resolveSingleStoreCustomHostFallback,
-  resolveStorefrontProductStatuses
+  resolveStorefrontProductStatuses,
+  shouldUseLegacyStoreBrandingQuery
 } from "@/lib/storefront/load-storefront-data";
 
 describe("loadStorefrontData nested path helpers", () => {
@@ -84,5 +85,21 @@ describe("loadStorefrontData nested path helpers", () => {
         singleStoreSlug: "at-home-apothecary"
       })
     ).toBeNull();
+  });
+
+  test("falls back to the legacy branding query when Supabase has stale asset columns", () => {
+    expect(
+      shouldUseLegacyStoreBrandingQuery({
+        code: "PGRST204",
+        message: "Could not find the 'favicon_path' column of 'store_branding' in the schema cache"
+      })
+    ).toBe(true);
+
+    expect(
+      shouldUseLegacyStoreBrandingQuery({
+        code: "PGRST204",
+        message: "Could not find the 'support_email' column of 'store_settings' in the schema cache"
+      })
+    ).toBe(false);
   });
 });
