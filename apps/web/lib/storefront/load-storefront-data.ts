@@ -17,6 +17,11 @@ import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
 import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 import { getSingleStoreSlug } from "@/lib/stores/single-store";
 
+type SupabaseSchemaCacheError = {
+  code?: string;
+  message?: string;
+} | null;
+
 function getValueAtPath(record: Record<string, unknown>, key: string): unknown {
   return key.split(".").reduce<unknown>((current, part) => {
     if (!current || typeof current !== "object" || Array.isArray(current)) {
@@ -69,6 +74,15 @@ export function resolveSingleStoreCustomHostFallback(input: {
   }
 
   return singleStoreSlug;
+}
+
+export function shouldUseLegacyStoreBrandingQuery(error: SupabaseSchemaCacheError) {
+  return (
+    isMissingColumnInSchemaCache(error, "favicon_path") ||
+    isMissingColumnInSchemaCache(error, "apple_touch_icon_path") ||
+    isMissingColumnInSchemaCache(error, "og_image_path") ||
+    isMissingColumnInSchemaCache(error, "twitter_image_path")
+  );
 }
 
 export async function loadStorefrontData(explicitStoreSlug?: string | null): Promise<StorefrontData | null> {
@@ -191,8 +205,29 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
       .order("created_at", { ascending: false })
   ]);
 
-  if (brandingError) {
-    throw new Error(brandingError.message);
+  let resolvedBranding = branding;
+  let resolvedBrandingError = brandingError;
+  if (brandingError && shouldUseLegacyStoreBrandingQuery(brandingError)) {
+    const legacyBranding = await admin
+      .from("store_branding")
+      .select("logo_path,primary_color,accent_color,theme_json")
+      .eq("store_id", store.id)
+      .maybeSingle();
+
+    resolvedBranding = legacyBranding.data
+      ? {
+          ...legacyBranding.data,
+          favicon_path: null,
+          apple_touch_icon_path: null,
+          og_image_path: null,
+          twitter_image_path: null
+        }
+      : null;
+    resolvedBrandingError = legacyBranding.error;
+  }
+
+  if (resolvedBrandingError) {
+    throw new Error(resolvedBrandingError.message);
   }
 
   let resolvedProducts = products;
@@ -324,7 +359,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
   const cartSection = sectionedContent.cartPage;
   const orderSummarySection = sectionedContent.orderSummaryPage;
   const emailsSection = sectionedContent.emails;
-  const brandingThemeJson = isRecord(branding?.theme_json) ? branding.theme_json : {};
+  const brandingThemeJson = isRecord(resolvedBranding?.theme_json) ? resolvedBranding.theme_json : {};
 
   const mergedTheme = buildMergedStorefrontThemeJson(brandingThemeJson, sectionedContent);
 
@@ -446,12 +481,12 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
     analytics,
     privacyProfile: resolveStorePrivacyProfile(privacyProfileError ? null : privacyProfile, platformPrivacySettings, finalSettings),
     experienceContent: sectionedContent,
-    branding: branding
+    branding: resolvedBranding
       ? {
-          ...branding,
+          ...resolvedBranding,
           theme_json: mergedTheme
         }
-      : branding,
+      : resolvedBranding,
     settings: finalSettings,
     contentBlocks:
       normalizedSectionedBlocks ??
