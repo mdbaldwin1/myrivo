@@ -103,7 +103,7 @@ export async function resolveStoreSlugFromRequestAsync(request: NextRequest): Pr
     return syncResolved;
   }
 
-  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  const host = request.headers.get("host") ?? request.headers.get("x-forwarded-host");
   const fromDomain = await resolveStoreSlugFromDomain(host);
   if (fromDomain) {
     return fromDomain;

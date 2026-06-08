@@ -75,7 +75,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
   const supabase = await createSupabaseServerClient();
   const admin = createSupabaseAdminClient();
   const requestHeaders = await headers();
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+  const host = requestHeaders.get("host") ?? requestHeaders.get("x-forwarded-host");
   const currentPath = requestHeaders.get("x-pathname") ?? requestHeaders.get("next-url") ?? "";
   const whiteLabelStoreSlug = await resolveStoreSlugFromDomain(host);
   const singleStoreCustomHostFallback =
