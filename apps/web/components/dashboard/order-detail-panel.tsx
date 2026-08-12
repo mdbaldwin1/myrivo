@@ -76,7 +76,7 @@ type OrderDetailResponse = {
     variant_snapshot: Record<string, unknown>;
     quantity: number;
     unit_price_cents: number;
-    products?: { title?: string } | null;
+    products?: { title?: string; product_type?: "physical" | "digital" } | null;
   }>;
   refunds?: OrderRefundRecord[];
   disputes?: OrderDisputeRecord[];
@@ -375,6 +375,7 @@ export function OrderDetailPanel({ orderId, onReschedulePickup, refreshToken = 0
             currency={order.currency}
             orderStatus={order.status}
             refunds={refunds}
+            hasDigitalItems={items.some((item) => item.products?.product_type === "digital")}
           />
 
           <OrderDisputeSummaryPanel disputes={disputes} currency={order.currency} />

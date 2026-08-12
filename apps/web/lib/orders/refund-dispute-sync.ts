@@ -48,6 +48,15 @@ function isClosedDisputeStatus(status: OrderDisputeRecord["status"]) {
   return status === "warning_closed" || status === "won" || status === "lost" || status === "prevented";
 }
 
+async function applyDigitalAccessChange(change: () => Promise<unknown>) {
+  try {
+    await change();
+  } catch (error) {
+    // Access control is a follow-up side effect; Stripe synchronization must remain retry-safe.
+    console.error("digital entitlement access update failed", error);
+  }
+}
+
 export async function syncStripeRefundRecord(
   refund: Stripe.Refund,
   options?: { refundRequestId?: string | null; processedByUserId?: string | null }
@@ -138,6 +147,15 @@ export async function syncStripeRefundRecord(
         amountCents: updatedRefund.amount_cents,
         reasonKey: updatedRefund.reason_key as MerchantRefundReason,
         customerMessage: updatedRefund.customer_message
+      });
+      await applyDigitalAccessChange(async () => {
+        const { data: order } = await admin.from("orders").select("total_cents").eq("id", updatedRefund.order_id).single<{ total_cents: number }>();
+        const { data: successfulRefunds } = await admin.from("order_refunds").select("amount_cents").eq("order_id", updatedRefund.order_id).eq("status", "succeeded");
+        const refundedCents = (successfulRefunds ?? []).reduce((sum, entry) => sum + entry.amount_cents, 0);
+        if (order && refundedCents >= order.total_cents) {
+          await admin.from("digital_order_entitlements").update({ status: "revoked", status_reason: "full_refund" }).eq("order_id", updatedRefund.order_id);
+          await admin.from("digital_order_access_tokens").update({ revoked_at: new Date().toISOString() }).eq("order_id", updatedRefund.order_id).is("revoked_at", null);
+        }
       });
     }
   }
@@ -262,6 +280,15 @@ export async function syncStripeDisputeRecord(dispute: Stripe.Dispute) {
       responseDueBy: syncedDispute.response_due_by
     });
   }
+
+  await applyDigitalAccessChange(async () => { if (syncedDispute.status === "lost") {
+    await admin.from("digital_order_entitlements").update({ status: "revoked", status_reason: "dispute_lost" }).eq("order_id", syncedDispute.order_id);
+    await admin.from("digital_order_access_tokens").update({ revoked_at: new Date().toISOString() }).eq("order_id", syncedDispute.order_id).is("revoked_at", null);
+  } else if (syncedDispute.status === "won" || syncedDispute.status === "prevented" || syncedDispute.status === "warning_closed") {
+    await admin.from("digital_order_entitlements").update({ status: "active", status_reason: null }).eq("order_id", syncedDispute.order_id).eq("status_reason", "dispute_open");
+  } else {
+    await admin.from("digital_order_entitlements").update({ status: "suspended", status_reason: "dispute_open" }).eq("order_id", syncedDispute.order_id).eq("status", "active");
+  }});
 
   return syncedDispute;
 }

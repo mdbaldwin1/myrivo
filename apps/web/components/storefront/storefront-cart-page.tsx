@@ -48,6 +48,7 @@ type StorefrontProduct = {
   slug: string;
   image_urls?: string[] | null;
   image_alt_text?: string | null;
+  product_type?: "physical" | "digital";
   product_variants: StorefrontVariant[];
 };
 
@@ -210,6 +211,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
+  const [digitalDeliveryConsent, setDigitalDeliveryConsent] = useState(false);
   const [email, setEmail] = useState("");
   const [selectedFulfillmentMethod, setSelectedFulfillmentMethod] = useState<"pickup" | "shipping">(
     fulfillmentOptions[0]?.method ?? "shipping"
@@ -390,9 +392,11 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
   }, [cart, resolvedProducts]);
 
   const subtotalCents = cartItems.reduce((sum, item) => sum + item.variant.price_cents * item.quantity, 0);
+  const hasDigitalItems = cartItems.some((item) => item.product.product_type === "digital");
+  const hasPhysicalItems = cartItems.some((item) => item.product.product_type !== "digital");
   const selectedFulfillment =
     fulfillmentOptions.find((option) => option.method === selectedFulfillmentMethod) ?? fulfillmentOptions[0]!;
-  const shippingFeeCents = selectedFulfillment?.feeCents ?? 0;
+  const shippingFeeCents = hasPhysicalItems ? selectedFulfillment?.feeCents ?? 0 : 0;
   const discountedSubtotalCents = Math.max(0, subtotalCents - appliedDiscountCents);
   const effectiveShippingFeeCents = Math.max(0, shippingFeeCents - Math.min(appliedShippingDiscountCents, shippingFeeCents));
   const checkoutTotalCents = discountedSubtotalCents + effectiveShippingFeeCents;
@@ -505,7 +509,11 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
       return;
     }
 
-    if (selectedFulfillment.method === "pickup") {
+    if (hasDigitalItems && !digitalDeliveryConsent) {
+      setError("Confirm immediate digital delivery before checkout.");
+      return;
+    }
+    if (hasPhysicalItems && selectedFulfillment.method === "pickup") {
       // When there are pickup options to choose from, a location must be selected.
       // When there are no options (locationless pickup), skip this validation.
       if ((pickupOptions ?? []).length > 0 && !selectedPickupLocationId) {
@@ -532,6 +540,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
         buyerLatitude: buyerLatitude ?? undefined,
         buyerLongitude: buyerLongitude ?? undefined,
         fulfillmentMethod: selectedFulfillment.method,
+        digitalDeliveryConsent,
         pickupLocationId: selectedPickupLocationId ?? undefined,
         pickupWindowStartAt: selectedPickupSlot?.startsAt,
         pickupWindowEndAt: selectedPickupSlot?.endsAt,
@@ -722,7 +731,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                           </button>
                         </div>
                         <div className="flex items-center justify-between gap-3">
-                          <div
+                          {item.product.product_type === "digital" ? <p className="text-sm text-muted-foreground">Quantity 1 · Digital download</p> : <div
                             className={cn(
                               "inline-flex items-center overflow-hidden border border-border/60 bg-[color:var(--storefront-surface)]",
                               buttonRadiusClass
@@ -755,7 +764,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                             >
                               +
                             </button>
-                          </div>
+                          </div>}
                           <p className="text-sm font-medium">${((item.variant.price_cents * item.quantity) / 100).toFixed(2)}</p>
                         </div>
                       </div>
@@ -788,7 +797,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                     className="h-10 border-border/60"
                   />
                 </div>
-                <Input
+                {hasPhysicalItems ? <Input
                   name="phone"
                   type="tel"
                   autoComplete="tel"
@@ -798,7 +807,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                   value={phone}
                   onChange={(event) => setPhone(event.target.value)}
                   className="h-10 border-border/60"
-                />
+                /> : null}
                 <Input
                   name="email"
                   type="email"
@@ -812,7 +821,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                 />
               </div>
 
-              <div className="space-y-2 border-b border-border/40 pb-4">
+              {hasPhysicalItems ? <div className="space-y-2 border-b border-border/40 pb-4">
                 <p className="text-sm font-medium">How do you want to receive your products?*</p>
                 <div className="space-y-2">
                   {fulfillmentOptions.map((option) => (
@@ -833,9 +842,11 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                     </label>
                   ))}
                 </div>
-              </div>
+              </div> : null}
 
-              {selectedFulfillment.method === "pickup" ? (
+              {hasDigitalItems ? <label className="flex items-start gap-2 rounded-md border border-border/60 bg-muted/20 p-3 text-sm"><input type="checkbox" checked={digitalDeliveryConsent} onChange={(event) => setDigitalDeliveryConsent(event.target.checked)} required /><span>I agree to immediate delivery of digital content and understand that downloads are generally final after access begins. Personal-use license applies.</span></label> : null}
+
+              {hasPhysicalItems && selectedFulfillment.method === "pickup" ? (
                 <div className="space-y-2 border-b border-border/40 pb-4">
                   {(pickupOptions ?? []).length > 0 ? (
                     <Button

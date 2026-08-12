@@ -18,6 +18,7 @@ type OrderRefundRequestPanelProps = {
   currency: string;
   orderStatus: OrderFinancialStatus;
   refunds: OrderRefundRecord[];
+  hasDigitalItems?: boolean;
 };
 
 function formatMoney(amountCents: number, currency: string) {
@@ -34,7 +35,7 @@ function getRefundStatusTone(status: OrderRefundRecord["status"]) {
   return "warning" as const;
 }
 
-export function OrderRefundRequestPanel({ orderId, orderTotalCents, currency, orderStatus, refunds }: OrderRefundRequestPanelProps) {
+export function OrderRefundRequestPanel({ orderId, orderTotalCents, currency, orderStatus, refunds, hasDigitalItems = false }: OrderRefundRequestPanelProps) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"full" | "partial">("full");
   const [amountInput, setAmountInput] = useState("");
@@ -164,6 +165,7 @@ export function OrderRefundRequestPanel({ orderId, orderTotalCents, currency, or
               >
                 <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pb-4 pr-1">
                   <AppAlert variant="error" message={error} />
+                  {hasDigitalItems ? <AppAlert variant="warning" message={mode === "full" ? "A successful full refund revokes all remaining digital access. Digital sales are generally final after the first download except for defects or other required exceptions." : "Partial refunds preserve digital access."} /> : null}
 
                   <FormField label="Refund type" description="Use full when the remaining balance should be refunded entirely.">
                     <div className="grid gap-2 sm:grid-cols-2">

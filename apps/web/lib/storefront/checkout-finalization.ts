@@ -9,6 +9,7 @@ import {
 import { buildStubCheckoutRpcPayload } from "@/lib/storefront/stub-checkout";
 import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 import { getStripeClient } from "@/lib/stripe/server";
+import { issueDigitalEntitlements } from "@/lib/digital-products/entitlements";
 
 type ShippingAddressSnapshot = {
   recipientName?: string;
@@ -86,6 +87,9 @@ type StorefrontCheckoutRecord = {
   fee_fixed_cents: number | null;
   item_total_cents: number | null;
   platform_fee_cents: number | null;
+  digital_consent_version: string | null;
+  digital_consent_accepted_at: string | null;
+  digital_license_version: string | null;
   items: Array<{ productId?: string; variantId?: string; quantity?: number; unitPriceCents?: number }> | unknown;
   order_id: string | null;
   status: "pending" | "completed" | "failed";
@@ -226,7 +230,7 @@ export async function finalizeStorefrontCheckout(
   const { data: checkout, error: checkoutError } = await supabase
     .from("storefront_checkout_sessions")
     .select(
-      "id,store_id,store_slug,analytics_session_id,analytics_session_key,source_cart_id,customer_email,customer_first_name,customer_last_name,customer_phone,customer_note,shipping_address_json,fulfillment_method,fulfillment_label,pickup_location_id,pickup_location_snapshot_json,pickup_window_start_at,pickup_window_end_at,pickup_timezone,shipping_fee_cents,promo_code,promo_codes_json,fee_plan_key,fee_bps,fee_fixed_cents,item_total_cents,platform_fee_cents,items,order_id,status"
+      "id,store_id,store_slug,analytics_session_id,analytics_session_key,source_cart_id,customer_email,customer_first_name,customer_last_name,customer_phone,customer_note,shipping_address_json,fulfillment_method,fulfillment_label,pickup_location_id,pickup_location_snapshot_json,pickup_window_start_at,pickup_window_end_at,pickup_timezone,shipping_fee_cents,promo_code,promo_codes_json,fee_plan_key,fee_bps,fee_fixed_cents,item_total_cents,platform_fee_cents,digital_consent_version,digital_consent_accepted_at,digital_license_version,items,order_id,status"
     )
     .eq("id", checkoutId)
     .maybeSingle<StorefrontCheckoutRecord>();
@@ -439,6 +443,9 @@ export async function finalizeStorefrontCheckout(
       promo_code: checkout.promo_code,
       shipping_fee_cents: shippingFeeCents,
       total_cents: computedTotalCents
+      ,digital_consent_version: checkout.digital_consent_version
+      ,digital_consent_accepted_at: checkout.digital_consent_accepted_at
+      ,digital_license_version: checkout.digital_license_version
     })
     .eq("id", orderId);
 
@@ -486,6 +493,7 @@ export async function finalizeStorefrontCheckout(
   });
 
   await sendOrderCreatedNotifications(orderId);
+  await issueDigitalEntitlements(orderId);
 
   return { status: "completed" as const, orderId };
 }

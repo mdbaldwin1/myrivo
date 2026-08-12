@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -10,12 +10,12 @@ export function DigitalProductFiles({ productId }: { productId: string }) {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  async function refresh() {
+  const refresh = useCallback(async () => {
     const response = await fetch(`/api/products/digital-assets?productId=${encodeURIComponent(productId)}`);
     const payload = await response.json();
     if (response.ok) setAssets(payload.assets ?? []);
-  }
-  useEffect(() => { void refresh(); }, [productId]);
+  }, [productId]);
+  useEffect(() => { void refresh(); }, [refresh]);
   async function upload(file: File) {
     setBusy(true); setError(null);
     try {

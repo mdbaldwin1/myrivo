@@ -59,6 +59,7 @@ type StorefrontProduct = {
   seo_title: string | null;
   seo_description: string | null;
   is_featured: boolean;
+  product_type?: "physical" | "digital";
   created_at: string;
   product_variants: StorefrontVariant[];
   product_option_axes?: Array<{
@@ -315,7 +316,8 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
   const addToCartResetTimeoutRef = useRef<number | null>(null);
 
   const selectedVariant = variants.find((variant) => variant.id === selectedVariantId) ?? defaultVariant;
-  const displayPrice = getProductDetailDisplayPrice(selectedVariant?.price_cents ?? 0, quantity);
+  const isDigital = resolvedProduct.product_type === "digital";
+  const displayPrice = getProductDetailDisplayPrice(selectedVariant?.price_cents ?? 0, isDigital ? 1 : quantity);
   const selectedOptionValues = selectedVariant?.option_values ?? {};
   const images = getVariantImages(selectedVariant, resolvedProduct);
   const canPurchaseSelectedVariant = Boolean(selectedVariant && (selectedVariant.is_made_to_order || selectedVariant.inventory_qty > 0));
@@ -377,9 +379,9 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
     const existing = current.find((item) => `${item.productId}:${item.variantId}` === key);
     const next = existing
       ? current.map((item) =>
-          `${item.productId}:${item.variantId}` === key ? { ...item, quantity: Math.min(item.quantity + quantity, 99) } : item
+          `${item.productId}:${item.variantId}` === key ? { ...item, quantity: isDigital ? 1 : Math.min(item.quantity + quantity, 99) } : item
         )
-      : [...current, { productId: resolvedProduct.id, variantId: selectedVariant.id, quantity }];
+      : [...current, { productId: resolvedProduct.id, variantId: selectedVariant.id, quantity: isDigital ? 1 : quantity }];
     analytics?.track({
       eventType: "add_to_cart",
       productId: resolvedProduct.id,
@@ -535,6 +537,7 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
 
           <div className={cn("space-y-4 p-4 sm:p-5", radiusClass, cardClass, isIntegrated ? "border border-border/60 bg-[color:var(--storefront-surface)] shadow-sm" : "")}>
             <div className="space-y-2">
+              {isDigital ? <p className="inline-flex rounded-full bg-muted px-2.5 py-1 text-xs font-medium">Digital download</p> : null}
               <p className="text-2xl font-semibold sm:text-[1.8rem]">${(displayPrice.totalPriceCents / 100).toFixed(2)}</p>
               {displayPrice.quantity > 1 ? (
                 <p className="text-sm text-muted-foreground">
@@ -582,7 +585,11 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
               )}
             </div>
 
-            <div className="space-y-2">
+            {isDigital ? (
+              <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-sm text-muted-foreground">
+                Files are delivered by a secure email link after payment. The link is valid for 48 hours. Personal-use license included.
+              </div>
+            ) : <div className="space-y-2">
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Quantity</p>
               <div className={cn("inline-flex w-fit items-center overflow-hidden border border-border/60 bg-[color:var(--storefront-surface)]", buttonRadiusClass)}>
                 <button
@@ -620,7 +627,7 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
                   +
                 </button>
               </div>
-            </div>
+            </div>}
 
             <div className="relative">
               <Button

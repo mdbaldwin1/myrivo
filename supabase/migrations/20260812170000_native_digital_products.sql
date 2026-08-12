@@ -13,6 +13,11 @@ alter table public.orders
   add column if not exists digital_consent_accepted_at timestamptz,
   add column if not exists digital_license_version text;
 
+alter table public.storefront_checkout_sessions
+  add column if not exists digital_consent_version text,
+  add column if not exists digital_consent_accepted_at timestamptz,
+  add column if not exists digital_license_version text;
+
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('digital-product-assets', 'digital-product-assets', false, 262144000, array['image/jpeg', 'image/png', 'application/pdf', 'application/zip'])
 on conflict (id) do update set public = false, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
@@ -144,3 +149,21 @@ create policy digital_entitlements_store_read on public.digital_order_entitlemen
 using (public.can_manage_store_membership_for_store(store_id));
 
 -- Access tokens and grant reservations are intentionally service-role only.
+
+create or replace function public.reserve_digital_download_grant(p_entitlement_id uuid, p_access_token_id uuid, p_reservation_key text)
+returns table(storage_path text, customer_filename text, grant_id uuid)
+language plpgsql security definer set search_path = public as $$
+declare
+  v_entitlement public.digital_order_entitlements%rowtype;
+  v_grant_id uuid;
+begin
+  select * into v_entitlement from public.digital_order_entitlements where id = p_entitlement_id for update;
+  if not found or v_entitlement.status <> 'active' then raise exception 'Download unavailable'; end if;
+  if v_entitlement.download_grants_used >= v_entitlement.max_download_grants then raise exception 'Download limit reached'; end if;
+  insert into public.digital_download_grants(entitlement_id, access_token_id, reservation_key, status)
+  values (p_entitlement_id, p_access_token_id, p_reservation_key, 'issued') returning id into v_grant_id;
+  update public.digital_order_entitlements set download_grants_used = download_grants_used + 1, first_accessed_at = coalesce(first_accessed_at, now()), last_accessed_at = now() where id = p_entitlement_id;
+  return query select v.storage_path, v.customer_filename, v_grant_id from public.digital_product_asset_versions v where v.id = v_entitlement.asset_version_id;
+end; $$;
+revoke all on function public.reserve_digital_download_grant(uuid,uuid,text) from public, anon, authenticated;
+grant execute on function public.reserve_digital_download_grant(uuid,uuid,text) to service_role;

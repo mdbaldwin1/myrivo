@@ -31,6 +31,7 @@ import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isStorePaymentsReadyForLaunch, type StoreTaxCollectionMode } from "@/lib/stores/tax-compliance";
+import { issueDigitalEntitlements } from "@/lib/digital-products/entitlements";
 
 const itemSchema = z
   .object({
@@ -56,11 +57,12 @@ const attributionTouchSchema = z.object({
 const payloadSchema = z.object({
   firstName: z.string().trim().min(1, "First name is required").max(80),
   lastName: z.string().trim().min(1, "Last name is required").max(80),
-  phone: z.string().trim().min(1, "Phone number is required").max(40),
+  phone: z.string().trim().max(40).optional().default(""),
   email: z.string().email("A valid email address is required"),
   buyerLatitude: z.number().min(-90).max(90).optional(),
   buyerLongitude: z.number().min(-180).max(180).optional(),
   fulfillmentMethod: z.enum(["pickup", "shipping"]).optional(),
+  digitalDeliveryConsent: z.boolean().optional().default(false),
   pickupLocationId: z.string().uuid().optional(),
   pickupWindowStartAt: z.string().datetime().optional(),
   pickupWindowEndAt: z.string().datetime().optional(),
@@ -82,6 +84,7 @@ type VariantProductJoin = {
   title: string;
   status: string;
   store_id: string;
+  product_type: "physical" | "digital";
 };
 
 type VariantRow = {
@@ -263,6 +266,7 @@ export async function POST(request: NextRequest) {
     promoCodes,
     analyticsSessionId,
     attribution
+    ,digitalDeliveryConsent
   } = payload.data;
   const storeSlug = await resolveStoreSlugFromRequestAsync(request);
   if (!storeSlug) {
@@ -735,7 +739,7 @@ export async function POST(request: NextRequest) {
 
   const { data: variants, error: variantsError } = await supabase
     .from("product_variants")
-    .select("id,product_id,title,price_cents,inventory_qty,is_made_to_order,status,option_values,products!inner(id,title,status,store_id)")
+    .select("id,product_id,title,price_cents,inventory_qty,is_made_to_order,status,option_values,products!inner(id,title,status,store_id,product_type)")
     .eq("store_id", store.id)
     .in("id", variantIds)
     .returns<VariantRow[]>();
@@ -747,6 +751,8 @@ export async function POST(request: NextRequest) {
   const variantMap = new Map((variants ?? []).map((variant) => [variant.id, variant]));
   const rpcItems: Array<{ productId: string; variantId: string; quantity: number; variantLabel: string; productTitle: string; unitPriceCents: number }> = [];
   let subtotalCents = 0;
+  let hasDigitalItems = false;
+  let hasPhysicalItems = false;
 
   for (const [variantId, entry] of aggregatedVariantItems.entries()) {
     const variant = variantMap.get(variantId);
@@ -759,6 +765,13 @@ export async function POST(request: NextRequest) {
 
     if (!product || product.status !== "active") {
       return NextResponse.json({ error: "A selected product is unavailable." }, { status: 400 });
+    }
+
+    if (product.product_type === "digital") {
+      hasDigitalItems = true;
+      if (entry.quantity !== 1) return NextResponse.json({ error: "Digital products have a quantity of one." }, { status: 400 });
+    } else {
+      hasPhysicalItems = true;
     }
 
     if (!variant.is_made_to_order && variant.inventory_qty < entry.quantity) {
@@ -786,6 +799,10 @@ export async function POST(request: NextRequest) {
   let appliedPromotions: AppliedPromotionSummary[] = [];
   const normalizedCustomerEmail = normalizePromotionRedemptionEmail(email);
   let shippingFeeCents = selectedFulfillment.feeCents;
+  if (hasDigitalItems && !digitalDeliveryConsent) {
+    return NextResponse.json({ error: "Confirm immediate digital delivery before checkout." }, { status: 400 });
+  }
+  if (!hasPhysicalItems) shippingFeeCents = 0;
 
   normalizedPromoCodes = normalizeRequestedPromoCodes({ promoCode, promoCodes });
   normalizedPromoCode = normalizedPromoCodes.length > 0 ? normalizedPromoCodes.join(", ") : null;
@@ -933,6 +950,9 @@ export async function POST(request: NextRequest) {
         pickup_timezone: resolvedPickupTimezone,
         promo_code: normalizedPromoCode,
         shipping_fee_cents: shippingFeeCents,
+        digital_consent_version: hasDigitalItems ? "immediate-delivery-v1" : null,
+        digital_consent_accepted_at: hasDigitalItems ? new Date().toISOString() : null,
+        digital_license_version: hasDigitalItems ? "personal-use-v1" : null,
         total_cents: computedTotalCents
       })
       .eq("id", result.order_id);
@@ -962,6 +982,7 @@ export async function POST(request: NextRequest) {
     });
 
     await sendOrderCreatedNotifications(result.order_id);
+    await issueDigitalEntitlements(result.order_id);
 
     return NextResponse.json({
       orderId: result.order_id,
@@ -1007,6 +1028,9 @@ export async function POST(request: NextRequest) {
       fulfillment_method: selectedFulfillment.method,
       fulfillment_label: selectedFulfillment.label,
       shipping_fee_cents: shippingFeeCents,
+      digital_consent_version: hasDigitalItems ? "immediate-delivery-v1" : null,
+      digital_consent_accepted_at: hasDigitalItems ? new Date().toISOString() : null,
+      digital_license_version: hasDigitalItems ? "personal-use-v1" : null,
       pickup_location_id: resolvedPickupLocationId,
       pickup_location_snapshot_json: resolvedPickupLocationSnapshot,
       pickup_window_start_at: resolvedPickupWindowStartAt,
@@ -1087,7 +1111,7 @@ export async function POST(request: NextRequest) {
           }
         : {}),
       billing_address_collection: "auto",
-      ...(selectedFulfillment.method === "shipping"
+      ...(hasPhysicalItems && selectedFulfillment.method === "shipping"
         ? {
             shipping_address_collection: {
               allowed_countries: ["US"]
@@ -1095,7 +1119,7 @@ export async function POST(request: NextRequest) {
           }
         : {}),
       line_items: stripeLineItems,
-      ...(selectedFulfillment.method === "shipping"
+      ...(hasPhysicalItems && selectedFulfillment.method === "shipping"
         ? {
             shipping_options: [
               {

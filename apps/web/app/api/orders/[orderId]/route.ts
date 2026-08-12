@@ -54,7 +54,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
   const { data: items, error: itemsError } = await supabase
     .from("order_items")
-    .select("id,product_id,product_variant_id,variant_label,variant_snapshot,quantity,unit_price_cents,products(title)")
+    .select("id,product_id,product_variant_id,variant_label,variant_snapshot,quantity,unit_price_cents,products(title,product_type)")
     .eq("order_id", order.id)
     .order("created_at", { ascending: true });
 

@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Added native digital products with private multi-file delivery, watermarked image previews, digital-only and mixed checkout support, 48-hour secure access links, five download grants per file, personal-use licensing, and refund/dispute access controls.
+
 ### Fixed
 - Fixed shipping-order checkout capture so Stripe-collected shipping addresses are saved onto orders and shown in the merchant order flyout.
 - Fixed custom-domain storefront routing so verified domains keep clean paths like `/`, `/products`, `/about`, `/cart`, and `/checkout` instead of leaking back to `/s/:storeSlug/...`.

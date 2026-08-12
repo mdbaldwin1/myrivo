@@ -4,7 +4,9 @@ import { CustomerOrderDetailView } from "@/components/customer/customer-order-de
 import { sanitizeReturnTo } from "@/lib/auth/return-to";
 import { resolveCustomerStorefrontLinksBySlug } from "@/lib/customer/storefront-links";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { OrderShippingDelayRecord } from "@/types/database";
+import { DigitalOrderDownloads } from "@/components/customer/digital-order-downloads";
 
 const paramsSchema = z.object({
   orderId: z.string().uuid()
@@ -117,16 +119,17 @@ export default async function DashboardCustomerOrderPage({ params, searchParams 
   }
 
   const store = Array.isArray(order.stores) ? order.stores[0] : order.stores;
+  const { count: digitalFileCount } = await createSupabaseAdminClient().from("digital_order_entitlements").select("id", { count: "exact", head: true }).eq("order_id", order.id);
   const storefrontLinksBySlug = await resolveCustomerStorefrontLinksBySlug(store?.slug ? [store.slug] : []);
   const storefrontHref = store?.slug ? storefrontLinksBySlug[store.slug]?.storefrontHref ?? null : null;
 
   return (
-    <CustomerOrderDetailView
+    <><CustomerOrderDetailView
       order={order}
       items={items ?? []}
       shippingDelays={shippingDelays ?? []}
       backHref={backHref}
       storefrontHref={storefrontHref}
-    />
+    />{digitalFileCount ? <div className="mx-auto max-w-5xl px-4 pb-8"><DigitalOrderDownloads orderId={order.id} email={order.customer_email} fileCount={digitalFileCount} /></div> : null}</>
   );
 }

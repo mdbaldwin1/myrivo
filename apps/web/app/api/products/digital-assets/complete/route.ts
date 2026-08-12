@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
   const bundle = await getOwnedStoreBundle(user.id, "staff");
   if (!bundle || !parsed.data.storagePath.startsWith(`${bundle.store.id}/${parsed.data.productId}/${parsed.data.assetId}/`)) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const admin = createSupabaseAdminClient();
-  const { data: product } = await admin.from("products").select("id").eq("id", parsed.data.productId).eq("store_id", bundle.store.id).maybeSingle();
+  const { data: product } = await admin.from("products").select("id,image_urls").eq("id", parsed.data.productId).eq("store_id", bundle.store.id).maybeSingle();
   if (!product) return NextResponse.json({ error: "Product not found" }, { status: 404 });
   const { data: downloaded, error: downloadError } = await admin.storage.from(DIGITAL_ASSET_BUCKET).download(parsed.data.storagePath);
   if (downloadError || !downloaded) return NextResponse.json({ error: downloadError?.message ?? "Uploaded file not found" }, { status: 400 });
@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
     if (!previewError) {
       previewUrl = admin.storage.from(DIGITAL_PREVIEW_BUCKET).getPublicUrl(previewPath).data.publicUrl;
       await admin.from("digital_product_previews").upsert({ product_id: product.id, source_asset_version_id: version.id, public_preview_path: previewPath, status: "ready", is_merchant_override: false });
+      if (!product.image_urls?.length) await admin.from("products").update({ image_urls: [previewUrl] }).eq("id", product.id);
     }
   }
   return NextResponse.json({ assetId: parsed.data.assetId, versionId: version.id, previewUrl }, { status: 201 });

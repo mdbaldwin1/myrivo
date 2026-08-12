@@ -31,3 +31,12 @@ When changing product structure after orders exist, verify downstream reporting 
 - `/docs/refunds-disputes-and-customer-issues`
 - `/docs/reviews-and-customer-trust`
 - `/docs/storefront-analytics-and-reporting`
+# Digital products
+
+Products can be marked as **Digital download** in Catalog. Merchants must affirm that they have rights to sell the files, then save the draft and use the inspector's **Files** tab to upload one or more JPG, PNG, PDF, or ZIP files. Original files remain private. Image originals receive an automatic reduced-resolution, tiled store-name watermark for their storefront preview.
+
+Digital items have a quantity of one. Digital-only checkout asks for name and email but omits phone and physical fulfillment; mixed carts retain physical fulfillment. Buyers consent to immediate digital delivery and the platform personal-use license at checkout.
+
+After successful payment, Myrivo snapshots the purchased file versions and emails a secure access link valid for 48 hours. Each purchased file permits five successful download grants. A buyer can request a fresh 48-hour link using the order ID and order email; issuing a new link does not reset download grants.
+
+Digital purchases are generally final after the first download except for defects, duplicate purchases, misrepresentation, or other required exceptions. A successful full refund revokes remaining access, while partial refunds preserve it. Open disputes suspend downloads, won disputes restore access, and lost disputes revoke it.
