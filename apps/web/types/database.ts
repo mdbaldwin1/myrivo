@@ -120,6 +120,7 @@ export type PlatformTeamInviteRecord = {
 };
 
 export type ProductStatus = "draft" | "active" | "archived";
+export type ProductType = "physical" | "digital";
 
 export type ProductRecord = {
   id: string;
@@ -136,6 +137,9 @@ export type ProductRecord = {
   price_cents: number;
   inventory_qty: number;
   status: ProductStatus;
+  product_type: ProductType;
+  digital_rights_affirmed_at: string | null;
+  digital_rights_affirmed_by_user_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -771,7 +775,61 @@ export type OrderItemRecord = {
   unit_price_cents: number;
   variant_label: string | null;
   variant_snapshot: Record<string, unknown>;
+  product_type: ProductType;
   created_at: string;
+};
+
+export type DigitalAssetStatus = "uploading" | "processing" | "ready" | "failed";
+export type DigitalEntitlementStatus = "active" | "suspended" | "revoked";
+
+export type DigitalProductAssetRecord = {
+  id: string;
+  store_id: string;
+  product_id: string;
+  product_variant_id: string | null;
+  label: string;
+  sort_order: number;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DigitalProductAssetVersionRecord = {
+  id: string;
+  asset_id: string;
+  version_number: number;
+  storage_path: string;
+  customer_filename: string;
+  mime_type: string;
+  byte_size: number;
+  checksum_sha256: string;
+  status: DigitalAssetStatus;
+  failure_reason: string | null;
+  created_at: string;
+  retired_at: string | null;
+};
+
+export type DigitalOrderEntitlementRecord = {
+  id: string;
+  store_id: string;
+  order_id: string;
+  order_item_id: string;
+  product_id: string;
+  product_variant_id: string | null;
+  asset_id: string;
+  asset_version_id: string;
+  customer_filename: string;
+  mime_type: string;
+  byte_size: number;
+  license_version: string;
+  max_download_grants: number;
+  download_grants_used: number;
+  status: DigitalEntitlementStatus;
+  status_reason: string | null;
+  first_accessed_at: string | null;
+  last_accessed_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type InventoryMovementReason = "sale" | "restock" | "adjustment";
