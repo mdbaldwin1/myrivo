@@ -32,6 +32,8 @@ export type ProductListItem = Pick<
   | "price_cents"
   | "inventory_qty"
   | "status"
+  | "product_type"
+  | "digital_rights_affirmed_at"
   | "created_at"
 > & {
   product_variants: ProductVariantListItem[];

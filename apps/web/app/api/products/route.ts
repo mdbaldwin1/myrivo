@@ -44,6 +44,8 @@ const nestedVariantSchema = z.object({
 type NestedVariantPayload = z.infer<typeof nestedVariantSchema>;
 
 const createProductSchema = z.object({
+  productType: z.enum(["physical", "digital"]).optional().default("physical"),
+  digitalRightsAffirmed: z.boolean().optional().default(false),
   title: z.string().min(2),
   description: z.string().min(1),
   slug: z.string().max(120).optional().nullable(),
@@ -63,6 +65,8 @@ const createProductSchema = z.object({
 
 const updateProductSchema = z.object({
   productId: z.string().uuid(),
+  productType: z.enum(["physical", "digital"]).optional(),
+  digitalRightsAffirmed: z.boolean().optional(),
   title: z.string().min(2).optional(),
   description: z.string().min(1).optional(),
   slug: z.string().max(120).optional().nullable(),
@@ -86,7 +90,7 @@ const deleteProductSchema = z.object({
 });
 
 const productSelectWithVariantImages =
-  "id,title,description,slug,sku,image_urls,image_alt_text,seo_title,seo_description,is_featured,price_cents,inventory_qty,status,created_at,product_variants(id,title,sku,sku_mode,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_made_to_order,is_default,status,sort_order,created_at),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))";
+  "id,title,description,slug,sku,image_urls,image_alt_text,seo_title,seo_description,is_featured,price_cents,inventory_qty,status,product_type,digital_rights_affirmed_at,created_at,product_variants(id,title,sku,sku_mode,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_made_to_order,is_default,status,sort_order,created_at),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))";
 const productSelectWithVariantImagesLegacy =
   "id,title,description,sku,image_urls,is_featured,price_cents,inventory_qty,status,created_at,product_variants(id,title,sku,sku_mode,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_default,status,sort_order,created_at),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))";
 
@@ -104,6 +108,8 @@ type ProductWithVariantsRow = {
   price_cents: number;
   inventory_qty: number;
   status: "draft" | "active" | "archived";
+  product_type: "physical" | "digital";
+  digital_rights_affirmed_at: string | null;
   created_at: string;
   product_variants: Array<{
     id: string;
@@ -1131,6 +1137,9 @@ export async function POST(request: NextRequest) {
     price_cents: priceFromVariants,
     inventory_qty: inventoryFromVariants,
     status: "draft" as const
+    ,product_type: payload.data.productType
+    ,digital_rights_affirmed_at: payload.data.productType === "digital" && payload.data.digitalRightsAffirmed ? new Date().toISOString() : null
+    ,digital_rights_affirmed_by_user_id: payload.data.productType === "digital" && payload.data.digitalRightsAffirmed ? resolved.userId : null
   };
   const { data: createdProduct, error: productError } = await supabase
     .from("products")
@@ -1239,10 +1248,10 @@ export async function PATCH(request: NextRequest) {
 
   const { data: existingProduct, error: existingProductError } = await resolved.supabase
     .from("products")
-    .select("title,status,inventory_qty")
+    .select("title,status,inventory_qty,product_type,digital_rights_affirmed_at")
     .eq("id", payload.data.productId)
     .eq("store_id", resolved.storeId)
-    .single<{ title: string; status: "draft" | "active" | "archived"; inventory_qty: number }>();
+    .single<{ title: string; status: "draft" | "active" | "archived"; inventory_qty: number; product_type: "physical" | "digital"; digital_rights_affirmed_at: string | null }>();
 
   if (existingProductError || !existingProduct) {
     return NextResponse.json({ error: "Product not found." }, { status: 404 });
@@ -1264,6 +1273,11 @@ export async function PATCH(request: NextRequest) {
   if (payload.data.priceCents !== undefined) updates.price_cents = payload.data.priceCents;
   if (payload.data.inventoryQty !== undefined) updates.inventory_qty = payload.data.inventoryQty;
   if (payload.data.status !== undefined) updates.status = payload.data.status;
+  if (payload.data.productType !== undefined) updates.product_type = payload.data.productType;
+  if (payload.data.digitalRightsAffirmed === true) {
+    updates.digital_rights_affirmed_at = new Date().toISOString();
+    updates.digital_rights_affirmed_by_user_id = resolved.userId;
+  }
 
   if (payload.data.slug !== undefined || payload.data.title !== undefined) {
     updates.slug = await ensureUniqueProductSlug(
@@ -1335,6 +1349,18 @@ export async function PATCH(request: NextRequest) {
 
     if (nextStatus === "active") {
       await assertProductCanBeActive(resolved.supabase, resolved.storeId, payload.data.productId);
+      const nextProductType = payload.data.productType ?? existingProduct.product_type;
+      const rightsAffirmed = payload.data.digitalRightsAffirmed === true || Boolean(existingProduct.digital_rights_affirmed_at);
+      if (nextProductType === "digital") {
+        const { count, error: assetCountError } = await resolved.supabase
+          .from("digital_product_assets")
+          .select("id", { count: "exact", head: true })
+          .eq("product_id", payload.data.productId)
+          .eq("active", true);
+        if (assetCountError) throw assetCountError;
+        if (!rightsAffirmed) throw new VariantConflictError("Confirm that you own or have permission to sell these files.", 400);
+        if (!count) throw new VariantConflictError("Add at least one ready digital file before publishing.", 400);
+      }
     }
   } catch (error) {
     const message = (error as Error).message;

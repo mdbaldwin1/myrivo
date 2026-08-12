@@ -37,6 +37,7 @@ import { richTextToPlainText } from "@/lib/rich-text";
 import { notify } from "@/lib/feedback/toast";
 import { prepareImageUploadFile } from "@/lib/uploads/prepare-image-upload-file";
 import { ProductRecord } from "@/types/database";
+import { DigitalProductFiles } from "@/components/dashboard/digital-product-files";
 
 export type { ProductListItem } from "@/components/dashboard/product-manager-domain";
 
@@ -525,6 +526,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   const [imageAltText, setImageAltText] = useState("");
   const [sku, setSku] = useState("");
   const [isFeatured, setIsFeatured] = useState(false);
+  const [productType, setProductType] = useState<"physical" | "digital">("physical");
+  const [digitalRightsAffirmed, setDigitalRightsAffirmed] = useState(false);
   const [createImageUrls, setCreateImageUrls] = useState<string[]>([]);
   const [createDraggingImageIndex, setCreateDraggingImageIndex] = useState<number | null>(null);
   const [createVariants, setCreateVariants] = useState<VariantDraft[]>([createBlankVariant(true)]);
@@ -567,6 +570,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   const [editSku, setEditSku] = useState("");
   const [editStatus, setEditStatus] = useState<ProductRecord["status"]>("draft");
   const [editIsFeatured, setEditIsFeatured] = useState(false);
+  const [editProductType, setEditProductType] = useState<"physical" | "digital">("physical");
+  const [editDigitalRightsAffirmed, setEditDigitalRightsAffirmed] = useState(false);
   const [editImageUrls, setEditImageUrls] = useState<string[]>([]);
   const [editDraggingImageIndex, setEditDraggingImageIndex] = useState<number | null>(null);
   const [editVariants, setEditVariants] = useState<VariantDraft[]>([createBlankVariant(true)]);
@@ -596,7 +601,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   const [deleteConfirmLabel, setDeleteConfirmLabel] = useState("Delete");
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(searchParams.get("productId") ?? initialProducts[0]?.id ?? null);
-  const [catalogInspectorTab, setCatalogInspectorTab] = useState<"overview" | "variants" | "inventory" | "media">("overview");
+  const [catalogInspectorTab, setCatalogInspectorTab] = useState<"overview" | "variants" | "inventory" | "files" | "media">("overview");
   const [variantInspectorMode, setVariantInspectorMode] = useState<"flat" | "grouped">("flat");
   const [inventoryAdjustDraft, setInventoryAdjustDraft] = useState<{
     productId: string;
@@ -630,6 +635,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
         imageAltText,
         sku,
         isFeatured,
+        productType,
+        digitalRightsAffirmed,
         createImageUrls,
         createVariants,
         createHasVariants,
@@ -650,6 +657,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       imageAltText,
       sku,
       isFeatured,
+      productType,
+      digitalRightsAffirmed,
       createImageUrls,
       createVariants,
       createHasVariants,
@@ -676,6 +685,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
         editSku,
         editStatus,
         editIsFeatured,
+        editProductType,
+        editDigitalRightsAffirmed,
         editImageUrls,
         editVariants,
         editHasVariants,
@@ -696,6 +707,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       editSku,
       editStatus,
       editIsFeatured,
+      editProductType,
+      editDigitalRightsAffirmed,
       editImageUrls,
       editVariants,
       editHasVariants,
@@ -923,6 +936,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title,
+        productType,
+        digitalRightsAffirmed,
         description,
         slug: productSlug.trim() || null,
         seoTitle: seoTitle.trim() || null,
@@ -965,6 +980,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     setImageAltText("");
     setSku("");
     setIsFeatured(false);
+    setProductType("physical");
+    setDigitalRightsAffirmed(false);
     setCreateImageUrls([]);
     setCreateVariants([createBlankVariant(true)]);
     setCreateHasVariants(false);
@@ -1381,6 +1398,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     setEditSku(product.sku ?? "");
     setEditStatus(product.status);
     setEditIsFeatured(product.is_featured);
+    setEditProductType(product.product_type);
+    setEditDigitalRightsAffirmed(Boolean(product.digital_rights_affirmed_at));
     setEditImageUrls(product.image_urls ?? []);
     const tierNames = resolveTierNamesForProduct(product);
 
@@ -1497,6 +1516,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       editingProductId,
       {
       title: editTitle,
+      productType: editProductType,
+      digitalRightsAffirmed: editDigitalRightsAffirmed,
       description: editDescription,
       slug: editProductSlug.trim() || null,
       seoTitle: editSeoTitle.trim() || null,
@@ -2434,6 +2455,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
               setDescription("");
               setSku("");
               setIsFeatured(false);
+              setProductType("physical");
+              setDigitalRightsAffirmed(false);
               setCreateImageUrls([]);
               setCreateVariants([createBlankVariant(true)]);
               setCreateHasVariants(false);
@@ -2480,6 +2503,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
             <TableHeader className="bg-muted/45">
               <TableRow>
                 <TableHead>Title</TableHead>
+                <TableHead>Fulfillment</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Price</TableHead>
                 <TableHead>Inventory</TableHead>
@@ -2490,7 +2514,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
             <TableBody>
               {visibleProducts.length === 0 ? (
                 <TableRow>
-                  <TableCell className="py-3 text-muted-foreground" colSpan={6}>
+                  <TableCell className="py-3 text-muted-foreground" colSpan={7}>
                     No products match this filter.
                   </TableCell>
                 </TableRow>
@@ -2525,6 +2549,9 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                             ) : null}
                           </div>
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">{product.product_type === "digital" ? "Digital" : "Physical"}</Badge>
                       </TableCell>
                       <TableCell>
                         <Select
@@ -2630,7 +2657,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
           {selectedProduct ? (
             <>
               <div className="flex flex-wrap items-center gap-2">
-                {(["overview", "variants", "inventory", "media"] as const).map((tab) => (
+                {(["overview", "variants", "inventory", ...(selectedProduct.product_type === "digital" ? ["files" as const] : []), "media"] as const).map((tab) => (
                   <Button
                     key={tab}
                     type="button"
@@ -2664,6 +2691,10 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                     </p>
                   </div>
                 </div>
+              ) : null}
+
+              {catalogInspectorTab === "files" && selectedProduct.product_type === "digital" ? (
+                <DigitalProductFiles productId={selectedProduct.id} />
               ) : null}
 
               {catalogInspectorTab === "variants" ? (() => {
@@ -2919,6 +2950,18 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                 <FormField label="Title">
                   <Input required minLength={2} placeholder="Everyday Hand Cream" value={title} onChange={(event) => setTitle(event.target.value)} />
                 </FormField>
+                <FormField label="Fulfillment">
+                  <Select value={productType} onChange={(event) => setProductType(event.target.value as "physical" | "digital")}>
+                    <option value="physical">Physical product</option>
+                    <option value="digital">Digital download</option>
+                  </Select>
+                </FormField>
+                {productType === "digital" ? (
+                  <label className="flex items-start gap-2 rounded-md border border-border bg-muted/20 p-3">
+                    <Checkbox checked={digitalRightsAffirmed} onChange={(event) => setDigitalRightsAffirmed(event.target.checked)} />
+                    <span className="text-sm">I own or have permission to sell the files for this product.</span>
+                  </label>
+                ) : null}
                 <FormField label="Description">
                   <RichTextEditor
                     required
@@ -3844,6 +3887,18 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                 <FormField label="Title">
                   <Input required minLength={2} placeholder="Everyday Hand Cream" value={editTitle} onChange={(event) => setEditTitle(event.target.value)} />
                 </FormField>
+                <FormField label="Fulfillment">
+                  <Select value={editProductType} onChange={(event) => setEditProductType(event.target.value as "physical" | "digital")}>
+                    <option value="physical">Physical product</option>
+                    <option value="digital">Digital download</option>
+                  </Select>
+                </FormField>
+                {editProductType === "digital" ? (
+                  <label className="flex items-start gap-2 rounded-md border border-border bg-muted/20 p-3">
+                    <Checkbox checked={editDigitalRightsAffirmed} onChange={(event) => setEditDigitalRightsAffirmed(event.target.checked)} />
+                    <span className="text-sm">I own or have permission to sell the files for this product.</span>
+                  </label>
+                ) : null}
                 <FormField label="Description">
                   <RichTextEditor
                     required
