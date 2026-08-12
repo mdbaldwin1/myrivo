@@ -13,6 +13,14 @@ alter table public.orders
   add column if not exists digital_consent_accepted_at timestamptz,
   add column if not exists digital_license_version text;
 
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('digital-product-assets', 'digital-product-assets', false, 262144000, array['image/jpeg', 'image/png', 'application/pdf', 'application/zip'])
+on conflict (id) do update set public = false, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('digital-product-previews', 'digital-product-previews', true, 10485760, array['image/jpeg', 'image/png'])
+on conflict (id) do update set public = true, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+
 create table if not exists public.digital_product_assets (
   id uuid primary key default gen_random_uuid(),
   store_id uuid not null references public.stores(id) on delete cascade,
