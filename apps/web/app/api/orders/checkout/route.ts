@@ -85,6 +85,8 @@ const payloadSchema = z.object({
   items: z.array(itemSchema).min(1)
 });
 
+const LEGACY_ORDERED_CART_RECOVERY_LIMIT = 100;
+
 type VariantProductJoin = {
   id: string;
   title: string;
@@ -664,70 +666,146 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const findCustomerCartId = async (status: "active" | "ordered") => {
+  const findCustomerCarts = async (status: "active" | "ordered") => {
     if (!authenticatedUser) {
-      return null;
+      return {
+        carts: [] as Array<{ id: string; status: "active" | "ordered" }>,
+        error: null,
+        exhaustive: true
+      };
     }
-    const { data: cart } = await serverSupabase
+    const candidateLimit = status === "active" ? 1 : LEGACY_ORDERED_CART_RECOVERY_LIMIT;
+    const { data: carts, error, count } = await serverSupabase
       .from("customer_carts")
-      .select("id")
+      .select("id,status", { count: "exact" })
       .eq("user_id", authenticatedUser.id)
       .eq("store_id", store.id)
       .eq("status", status)
       .order(status === "active" ? "created_at" : "updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle<{ id: string }>();
+      .limit(candidateLimit + 1)
+      .returns<Array<{ id: string; status: "active" | "ordered" }>>();
 
-    return cart?.id ?? null;
+    const resolvedCarts = carts ?? [];
+    const candidateCount = count ?? resolvedCarts.length;
+    return {
+      carts: resolvedCarts,
+      error,
+      exhaustive: candidateCount === resolvedCarts.length && candidateCount <= candidateLimit
+    };
   };
-  let sourceCartId: string | null = null;
-  if (!checkoutAttemptId) {
-    sourceCartId =
-      (await findCustomerCartId("active")) ??
-      (await findCustomerCartId("ordered"));
-  }
-
-  const checkoutAttemptIdentity = resolveCheckoutAttemptIdentity({
+  const checkoutIntent = {
+    firstName,
+    lastName,
+    phone: phone.trim(),
+    email: email.trim().toLowerCase(),
+    buyerLatitude: buyerLatitude ?? null,
+    buyerLongitude: buyerLongitude ?? null,
+    fulfillmentMethod: fulfillmentMethod ?? null,
+    digitalDeliveryConsent,
+    pickupLocationId: pickupLocationId ?? null,
+    pickupWindowStartAt: pickupWindowStartAt ?? null,
+    pickupWindowEndAt: pickupWindowEndAt ?? null,
+    customerNote: customerNote?.trim() || null,
+    promoCode: promoCode?.trim().toUpperCase() || null,
+    promoCodes: promoCodes?.map((code) => code.trim().toUpperCase()) ?? [],
+    items
+  };
+  const resolveIdentity = (cartId: string | null) => resolveCheckoutAttemptIdentity({
     checkoutAttemptId,
     storeId: store.id,
     customerEmail: email,
-    sourceCartId,
-    intent: {
-      firstName,
-      lastName,
-      phone: phone.trim(),
-      email: email.trim().toLowerCase(),
-      buyerLatitude: buyerLatitude ?? null,
-      buyerLongitude: buyerLongitude ?? null,
-      fulfillmentMethod: fulfillmentMethod ?? null,
-      digitalDeliveryConsent,
-      pickupLocationId: pickupLocationId ?? null,
-      pickupWindowStartAt: pickupWindowStartAt ?? null,
-      pickupWindowEndAt: pickupWindowEndAt ?? null,
-      customerNote: customerNote?.trim() || null,
-      promoCode: promoCode?.trim().toUpperCase() || null,
-      promoCodes: promoCodes?.map((code) => code.trim().toUpperCase()) ?? [],
-      items
-    }
+    sourceCartId: cartId,
+    intent: checkoutIntent
   });
-
-  const { data: existingCheckoutData, error: existingCheckoutError } = await supabase.rpc(
-    "get_storefront_checkout_attempt",
-    {
+  const getExistingCheckout = async (identity: ReturnType<typeof resolveCheckoutAttemptIdentity>) => {
+    const result = await supabase.rpc("get_storefront_checkout_attempt", {
       p_store_id: store.id,
-      p_checkout_attempt_key: checkoutAttemptIdentity.attemptKey,
-      p_request_fingerprint_sha256: checkoutAttemptIdentity.fingerprintSha256
+      p_checkout_attempt_key: identity.attemptKey,
+      p_request_fingerprint_sha256: identity.fingerprintSha256
+    });
+    return {
+      checkout: result.data as CheckoutAttemptRow | null,
+      error: result.error
+    };
+  };
+
+  let sourceCartId: string | null = null;
+  let checkoutAttemptIdentity: ReturnType<typeof resolveCheckoutAttemptIdentity>;
+  let existingCheckout: CheckoutAttemptRow | null = null;
+
+  if (!checkoutAttemptId && authenticatedUser) {
+    const [activeCartResult, orderedCartResult] = await Promise.all([
+      findCustomerCarts("active"),
+      findCustomerCarts("ordered")
+    ]);
+    const cartLookupError = activeCartResult.error ?? orderedCartResult.error;
+    if (cartLookupError) {
+      return NextResponse.json({ error: cartLookupError.message }, { status: 500 });
     }
-  );
-  if (existingCheckoutError) {
-    const fingerprintConflict = existingCheckoutError.message?.includes("different purchase details");
-    return NextResponse.json(
-      { error: fingerprintConflict ? "This checkout attempt does not match the original purchase." : "Unable to resume checkout." },
-      { status: fingerprintConflict ? 409 : 500 }
-    );
+    if (!activeCartResult.exhaustive || !orderedCartResult.exhaustive) {
+      return NextResponse.json(
+        { error: "We could not safely identify which checkout to resume. Please refresh your cart and try again." },
+        { status: 409 }
+      );
+    }
+
+    const matchingAttempts: Array<{
+      cartId: string;
+      identity: ReturnType<typeof resolveCheckoutAttemptIdentity>;
+      checkout: CheckoutAttemptRow;
+    }> = [];
+    const candidateCarts = [...new Map(
+      [...activeCartResult.carts, ...orderedCartResult.carts].map((cart) => [cart.id, cart])
+    ).values()];
+    for (const cart of candidateCarts) {
+      const identity = resolveIdentity(cart.id);
+      const lookup = await getExistingCheckout(identity);
+      if (lookup.error) {
+        const fingerprintConflict = lookup.error.message?.includes("different purchase details");
+        return NextResponse.json(
+          { error: fingerprintConflict ? "This checkout attempt does not match the original purchase." : "Unable to resume checkout." },
+          { status: fingerprintConflict ? 409 : 500 }
+        );
+      }
+      if (lookup.checkout) {
+        matchingAttempts.push({ cartId: cart.id, identity, checkout: lookup.checkout });
+      }
+    }
+
+    if (matchingAttempts.length > 1) {
+      return NextResponse.json(
+        { error: "We could not safely identify which checkout to resume. Please refresh your cart and try again." },
+        { status: 409 }
+      );
+    }
+
+    if (matchingAttempts.length === 1) {
+      const match = matchingAttempts[0]!;
+      sourceCartId = match.cartId;
+      checkoutAttemptIdentity = match.identity;
+      existingCheckout = match.checkout;
+    } else if (activeCartResult.carts.length === 1 && orderedCartResult.carts.length === 0) {
+      sourceCartId = activeCartResult.carts[0]!.id;
+      checkoutAttemptIdentity = resolveIdentity(sourceCartId);
+    } else {
+      return NextResponse.json(
+        { error: "We could not safely start this checkout. Please refresh your cart and try again." },
+        { status: 409 }
+      );
+    }
+  } else {
+    checkoutAttemptIdentity = resolveIdentity(null);
+    const lookup = await getExistingCheckout(checkoutAttemptIdentity);
+    if (lookup.error) {
+      const fingerprintConflict = lookup.error.message?.includes("different purchase details");
+      return NextResponse.json(
+        { error: fingerprintConflict ? "This checkout attempt does not match the original purchase." : "Unable to resume checkout." },
+        { status: fingerprintConflict ? 409 : 500 }
+      );
+    }
+    existingCheckout = lookup.checkout;
   }
 
-  const existingCheckout = existingCheckoutData as CheckoutAttemptRow | null;
   if (existingCheckout?.checkout_mode === "stub") {
     return resumeStubCheckout(supabase, existingCheckout);
   }
@@ -736,7 +814,17 @@ export async function POST(request: NextRequest) {
   }
 
   if (checkoutAttemptId) {
-    sourceCartId = await findCustomerCartId("active");
+    const activeCartResult = await findCustomerCarts("active");
+    if (activeCartResult.error) {
+      return NextResponse.json({ error: activeCartResult.error.message }, { status: 500 });
+    }
+    if (!activeCartResult.exhaustive) {
+      return NextResponse.json(
+        { error: "We could not safely identify your active cart. Please refresh your cart and try again." },
+        { status: 409 }
+      );
+    }
+    sourceCartId = activeCartResult.carts[0]?.id ?? null;
   }
   const sessionLink = await resolveStorefrontSessionLink(supabase, {
     storeId: store.id,

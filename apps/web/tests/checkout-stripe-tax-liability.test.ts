@@ -823,24 +823,35 @@ describe("checkout Stripe tax liability", () => {
     );
   });
 
-  test("reuses a legacy authenticated checkout after its source cart becomes ordered", async () => {
+  test("reuses completed legacy checkout A without consuming a newer active cart B", async () => {
     authenticatedUserId = "20000000-0000-4000-8000-000000000001";
     isStripeStubModeMock.mockReturnValue(true);
-    const cartId = "30000000-0000-4000-8000-000000000001";
+    const completedCartId = "30000000-0000-4000-8000-000000000001";
+    const activeCartId = "30000000-0000-4000-8000-000000000002";
     const orderId = "50000000-0000-4000-8000-000000000001";
-    let cartStatus: "active" | "ordered" = "active";
+    const carts = [{ id: completedCartId, status: "active" as "active" | "ordered" }];
     serverFromMock.mockImplementation(() => ({
       select: vi.fn(() => {
         let requestedStatus: string | null = null;
+        let requestedLimit = Number.POSITIVE_INFINITY;
         const query = {
           eq: vi.fn((column: string, value: string) => {
             if (column === "status") requestedStatus = value;
             return query;
           }),
           order: vi.fn(() => query),
-          limit: vi.fn(() => query),
+          limit: vi.fn((value: number) => {
+            requestedLimit = value;
+            return query;
+          }),
           maybeSingle: vi.fn(async () => ({
-            data: requestedStatus === cartStatus ? { id: cartId } : null,
+            data: carts.find((cart) => cart.status === requestedStatus) ?? null,
+            error: null
+          })),
+          returns: vi.fn(async () => ({
+            data: carts
+              .filter((cart) => cart.status === requestedStatus)
+              .slice(0, requestedLimit),
             error: null
           }))
         };
@@ -882,7 +893,8 @@ describe("checkout Stripe tax liability", () => {
           orderEffects += 1;
           checkout.status = "completed";
           checkout.order_id = orderId;
-          cartStatus = "ordered";
+          const sourceCart = carts.find((cart) => cart.id === checkout.source_cart_id);
+          if (sourceCart) sourceCart.status = "ordered";
         }
         return {
           data: {
@@ -906,6 +918,8 @@ describe("checkout Stripe tax liability", () => {
     const route = await import("@/app/api/orders/checkout/route");
 
     const first = await route.POST(buildRequest(requestBody));
+    carts.push({ id: activeCartId, status: "active" });
+    isStripeStubModeMock.mockReturnValue(false);
     const second = await route.POST(buildRequest(requestBody));
 
     expect(first.status).toBe(200);
@@ -915,6 +929,74 @@ describe("checkout Stripe tax liability", () => {
     expect(checkoutCreates).toBe(1);
     expect(attempts).toHaveLength(1);
     expect(orderEffects).toBe(1);
+    expect(carts.find((cart) => cart.id === activeCartId)?.status).toBe("active");
+    expect(stripeCheckoutCreateMock).not.toHaveBeenCalled();
+  });
+
+  test("rejects an authenticated legacy retry when multiple ordered carts match", async () => {
+    authenticatedUserId = "20000000-0000-4000-8000-000000000001";
+    const carts = [
+      { id: "30000000-0000-4000-8000-000000000011", status: "ordered" as const },
+      { id: "30000000-0000-4000-8000-000000000012", status: "ordered" as const },
+      { id: "30000000-0000-4000-8000-000000000013", status: "ordered" as const }
+    ];
+    serverFromMock.mockImplementation(() => ({
+      select: vi.fn(() => {
+        let requestedStatus: string | null = null;
+        let requestedLimit = Number.POSITIVE_INFINITY;
+        const query = {
+          eq: vi.fn((column: string, value: string) => {
+            if (column === "status") requestedStatus = value;
+            return query;
+          }),
+          order: vi.fn(() => query),
+          limit: vi.fn((value: number) => {
+            requestedLimit = value;
+            return query;
+          }),
+          returns: vi.fn(async () => ({
+            data: carts
+              .filter((cart) => cart.status === requestedStatus)
+              .slice(0, requestedLimit),
+            error: null
+          }))
+        };
+        return query;
+      })
+    }));
+    let lookupIndex = 0;
+    adminRpcMock.mockImplementation(async (name: string) => {
+      if (name !== "get_storefront_checkout_attempt") {
+        throw new Error(`Unexpected mutation RPC ${name}`);
+      }
+      lookupIndex += 1;
+      return {
+        data: lookupIndex === 2
+          ? null
+          : {
+              id: `40000000-0000-4000-8000-${String(lookupIndex).padStart(12, "0")}`,
+              checkout_mode: "stripe",
+              status: "completed",
+              order_id: `50000000-0000-4000-8000-${String(lookupIndex).padStart(12, "0")}`
+            },
+        error: null
+      };
+    });
+    const route = await import("@/app/api/orders/checkout/route");
+
+    const response = await route.POST(buildRequest({
+      firstName: "Legacy",
+      lastName: "Buyer",
+      phone: "555-0100",
+      email: "legacy@example.com",
+      items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
+    }));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringContaining("safely identify")
+    });
+    expect(stripeCheckoutCreateMock).not.toHaveBeenCalled();
   });
 
   test("returns an already-bound Stripe session without creating another", async () => {
