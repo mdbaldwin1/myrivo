@@ -177,6 +177,48 @@ describe("finalizeStorefrontCheckout", () => {
     expect(enqueueDigitalDeliveryMock).toHaveBeenCalledWith("order-1", "manifest-1");
   });
 
+  test("loads the digital manifest identity needed by checkout status recovery", async () => {
+    adminFromMock.mockImplementation((table: string) => {
+      if (table !== "storefront_checkout_sessions") {
+        throw new Error(`Unexpected table ${table}`);
+      }
+      return {
+        select: vi.fn((columns: string) => {
+          if (!columns.split(",").includes("digital_manifest_id")) {
+            throw new Error("Digital manifest identity was not selected");
+          }
+          return {
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                maybeSingle: vi.fn(async () => ({
+                  data: {
+                    id: "checkout-completed",
+                    status: "completed",
+                    order_id: "order-1",
+                    error_message: null,
+                    stripe_payment_intent_id: "pi_123",
+                    digital_manifest_id: "manifest-1"
+                  },
+                  error: null
+                }))
+              }))
+            }))
+          };
+        })
+      };
+    });
+
+    const { getStorefrontCheckoutBySessionId } = await import("@/lib/storefront/checkout-finalization");
+
+    await expect(
+      getStorefrontCheckoutBySessionId("digital-shop", "cs_test_manifest_lookup")
+    ).resolves.toMatchObject({
+      status: "completed",
+      order_id: "order-1",
+      digital_manifest_id: "manifest-1"
+    });
+  });
+
   test("persists the Stripe shipping address onto the order and checkout session", async () => {
     const orderUpdateMock = vi.fn(() => ({
       eq: vi.fn(async () => ({ error: null }))

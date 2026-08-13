@@ -103,3 +103,40 @@ The full suite retained only the pre-existing refund/dispute mock stderr and zer
 - The scheduler itself remains part of the later deployment/operations task; this task provides the authenticated endpoint and runbook contract it must call.
 - The next notification/UX task can consume the durable job and attempt states to add richer merchant repair controls without changing delivery correctness.
 - `DIGITAL_DELIVERY_TOKEN_SECRET` must be generated independently from the processor secret and remain stable across deploys; changing it invalidates reproduction of outstanding purchase links until the prior value is restored or those tokens are explicitly revoked and replaced.
+
+## Fix Round 1: Completed Checkout Status Recovery
+
+### Poll-path durable delivery repair
+
+- The checkout-status lookup now includes the persisted digital manifest identity alongside the tenant-scoped store slug and completed order ID.
+- Before returning `completed` for a digital checkout, the status route calls the same service-role-only `enqueueDigitalDelivery(orderId, manifestId)` boundary used by finalization.
+- The database function independently proves that the manifest is locked to the same paid order and store. Its unique order/job constraint makes status polling and an already-existing job idempotent.
+- The recovery path does not call Stripe, rerun checkout finalization, create another order, or touch inventory. Physical completed checkouts retain the existing immediate response.
+- If a digital checkout lacks an order ID or the database ensure fails, the route returns pollable `pending` state with HTTP 503 and `Retry-After: 2`; it does not expose the internal error or falsely report fulfillment-ready completion.
+
+### TDD evidence
+
+RED was observed for the completed digital route behaviors:
+
+```text
+completed digital checkout did not call the durable enqueue boundary
+enqueue failure returned HTTP 200 completed instead of recoverable HTTP 503 pending
+```
+
+A separate lookup-contract RED run rejected the checkout query because `digital_manifest_id` was absent. GREEN focused evidence covered route success/failure, lookup projection, physical-checkout non-interference, completed finalizer repair, and worker idempotency:
+
+```text
+Test Files 3 passed (3)
+Tests 19 passed (19)
+```
+
+### Validation
+
+- Native PostgreSQL migration contract — 75 tests passed, including repeated enqueue convergence to one delivery job.
+- `npm run lint --workspace @myrivo/web` — passed with zero warnings/errors and both consistency checks.
+- `npm run typecheck --workspace @myrivo/web` — passed.
+- `npm test --workspace @myrivo/web` — 239 files and 847 tests passed.
+- `npm run build --workspace @myrivo/web` — passed with 159 generated pages.
+- `git diff --check` — passed.
+
+The full suite/build retained only the previously documented refund/dispute mock stderr, zero-size chart warnings, Next.js middleware deprecation, and stale Browserslist-data notice.

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { enqueueDigitalDelivery } from "@/lib/digital-products/delivery-jobs";
 import { isStripeStubMode } from "@/lib/env";
 import { checkRateLimit } from "@/lib/security/rate-limit";
 import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
@@ -44,6 +45,22 @@ export async function GET(request: NextRequest) {
     }
 
     if (checkout.status === "completed") {
+      if (checkout.digital_manifest_id) {
+        if (!checkout.order_id) {
+          return NextResponse.json(
+            { status: "pending", error: "Digital delivery is still being prepared." },
+            { status: 503, headers: { "Retry-After": "2" } }
+          );
+        }
+        try {
+          await enqueueDigitalDelivery(checkout.order_id, checkout.digital_manifest_id);
+        } catch {
+          return NextResponse.json(
+            { status: "pending", error: "Digital delivery is still being prepared." },
+            { status: 503, headers: { "Retry-After": "2" } }
+          );
+        }
+      }
       return NextResponse.json({ status: "completed", orderId: checkout.order_id });
     }
 

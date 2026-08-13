@@ -554,7 +554,7 @@ export async function getStorefrontCheckoutBySessionId(storeSlug: string, sessio
 
   const { data, error } = await supabase
     .from("storefront_checkout_sessions")
-    .select("id,status,order_id,error_message,stripe_payment_intent_id")
+    .select("id,status,order_id,error_message,stripe_payment_intent_id,digital_manifest_id")
     .eq("store_slug", storeSlug)
     .eq("stripe_checkout_session_id", sessionId)
     .maybeSingle<{
@@ -563,6 +563,7 @@ export async function getStorefrontCheckoutBySessionId(storeSlug: string, sessio
       order_id: string | null;
       error_message: string | null;
       stripe_payment_intent_id: string | null;
+      digital_manifest_id: string | null;
     }>();
 
   if (error) {
