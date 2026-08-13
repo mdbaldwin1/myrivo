@@ -922,6 +922,7 @@ export type DigitalPurchaseManifestRecord = {
   order_id: string | null;
   consent_version: string;
   license_version: string;
+  request_fingerprint_sha256: string | null;
   status: DigitalPurchaseManifestStatus;
   locked_at: string | null;
   created_at: string;

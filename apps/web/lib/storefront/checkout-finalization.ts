@@ -6,10 +6,14 @@ import {
   persistPromotionRedemptions,
   type PromotionRedemptionPersistenceClient
 } from "@/lib/promotions/persist-redemptions";
-import { buildStubCheckoutRpcPayload } from "@/lib/storefront/stub-checkout";
+import {
+  buildStubCheckoutRpcPayload,
+  buildStubCheckoutWithManifestRpcPayload
+} from "@/lib/storefront/stub-checkout";
 import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 import { getStripeClient } from "@/lib/stripe/server";
 import { issueDigitalEntitlements } from "@/lib/digital-products/entitlements";
+import { lockManifestToOrder } from "@/lib/digital-products/manifest-service";
 
 type ShippingAddressSnapshot = {
   recipientName?: string;
@@ -90,6 +94,7 @@ type StorefrontCheckoutRecord = {
   digital_consent_version: string | null;
   digital_consent_accepted_at: string | null;
   digital_license_version: string | null;
+  digital_manifest_id: string | null;
   items: Array<{ productId?: string; variantId?: string; quantity?: number; unitPriceCents?: number }> | unknown;
   order_id: string | null;
   status: "pending" | "completed" | "failed";
@@ -230,7 +235,7 @@ export async function finalizeStorefrontCheckout(
   const { data: checkout, error: checkoutError } = await supabase
     .from("storefront_checkout_sessions")
     .select(
-      "id,store_id,store_slug,analytics_session_id,analytics_session_key,source_cart_id,customer_email,customer_first_name,customer_last_name,customer_phone,customer_note,shipping_address_json,fulfillment_method,fulfillment_label,pickup_location_id,pickup_location_snapshot_json,pickup_window_start_at,pickup_window_end_at,pickup_timezone,shipping_fee_cents,promo_code,promo_codes_json,fee_plan_key,fee_bps,fee_fixed_cents,item_total_cents,platform_fee_cents,digital_consent_version,digital_consent_accepted_at,digital_license_version,items,order_id,status"
+      "id,store_id,store_slug,analytics_session_id,analytics_session_key,source_cart_id,customer_email,customer_first_name,customer_last_name,customer_phone,customer_note,shipping_address_json,fulfillment_method,fulfillment_label,pickup_location_id,pickup_location_snapshot_json,pickup_window_start_at,pickup_window_end_at,pickup_timezone,shipping_fee_cents,promo_code,promo_codes_json,fee_plan_key,fee_bps,fee_fixed_cents,item_total_cents,platform_fee_cents,digital_consent_version,digital_consent_accepted_at,digital_license_version,digital_manifest_id,items,order_id,status"
     )
     .eq("id", checkoutId)
     .maybeSingle<StorefrontCheckoutRecord>();
@@ -246,6 +251,9 @@ export async function finalizeStorefrontCheckout(
   const resolvedShippingAddressSnapshot = checkout.shipping_address_json ?? shippingAddressSnapshot;
 
   if (checkout.status === "completed" && checkout.order_id) {
+    if (checkout.digital_manifest_id) {
+      await lockManifestToOrder(checkout.digital_manifest_id, checkout.order_id);
+    }
     return { status: "completed" as const, orderId: checkout.order_id };
   }
 
@@ -278,6 +286,9 @@ export async function finalizeStorefrontCheckout(
     }
 
     if (existingOrder) {
+      if (checkout.digital_manifest_id) {
+        await lockManifestToOrder(checkout.digital_manifest_id, existingOrder.id);
+      }
       const { data: existingOrderRow, error: existingOrderFetchError } = await supabase
         .from("orders")
         .select("subtotal_cents,discount_cents")
@@ -371,8 +382,22 @@ export async function finalizeStorefrontCheckout(
   }
 
   const { data: rpcResult, error: rpcError } = await supabase.rpc(
-    "stub_checkout_create_paid_order",
-      buildStubCheckoutRpcPayload({
+    checkout.digital_manifest_id
+      ? "stub_checkout_create_paid_order_with_manifest"
+      : "stub_checkout_create_paid_order",
+    checkout.digital_manifest_id
+      ? buildStubCheckoutWithManifestRpcPayload({
+          storeSlug: checkout.store_slug,
+          customerEmail: checkout.customer_email,
+          customerUserId: await resolveCheckoutCustomerUserId(supabase, checkout.source_cart_id),
+          items: checkout.items,
+          stubPaymentRef: paymentIntentId,
+          discountCents: resolveCheckoutDiscountCents(checkout),
+          promoCode: null,
+          checkoutSessionId: checkout.id,
+          digitalManifestId: checkout.digital_manifest_id
+        })
+      : buildStubCheckoutRpcPayload({
         storeSlug: checkout.store_slug,
         customerEmail: checkout.customer_email,
         customerUserId: await resolveCheckoutCustomerUserId(supabase, checkout.source_cart_id),
@@ -380,7 +405,7 @@ export async function finalizeStorefrontCheckout(
         stubPaymentRef: paymentIntentId,
         discountCents: resolveCheckoutDiscountCents(checkout),
         promoCode: null
-      })
+        })
     );
 
   if (rpcError) {

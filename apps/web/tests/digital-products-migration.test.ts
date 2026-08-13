@@ -49,6 +49,10 @@ const publishingReadinessRelationMoveMigration = join(
   repoRoot,
   "supabase/migrations/20260812232000_validate_digital_readiness_relation_moves.sql",
 );
+const checkoutManifestMigration = join(
+  repoRoot,
+  "supabase/migrations/20260813000000_digital_checkout_manifests.sql",
+);
 
 const ids = {
   storeA: "10000000-0000-0000-0000-000000000001",
@@ -77,6 +81,22 @@ const ids = {
   legacyGrant: "a0000000-0000-0000-0000-000000000001",
   manifestA: "b0000000-0000-0000-0000-000000000001",
   manifestItemA: "c0000000-0000-0000-0000-000000000001",
+  manifestStore: "12000000-0000-4000-8000-000000000001",
+  manifestProduct: "22000000-0000-4000-8000-000000000001",
+  manifestPhysicalProduct: "22000000-0000-4000-8000-000000000002",
+  manifestVariant: "32000000-0000-4000-8000-000000000001",
+  manifestPhysicalVariant: "32000000-0000-4000-8000-000000000002",
+  manifestCheckout: "42000000-0000-4000-8000-000000000001",
+  manifestConcurrentCheckout: "42000000-0000-4000-8000-000000000002",
+  manifestOrder: "42000000-0000-4000-8000-000000000003",
+  manifestOrderItem: "52000000-0000-4000-8000-000000000001",
+  manifestPhysicalOrderItem: "52000000-0000-4000-8000-000000000002",
+  manifestProductWideAsset: "62000000-0000-4000-8000-000000000001",
+  manifestVariantAsset: "62000000-0000-4000-8000-000000000002",
+  manifestOtherVariantAsset: "62000000-0000-4000-8000-000000000003",
+  manifestProductWideV1: "72000000-0000-4000-8000-000000000001",
+  manifestProductWideV2: "72000000-0000-4000-8000-000000000002",
+  manifestVariantV1: "72000000-0000-4000-8000-000000000003",
 } as const;
 
 const baseSchema = `
@@ -367,6 +387,9 @@ beforeAll(() => {
       `Missing publishing readiness relation move migration: ${publishingReadinessRelationMoveMigration}`,
     );
   }
+  if (!existsSync(checkoutManifestMigration)) {
+    throw new Error(`Missing checkout manifest migration: ${checkoutManifestMigration}`);
+  }
 
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-digital-migration-"));
   port = 55432 + (process.pid % 9000);
@@ -433,6 +456,7 @@ beforeAll(() => {
     applyMigration(database, publishingReadinessSerializationMigration);
     applyMigration(database, publishingReadinessChildLockMigration);
     applyMigration(database, publishingReadinessRelationMoveMigration);
+    applyMigration(database, checkoutManifestMigration);
   }
 
   execFileSync(createdb, ["full_chain"], {
@@ -446,6 +470,86 @@ beforeAll(() => {
     .sort()) {
     applyMigration("full_chain", join(migrationsDirectory, migration));
   }
+
+  runSql(
+    "full_chain",
+    `insert into auth.users(id, email) values
+      ('00000000-0000-4000-8000-000000000011', 'manifest-owner@example.test');
+    insert into public.stores(id, owner_user_id, name, slug, status) values (
+      '${ids.manifestStore}', '00000000-0000-4000-8000-000000000011',
+      'Manifest Store', 'manifest-store', 'live'
+    );
+    insert into public.products(
+      id, store_id, title, description, price_cents, inventory_qty, status,
+      product_type, digital_rights_affirmed_at, digital_rights_affirmed_by_user_id
+    ) values (
+      '${ids.manifestProduct}', '${ids.manifestStore}', 'Digital set', '', 2500, 100,
+      'draft', 'digital', now(), '00000000-0000-4000-8000-000000000011'
+    ), (
+      '${ids.manifestPhysicalProduct}', '${ids.manifestStore}', 'Frame', '', 1500, 100,
+      'active', 'physical', null, null
+    );
+    insert into public.product_variants(
+      id, store_id, product_id, title, price_cents, inventory_qty, is_default, status, sort_order
+    ) values (
+      '${ids.manifestVariant}', '${ids.manifestStore}', '${ids.manifestProduct}',
+      'Blue', 2500, 100, true, 'active', 0
+    ), (
+      '${ids.manifestPhysicalVariant}', '${ids.manifestStore}', '${ids.manifestPhysicalProduct}',
+      'Oak', 1500, 100, true, 'active', 0
+    );
+    insert into public.digital_product_assets(
+      id, store_id, product_id, product_variant_id, label, sort_order, active
+    ) values (
+      '${ids.manifestProductWideAsset}', '${ids.manifestStore}', '${ids.manifestProduct}',
+      null, 'Instructions', 20, true
+    ), (
+      '${ids.manifestVariantAsset}', '${ids.manifestStore}', '${ids.manifestProduct}',
+      '${ids.manifestVariant}', 'Blue printable', 10, true
+    );
+    insert into public.digital_product_asset_versions(
+      id, asset_id, version_number, storage_path, customer_filename, mime_type,
+      byte_size, checksum_sha256, status
+    ) values (
+      '${ids.manifestProductWideV1}', '${ids.manifestProductWideAsset}', 1,
+      '${ids.manifestStore}/${ids.manifestProduct}/${ids.manifestProductWideAsset}/v1/instructions.pdf',
+      'instructions.pdf', 'application/pdf', 100, repeat('1', 64), 'ready'
+    ), (
+      '${ids.manifestProductWideV2}', '${ids.manifestProductWideAsset}', 2,
+      '${ids.manifestStore}/${ids.manifestProduct}/${ids.manifestProductWideAsset}/v2/instructions.pdf',
+      'instructions.pdf', 'application/pdf', 200, repeat('2', 64), 'ready'
+    ), (
+      '${ids.manifestVariantV1}', '${ids.manifestVariantAsset}', 1,
+      '${ids.manifestStore}/${ids.manifestProduct}/${ids.manifestVariantAsset}/v1/blue.zip',
+      'blue-printable.zip', 'application/zip', 300, repeat('3', 64), 'ready'
+    );
+    insert into public.digital_product_previews(
+      product_id, source_asset_version_id, public_preview_path, status
+    ) values (
+      '${ids.manifestProduct}', '${ids.manifestVariantV1}',
+      '${ids.manifestStore}/${ids.manifestProduct}/preview.jpg', 'ready'
+    );
+    update public.products set status = 'active' where id = '${ids.manifestProduct}';
+    insert into public.storefront_checkout_sessions(
+      id, store_id, store_slug, customer_email, items, status,
+      digital_consent_version, digital_consent_accepted_at, digital_license_version
+    ) values (
+      '${ids.manifestCheckout}', '${ids.manifestStore}', 'manifest-store',
+      'buyer@example.test',
+      jsonb_build_array(
+        jsonb_build_object('productId', '${ids.manifestProduct}', 'variantId', '${ids.manifestVariant}', 'quantity', 1),
+        jsonb_build_object('productId', '${ids.manifestPhysicalProduct}', 'variantId', '${ids.manifestPhysicalVariant}', 'quantity', 1)
+      ),
+      'pending', 'immediate-delivery-v1', '2026-08-13T04:00:00Z', 'personal-use-v1'
+    ), (
+      '${ids.manifestConcurrentCheckout}', '${ids.manifestStore}', 'manifest-store',
+      'buyer@example.test',
+      jsonb_build_array(
+        jsonb_build_object('productId', '${ids.manifestProduct}', 'variantId', '${ids.manifestVariant}', 'quantity', 1)
+      ),
+      'pending', 'immediate-delivery-v1', '2026-08-13T04:01:00Z', 'personal-use-v1'
+    );`,
+  );
 }, 60_000);
 
 afterAll(() => {
@@ -609,6 +713,387 @@ describe("digital product relational integrity", () => {
         'a2.pdf', 'application/pdf', 10, repeat('b', 64), 'File A2', 0
       )`,
     );
+  });
+});
+
+describe("transactional checkout manifests", () => {
+  const mixedItemsSql = `jsonb_build_array(
+    jsonb_build_object(
+      'productId', '${ids.manifestProduct}',
+      'variantId', '${ids.manifestVariant}',
+      'quantity', 1
+    ),
+    jsonb_build_object(
+      'productId', '${ids.manifestPhysicalProduct}',
+      'variantId', '${ids.manifestPhysicalVariant}',
+      'quantity', 1
+    )
+  )`;
+  const digitalItemsSql = `jsonb_build_array(
+    jsonb_build_object(
+      'productId', '${ids.manifestProduct}',
+      'variantId', '${ids.manifestVariant}',
+      'quantity', 1
+    )
+  )`;
+
+  function createManifest(checkoutSessionId = ids.manifestCheckout, itemsSql = mixedItemsSql) {
+    return JSON.parse(
+      runSql(
+        "full_chain",
+        `select public.create_or_reuse_digital_checkout_manifest(
+          '${checkoutSessionId}', '${ids.manifestStore}', ${itemsSql},
+          'immediate-delivery-v1',
+          case when '${checkoutSessionId}' = '${ids.manifestConcurrentCheckout}'
+            then '2026-08-13T04:01:00Z'::timestamptz
+            else '2026-08-13T04:00:00Z'::timestamptz
+          end,
+          'personal-use-v1'
+        )`,
+      ),
+    ) as {
+      manifestId: string;
+      orderId: string | null;
+      checkoutSessionId: string;
+      storeId: string;
+      consentVersion: string;
+      licenseVersion: string;
+      createdAt: string;
+      items: Array<Record<string, unknown>>;
+    };
+  }
+
+  it("captures product-wide and selected-variant files in deterministic order using newest ready versions", () => {
+    const manifest = createManifest();
+
+    expect(manifest).toMatchObject({
+      orderId: null,
+      checkoutSessionId: ids.manifestCheckout,
+      storeId: ids.manifestStore,
+      consentVersion: "immediate-delivery-v1",
+      licenseVersion: "personal-use-v1",
+    });
+    expect(manifest.items).toEqual([
+      {
+        orderItemId: null,
+        productId: ids.manifestProduct,
+        productVariantId: ids.manifestVariant,
+        assetId: ids.manifestVariantAsset,
+        assetVersionId: ids.manifestVariantV1,
+        customerFilename: "blue-printable.zip",
+        mimeType: "application/zip",
+        byteSize: 300,
+        checksumSha256: "3".repeat(64),
+        label: "Blue printable",
+        sortOrder: 0,
+      },
+      {
+        orderItemId: null,
+        productId: ids.manifestProduct,
+        productVariantId: ids.manifestVariant,
+        assetId: ids.manifestProductWideAsset,
+        assetVersionId: ids.manifestProductWideV2,
+        customerFilename: "instructions.pdf",
+        mimeType: "application/pdf",
+        byteSize: 200,
+        checksumSha256: "2".repeat(64),
+        label: "Instructions",
+        sortOrder: 1,
+      },
+    ]);
+    expect(JSON.stringify(manifest)).not.toContain(ids.manifestStore + "/");
+    expect(
+      runSql(
+        "full_chain",
+        `select digital_manifest_id::text from public.storefront_checkout_sessions
+         where id = '${ids.manifestCheckout}'`,
+      ),
+    ).toBe(manifest.manifestId);
+    expect(
+      runSql(
+        "full_chain",
+        `select request_fingerprint_sha256 from public.digital_purchase_manifests
+         where id = '${manifest.manifestId}'`,
+      ),
+    ).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("reuses the identical snapshot after a newer catalog version appears", () => {
+    const original = createManifest();
+    runSql(
+      "full_chain",
+      `insert into public.digital_product_asset_versions(
+        id, asset_id, version_number, storage_path, customer_filename, mime_type,
+        byte_size, checksum_sha256, status
+      ) values (
+        '71000000-0000-4000-8000-000000000004',
+        '${ids.manifestProductWideAsset}', 3,
+        '${ids.manifestStore}/${ids.manifestProduct}/${ids.manifestProductWideAsset}/v3/instructions.pdf',
+        'instructions-v3.pdf', 'application/pdf', 400, repeat('4', 64), 'ready'
+      ) on conflict (id) do nothing`,
+    );
+
+    const retried = createManifest();
+    expect(retried).toEqual(original);
+    expect(retried.items.map((item) => item.assetVersionId)).toContain(
+      ids.manifestProductWideV2,
+    );
+    expect(retried.items.map((item) => item.assetVersionId)).not.toContain(
+      "72000000-0000-4000-8000-000000000004",
+    );
+  });
+
+  it("rejects reuse when the checkout fingerprint does not match", () => {
+    createManifest();
+    expectRejected(
+      "full_chain",
+      `select public.create_or_reuse_digital_checkout_manifest(
+        '${ids.manifestCheckout}', '${ids.manifestStore}', ${digitalItemsSql},
+        'immediate-delivery-v1', '2026-08-13T04:00:00Z', 'personal-use-v1'
+      )`,
+    );
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.digital_purchase_manifests
+         where checkout_session_id = '${ids.manifestCheckout}'`,
+      ),
+    ).toBe("1");
+  });
+
+  it("serializes concurrent retries to one identical manifest", async () => {
+    const statement = `select public.create_or_reuse_digital_checkout_manifest(
+      '${ids.manifestConcurrentCheckout}', '${ids.manifestStore}', ${digitalItemsSql},
+      'immediate-delivery-v1', '2026-08-13T04:01:00Z', 'personal-use-v1'
+    )`;
+    const [first, second] = await Promise.all([
+      runSqlAsync("full_chain", statement, "manifest-create-a"),
+      runSqlAsync("full_chain", statement, "manifest-create-b"),
+    ]);
+
+    expect(JSON.parse(first)).toEqual(JSON.parse(second));
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.digital_purchase_manifests
+         where checkout_session_id = '${ids.manifestConcurrentCheckout}'`,
+      ),
+    ).toBe("1");
+  });
+
+  it("rejects a digital selection without a ready preview or deliverable", () => {
+    const unreadyProduct = "22000000-0000-4000-8000-000000000010";
+    const unreadyVariant = "32000000-0000-4000-8000-000000000010";
+    const unreadyCheckout = "42000000-0000-4000-8000-000000000010";
+    runSql(
+      "full_chain",
+      `insert into public.products(
+        id, store_id, title, description, price_cents, inventory_qty, status,
+        product_type, digital_rights_affirmed_at, digital_rights_affirmed_by_user_id
+      ) values (
+        '${unreadyProduct}', '${ids.manifestStore}', 'Unready', '', 1000, 1,
+        'draft', 'digital', now(), '00000000-0000-4000-8000-000000000011'
+      ) on conflict (id) do nothing;
+      insert into public.product_variants(
+        id, store_id, product_id, price_cents, inventory_qty, is_default, status
+      ) values (
+        '${unreadyVariant}', '${ids.manifestStore}', '${unreadyProduct}',
+        1000, 1, true, 'active'
+      ) on conflict (id) do nothing;
+      insert into public.storefront_checkout_sessions(
+        id, store_id, store_slug, customer_email, items, status,
+        digital_consent_version, digital_consent_accepted_at, digital_license_version
+      ) values (
+        '${unreadyCheckout}', '${ids.manifestStore}', 'manifest-store',
+        'buyer@example.test',
+        jsonb_build_array(jsonb_build_object(
+          'productId', '${unreadyProduct}', 'variantId', '${unreadyVariant}', 'quantity', 1
+        )),
+        'pending', 'immediate-delivery-v1', now(), 'personal-use-v1'
+      ) on conflict (id) do nothing`,
+    );
+
+    expectRejected(
+      "full_chain",
+      `select public.create_or_reuse_digital_checkout_manifest(
+        '${unreadyCheckout}', '${ids.manifestStore}',
+        jsonb_build_array(jsonb_build_object(
+          'productId', '${unreadyProduct}', 'variantId', '${unreadyVariant}', 'quantity', 1
+        )),
+        'immediate-delivery-v1',
+        (select digital_consent_accepted_at from public.storefront_checkout_sessions where id = '${unreadyCheckout}'),
+        'personal-use-v1'
+      )`,
+    );
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.digital_purchase_manifests
+         where checkout_session_id = '${unreadyCheckout}'`,
+      ),
+    ).toBe("0");
+  });
+
+  it("rolls stub order creation back when manifest locking fails, then retries cleanly", () => {
+    const checkoutId = "42000000-0000-4000-8000-000000000020";
+    const paymentRef = "stub_pi_manifest_atomicity";
+    runSql(
+      "full_chain",
+      `insert into public.storefront_checkout_sessions(
+        id, store_id, store_slug, customer_email, items, status,
+        digital_consent_version, digital_consent_accepted_at, digital_license_version
+      ) values (
+        '${checkoutId}', '${ids.manifestStore}', 'manifest-store',
+        'buyer@example.test', ${digitalItemsSql}, 'pending',
+        'immediate-delivery-v1', '2026-08-13T04:02:00Z', 'personal-use-v1'
+      )`,
+    );
+    const manifest = JSON.parse(
+      runSql(
+        "full_chain",
+        `select public.create_or_reuse_digital_checkout_manifest(
+          '${checkoutId}', '${ids.manifestStore}', ${digitalItemsSql},
+          'immediate-delivery-v1', '2026-08-13T04:02:00Z', 'personal-use-v1'
+        )`,
+      ),
+    ) as { manifestId: string };
+    const inventoryBefore = runSql(
+      "full_chain",
+      `select inventory_qty from public.product_variants where id = '${ids.manifestVariant}'`,
+    );
+
+    runSql(
+      "full_chain",
+      `create function public.test_reject_manifest_lock()
+       returns trigger language plpgsql as $$
+       begin
+         if new.status = 'locked' then
+           raise exception 'Injected manifest lock failure';
+         end if;
+         return new;
+       end;
+       $$;
+       create trigger test_reject_manifest_lock
+       before update of status on public.digital_purchase_manifests
+       for each row execute function public.test_reject_manifest_lock()`,
+    );
+
+    expectRejected(
+      "full_chain",
+      `select * from public.stub_checkout_create_paid_order_with_manifest(
+        'manifest-store', 'buyer@example.test', null, ${digitalItemsSql},
+        '${paymentRef}', 0, null, '${checkoutId}', '${manifest.manifestId}'
+      )`,
+    );
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.orders where stripe_payment_intent_id = '${paymentRef}'`,
+      ),
+    ).toBe("0");
+    expect(
+      runSql(
+        "full_chain",
+        `select status || ':' || (order_id is null)::text
+         from public.digital_purchase_manifests where id = '${manifest.manifestId}'`,
+      ),
+    ).toBe("draft:true");
+    expect(
+      runSql(
+        "full_chain",
+        `select inventory_qty from public.product_variants where id = '${ids.manifestVariant}'`,
+      ),
+    ).toBe(inventoryBefore);
+
+    runSql(
+      "full_chain",
+      `drop trigger test_reject_manifest_lock on public.digital_purchase_manifests;
+       drop function public.test_reject_manifest_lock()`,
+    );
+    const orderId = runSql(
+      "full_chain",
+      `select order_id from public.stub_checkout_create_paid_order_with_manifest(
+        'manifest-store', 'buyer@example.test', null, ${digitalItemsSql},
+        '${paymentRef}', 0, null, '${checkoutId}', '${manifest.manifestId}'
+      )`,
+    );
+
+    expect(orderId).toMatch(/^[a-f0-9-]{36}$/);
+    expect(
+      runSql(
+        "full_chain",
+        `select status || ':' || order_id::text
+         from public.digital_purchase_manifests where id = '${manifest.manifestId}'`,
+      ),
+    ).toBe(`locked:${orderId}`);
+    expect(
+      runSql(
+        "full_chain",
+        `select status || ':' || order_id::text
+         from public.storefront_checkout_sessions where id = '${checkoutId}'`,
+      ),
+    ).toBe(`completed:${orderId}`);
+  });
+
+  it("locks once to the exact order items and rejects later mutation", () => {
+    const manifest = createManifest();
+    runSql(
+      "full_chain",
+      `insert into public.orders(
+        id, store_id, customer_email, subtotal_cents, total_cents, status
+      ) values (
+        '${ids.manifestOrder}', '${ids.manifestStore}', 'buyer@example.test', 4000, 4000, 'paid'
+      ) on conflict (id) do nothing;
+      insert into public.order_items(
+        id, order_id, product_id, product_variant_id, quantity, unit_price_cents, product_type
+      ) values (
+        '${ids.manifestOrderItem}', '${ids.manifestOrder}', '${ids.manifestProduct}',
+        '${ids.manifestVariant}', 1, 2500, 'digital'
+      ), (
+        '${ids.manifestPhysicalOrderItem}', '${ids.manifestOrder}', '${ids.manifestPhysicalProduct}',
+        '${ids.manifestPhysicalVariant}', 1, 1500, 'physical'
+      ) on conflict (id) do nothing`,
+    );
+
+    const locked = JSON.parse(
+      runSql(
+        "full_chain",
+        `select public.lock_digital_checkout_manifest(
+          '${manifest.manifestId}', '${ids.manifestOrder}'
+        )`,
+      ),
+    ) as { orderId: string; items: Array<{ orderItemId: string }> };
+    const retried = JSON.parse(
+      runSql(
+        "full_chain",
+        `select public.lock_digital_checkout_manifest(
+          '${manifest.manifestId}', '${ids.manifestOrder}'
+        )`,
+      ),
+    );
+
+    expect(locked.orderId).toBe(ids.manifestOrder);
+    expect(locked.items.every((item) => item.orderItemId === ids.manifestOrderItem)).toBe(true);
+    expect(retried).toEqual(locked);
+    expectRejected(
+      "full_chain",
+      `update public.digital_purchase_manifest_items
+       set customer_filename = 'changed.pdf'
+       where manifest_id = '${manifest.manifestId}'`,
+    );
+  });
+
+  it("keeps manifest and stub wrapper functions service-role-only", () => {
+    expect(
+      runSql(
+        "full_chain",
+        `select
+          has_function_privilege('anon', 'public.create_or_reuse_digital_checkout_manifest(uuid,uuid,jsonb,text,timestamp with time zone,text)', 'execute')::text || ':' ||
+          has_function_privilege('authenticated', 'public.lock_digital_checkout_manifest(uuid,uuid)', 'execute')::text || ':' ||
+          has_function_privilege('service_role', 'public.create_or_reuse_digital_checkout_manifest(uuid,uuid,jsonb,text,timestamp with time zone,text)', 'execute')::text || ':' ||
+          has_function_privilege('service_role', 'public.stub_checkout_create_paid_order_with_manifest(text,text,uuid,jsonb,text,integer,text,uuid,uuid)', 'execute')::text`,
+      ),
+    ).toBe("false:false:true:true");
   });
 });
 

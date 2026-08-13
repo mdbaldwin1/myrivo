@@ -24,7 +24,10 @@ import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
 import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 import { buildStorefrontCheckoutPath } from "@/lib/storefront/paths";
-import { buildStubCheckoutRpcPayload } from "@/lib/storefront/stub-checkout";
+import {
+  buildStubCheckoutRpcPayload,
+  buildStubCheckoutWithManifestRpcPayload
+} from "@/lib/storefront/stub-checkout";
 import { getStoreStripePaymentsReadiness } from "@/lib/stripe/store-payments-readiness";
 import { getStripeClient } from "@/lib/stripe/server";
 import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
@@ -32,6 +35,12 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isStorePaymentsReadyForLaunch, type StoreTaxCollectionMode } from "@/lib/stores/tax-compliance";
 import { issueDigitalEntitlements } from "@/lib/digital-products/entitlements";
+import { DIGITAL_PRODUCT_CONFIG } from "@/lib/digital-products/config";
+import {
+  buildDigitalManifestStripeMetadata,
+  createOrReuseCheckoutManifest,
+  DigitalPurchaseManifestError
+} from "@/lib/digital-products/manifest-service";
 
 const itemSchema = z
   .object({
@@ -890,19 +899,118 @@ export async function POST(request: NextRequest) {
 
   const isFreeOrder = totalCents === 0;
   const shouldUseStubMode = isStripeStubMode() || isFreeOrder || (isStoreTeamMember && !isStorePubliclyAccessibleStatus(store.status));
+  const digitalConsentAcceptedAt = hasDigitalItems ? new Date().toISOString() : null;
+  const pendingCheckoutValues = {
+    store_id: store.id,
+    store_slug: store.slug,
+    customer_email: email,
+    customer_first_name: firstName,
+    customer_last_name: lastName,
+    customer_phone: normalizedPhone,
+    customer_note: normalizedCustomerNote,
+    fulfillment_method: selectedFulfillment.method,
+    fulfillment_label: selectedFulfillment.label,
+    shipping_fee_cents: shippingFeeCents,
+    digital_consent_version: hasDigitalItems ? DIGITAL_PRODUCT_CONFIG.consentVersion : null,
+    digital_consent_accepted_at: digitalConsentAcceptedAt,
+    digital_license_version: hasDigitalItems ? DIGITAL_PRODUCT_CONFIG.licenseVersion : null,
+    pickup_location_id: resolvedPickupLocationId,
+    pickup_location_snapshot_json: resolvedPickupLocationSnapshot,
+    pickup_window_start_at: resolvedPickupWindowStartAt,
+    pickup_window_end_at: resolvedPickupWindowEndAt,
+    pickup_timezone: resolvedPickupTimezone,
+    promo_code: normalizedPromoCode,
+    promo_codes_json: normalizedPromoCodes,
+    analytics_session_key: sessionLink?.sessionKey ?? null,
+    analytics_session_id: sessionLink?.id ?? null,
+    source_cart_id: sourceCartId,
+    fee_plan_key: feeProfile.planKey,
+    fee_bps: feeProfile.feeBps,
+    fee_fixed_cents: feeProfile.feeFixedCents,
+    item_total_cents: itemTotalCents,
+    platform_fee_cents: platformFeeCents,
+    attribution_json: attribution ?? {},
+    items: rpcItems,
+    status: "pending"
+  } as const;
+
+  const createPendingCheckout = () =>
+    supabase
+      .from("storefront_checkout_sessions")
+      .insert(pendingCheckoutValues)
+      .select("id")
+      .single<{ id: string }>();
+
+  const createDigitalManifest = async (checkoutSessionId: string) => {
+    if (!hasDigitalItems || !digitalConsentAcceptedAt) {
+      return null;
+    }
+    return createOrReuseCheckoutManifest({
+      checkoutSessionId,
+      storeId: store.id,
+      items: rpcItems,
+      consent: {
+        version: DIGITAL_PRODUCT_CONFIG.consentVersion,
+        acceptedAt: digitalConsentAcceptedAt
+      }
+    });
+  };
 
   if (shouldUseStubMode) {
+    const stubPaymentRef = `stub_pi_${Date.now()}`;
+    let manifestId: string | null = null;
+    let pendingCheckoutId: string | null = null;
+
+    if (hasDigitalItems) {
+      const { data: pendingCheckout, error: pendingCheckoutError } = await createPendingCheckout();
+      if (pendingCheckoutError || !pendingCheckout) {
+        return NextResponse.json(
+          { error: pendingCheckoutError?.message ?? "Unable to create checkout session." },
+          { status: 500 }
+        );
+      }
+      pendingCheckoutId = pendingCheckout.id;
+
+      try {
+        manifestId = (await createDigitalManifest(pendingCheckout.id))?.manifestId ?? null;
+      } catch (error) {
+        await supabase
+          .from("storefront_checkout_sessions")
+          .update({ status: "failed", error_message: "Digital files were not ready for checkout." })
+          .eq("id", pendingCheckout.id);
+        const status = error instanceof DigitalPurchaseManifestError ? 409 : 500;
+        return NextResponse.json(
+          { error: error instanceof Error ? error.message : "Digital files are not ready for checkout." },
+          { status }
+        );
+      }
+    }
+
     const { data, error } = await supabase.rpc(
-      "stub_checkout_create_paid_order",
-      buildStubCheckoutRpcPayload({
-        storeSlug,
-        customerEmail: email,
-        customerUserId: authenticatedUser?.id ?? null,
-        items: rpcItems,
-        stubPaymentRef: `stub_pi_${Date.now()}`,
-        discountCents,
-        promoCode: null
-      })
+      hasDigitalItems
+        ? "stub_checkout_create_paid_order_with_manifest"
+        : "stub_checkout_create_paid_order",
+      hasDigitalItems
+        ? buildStubCheckoutWithManifestRpcPayload({
+            storeSlug,
+            customerEmail: email,
+            customerUserId: authenticatedUser?.id ?? null,
+            items: rpcItems,
+            stubPaymentRef,
+            discountCents,
+            promoCode: null,
+            checkoutSessionId: pendingCheckoutId!,
+            digitalManifestId: manifestId
+          })
+        : buildStubCheckoutRpcPayload({
+            storeSlug,
+            customerEmail: email,
+            customerUserId: authenticatedUser?.id ?? null,
+            items: rpcItems,
+            stubPaymentRef,
+            discountCents,
+            promoCode: null
+          })
     );
 
     if (error) {
@@ -950,9 +1058,9 @@ export async function POST(request: NextRequest) {
         pickup_timezone: resolvedPickupTimezone,
         promo_code: normalizedPromoCode,
         shipping_fee_cents: shippingFeeCents,
-        digital_consent_version: hasDigitalItems ? "immediate-delivery-v1" : null,
-        digital_consent_accepted_at: hasDigitalItems ? new Date().toISOString() : null,
-        digital_license_version: hasDigitalItems ? "personal-use-v1" : null,
+        digital_consent_version: hasDigitalItems ? DIGITAL_PRODUCT_CONFIG.consentVersion : null,
+        digital_consent_accepted_at: digitalConsentAcceptedAt,
+        digital_license_version: hasDigitalItems ? DIGITAL_PRODUCT_CONFIG.licenseVersion : null,
         total_cents: computedTotalCents
       })
       .eq("id", result.order_id);
@@ -1015,47 +1123,32 @@ export async function POST(request: NextRequest) {
 
   const stripe = getStripeClient();
 
-  const { data: pendingCheckout, error: pendingCheckoutError } = await supabase
-    .from("storefront_checkout_sessions")
-    .insert({
-      store_id: store.id,
-      store_slug: store.slug,
-      customer_email: email,
-      customer_first_name: firstName,
-      customer_last_name: lastName,
-      customer_phone: normalizedPhone,
-      customer_note: normalizedCustomerNote,
-      fulfillment_method: selectedFulfillment.method,
-      fulfillment_label: selectedFulfillment.label,
-      shipping_fee_cents: shippingFeeCents,
-      digital_consent_version: hasDigitalItems ? "immediate-delivery-v1" : null,
-      digital_consent_accepted_at: hasDigitalItems ? new Date().toISOString() : null,
-      digital_license_version: hasDigitalItems ? "personal-use-v1" : null,
-      pickup_location_id: resolvedPickupLocationId,
-      pickup_location_snapshot_json: resolvedPickupLocationSnapshot,
-      pickup_window_start_at: resolvedPickupWindowStartAt,
-      pickup_window_end_at: resolvedPickupWindowEndAt,
-      pickup_timezone: resolvedPickupTimezone,
-      promo_code: normalizedPromoCode,
-      promo_codes_json: normalizedPromoCodes,
-      analytics_session_key: sessionLink?.sessionKey ?? null,
-      analytics_session_id: sessionLink?.id ?? null,
-      source_cart_id: sourceCartId,
-      fee_plan_key: feeProfile.planKey,
-      fee_bps: feeProfile.feeBps,
-      fee_fixed_cents: feeProfile.feeFixedCents,
-      item_total_cents: itemTotalCents,
-      platform_fee_cents: platformFeeCents,
-      attribution_json: attribution ?? {},
-      items: rpcItems,
-      status: "pending"
-    })
-    .select("id")
-    .single<{ id: string }>();
+  const { data: pendingCheckout, error: pendingCheckoutError } = await createPendingCheckout();
 
   if (pendingCheckoutError || !pendingCheckout) {
     return NextResponse.json({ error: pendingCheckoutError?.message ?? "Unable to create checkout session." }, { status: 500 });
   }
+
+  let digitalManifestId: string | null = null;
+  if (hasDigitalItems) {
+    try {
+      digitalManifestId = (await createDigitalManifest(pendingCheckout.id))?.manifestId ?? null;
+    } catch (error) {
+      await supabase
+        .from("storefront_checkout_sessions")
+        .update({ status: "failed", error_message: "Digital files were not ready for checkout." })
+        .eq("id", pendingCheckout.id);
+      const status = error instanceof DigitalPurchaseManifestError ? 409 : 500;
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Digital files are not ready for checkout." },
+        { status }
+      );
+    }
+  }
+
+  const digitalManifestMetadata = digitalManifestId
+    ? buildDigitalManifestStripeMetadata(digitalManifestId)
+    : {};
 
   const appUrl = getAppUrl();
 
@@ -1075,7 +1168,8 @@ export async function POST(request: NextRequest) {
       promo_codes: normalizedPromoCodes.join(","),
       pickup_location_id: resolvedPickupLocationId ?? "",
       pickup_window_start_at: resolvedPickupWindowStartAt ?? "",
-      pickup_window_end_at: resolvedPickupWindowEndAt ?? ""
+      pickup_window_end_at: resolvedPickupWindowEndAt ?? "",
+      ...digitalManifestMetadata
     }
   };
 
@@ -1146,9 +1240,12 @@ export async function POST(request: NextRequest) {
         promo_codes: normalizedPromoCodes.join(","),
         pickup_location_id: resolvedPickupLocationId ?? "",
         pickup_window_start_at: resolvedPickupWindowStartAt ?? "",
-        pickup_window_end_at: resolvedPickupWindowEndAt ?? ""
+        pickup_window_end_at: resolvedPickupWindowEndAt ?? "",
+        ...digitalManifestMetadata
       },
       payment_intent_data: paymentIntentData
+    }, {
+      idempotencyKey: `storefront-checkout:${pendingCheckout.id}`
     });
 
     sessionId = session.id;

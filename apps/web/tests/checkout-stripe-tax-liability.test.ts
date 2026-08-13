@@ -16,6 +16,21 @@ const getStripeClientMock = vi.fn();
 const adminFromMock = vi.fn();
 const serverFromMock = vi.fn();
 const stripeCheckoutCreateMock = vi.fn();
+const createOrReuseCheckoutManifestMock = vi.fn();
+let checkoutProductType: "physical" | "digital";
+let checkoutStoreId: string;
+let pendingCheckoutId: string;
+
+class TestDigitalPurchaseManifestError extends Error {}
+
+vi.mock("@/lib/digital-products/manifest-service", () => ({
+  createOrReuseCheckoutManifest: (...args: unknown[]) =>
+    createOrReuseCheckoutManifestMock(...args),
+  buildDigitalManifestStripeMetadata: (manifestId: string) => ({
+    digital_manifest_id: manifestId
+  }),
+  DigitalPurchaseManifestError: TestDigitalPurchaseManifestError
+}));
 
 vi.mock("@/lib/security/request-origin", () => ({
   enforceTrustedOrigin: (...args: unknown[]) => enforceTrustedOriginMock(...args)
@@ -102,6 +117,10 @@ describe("checkout Stripe tax liability", () => {
     adminFromMock.mockReset();
     serverFromMock.mockReset();
     stripeCheckoutCreateMock.mockReset();
+    createOrReuseCheckoutManifestMock.mockReset();
+    checkoutProductType = "physical";
+    checkoutStoreId = "store-1";
+    pendingCheckoutId = "checkout-1";
 
     enforceTrustedOriginMock.mockReturnValue(null);
     checkRateLimitMock.mockResolvedValue(null);
@@ -161,7 +180,7 @@ describe("checkout Stripe tax liability", () => {
             eq: vi.fn(() => ({
               maybeSingle: vi.fn(async () => ({
                 data: {
-                  id: "store-1",
+                  id: checkoutStoreId,
                   name: "Stripe Shop",
                   slug: "stripe-shop",
                   status: "live",
@@ -251,7 +270,8 @@ describe("checkout Stripe tax liability", () => {
                         id: "11111111-1111-4111-8111-111111111111",
                         title: "Starter Kit",
                         status: "active",
-                        store_id: "store-1"
+                        store_id: checkoutStoreId,
+                        product_type: checkoutProductType
                       }
                     }
                   ],
@@ -267,7 +287,7 @@ describe("checkout Stripe tax liability", () => {
         return {
           insert: vi.fn(() => ({
             select: vi.fn(() => ({
-              single: vi.fn(async () => ({ data: { id: "checkout-1" }, error: null }))
+              single: vi.fn(async () => ({ data: { id: pendingCheckoutId }, error: null }))
             }))
           })),
           update: vi.fn(() => ({
@@ -334,7 +354,8 @@ describe("checkout Stripe tax liability", () => {
           },
           application_fee_amount: 125
         })
-      })
+      }),
+      { idempotencyKey: "storefront-checkout:checkout-1" }
     );
   });
 
@@ -366,6 +387,76 @@ describe("checkout Stripe tax liability", () => {
     expect(response.status).toBe(409);
     expect(payload.error).toBe("This store's Stripe tax setup is not complete yet.");
     expect(stripeCheckoutCreateMock).not.toHaveBeenCalled();
+  });
+
+  test("snapshots digital files before Stripe and sends only the opaque manifest id", async () => {
+    checkoutProductType = "digital";
+    checkoutStoreId = "10000000-0000-4000-8000-000000000001";
+    pendingCheckoutId = "40000000-0000-4000-8000-000000000001";
+    createOrReuseCheckoutManifestMock.mockResolvedValue({
+      manifestId: "b0000000-0000-4000-8000-000000000001",
+      items: [
+        {
+          customerFilename: "private-original.zip",
+          assetVersionId: "70000000-0000-4000-8000-000000000001"
+        }
+      ]
+    });
+
+    const route = await import("@/app/api/orders/checkout/route");
+    const response = await route.POST(
+      buildRequest({
+        firstName: "Alice",
+        lastName: "Buyer",
+        phone: "",
+        email: "alice@example.com",
+        digitalDeliveryConsent: true,
+        items: [
+          {
+            variantId: "33333333-3333-4333-8333-333333333333",
+            quantity: 1
+          }
+        ]
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(createOrReuseCheckoutManifestMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        checkoutSessionId: pendingCheckoutId,
+        storeId: checkoutStoreId,
+        items: [
+          expect.objectContaining({
+            productId: "11111111-1111-4111-8111-111111111111",
+            variantId: "33333333-3333-4333-8333-333333333333",
+            quantity: 1
+          })
+        ]
+      })
+    );
+    expect(
+      createOrReuseCheckoutManifestMock.mock.invocationCallOrder[0]
+    ).toBeLessThan(stripeCheckoutCreateMock.mock.invocationCallOrder[0]!);
+
+    const [stripeRequest, stripeOptions] = stripeCheckoutCreateMock.mock.calls[0]!;
+    expect(stripeOptions).toEqual({
+      idempotencyKey: `storefront-checkout:${pendingCheckoutId}`
+    });
+    expect(stripeRequest.metadata).toEqual(
+      expect.objectContaining({
+        digital_manifest_id: "b0000000-0000-4000-8000-000000000001"
+      })
+    );
+    expect(stripeRequest.payment_intent_data.metadata).toEqual(
+      expect.objectContaining({
+        digital_manifest_id: "b0000000-0000-4000-8000-000000000001"
+      })
+    );
+    expect(JSON.stringify(stripeRequest.metadata)).not.toContain(
+      "private-original.zip"
+    );
+    expect(JSON.stringify(stripeRequest.metadata)).not.toContain("assetVersionId");
+    expect(stripeRequest).not.toHaveProperty("shipping_options");
   });
 
   test("allows checkout for seller-attested no-tax stores when Stripe is operationally ready", async () => {
@@ -541,7 +632,8 @@ describe("checkout Stripe tax liability", () => {
             })
           })
         ]
-      })
+      }),
+      { idempotencyKey: "storefront-checkout:checkout-1" }
     );
     expect(stripeCheckoutCreateMock.mock.calls[0]?.[0]).not.toHaveProperty("automatic_tax");
   });
