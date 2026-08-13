@@ -145,6 +145,18 @@ describe("digital product asset resolution", () => {
   });
 });
 
+describe("digital delivery configuration", () => {
+  it("keeps retry, lease, and batch controls in validated configuration", () => {
+    expect(DIGITAL_PRODUCT_CONFIG.deliveryLeaseSeconds).toBeGreaterThan(0);
+    expect(DIGITAL_PRODUCT_CONFIG.deliveryMaxAttempts).toBeGreaterThan(1);
+    expect(DIGITAL_PRODUCT_CONFIG.deliveryRetryBaseSeconds).toBeGreaterThan(0);
+    expect(DIGITAL_PRODUCT_CONFIG.deliveryRetryMaxSeconds).toBeGreaterThanOrEqual(
+      DIGITAL_PRODUCT_CONFIG.deliveryRetryBaseSeconds,
+    );
+    expect(DIGITAL_PRODUCT_CONFIG.deliveryProcessBatchSize).toBeGreaterThan(0);
+  });
+});
+
 describe("digital product publishing readiness", () => {
   it("reports a missing rights affirmation", () => {
     expect(

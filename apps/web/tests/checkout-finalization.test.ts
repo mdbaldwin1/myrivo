@@ -6,6 +6,8 @@ const calculatePlatformFeeCentsMock = vi.fn();
 const writeOrderFeeBreakdownMock = vi.fn();
 const sendOrderCreatedNotificationsMock = vi.fn();
 const persistPromotionRedemptionsMock = vi.fn();
+const lockManifestToOrderMock = vi.fn();
+const enqueueDigitalDeliveryMock = vi.fn();
 
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: vi.fn(() => ({
@@ -27,6 +29,14 @@ vi.mock("@/lib/promotions/persist-redemptions", () => ({
   persistPromotionRedemptions: (...args: unknown[]) => persistPromotionRedemptionsMock(...args)
 }));
 
+vi.mock("@/lib/digital-products/manifest-service", () => ({
+  lockManifestToOrder: (...args: unknown[]) => lockManifestToOrderMock(...args)
+}));
+
+vi.mock("@/lib/digital-products/delivery-jobs", () => ({
+  enqueueDigitalDelivery: (...args: unknown[]) => enqueueDigitalDeliveryMock(...args)
+}));
+
 vi.mock("@/lib/env", () => ({
   isStripeStubMode: () => false
 }));
@@ -44,6 +54,8 @@ describe("finalizeStorefrontCheckout", () => {
     writeOrderFeeBreakdownMock.mockReset();
     sendOrderCreatedNotificationsMock.mockReset();
     persistPromotionRedemptionsMock.mockReset();
+    lockManifestToOrderMock.mockReset();
+    enqueueDigitalDeliveryMock.mockReset();
 
     resolveStoreFeeProfileMock.mockResolvedValue({
       planKey: "growth",
@@ -54,6 +66,8 @@ describe("finalizeStorefrontCheckout", () => {
     writeOrderFeeBreakdownMock.mockResolvedValue(undefined);
     sendOrderCreatedNotificationsMock.mockResolvedValue(undefined);
     persistPromotionRedemptionsMock.mockResolvedValue(undefined);
+    lockManifestToOrderMock.mockResolvedValue(undefined);
+    enqueueDigitalDeliveryMock.mockResolvedValue({ id: "delivery-job-1", status: "pending" });
   });
 
   test("extracts Stripe-collected shipping details from the current Checkout Session shape", async () => {
@@ -98,6 +112,69 @@ describe("finalizeStorefrontCheckout", () => {
 
     expect(resolveCheckoutShippingAddressSnapshot("digital_only", address, address)).toBeNull();
     expect(resolveCheckoutShippingAddressSnapshot("mixed", null, address)).toEqual(address);
+  });
+
+  test("repairs a completed digital checkout by ensuring its durable delivery job", async () => {
+    adminFromMock.mockImplementation((table: string) => {
+      if (table !== "storefront_checkout_sessions") {
+        throw new Error(`Unexpected table ${table}`);
+      }
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            maybeSingle: vi.fn(async () => ({
+              data: {
+                id: "checkout-completed",
+                store_id: "store-1",
+                store_slug: "digital-shop",
+                analytics_session_id: null,
+                analytics_session_key: null,
+                source_cart_id: null,
+                customer_email: "buyer@example.com",
+                customer_first_name: "Digital",
+                customer_last_name: "Buyer",
+                customer_phone: null,
+                customer_note: null,
+                shipping_address_json: null,
+                fulfillment_method: "digital_delivery",
+                fulfillment_label: "Digital delivery",
+                pickup_location_id: null,
+                pickup_location_snapshot_json: null,
+                pickup_window_start_at: null,
+                pickup_window_end_at: null,
+                pickup_timezone: null,
+                shipping_fee_cents: 0,
+                promo_code: null,
+                promo_codes_json: [],
+                fee_plan_key: "standard",
+                fee_bps: 600,
+                fee_fixed_cents: 30,
+                item_total_cents: 2400,
+                platform_fee_cents: 174,
+                digital_consent_version: "immediate-delivery-v1",
+                digital_consent_accepted_at: "2026-08-13T04:00:00.000Z",
+                digital_license_version: "personal-use-v1",
+                digital_manifest_id: "manifest-1",
+                checkout_composition: "digital_only",
+                items: [],
+                order_id: "order-1",
+                status: "completed"
+              },
+              error: null
+            }))
+          }))
+        }))
+      };
+    });
+
+    const { finalizeStorefrontCheckout } = await import("@/lib/storefront/checkout-finalization");
+
+    await expect(finalizeStorefrontCheckout("checkout-completed", "pi_paid")).resolves.toEqual({
+      status: "completed",
+      orderId: "order-1"
+    });
+    expect(lockManifestToOrderMock).toHaveBeenCalledWith("manifest-1", "order-1");
+    expect(enqueueDigitalDeliveryMock).toHaveBeenCalledWith("order-1", "manifest-1");
   });
 
   test("persists the Stripe shipping address onto the order and checkout session", async () => {

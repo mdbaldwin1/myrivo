@@ -10,7 +10,7 @@ import {
   buildStubCheckoutWithManifestRpcPayload
 } from "@/lib/storefront/stub-checkout";
 import { getStripeClient } from "@/lib/stripe/server";
-import { issueDigitalEntitlements } from "@/lib/digital-products/entitlements";
+import { enqueueDigitalDelivery } from "@/lib/digital-products/delivery-jobs";
 import { lockManifestToOrder } from "@/lib/digital-products/manifest-service";
 import type { CheckoutComposition } from "@/lib/storefront/checkout-composition";
 
@@ -293,6 +293,7 @@ export async function finalizeStorefrontCheckout(
   if (checkout.status === "completed" && checkout.order_id) {
     if (checkout.digital_manifest_id) {
       await lockManifestToOrder(checkout.digital_manifest_id, checkout.order_id);
+      await enqueueDigitalDelivery(checkout.order_id, checkout.digital_manifest_id);
     }
     return { status: "completed" as const, orderId: checkout.order_id };
   }
@@ -311,6 +312,7 @@ export async function finalizeStorefrontCheckout(
     if (existingOrder) {
       if (checkout.digital_manifest_id) {
         await lockManifestToOrder(checkout.digital_manifest_id, existingOrder.id);
+        await enqueueDigitalDelivery(existingOrder.id, checkout.digital_manifest_id);
       }
       const { data: existingOrderRow, error: existingOrderFetchError } = await supabase
         .from("orders")
@@ -500,7 +502,9 @@ export async function finalizeStorefrontCheckout(
   }
 
   await sendOrderCreatedNotifications(orderId);
-  await issueDigitalEntitlements(orderId);
+  if (checkout.digital_manifest_id) {
+    await enqueueDigitalDelivery(orderId, checkout.digital_manifest_id);
+  }
 
   return { status: "completed" as const, orderId };
 }

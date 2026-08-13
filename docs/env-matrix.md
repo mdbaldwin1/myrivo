@@ -106,6 +106,15 @@ Recommended local defaults:
 - `NOTIFICATIONS_CRON_SECRET`
   - Required to secure `/api/notifications/digest/weekly`
 
+### Digital delivery processor
+
+- `DIGITAL_DELIVERY_PROCESS_SECRET`
+  - Required to authorize `POST /api/internal/digital-delivery/process`; use a random value of at least 32 characters.
+- `DIGITAL_DELIVERY_TOKEN_SECRET`
+  - Required to derive reproducible purchase bearer tokens without storing them; use a separate random value of at least 32 characters and keep it stable across deploys.
+- `RESEND_API_KEY` and a configured platform sender
+  - Required before processing digital-delivery jobs so the buyer notification can complete.
+
 ### Vercel domain automation
 
 - `VERCEL_API_TOKEN`
@@ -141,7 +150,7 @@ These are not general app runtime vars, but they matter for automated delivery:
 
 ## Notes
 
-- Keep `SUPABASE_SERVICE_ROLE_KEY`, Stripe secrets, Resend keys, and Vercel API tokens server-only.
+- Keep `SUPABASE_SERVICE_ROLE_KEY`, digital-delivery secrets, Stripe secrets, Resend keys, and Vercel API tokens server-only.
 - `NEXT_PUBLIC_APP_URL` should match the real deployed origin in production, and the Supabase auth redirect allowlist should include its callback URL.
 - `MYRIVO_PUBLIC_APP_URL` lets local/dev runtime actions still generate public-facing email links without pointing recipients at `localhost`.
 - `MYRIVO_SINGLE_STORE_SLUG` is a fallback/default runtime slug, not the source of truth for store ownership.

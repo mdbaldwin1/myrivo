@@ -81,6 +81,10 @@ const serializedCartMutationsMigration = join(
   repoRoot,
   "supabase/migrations/20260813007000_serialize_authenticated_cart_mutations.sql",
 );
+const durableDigitalDeliveryMigration = join(
+  repoRoot,
+  "supabase/migrations/20260813008000_durable_digital_delivery.sql",
+);
 
 const ids = {
   storeA: "10000000-0000-0000-0000-000000000001",
@@ -170,7 +174,8 @@ returns boolean language sql stable as $$ select false $$;
 
 create table public.stores (
   id uuid primary key,
-  owner_user_id uuid not null references auth.users(id)
+  owner_user_id uuid not null references auth.users(id),
+  name text not null default 'Store'
 );
 create table public.products (
   id uuid primary key,
@@ -185,7 +190,8 @@ create table public.product_variants (
 create table public.orders (
   id uuid primary key,
   store_id uuid not null references public.stores(id),
-  customer_email text not null default 'customer@example.test'
+  customer_email text not null default 'customer@example.test',
+  status text not null default 'paid'
 );
 create table public.order_items (
   id uuid primary key,
@@ -451,6 +457,9 @@ beforeAll(() => {
   if (!existsSync(serializedCartMutationsMigration)) {
     throw new Error(`Missing serialized cart mutations migration: ${serializedCartMutationsMigration}`);
   }
+  if (!existsSync(durableDigitalDeliveryMigration)) {
+    throw new Error(`Missing durable digital delivery migration: ${durableDigitalDeliveryMigration}`);
+  }
 
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-digital-migration-"));
   port = 55432 + (process.pid % 9000);
@@ -518,6 +527,7 @@ beforeAll(() => {
     applyMigration(database, publishingReadinessChildLockMigration);
     applyMigration(database, publishingReadinessRelationMoveMigration);
     applyMigration(database, checkoutManifestMigration);
+    applyMigration(database, durableDigitalDeliveryMigration);
   }
 
   execFileSync(createdb, ["full_chain"], {
@@ -1221,6 +1231,422 @@ describe("transactional checkout manifests", () => {
           has_function_privilege('authenticated', 'public.lock_digital_checkout_manifest(uuid,uuid)', 'execute')::text || ':' ||
           has_function_privilege('service_role', 'public.create_or_reuse_digital_checkout_manifest(uuid,uuid,jsonb,text,timestamp with time zone,text)', 'execute')::text || ':' ||
           has_function_privilege('service_role', 'public.stub_checkout_create_paid_order_with_manifest(text,text,uuid,jsonb,text,integer,text,uuid,uuid)', 'execute')::text`,
+      ),
+    ).toBe("false:false:true:true");
+  });
+});
+
+describe("durable digital delivery", () => {
+  const deliveryItemsSql = `jsonb_build_array(jsonb_build_object(
+    'productId', '${ids.manifestProduct}',
+    'variantId', '${ids.manifestVariant}',
+    'quantity', 1,
+    'variantLabel', 'Blue',
+    'productTitle', 'Digital set',
+    'productType', 'digital',
+    'unitPriceCents', 2500
+  ))`;
+
+  function retireClaimableJobs() {
+    runSql(
+      "full_chain",
+      `update public.digital_delivery_attempts
+       set status = 'failed', safe_error = 'Test isolation', finished_at = now()
+       where status = 'processing';
+       update public.digital_delivery_jobs
+       set status = 'failed', lease_expires_at = null, lease_token = null,
+           last_safe_error = 'Test isolation', completed_at = now(), updated_at = now()
+       where status in ('pending', 'processing')`,
+    );
+  }
+
+  function prepareDeliveryCheckout(suffix: string) {
+    const checkoutId = `42000000-0000-4000-8000-${suffix}`;
+    runSql(
+      "full_chain",
+      `update public.products set status = 'active' where id = '${ids.manifestProduct}';
+       update public.product_variants set status = 'active' where id = '${ids.manifestVariant}';
+       insert into public.storefront_checkout_sessions(
+         id, store_id, store_slug, customer_email, customer_first_name,
+         customer_last_name, items, checkout_composition, fulfillment_method,
+         fulfillment_label, shipping_fee_cents, promo_codes_json,
+         applied_promotions_json, fee_plan_key, fee_bps, fee_fixed_cents,
+         item_total_cents, platform_fee_cents, checkout_mode,
+         tax_collection_mode_snapshot, status, digital_consent_version,
+         digital_consent_accepted_at, digital_license_version
+       ) values (
+         '${checkoutId}', '${ids.manifestStore}', 'manifest-store',
+         'delivery-${suffix}@example.test', 'Digital', 'Buyer',
+         ${deliveryItemsSql}, 'digital_only', 'digital_delivery',
+         'Digital delivery', 0, '[]'::jsonb, '[]'::jsonb, 'standard',
+         600, 30, 2500, 180, 'stub', 'seller_attested_no_tax', 'pending',
+         '${DIGITAL_PRODUCT_CONFIG.consentVersion}', now(),
+         '${DIGITAL_PRODUCT_CONFIG.licenseVersion}'
+       )`,
+    );
+    const manifestId = runSql(
+      "full_chain",
+      `select result ->> 'manifestId'
+       from (
+         select public.create_or_reuse_digital_checkout_manifest(
+           '${checkoutId}', '${ids.manifestStore}', ${deliveryItemsSql},
+           '${DIGITAL_PRODUCT_CONFIG.consentVersion}',
+           (select digital_consent_accepted_at from public.storefront_checkout_sessions where id = '${checkoutId}'),
+           '${DIGITAL_PRODUCT_CONFIG.licenseVersion}'
+         ) result
+       ) manifest`,
+    );
+    return { checkoutId, manifestId };
+  }
+
+  function finalizeDeliveryCheckout(suffix: string) {
+    const prepared = prepareDeliveryCheckout(suffix);
+    const paymentRef = `stub_pi_delivery_${suffix}`;
+    const orderId = runSql(
+      "full_chain",
+      `select order_id from public.stub_checkout_create_paid_order_with_manifest(
+        'manifest-store', 'ignored@example.test', null, '[]'::jsonb,
+        '${paymentRef}', 0, null, '${prepared.checkoutId}', '${prepared.manifestId}'
+      )`,
+    );
+    const jobId = runSql(
+      "full_chain",
+      `select id from public.digital_delivery_jobs
+       where order_id = '${orderId}' and job_type = 'purchase_delivery'`,
+    );
+    return { ...prepared, orderId, jobId, paymentRef };
+  }
+
+  function claimDelivery(leaseSeconds = 120, maxAttempts = 8) {
+    return JSON.parse(
+      runSql(
+        "full_chain",
+        `select row_to_json(claim) from public.claim_digital_delivery_job(
+          ${leaseSeconds}, ${maxAttempts}
+        ) claim`,
+      ),
+    ) as {
+      id: string;
+      order_id: string;
+      manifest_id: string;
+      lease_token: string;
+      attempt_number: number;
+      notification_sent_at: string | null;
+    };
+  }
+
+  function materializeStatement(job: ReturnType<typeof claimDelivery>) {
+    return `select public.materialize_digital_delivery_from_manifest(
+      '${job.id}', '${job.lease_token}',
+      '70000000-0000-4000-8000-000000000071', repeat('a', 64),
+      172800, ${DIGITAL_PRODUCT_CONFIG.grantsPerFile}
+    )`;
+  }
+
+  it("rolls the paid order back when its durable job cannot be inserted", () => {
+    retireClaimableJobs();
+    const fixture = prepareDeliveryCheckout("000000000071");
+    runSql(
+      "full_chain",
+      `create function public.test_reject_delivery_enqueue()
+       returns trigger language plpgsql as $$
+       begin
+         raise exception 'Injected delivery enqueue failure';
+       end;
+       $$;
+       create trigger test_reject_delivery_enqueue
+       before insert on public.digital_delivery_jobs
+       for each row execute function public.test_reject_delivery_enqueue()`,
+    );
+
+    try {
+      expectRejected(
+        "full_chain",
+        `select * from public.stub_checkout_create_paid_order_with_manifest(
+          'manifest-store', 'ignored@example.test', null, '[]'::jsonb,
+          'stub_pi_delivery_atomic', 0, null,
+          '${fixture.checkoutId}', '${fixture.manifestId}'
+        )`,
+      );
+      expect(
+        runSql(
+          "full_chain",
+          "select count(*) from public.orders where stripe_payment_intent_id = 'stub_pi_delivery_atomic'",
+        ),
+      ).toBe("0");
+      expect(
+        runSql(
+          "full_chain",
+          `select status from public.digital_purchase_manifests where id = '${fixture.manifestId}'`,
+        ),
+      ).toBe("draft");
+    } finally {
+      runSql(
+        "full_chain",
+        `drop trigger if exists test_reject_delivery_enqueue on public.digital_delivery_jobs;
+         drop function if exists public.test_reject_delivery_enqueue()`,
+      );
+    }
+
+    const orderId = runSql(
+      "full_chain",
+      `select order_id from public.stub_checkout_create_paid_order_with_manifest(
+        'manifest-store', 'ignored@example.test', null, '[]'::jsonb,
+        'stub_pi_delivery_atomic', 0, null,
+        '${fixture.checkoutId}', '${fixture.manifestId}'
+      )`,
+    );
+    runSql(
+      "full_chain",
+      `select public.enqueue_digital_delivery('${orderId}', '${fixture.manifestId}');
+       select public.enqueue_digital_delivery('${orderId}', '${fixture.manifestId}')`,
+    );
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.digital_delivery_jobs where order_id = '${orderId}'`,
+      ),
+    ).toBe("1");
+  });
+
+  it("atomically gives one worker the lease under concurrent claims", async () => {
+    retireClaimableJobs();
+    const fixture = finalizeDeliveryCheckout("000000000072");
+    const statement = `select row_to_json(claim) from public.claim_digital_delivery_job(120, 8) claim`;
+    const [first, second] = await Promise.all([
+      runSqlAsync("full_chain", statement, "delivery-claim-a"),
+      runSqlAsync("full_chain", statement, "delivery-claim-b"),
+    ]);
+    const claimed = [first, second].filter(Boolean).map((value) => JSON.parse(value));
+
+    expect(claimed).toHaveLength(1);
+    expect(claimed[0]).toMatchObject({
+      id: fixture.jobId,
+      order_id: fixture.orderId,
+      manifest_id: fixture.manifestId,
+      attempt_number: 1,
+    });
+    expect(claimed[0].lease_token).toMatch(/^[a-f0-9-]{36}$/);
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.digital_delivery_attempts
+         where job_id = '${fixture.jobId}' and status = 'processing'`,
+      ),
+    ).toBe("1");
+  });
+
+  it("rolls back after entitlement row one and concurrent retries converge to the manifest and one token", async () => {
+    retireClaimableJobs();
+    const fixture = finalizeDeliveryCheckout("000000000073");
+    runSql(
+      "full_chain",
+      `insert into public.digital_product_asset_versions(
+        id, asset_id, version_number, storage_path, customer_filename,
+        mime_type, byte_size, checksum_sha256, status
+      ) values (
+        '71000000-0000-4000-8000-000000000073',
+        '${ids.manifestProductWideAsset}', 4,
+        '${ids.manifestStore}/${ids.manifestProduct}/${ids.manifestProductWideAsset}/v4/current.pdf',
+        'current-catalog.pdf', 'application/pdf', 500, repeat('7', 64), 'ready'
+      )`,
+    );
+    const job = claimDelivery();
+    expect(job.id).toBe(fixture.jobId);
+
+    runSql(
+      "full_chain",
+      `create function public.test_reject_second_entitlement()
+       returns trigger language plpgsql as $$
+       begin
+         if new.asset_id = '${ids.manifestProductWideAsset}' then
+           raise exception 'Injected entitlement row two failure';
+         end if;
+         return new;
+       end;
+       $$;
+       create trigger test_reject_second_entitlement
+       before insert on public.digital_order_entitlements
+       for each row execute function public.test_reject_second_entitlement()`,
+    );
+    try {
+      expectRejected("full_chain", materializeStatement(job));
+      expect(
+        runSql(
+          "full_chain",
+          `select count(*) from public.digital_order_entitlements where order_id = '${fixture.orderId}'`,
+        ),
+      ).toBe("0");
+      expect(
+        runSql(
+          "full_chain",
+          `select count(*) from public.digital_order_access_tokens where order_id = '${fixture.orderId}'`,
+        ),
+      ).toBe("0");
+    } finally {
+      runSql(
+        "full_chain",
+        `drop trigger if exists test_reject_second_entitlement on public.digital_order_entitlements;
+         drop function if exists public.test_reject_second_entitlement()`,
+      );
+    }
+
+    const statement = materializeStatement(job);
+    const [first, second] = await Promise.all([
+      runSqlAsync("full_chain", statement, "delivery-materialize-a"),
+      runSqlAsync("full_chain", statement, "delivery-materialize-b"),
+    ]);
+    expect(JSON.parse(first)).toEqual(JSON.parse(second));
+    expect(JSON.parse(first)).toMatchObject({ entitlement_count: 2 });
+    expect(
+      runSql(
+        "full_chain",
+        `select string_agg(customer_filename, ',' order by customer_filename)
+         from public.digital_order_entitlements where order_id = '${fixture.orderId}'`,
+      ),
+    ).toBe("blue-printable.zip,instructions-v3.pdf");
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.digital_order_access_tokens
+         where order_id = '${fixture.orderId}' and issuance_reason = 'purchase'
+           and revoked_at is null`,
+      ),
+    ).toBe("1");
+    expect(
+      runSql(
+        "full_chain",
+        `select extract(epoch from expires_at - created_at)::integer
+         from public.digital_order_access_tokens
+         where order_id = '${fixture.orderId}' and issuance_reason = 'purchase'
+           and revoked_at is null`,
+      ),
+    ).toBe("172800");
+
+    runSql(
+      "full_chain",
+      `select public.mark_digital_delivery_notification_sent('${job.id}', '${job.lease_token}');
+       select public.complete_digital_delivery_job(
+         '${job.id}', '${job.lease_token}', 'succeeded', null, 8, 60, 21600
+       )`,
+    );
+    expect(
+      runSql(
+        "full_chain",
+        `select status || ':' || (notification_sent_at is not null)::text
+         from public.digital_delivery_jobs where id = '${job.id}'`,
+      ),
+    ).toBe("succeeded:true");
+  });
+
+  it("treats entitlements outside the locked manifest as an operational mismatch", () => {
+    retireClaimableJobs();
+    const fixture = finalizeDeliveryCheckout("000000000074");
+    const job = claimDelivery();
+    const orderItemId = runSql(
+      "full_chain",
+      `select id from public.order_items where order_id = '${fixture.orderId}'`,
+    );
+    runSql(
+      "full_chain",
+      `insert into public.digital_order_entitlements(
+        store_id, order_id, order_item_id, product_id, product_variant_id,
+        asset_id, asset_version_id, customer_filename, mime_type, byte_size,
+        license_version, max_download_grants
+      ) values (
+        '${ids.manifestStore}', '${fixture.orderId}', '${orderItemId}',
+        '${ids.manifestProduct}', '${ids.manifestVariant}',
+        '${ids.manifestProductWideAsset}', '${ids.manifestProductWideV1}',
+        'legacy-catalog-file.pdf', 'application/pdf', 100,
+        '${DIGITAL_PRODUCT_CONFIG.licenseVersion}', ${DIGITAL_PRODUCT_CONFIG.grantsPerFile}
+      )`,
+    );
+
+    expectRejected("full_chain", materializeStatement(job));
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.digital_order_entitlements where order_id = '${fixture.orderId}'`,
+      ),
+    ).toBe("1");
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.digital_order_access_tokens where order_id = '${fixture.orderId}'`,
+      ),
+    ).toBe("0");
+  });
+
+  it("recovers stale leases with exponential backoff and dead-letters at the bound", async () => {
+    retireClaimableJobs();
+    const fixture = finalizeDeliveryCheckout("000000000075");
+    const first = claimDelivery(1, 3);
+    expect(first.id).toBe(fixture.jobId);
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 1_100));
+    const second = claimDelivery(120, 3);
+    expect(second).toMatchObject({ id: fixture.jobId, attempt_number: 2 });
+    expect(
+      runSql(
+        "full_chain",
+        `select status || ':' || safe_error from public.digital_delivery_attempts
+         where job_id = '${fixture.jobId}' and attempt_number = 1`,
+      ),
+    ).toBe("failed:Processing lease expired");
+
+    const retry = JSON.parse(
+      runSql(
+        "full_chain",
+        `select public.complete_digital_delivery_job(
+          '${second.id}', '${second.lease_token}', 'failed',
+          'Authorization: Bearer secret buyer@example.test https://myrivo.test/downloads/raw',
+          3, 10, 30
+        )`,
+      ),
+    ) as { status: string; next_attempt_at: string };
+    expect(retry.status).toBe("pending");
+    expect(new Date(retry.next_attempt_at).getTime()).toBeGreaterThan(
+      Date.now() + 18_000,
+    );
+    expect(
+      runSql(
+        "full_chain",
+        `select last_safe_error from public.digital_delivery_jobs where id = '${fixture.jobId}'`,
+      ),
+    ).toBe("Digital delivery attempt failed");
+
+    runSql(
+      "full_chain",
+      `update public.digital_delivery_jobs set next_attempt_at = now() where id = '${fixture.jobId}'`,
+    );
+    const third = claimDelivery(120, 3);
+    const terminal = JSON.parse(
+      runSql(
+        "full_chain",
+        `select public.complete_digital_delivery_job(
+          '${third.id}', '${third.lease_token}', 'failed', 'Provider unavailable',
+          3, 10, 30
+        )`,
+      ),
+    ) as { status: string; next_attempt_at: null };
+    expect(terminal).toEqual({ status: "failed", next_attempt_at: null });
+    expect(
+      runSql(
+        "full_chain",
+        `select status || ':' || attempt_count::text || ':' || (completed_at is not null)::text
+         from public.digital_delivery_jobs where id = '${fixture.jobId}'`,
+      ),
+    ).toBe("failed:3:true");
+  });
+
+  it("keeps every delivery mutation service-role-only while merchants can read failures", () => {
+    expect(
+      runSql(
+        "full_chain",
+        `select
+          has_function_privilege('anon', 'public.claim_digital_delivery_job(integer,integer)', 'execute')::text || ':' ||
+          has_function_privilege('authenticated', 'public.materialize_digital_delivery_from_manifest(uuid,uuid,uuid,text,integer,integer)', 'execute')::text || ':' ||
+          has_function_privilege('service_role', 'public.enqueue_digital_delivery(uuid,uuid)', 'execute')::text || ':' ||
+          has_function_privilege('service_role', 'public.complete_digital_delivery_job(uuid,uuid,text,text,integer,integer,integer)', 'execute')::text`,
       ),
     ).toBe("false:false:true:true");
   });

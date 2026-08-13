@@ -7,6 +7,7 @@ export type SendTransactionalEmailInput = {
   text: string;
   html?: string | null;
   replyTo?: string | null;
+  idempotencyKey?: string | null;
 };
 
 export type SendTransactionalEmailResult = {
@@ -39,7 +40,10 @@ async function sendWithResend(input: SendTransactionalEmailInput): Promise<SendT
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      ...(input.idempotencyKey?.trim()
+        ? { "Idempotency-Key": input.idempotencyKey.trim() }
+        : {})
     },
     body: JSON.stringify(payload)
   });

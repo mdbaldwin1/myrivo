@@ -27,6 +27,20 @@ describe("env schema", () => {
     expect(parsed.success).toBe(true);
   });
 
+  test("rejects weak digital delivery credentials", () => {
+    expect(serverEnvSchema.safeParse({
+      SUPABASE_SERVICE_ROLE_KEY: "service-role",
+      DIGITAL_DELIVERY_PROCESS_SECRET: "short",
+      DIGITAL_DELIVERY_TOKEN_SECRET: "also-short"
+    }).success).toBe(false);
+
+    expect(serverEnvSchema.safeParse({
+      SUPABASE_SERVICE_ROLE_KEY: "service-role",
+      DIGITAL_DELIVERY_PROCESS_SECRET: "process-secret-that-is-at-least-32-characters",
+      DIGITAL_DELIVERY_TOKEN_SECRET: "token-secret-that-is-at-least-32-characters"
+    }).success).toBe(true);
+  });
+
   test("stripe env validates checkout keys", () => {
     const parsed = stripeEnvSchema.safeParse({
       STRIPE_SECRET_KEY: "sk_test_123",

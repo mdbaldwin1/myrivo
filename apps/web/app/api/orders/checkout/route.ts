@@ -34,7 +34,7 @@ import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isStorePaymentsReadyForLaunch, type StoreTaxCollectionMode } from "@/lib/stores/tax-compliance";
-import { issueDigitalEntitlements } from "@/lib/digital-products/entitlements";
+import { enqueueDigitalDelivery } from "@/lib/digital-products/delivery-jobs";
 import { DIGITAL_PRODUCT_CONFIG } from "@/lib/digital-products/config";
 import {
   buildDigitalManifestStripeMetadata,
@@ -551,7 +551,9 @@ async function resumeStubCheckout(
   }
 
   await sendOrderCreatedNotifications(result.order_id);
-  await issueDigitalEntitlements(result.order_id);
+  if (manifestId) {
+    await enqueueDigitalDelivery(result.order_id, manifestId);
+  }
 
   return NextResponse.json({
     orderId: result.order_id,
@@ -568,6 +570,9 @@ async function resumeStripeCheckout(
   checkout: CheckoutAttemptRow
 ) {
   if (checkout.status === "completed" && checkout.order_id) {
+    if (checkout.digital_manifest_id) {
+      await enqueueDigitalDelivery(checkout.order_id, checkout.digital_manifest_id);
+    }
     return NextResponse.json({
       orderId: checkout.order_id,
       status: "paid",

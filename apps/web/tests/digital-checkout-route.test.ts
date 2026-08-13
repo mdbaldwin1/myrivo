@@ -13,6 +13,7 @@ const adminFromMock = vi.fn();
 const adminRpcMock = vi.fn();
 const stripeCheckoutCreateMock = vi.fn();
 const createOrReuseCheckoutManifestMock = vi.fn();
+const enqueueDigitalDeliveryMock = vi.fn();
 
 const ids = {
   store: "10000000-0000-4000-8000-000000000001",
@@ -70,7 +71,9 @@ vi.mock("@/lib/billing/fees", () => ({
   calculatePlatformFeeCents: (...args: unknown[]) => calculatePlatformFeeCentsMock(...args)
 }));
 vi.mock("@/lib/notifications/order-emails", () => ({ sendOrderCreatedNotifications: vi.fn() }));
-vi.mock("@/lib/digital-products/entitlements", () => ({ issueDigitalEntitlements: vi.fn() }));
+vi.mock("@/lib/digital-products/delivery-jobs", () => ({
+  enqueueDigitalDelivery: (...args: unknown[]) => enqueueDigitalDeliveryMock(...args)
+}));
 vi.mock("@/lib/env", () => ({
   getAppUrl: () => "https://www.myrivo.app",
   isStripeStubMode: () => false
@@ -214,6 +217,7 @@ describe("digital checkout composition", () => {
     });
     getStripeClientMock.mockReturnValue({ checkout: { sessions: { create: stripeCheckoutCreateMock } } });
     createOrReuseCheckoutManifestMock.mockResolvedValue({ manifestId: ids.manifest, items: [] });
+    enqueueDigitalDeliveryMock.mockResolvedValue({ id: "delivery-job-1", status: "pending" });
 
     adminRpcMock.mockImplementation(async (name: string, args: Record<string, unknown>) => {
       if (name === "get_storefront_checkout_attempt") return { data: null, error: null };
@@ -301,6 +305,85 @@ describe("digital checkout composition", () => {
     expect(stripePayload).not.toHaveProperty("billing_address_collection");
     expect(stripePayload).not.toHaveProperty("shipping_address_collection");
     expect(stripePayload).not.toHaveProperty("shipping_options");
+  });
+
+  test("repairs durable delivery when a completed Stripe checkout is resumed", async () => {
+    adminRpcMock.mockImplementation(async (name: string) => {
+      if (name === "get_storefront_checkout_attempt") {
+        return {
+          data: {
+            id: ids.checkout,
+            store_id: ids.store,
+            store_slug: "digital-shop",
+            customer_email: "alice@example.com",
+            customer_first_name: "Alice",
+            customer_last_name: "Buyer",
+            customer_phone: null,
+            customer_note: null,
+            fulfillment_method: "digital_delivery",
+            fulfillment_label: "Digital delivery",
+            shipping_fee_cents: 0,
+            pickup_location_id: null,
+            pickup_location_snapshot_json: null,
+            pickup_window_start_at: null,
+            pickup_window_end_at: null,
+            pickup_timezone: null,
+            promo_code: null,
+            promo_codes_json: [],
+            applied_promotions_json: [],
+            analytics_session_key: null,
+            analytics_session_id: null,
+            source_cart_id: null,
+            fee_plan_key: "standard",
+            fee_bps: 600,
+            fee_fixed_cents: 30,
+            item_total_cents: 2400,
+            platform_fee_cents: 174,
+            attribution_json: {},
+            items: [{
+              productId: ids.digitalProduct,
+              variantId: ids.digitalVariant,
+              productTitle: "Printable set",
+              variantLabel: "Default",
+              productType: "digital",
+              unitPriceCents: 2400,
+              quantity: 1
+            }],
+            checkout_composition: "digital_only",
+            digital_consent_version: "immediate-delivery-v1",
+            digital_consent_accepted_at: "2026-08-13T04:00:00.000Z",
+            digital_license_version: "personal-use-v1",
+            digital_manifest_id: ids.manifest,
+            checkout_mode: "stripe",
+            stripe_account_id_snapshot: "acct_123",
+            tax_collection_mode_snapshot: "stripe_tax",
+            status: "completed",
+            order_id: "70000000-0000-4000-8000-000000000001",
+            stripe_checkout_session_id: "cs_test_completed",
+            stripe_checkout_url: "https://checkout.stripe.test/completed",
+            checkout_attempt_key: "018f6fc1-8adc-7f43-8000-000000000601",
+            checkout_request_fingerprint_sha256: "a".repeat(64),
+            created: false
+          },
+          error: null
+        };
+      }
+      throw new Error(`Unexpected RPC ${name}`);
+    });
+
+    const route = await import("@/app/api/orders/checkout/route");
+    const response = await route.POST(buildRequest());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      orderId: "70000000-0000-4000-8000-000000000001",
+      status: "paid",
+      paymentMode: "stripe"
+    });
+    expect(enqueueDigitalDeliveryMock).toHaveBeenCalledWith(
+      "70000000-0000-4000-8000-000000000001",
+      ids.manifest
+    );
   });
 
   test("rejects an aggregated duplicate digital line instead of selling quantity two", async () => {

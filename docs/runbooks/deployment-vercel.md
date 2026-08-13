@@ -28,6 +28,10 @@ Add these when the corresponding production features are enabled:
   - `MYRIVO_EMAIL_FROM`
   - `MYRIVO_EMAIL_PLATFORM_FROM`
   - `MYRIVO_EMAIL_REPLY_TO`
+- Digital-product delivery worker
+  - `DIGITAL_DELIVERY_PROCESS_SECRET`
+  - `DIGITAL_DELIVERY_TOKEN_SECRET`
+  - Configure the scheduler to `POST /api/internal/digital-delivery/process` with `Authorization: Bearer <DIGITAL_DELIVERY_PROCESS_SECRET>` only after the digital-product release gate is enabled.
 - Onboarding AI
   - `MYRIVO_ONBOARDING_AI_PROVIDER`
   - `MYRIVO_ONBOARDING_AI_MODEL`
