@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Added a service-role-only, run/store/project-bound non-production acceptance controller with tamper-resistant audit, separate evidence signing credentials, valid image fixtures, and encoded Stripe-hosted digital/mixed checkout journeys.
 - Made digital-product promotion evidence current-run and signed, added a production-disabled acceptance control plane with independent state observations, moved core acceptance actions into the merchant/buyer UI, enforced unique migration versions with release/session privilege tests, and added retryable download network-timeout feedback.
 - Removed digital-download bearers from request paths and browser history through fragment-to-HttpOnly-session exchange, added a database-authoritative provider/reviewer rollout interlock and fail-closed release command, and improved reduced-motion and download-progress feedback.
 - Kept checkout and signed-in first access bearer-free by establishing download sessions server-side, made grant issuance a trusted-origin POST, made fragment exchange retry-safe, and bound acceptance to the exact release, evidence digest, origin, environment, and pre-merge promotion check.

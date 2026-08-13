@@ -9,7 +9,7 @@ const schema = z.object({
   merchant: identity, customer: identity, storeSlug: z.string().min(1), productSlug: z.string().min(1),
   orderId: z.string().uuid(), productId: z.string().uuid(),
   controlUrl: relativeRoute,
-  routes: z.object({ catalogFiles: relativeRoute, product: relativeRoute, cart: relativeRoute, checkoutReturn: relativeRoute, download: relativeRoute, recovery: relativeRoute, customerOrder: relativeRoute, merchantOrder: relativeRoute }).strict(),
+  routes: z.object({ catalogFiles: relativeRoute, product: relativeRoute, physicalProduct: relativeRoute, cart: relativeRoute, checkoutReturn: relativeRoute, download: relativeRoute, recovery: relativeRoute, customerOrder: relativeRoute, merchantOrder: relativeRoute }).strict(),
 }).strict();
 
 export type DigitalAcceptanceFixture = z.infer<typeof schema>;
@@ -26,8 +26,8 @@ export function loadDigitalAcceptanceFixture(): DigitalAcceptanceFixture | null 
   return fixture;
 }
 
-export async function acceptanceAction(request: import("@playwright/test").APIRequestContext, fixture: DigitalAcceptanceFixture, action: "observe" | "reset" | "inject-delivery-failure" | "inject-refund" | "inject-dispute", transition?: "partial" | "full" | "opened" | "won" | "lost") {
-  const response = await request.post(fixture.controlUrl, { headers: { authorization: `Bearer ${fixture.controlSecret}` }, data: { version: 1, action, runId: fixture.runId, subjectId: fixture.orderId, ...(transition ? { transition } : {}) } });
+export async function acceptanceAction(request: import("@playwright/test").APIRequestContext, fixture: DigitalAcceptanceFixture, action: "observe" | "reset" | "expire-access" | "inject-delivery-failure" | "inject-refund" | "inject-dispute", transition?: "partial" | "full" | "opened" | "won" | "lost") {
+  const response = await request.post(fixture.controlUrl, { headers: { authorization: `Bearer ${fixture.controlSecret}` }, data: { version: 1, action, runId: fixture.runId, subjectId: fixture.orderId, idempotencyKey: crypto.randomUUID(), ...(transition ? { transition } : {}) } });
   if (!response.ok()) throw new Error(`Acceptance action ${action} failed with ${response.status()}`);
   const body = await response.json() as { version?: number; runId?: string; observedAt?: string; observation?: Record<string, unknown> };
   if (body.version !== 1 || body.runId !== fixture.runId || !body.observedAt || !body.observation) throw new Error(`Acceptance action ${action} returned unbound evidence.`);
@@ -35,7 +35,9 @@ export async function acceptanceAction(request: import("@playwright/test").APIRe
   if (output) {
     const existing = fs.existsSync(output) ? JSON.parse(fs.readFileSync(output, "utf8")) : { schemaVersion: 3, runId: fixture.runId, origin: new URL(fixture.baseUrl).origin, releaseVersion: process.env.MYRIVO_DIGITAL_RELEASE_SHA, environment: process.env.MYRIVO_DIGITAL_ACCEPTANCE_ENVIRONMENT, startedAt: new Date().toISOString(), observations: [] };
     delete existing.signature; existing.observations.push({ action, transition, ...body }); existing.completedAt = new Date().toISOString();
-    const unsigned = JSON.stringify(existing); existing.signature = createHmac("sha256", fixture.controlSecret).update(unsigned).digest("hex");
+    const signingKey = process.env.MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_HMAC_KEY;
+    if (!signingKey || signingKey.length < 32 || signingKey === fixture.controlSecret) throw new Error("A separate evidence HMAC key is required.");
+    const unsigned = JSON.stringify(existing); existing.signature = createHmac("sha256", signingKey).update(unsigned).digest("hex");
     fs.writeFileSync(output, JSON.stringify(existing));
   }
   return body;

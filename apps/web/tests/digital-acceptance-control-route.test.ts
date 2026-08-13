@@ -14,16 +14,28 @@ describe("digital acceptance control route", () => {
     process.env.MYRIVO_DIGITAL_ACCEPTANCE_CONTROL_SECRET = "s".repeat(32);
     process.env.MYRIVO_DIGITAL_ACCEPTANCE_ENVIRONMENT = "test";
     process.env.VERCEL_ENV = "preview";
+    process.env.MYRIVO_DIGITAL_ACCEPTANCE_ORIGIN = "http://localhost";
+    process.env.MYRIVO_DIGITAL_ACCEPTANCE_PROJECT_REF = "test-project";
   });
 
   it("is unavailable in production even with a valid credential", async () => {
     process.env.VERCEL_ENV = "production";
     const { POST } = await import("@/app/api/internal/digital-products/acceptance/route");
     const response = await POST(new NextRequest("https://example.test/api/internal/digital-products/acceptance", {
-      method: "POST", headers: { authorization: `Bearer ${"s".repeat(32)}` }, body: JSON.stringify({ version: 1, action: "observe", runId: crypto.randomUUID(), subjectId: crypto.randomUUID() }),
+      method: "POST", headers: { authorization: `Bearer ${"s".repeat(32)}` }, body: JSON.stringify({ version: 1, action: "observe", runId: crypto.randomUUID(), subjectId: crypto.randomUUID(), idempotencyKey: crypto.randomUUID() }),
     }));
     expect(response.status).toBe(404);
     expect(observe).not.toHaveBeenCalled();
+  });
+
+  it("is unavailable in self-hosted production without a Vercel marker", async () => {
+    delete process.env.VERCEL_ENV;
+    vi.stubEnv("NODE_ENV", "production");
+    const { POST } = await import("@/app/api/internal/digital-products/acceptance/route");
+    const response = await POST(new NextRequest("http://localhost/api/internal/digital-products/acceptance", { method: "POST" }));
+    expect(response.status).toBe(404);
+    expect(observe).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
   });
 
   it("is unavailable unless an explicit test-only environment is configured", async () => {
@@ -45,7 +57,7 @@ describe("digital acceptance control route", () => {
     observe.mockResolvedValue({ runId: "10000000-0000-4000-8000-000000000001", observation: { orderStatus: "paid" } });
     const { POST } = await import("@/app/api/internal/digital-products/acceptance/route");
     const response = await POST(new NextRequest("http://localhost/api/internal/digital-products/acceptance", {
-      method: "POST", headers: { authorization: `Bearer ${"s".repeat(32)}` }, body: JSON.stringify({ version: 1, action: "observe", runId: "10000000-0000-4000-8000-000000000001", subjectId: "20000000-0000-4000-8000-000000000001", expected: { orderStatus: "failed" } }),
+      method: "POST", headers: { authorization: `Bearer ${"s".repeat(32)}` }, body: JSON.stringify({ version: 1, action: "observe", runId: "10000000-0000-4000-8000-000000000001", subjectId: "20000000-0000-4000-8000-000000000001", idempotencyKey: "30000000-0000-4000-8000-000000000001", expected: { orderStatus: "failed" } }),
     }));
     expect(response.status).toBe(400);
     expect(observe).not.toHaveBeenCalled();

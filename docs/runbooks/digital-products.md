@@ -61,6 +61,8 @@ Rollback starts by disabling every enabled store. Roll back application code onl
 
 Run against a dedicated non-production store with Stripe test mode and a Resend-authorized recipient. Point `MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE` at the versioned fixture and `MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_OUTPUT` at a new empty temporary path. The browser run performs user-facing merchant/buyer actions; the separately authenticated control endpoint is limited to deterministic reset, provider-event/failure injection, and independent state observation. It returns 404 in production. The run generates its own SHA/environment/run-bound HMAC evidence; static or pre-created evidence is rejected.
 
+The acceptance application additionally requires `MYRIVO_DIGITAL_ACCEPTANCE_ORIGIN`, `MYRIVO_DIGITAL_ACCEPTANCE_PROJECT_REF`, and an active `digital_acceptance_targets` row binding that project, store, and run. The database session must set matching `app.environment` and `app.project_ref`; the service-role-only RPC rejects production, expired targets, cross-store subjects, cross-run requests, invalid transitions, and reused idempotency keys. Keep `MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_HMAC_KEY` separate from the control bearer and CI-only. Checkout acceptance enters Stripe's test card on hosted Checkout for both digital-only and mixed carts and waits for the real return/delivery path; never replace this with direct navigation to a seeded return URL.
+
 Record timestamps and safe IDs (store/order/job/manifest IDs are acceptable internally), Stripe test event IDs, Resend delivery IDs, screenshots, and observed states for:
 
 - digital-only and mixed successful payments;

@@ -8,7 +8,10 @@ function equal(left: string, right: string) {
 
 export async function POST(request: NextRequest) {
   const acceptanceEnvironment = process.env.MYRIVO_DIGITAL_ACCEPTANCE_ENVIRONMENT;
-  if (process.env.VERCEL_ENV === "production" || !["test", "preview"].includes(acceptanceEnvironment ?? "")) {
+  const approvedOrigin = process.env.MYRIVO_DIGITAL_ACCEPTANCE_ORIGIN;
+  const approvedProject = process.env.MYRIVO_DIGITAL_ACCEPTANCE_PROJECT_REF;
+  if (process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production" || !["test", "preview"].includes(acceptanceEnvironment ?? "")
+    || !approvedOrigin || new URL(request.url).origin !== approvedOrigin || !approvedProject?.match(/^[a-z0-9-]{6,64}$/)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const secret = process.env.MYRIVO_DIGITAL_ACCEPTANCE_CONTROL_SECRET?.trim();

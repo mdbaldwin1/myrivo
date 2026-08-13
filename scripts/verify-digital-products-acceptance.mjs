@@ -14,10 +14,12 @@ if (!evidencePath) fail("acceptance evidence output path is missing");
 for (const key of ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "RESEND_API_KEY", "MYRIVO_DIGITAL_TEST_RECIPIENT"]) {
   if (!process.env[key]?.trim()) fail(`${key} is missing`);
 }
+const evidenceKey = process.env.MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_HMAC_KEY?.trim();
 if (process.env.STRIPE_STUB_MODE !== "false" || !process.env.STRIPE_SECRET_KEY.startsWith("sk_test_")) {
   fail("Stripe must be explicitly configured in test mode");
 }
 const fixture = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
+if (!evidenceKey || evidenceKey.length < 32 || evidenceKey === fixture.controlSecret) fail("a separate evidence HMAC key is required");
 const baseUrl = new URL(fixture.baseUrl);
 const approvedHost = process.env.MYRIVO_DIGITAL_APPROVED_NONPROD_HOST?.trim().toLowerCase();
 const loopback = ["127.0.0.1", "localhost", "::1"].includes(baseUrl.hostname);
@@ -35,9 +37,16 @@ if (result.status !== 0) process.exit(result.status ?? 1);
 if (!fs.existsSync(evidencePath)) fail("acceptance run did not generate evidence");
 const evidence = JSON.parse(fs.readFileSync(evidencePath, "utf8"));
 const signature = evidence.signature; delete evidence.signature;
-const expectedSignature = createHmac("sha256", fixture.controlSecret).update(JSON.stringify(evidence)).digest("hex");
+const expectedSignature = createHmac("sha256", evidenceKey).update(JSON.stringify(evidence)).digest("hex");
 if (typeof signature !== "string" || !timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) fail("evidence signature is invalid");
-if (evidence.schemaVersion !== 3 || evidence.runId !== fixture.runId || evidence.origin !== baseUrl.origin || evidence.releaseVersion !== (process.env.GITHUB_HEAD_SHA || process.env.GITHUB_SHA) || evidence.observations?.length < 5) fail("evidence is incomplete or not run-bound");
+if (evidence.schemaVersion !== 3 || evidence.runId !== fixture.runId || evidence.origin !== baseUrl.origin || evidence.releaseVersion !== (process.env.GITHUB_HEAD_SHA || process.env.GITHUB_SHA) || !Array.isArray(evidence.observations)) fail("evidence is incomplete or not run-bound");
+const requiredActions = new Set(["reset:", "inject-refund:partial", "inject-refund:full", "inject-dispute:opened", "inject-dispute:won", "inject-dispute:lost", "inject-delivery-failure:"]);
+for (const item of evidence.observations) {
+  requiredActions.delete(`${item.action}:${item.transition ?? ""}`);
+  if (item.runId !== fixture.runId || !item.observedAt || !item.observation?.order || item.observation.order.id !== fixture.orderId) fail("an observation is null, stale, or unlinked");
+  if (item.observation.providerPayment && (item.observation.providerPayment.livemode !== false || item.observation.providerPayment.status !== "succeeded")) fail("provider payment is not a succeeded test-mode payment");
+}
+if (requiredActions.size) fail(`evidence is missing required actions: ${[...requiredActions].join(", ")}`);
 if (!evidence.completedAt || Date.now() - Date.parse(evidence.completedAt) > 60 * 60 * 1000) fail("evidence is stale");
 const digest = createHash("sha256").update(fs.readFileSync(evidencePath)).digest("hex");
 console.log(`Validated current-run acceptance evidence sha256=${digest}`);
