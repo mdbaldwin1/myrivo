@@ -53,6 +53,10 @@ const checkoutManifestMigration = join(
   repoRoot,
   "supabase/migrations/20260813000000_digital_checkout_manifests.sql",
 );
+const checkoutAttemptRecoveryMigration = join(
+  repoRoot,
+  "supabase/migrations/20260813001000_checkout_attempt_recovery.sql",
+);
 
 const ids = {
   storeA: "10000000-0000-0000-0000-000000000001",
@@ -389,6 +393,9 @@ beforeAll(() => {
   }
   if (!existsSync(checkoutManifestMigration)) {
     throw new Error(`Missing checkout manifest migration: ${checkoutManifestMigration}`);
+  }
+  if (!existsSync(checkoutAttemptRecoveryMigration)) {
+    throw new Error(`Missing checkout attempt recovery migration: ${checkoutAttemptRecoveryMigration}`);
   }
 
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-digital-migration-"));
@@ -1094,6 +1101,136 @@ describe("transactional checkout manifests", () => {
           has_function_privilege('service_role', 'public.stub_checkout_create_paid_order_with_manifest(text,text,uuid,jsonb,text,integer,text,uuid,uuid)', 'execute')::text`,
       ),
     ).toBe("false:false:true:true");
+  });
+});
+
+describe("checkout attempt recovery", () => {
+  const checkoutJson = `jsonb_build_object(
+    'store_slug', 'manifest-store',
+    'customer_email', 'buyer@example.test',
+    'customer_first_name', 'Retry',
+    'customer_last_name', 'Buyer',
+    'customer_phone', '',
+    'customer_note', null,
+    'fulfillment_method', 'shipping',
+    'fulfillment_label', 'Shipping',
+    'shipping_fee_cents', 0,
+    'promo_code', null,
+    'promo_codes_json', '[]'::jsonb,
+    'fee_plan_key', 'standard',
+    'fee_bps', 500,
+    'fee_fixed_cents', 0,
+    'item_total_cents', 2500,
+    'platform_fee_cents', 125,
+    'attribution_json', '{}'::jsonb,
+    'items', jsonb_build_array(jsonb_build_object(
+      'productId', '${ids.manifestProduct}',
+      'variantId', '${ids.manifestVariant}',
+      'quantity', 1,
+      'variantLabel', 'Blue',
+      'productTitle', 'Digital set',
+      'unitPriceCents', 2500
+    )),
+    'status', 'pending'
+  )`;
+
+  it("serializes concurrent double submits to one checkout row", async () => {
+    const attemptKey = "018f6fc1-8adc-7f43-8000-000000000101";
+    const fingerprint = "a".repeat(64);
+    const statement = `select public.create_or_reuse_storefront_checkout_attempt(
+      '${ids.manifestStore}', '${attemptKey}', '${fingerprint}', ${checkoutJson}
+    )`;
+    const [first, second] = await Promise.all([
+      runSqlAsync("full_chain", statement, "checkout-attempt-a"),
+      runSqlAsync("full_chain", statement, "checkout-attempt-b"),
+    ]);
+    const firstResult = JSON.parse(first) as { id: string };
+    const secondResult = JSON.parse(second) as { id: string };
+
+    expect(secondResult.id).toBe(firstResult.id);
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.storefront_checkout_sessions
+         where store_id = '${ids.manifestStore}' and checkout_attempt_key = '${attemptKey}'`,
+      ),
+    ).toBe("1");
+  });
+
+  it("rejects the same attempt key when the canonical request fingerprint changes", () => {
+    const attemptKey = "018f6fc1-8adc-7f43-8000-000000000102";
+    runSql(
+      "full_chain",
+      `select public.create_or_reuse_storefront_checkout_attempt(
+        '${ids.manifestStore}', '${attemptKey}', '${"b".repeat(64)}', ${checkoutJson}
+      )`,
+    );
+
+    expectRejected(
+      "full_chain",
+      `select public.create_or_reuse_storefront_checkout_attempt(
+        '${ids.manifestStore}', '${attemptKey}', '${"c".repeat(64)}', ${checkoutJson}
+      )`,
+    );
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.storefront_checkout_sessions
+         where store_id = '${ids.manifestStore}' and checkout_attempt_key = '${attemptKey}'`,
+      ),
+    ).toBe("1");
+  });
+
+  it("binds one Stripe session idempotently and rejects replacement", () => {
+    const attemptKey = "018f6fc1-8adc-7f43-8000-000000000103";
+    const checkout = JSON.parse(
+      runSql(
+        "full_chain",
+        `select public.create_or_reuse_storefront_checkout_attempt(
+          '${ids.manifestStore}', '${attemptKey}', '${"d".repeat(64)}', ${checkoutJson}
+        )`,
+      ),
+    ) as { id: string };
+    const bind = `select public.bind_storefront_checkout_stripe_session(
+      '${checkout.id}', '${ids.manifestStore}', 'cs_test_recoverable',
+      'https://checkout.stripe.com/c/pay/cs_test_recoverable'
+    )`;
+
+    expect(JSON.parse(runSql("full_chain", bind))).toMatchObject({
+      id: checkout.id,
+      stripe_checkout_session_id: "cs_test_recoverable",
+      stripe_checkout_url: "https://checkout.stripe.com/c/pay/cs_test_recoverable",
+      status: "pending",
+    });
+    expect(JSON.parse(runSql("full_chain", bind))).toMatchObject({ id: checkout.id });
+    expectRejected(
+      "full_chain",
+      `select public.bind_storefront_checkout_stripe_session(
+        '${checkout.id}', '${ids.manifestStore}', 'cs_test_other',
+        'https://checkout.stripe.com/c/pay/cs_test_other'
+      )`,
+    );
+  });
+
+  it("keeps attempt creation and Stripe binding service-role-only", () => {
+    expect(
+      runSql(
+        "full_chain",
+        `select
+          has_function_privilege('anon', 'public.create_or_reuse_storefront_checkout_attempt(uuid,text,text,jsonb)', 'execute')::text || ':' ||
+          has_function_privilege('authenticated', 'public.create_or_reuse_storefront_checkout_attempt(uuid,text,text,jsonb)', 'execute')::text || ':' ||
+          has_function_privilege('service_role', 'public.create_or_reuse_storefront_checkout_attempt(uuid,text,text,jsonb)', 'execute')::text`,
+      ),
+    ).toBe("false:false:true");
+    expect(
+      runSql(
+        "full_chain",
+        `select
+          has_function_privilege('anon', 'public.bind_storefront_checkout_stripe_session(uuid,uuid,text,text)', 'execute')::text || ':' ||
+          has_function_privilege('authenticated', 'public.bind_storefront_checkout_stripe_session(uuid,uuid,text,text)', 'execute')::text || ':' ||
+          has_function_privilege('service_role', 'public.bind_storefront_checkout_stripe_session(uuid,uuid,text,text)', 'execute')::text`,
+      ),
+    ).toBe("false:false:true");
   });
 });
 

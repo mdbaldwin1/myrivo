@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - Prevented undeliverable digital products from publishing with transactional rights, preview, and per-variant file readiness checks plus safe fulfillment-type conversion rules.
 
 ### Fixed
+- Made storefront checkout retries idempotent across double submits, reloads, ambiguous Stripe timeouts, and checkout-session persistence failures so one purchase attempt cannot create multiple payable sessions or digital manifests.
 - Fixed shipping-order checkout capture so Stripe-collected shipping addresses are saved onto orders and shown in the merchant order flyout.
 - Fixed custom-domain storefront routing so verified domains keep clean paths like `/`, `/products`, `/about`, `/cart`, and `/checkout` instead of leaking back to `/s/:storeSlug/...`.
 - Fixed storefront cart/checkout accessibility metadata and stabilized merchant E2E flows so release validation matches the current store-scoped dashboard, onboarding, and draft/live storefront behavior.

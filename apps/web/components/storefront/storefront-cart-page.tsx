@@ -28,6 +28,12 @@ import { STOREFRONT_TEXT_LINK_EFFECT_CLASS } from "@/lib/storefront/link-effects
 import { resolveFooterNavLinks, resolveHeaderNavLinks } from "@/lib/storefront/navigation";
 import { buildStorefrontCheckoutPath, buildStorefrontProductPath, buildStorefrontProductsPath } from "@/lib/storefront/paths";
 import { resolveStorefrontPresentation } from "@/lib/storefront/presentation";
+import {
+  getOrCreateCheckoutAttempt,
+  readCheckoutAttempt,
+  writeCheckoutAttempt,
+  type ClientCheckoutAttempt
+} from "@/lib/storefront/checkout-attempt-client";
 
 type StorefrontVariant = {
   id: string;
@@ -57,6 +63,7 @@ type CheckoutResponse = {
   checkoutUrl?: string;
   orderId?: string;
   paymentMode?: string;
+  status?: "paid";
   error?: string;
 };
 
@@ -233,6 +240,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
   const [pickupStatusMessage, setPickupStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const trackedCartViewRef = useRef(false);
+  const checkoutAttemptRef = useRef<ClientCheckoutAttempt | null>(null);
 
   useStorefrontPageView("cart");
 
@@ -529,27 +537,38 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
     setPending(true);
     setError(null);
 
+    const checkoutIntent = {
+      firstName,
+      lastName,
+      phone: phone.trim(),
+      email,
+      buyerLatitude: buyerLatitude ?? undefined,
+      buyerLongitude: buyerLongitude ?? undefined,
+      fulfillmentMethod: selectedFulfillment.method,
+      digitalDeliveryConsent,
+      pickupLocationId: selectedPickupLocationId ?? undefined,
+      pickupWindowStartAt: selectedPickupSlot?.startsAt,
+      pickupWindowEndAt: selectedPickupSlot?.endsAt,
+      customerNote: resolvedSettings?.checkout_allow_order_note ? orderNote.trim() || undefined : undefined,
+      promoCode: appliedPromoCodes[0] ?? undefined,
+      promoCodes: appliedPromoCodes,
+      items: cartItems.map((item) => ({ productId: item.productId, variantId: item.variantId, quantity: item.quantity }))
+    };
+    const checkoutAttemptStorageKey = `myrivo:checkout-attempt:${resolvedStore.slug}`;
+    const currentCheckoutAttempt = checkoutAttemptRef.current
+      ?? readCheckoutAttempt(window.sessionStorage, checkoutAttemptStorageKey);
+    const checkoutAttempt = getOrCreateCheckoutAttempt(currentCheckoutAttempt, checkoutIntent);
+    checkoutAttemptRef.current = checkoutAttempt;
+    writeCheckoutAttempt(window.sessionStorage, checkoutAttemptStorageKey, checkoutAttempt);
+
     const response = await fetch(`/api/orders/checkout?store=${encodeURIComponent(resolvedStore.slug)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        firstName,
-        lastName,
-        phone: phone.trim(),
-        email,
-        buyerLatitude: buyerLatitude ?? undefined,
-        buyerLongitude: buyerLongitude ?? undefined,
-        fulfillmentMethod: selectedFulfillment.method,
-        digitalDeliveryConsent,
-        pickupLocationId: selectedPickupLocationId ?? undefined,
-        pickupWindowStartAt: selectedPickupSlot?.startsAt,
-        pickupWindowEndAt: selectedPickupSlot?.endsAt,
-        customerNote: resolvedSettings?.checkout_allow_order_note ? orderNote.trim() || undefined : undefined,
-        promoCode: appliedPromoCodes[0] ?? undefined,
-        promoCodes: appliedPromoCodes,
+        checkoutAttemptId: checkoutAttempt.id,
+        ...checkoutIntent,
         analyticsSessionId: analytics?.getSessionId() ?? undefined,
-        attribution: analytics?.getAttributionSnapshot() ?? undefined,
-        items: cartItems.map((item) => ({ productId: item.productId, variantId: item.variantId, quantity: item.quantity }))
+        attribution: analytics?.getAttributionSnapshot() ?? undefined
       })
     });
 
@@ -576,7 +595,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
       return;
     }
 
-    if (response.ok && payload.orderId && payload.paymentMode === "stub") {
+    if (response.ok && payload.orderId && payload.status === "paid") {
       analytics?.track({
         eventType: "checkout_started",
         orderId: payload.orderId,

@@ -14,9 +14,11 @@ const getAppUrlMock = vi.fn();
 const getStoreStripePaymentsReadinessMock = vi.fn();
 const getStripeClientMock = vi.fn();
 const adminFromMock = vi.fn();
+const adminRpcMock = vi.fn();
 const serverFromMock = vi.fn();
 const stripeCheckoutCreateMock = vi.fn();
 const createOrReuseCheckoutManifestMock = vi.fn();
+const checkoutSessionUpdatePayloads: Array<Record<string, unknown>> = [];
 let checkoutProductType: "physical" | "digital";
 let checkoutStoreId: string;
 let pendingCheckoutId: string;
@@ -73,7 +75,8 @@ vi.mock("@/lib/stripe/server", () => ({
 
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: vi.fn(() => ({
-    from: (...args: unknown[]) => adminFromMock(...args)
+    from: (...args: unknown[]) => adminFromMock(...args),
+    rpc: (...args: unknown[]) => adminRpcMock(...args)
   }))
 }));
 
@@ -115,9 +118,11 @@ describe("checkout Stripe tax liability", () => {
     getStoreStripePaymentsReadinessMock.mockReset();
     getStripeClientMock.mockReset();
     adminFromMock.mockReset();
+    adminRpcMock.mockReset();
     serverFromMock.mockReset();
     stripeCheckoutCreateMock.mockReset();
     createOrReuseCheckoutManifestMock.mockReset();
+    checkoutSessionUpdatePayloads.length = 0;
     checkoutProductType = "physical";
     checkoutStoreId = "store-1";
     pendingCheckoutId = "checkout-1";
@@ -157,6 +162,36 @@ describe("checkout Stripe tax liability", () => {
           create: stripeCheckoutCreateMock
         }
       }
+    });
+    adminRpcMock.mockImplementation(async (name: string, args: Record<string, unknown>) => {
+      if (name === "create_or_reuse_storefront_checkout_attempt") {
+        return {
+          data: {
+            ...(args.p_checkout as Record<string, unknown>),
+            id: pendingCheckoutId,
+            order_id: null,
+            digital_manifest_id: null,
+            stripe_checkout_session_id: null,
+            stripe_checkout_url: null,
+            checkout_attempt_key: args.p_checkout_attempt_key,
+            checkout_request_fingerprint_sha256: args.p_request_fingerprint_sha256,
+            created: true
+          },
+          error: null
+        };
+      }
+      if (name === "bind_storefront_checkout_stripe_session") {
+        return {
+          data: {
+            id: pendingCheckoutId,
+            status: "pending",
+            stripe_checkout_session_id: args.p_stripe_checkout_session_id,
+            stripe_checkout_url: args.p_stripe_checkout_url
+          },
+          error: null
+        };
+      }
+      throw new Error(`Unexpected RPC ${name}`);
     });
 
     serverFromMock.mockReturnValue({
@@ -290,9 +325,12 @@ describe("checkout Stripe tax liability", () => {
               single: vi.fn(async () => ({ data: { id: pendingCheckoutId }, error: null }))
             }))
           })),
-          update: vi.fn(() => ({
-            eq: vi.fn(async () => ({ error: null }))
-          }))
+          update: vi.fn((values: Record<string, unknown>) => {
+            checkoutSessionUpdatePayloads.push(values);
+            return {
+              eq: vi.fn(async () => ({ error: null }))
+            };
+          })
         };
       }
 
@@ -636,5 +674,132 @@ describe("checkout Stripe tax liability", () => {
       { idempotencyKey: "storefront-checkout:checkout-1" }
     );
     expect(stripeCheckoutCreateMock.mock.calls[0]?.[0]).not.toHaveProperty("automatic_tax");
+  });
+
+  test("recovers when Stripe accepted the session but persisting its binding failed", async () => {
+    checkoutProductType = "digital";
+    checkoutStoreId = "10000000-0000-4000-8000-000000000001";
+    pendingCheckoutId = "40000000-0000-4000-8000-000000000001";
+    createOrReuseCheckoutManifestMock.mockResolvedValue({
+      manifestId: "b0000000-0000-4000-8000-000000000001",
+      items: []
+    });
+    let createAttemptCalls = 0;
+    let bindCalls = 0;
+    adminRpcMock.mockImplementation(async (name: string, args: Record<string, unknown>) => {
+      if (name === "create_or_reuse_storefront_checkout_attempt") {
+        createAttemptCalls += 1;
+        return {
+          data: {
+            ...(args.p_checkout as Record<string, unknown>),
+            id: pendingCheckoutId,
+            order_id: null,
+            digital_manifest_id: createAttemptCalls === 1 ? null : "b0000000-0000-4000-8000-000000000001",
+            stripe_checkout_session_id: null,
+            stripe_checkout_url: null,
+            created: createAttemptCalls === 1
+          },
+          error: null
+        };
+      }
+      if (name === "bind_storefront_checkout_stripe_session") {
+        bindCalls += 1;
+        return bindCalls === 1
+          ? { data: null, error: { message: "Injected checkout binding write failure" } }
+          : { data: { id: pendingCheckoutId }, error: null };
+      }
+      throw new Error(`Unexpected RPC ${name}`);
+    });
+    const requestBody = {
+      checkoutAttemptId: "018f6fc1-8adc-7f43-8000-000000000001",
+      firstName: "Alice",
+      lastName: "Buyer",
+      phone: "",
+      email: "alice@example.com",
+      digitalDeliveryConsent: true,
+      items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
+    };
+    const route = await import("@/app/api/orders/checkout/route");
+
+    const first = await route.POST(buildRequest(requestBody));
+    const second = await route.POST(buildRequest(requestBody));
+
+    expect(first.status).toBe(503);
+    expect(second.status).toBe(200);
+    expect(stripeCheckoutCreateMock).toHaveBeenCalledTimes(2);
+    expect(stripeCheckoutCreateMock.mock.calls.map((call) => call[1])).toEqual([
+      { idempotencyKey: `storefront-checkout:${pendingCheckoutId}` },
+      { idempotencyKey: `storefront-checkout:${pendingCheckoutId}` }
+    ]);
+    expect(checkoutSessionUpdatePayloads).not.toContainEqual(expect.objectContaining({ status: "failed" }));
+  });
+
+  test("keeps an ambiguous Stripe timeout pending and safely resumes the same attempt", async () => {
+    stripeCheckoutCreateMock
+      .mockRejectedValueOnce(new Error("Stripe request timed out after write"))
+      .mockResolvedValueOnce({
+        id: "cs_test_123",
+        url: "https://checkout.stripe.com/pay/cs_test_123"
+      });
+    const requestBody = {
+      checkoutAttemptId: "018f6fc1-8adc-7f43-8000-000000000002",
+      firstName: "Alice",
+      lastName: "Buyer",
+      phone: "555-0100",
+      email: "alice@example.com",
+      items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
+    };
+    const route = await import("@/app/api/orders/checkout/route");
+
+    const first = await route.POST(buildRequest(requestBody));
+    const second = await route.POST(buildRequest(requestBody));
+
+    expect(first.status).toBe(503);
+    expect(second.status).toBe(200);
+    expect(stripeCheckoutCreateMock).toHaveBeenCalledTimes(2);
+    expect(stripeCheckoutCreateMock.mock.calls.map((call) => call[1])).toEqual([
+      { idempotencyKey: `storefront-checkout:${pendingCheckoutId}` },
+      { idempotencyKey: `storefront-checkout:${pendingCheckoutId}` }
+    ]);
+    expect(checkoutSessionUpdatePayloads).not.toContainEqual(expect.objectContaining({ status: "failed" }));
+  });
+
+  test("returns an already-bound Stripe session without creating another", async () => {
+    adminRpcMock.mockImplementation(async (name: string, args: Record<string, unknown>) => {
+      if (name === "create_or_reuse_storefront_checkout_attempt") {
+        return {
+          data: {
+            ...(args.p_checkout as Record<string, unknown>),
+            id: pendingCheckoutId,
+            order_id: null,
+            digital_manifest_id: null,
+            stripe_checkout_session_id: "cs_test_existing",
+            stripe_checkout_url: "https://checkout.stripe.com/pay/cs_test_existing",
+            created: false
+          },
+          error: null
+        };
+      }
+      throw new Error(`Unexpected RPC ${name}`);
+    });
+    const route = await import("@/app/api/orders/checkout/route");
+    const response = await route.POST(
+      buildRequest({
+        checkoutAttemptId: "018f6fc1-8adc-7f43-8000-000000000003",
+        firstName: "Alice",
+        lastName: "Buyer",
+        phone: "555-0100",
+        email: "alice@example.com",
+        items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
+      })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      mode: "checkout",
+      sessionId: "cs_test_existing",
+      checkoutUrl: "https://checkout.stripe.com/pay/cs_test_existing"
+    });
+    expect(stripeCheckoutCreateMock).not.toHaveBeenCalled();
   });
 });

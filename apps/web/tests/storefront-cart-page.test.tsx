@@ -150,4 +150,94 @@ describe("StorefrontCartPage", () => {
     expect(screen.getByText("Enable location sharing to verify pickup availability.")).toBeTruthy();
     expect((screen.getByRole("radio", { name: /shipping/i }) as HTMLInputElement).checked).toBe(false);
   });
+
+  test("reuses the checkout attempt id when a recoverable request is retried", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(
+      "018f6fc1-8adc-7f43-8000-000000000301"
+    );
+    const checkoutBodies: Array<Record<string, unknown>> = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith("/api/customer/cart")) {
+        return new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (url.startsWith("/api/orders/checkout")) {
+        checkoutBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response(
+          JSON.stringify({
+            error: "We could not confirm checkout yet. Please try again; you will not be charged twice."
+          }),
+          { status: 503, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+    window.localStorage.setItem(
+      "aha-cart:single-store",
+      JSON.stringify([{ productId: "product-1", variantId: "variant-1", quantity: 1 }])
+    );
+    render(
+      <StorefrontCartPage
+        store={{ id: "store-1", name: "At Home Apothecary", slug: "at-home-apothecary" }}
+        branding={null}
+        settings={{
+          announcement: null,
+          support_email: "support@example.com",
+          footer_tagline: null,
+          footer_note: null,
+          instagram_url: null,
+          facebook_url: null,
+          tiktok_url: null,
+          storefront_copy_json: null,
+          checkout_enable_local_pickup: false,
+          checkout_enable_flat_rate_shipping: true,
+          checkout_flat_rate_shipping_label: "Shipping",
+          checkout_flat_rate_shipping_fee_cents: 500,
+          checkout_allow_order_note: false
+        }}
+        products={[
+          {
+            id: "product-1",
+            title: "Whipped Tallow Balm",
+            slug: "whipped-tallow-balm",
+            product_type: "physical",
+            product_variants: [
+              {
+                id: "variant-1",
+                title: "Default",
+                option_values: {},
+                price_cents: 1800,
+                inventory_qty: 12,
+                is_made_to_order: false,
+                is_default: true,
+                status: "active",
+                sort_order: 0,
+                created_at: "2026-03-31T00:00:00.000Z"
+              }
+            ]
+          }
+        ]}
+      />
+    );
+
+    await user.type(await screen.findByPlaceholderText("First name"), "Alice");
+    await user.type(screen.getByPlaceholderText("Last name"), "Buyer");
+    await user.type(screen.getByPlaceholderText("Phone"), "555-0100");
+    await user.type(screen.getByPlaceholderText("you@example.com"), "alice@example.com");
+    await user.click(screen.getByRole("button", { name: "Checkout" }));
+    await screen.findByText(/you will not be charged twice/i);
+    await user.click(screen.getByRole("button", { name: "Checkout" }));
+
+    await waitFor(() => expect(checkoutBodies).toHaveLength(2));
+    expect(checkoutBodies.map((body) => body.checkoutAttemptId)).toEqual([
+      "018f6fc1-8adc-7f43-8000-000000000301",
+      "018f6fc1-8adc-7f43-8000-000000000301"
+    ]);
+  });
 });
