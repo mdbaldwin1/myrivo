@@ -167,3 +167,42 @@
 - **Current-run evidence:** Structurally resolved. Evidence is generated during the browser run and HMAC-bound to run/origin/release; semantic completeness remains the P1 above.
 - **CI operational coherence:** Resolved at the workflow-plumbing level. It supplies the approved remote host, creates a fresh output path, uses head SHA, and supports managed loopback. Actual execution remains blocked by the absent controller RPC and external fixture/provider credentials.
 - **Migration testing:** Resolved for the secure-session and release-approval migrations with native PostgreSQL privilege/match/mismatch/window tests plus unique version enforcement. Official Supabase fresh/upgrade validation remains a truthfully documented external release blocker.
+
+---
+
+## Round 5 Re-review — commit `8e43d02`
+
+### Verdict
+
+**FAIL** — the controller RPC and hosted Stripe interactions now exist, but the resulting orders are not linked to observations and the evidence verifier still does not enforce the exact independent state semantics required for release.
+
+### P1 — New Stripe checkout orders are never captured; all evidence observes the seeded fixture order
+
+**Evidence:** The browser now completes hosted Stripe Checkout twice, for digital and mixed carts (`apps/web/e2e/digital-products.spec.ts:8-16,33-49`). However, `acceptanceAction()` always sends `subjectId: fixture.orderId` (`apps/web/e2e/digital-products-fixture.ts:29`), and the control service queries that ID (`apps/web/lib/digital-products/acceptance-control.ts:27-31`). Neither `completeStripeCheckout()` nor the return page extracts the newly created order ID, checkout session ID, payment intent, or composition. Thus both post-checkout observations at `digital-products.spec.ts:47-48` read the same pre-seeded order. The evidence verifier likewise mandates `item.observation.order.id === fixture.orderId` (`scripts/verify-digital-products-acceptance.mjs:46`).
+
+**Impact:** Hosted Checkout can create two unrelated or malformed orders—or fail webhook/manifest/delivery linkage—while evidence certifies an old fixture order. Digital-only versus mixed semantics, new manifest immutability, webhook convergence, email delivery, and access-session creation are not proven for either payment.
+
+**Remediation:** Capture an opaque checkout/session/order identifier from each completed return flow, resolve it independently to the newly created order, and pass that order as the observation subject. Require distinct digital and mixed order IDs and exact composition; link each to its Stripe PaymentIntent/event, manifest, delivery job/notification, access token/session, and expected inventory/fulfillment behavior. Keep the seeded order only for deterministic injected-transition scenarios if needed.
+
+### P1 — The exact observation schema is dead code and evidence validation remains presence-based
+
+**Evidence:** `digitalAcceptanceObservationSchema` defines some strict fields in `apps/web/lib/digital-products/acceptance-evidence.ts:3-10`, but production code never imports it; only its two-case unit test does. Its shape does not match the controller response names (`payment` vs `providerPayment`, `delivery` vs `deliveryJob`, flattened manifest IDs vs `manifestItems`), so applying it would currently reject all evidence. In Playwright, observations are still asserted only as truthy (`apps/web/e2e/digital-products.spec.ts:29-30,47-48`) or ignored (`:65,75,83,93`). The verifier checks only a fixed order ID and optionally validates payment when present (`scripts/verify-digital-products-acceptance.mjs:43-49`), allowing `providerPayment: null`, empty manifests/grants/notifications, wrong refund/dispute state, and a still-failed delivery job to pass.
+
+**Impact:** The HMAC proves who wrote the file, not that the required behavior occurred. Null or semantically wrong authoritative observations can satisfy the promotion gate.
+
+**Remediation:** Normalize controller output through one runtime schema and use that same schema in Playwright and the verifier. Define per-scenario exact predicates and ordered transitions: non-live succeeded payment; nonempty immutable manifest; succeeded delivery and sent Resend notification; five issued grants, grace reuse without increment, sixth rejection; unchanged prior version after replacement; partial active/full revoked; dispute opened suspended/won restored/lost revoked; failed job followed by a later succeeded retry with increased attempt; resend provider ID rotation without grant reset. Require every scenario exactly once for its linked order/run.
+
+### P1 — Stateful financial scenarios are ordered incompatibly and provider-event injection is simulated only in Postgres
+
+**Evidence:** The serial suite applies a partial refund and then a full refund to the same order before running dispute opened/won/lost (`apps/web/e2e/digital-products.spec.ts:68-84`). After a full refund revokes access, a later dispute win should not restore financially ineligible access, yet line 80 expects “your files” and line 81 expects a download button. The acceptance RPC directly inserts refund rows/calls internal sync functions and directly invokes dispute sync with fabricated `evt_acceptance_*` IDs (`supabase/migrations/20260813023000_nonproduction_digital_acceptance_control.sql:53-65`); it does not use Stripe's test-mode refund or supported dispute/webhook event path despite the test being described as “provider financial events.”
+
+**Impact:** The sequence is either impossible to pass against correct financial eligibility logic or encourages incorrect restoration after full refund. It also does not validate Stripe webhook parsing/signature/idempotency/provider payload behavior required by the acceptance plan.
+
+**Remediation:** Use independent fresh paid orders or reset to a documented authoritative baseline for mutually exclusive financial branches. Drive real Stripe test refunds and supported dispute test events through the webhook boundary, including duplicate/reordered delivery, then observe resulting database/UI state. If a narrowly scoped DB injector is retained for states Stripe cannot produce, label it as integration-only and do not count it as provider acceptance.
+
+### Previous findings disposition
+
+- **Missing RPC:** Resolved. Migration `20260813023000_nonproduction_digital_acceptance_control.sql` defines a typed, idempotent, run/store/project-bound service-role-only RPC, and native PostgreSQL tests cover core privileges and tampering.
+- **Hosted digital/mixed Checkout encoding:** Partially resolved. Both hosted forms are filled and submitted, but their resulting orders are not linked or semantically verified.
+- **Evidence HMAC/current-run mechanics:** Resolved structurally with a separate CI key. Semantic validation remains P1.
+- **CI coherence:** Required secrets/approved host and current output are wired. `MYRIVO_DIGITAL_ACCEPTANCE_ENVIRONMENT`, origin, project ref, and control secret are expected on the deployed acceptance app rather than runner; no new runner-level blocker is identified here.
