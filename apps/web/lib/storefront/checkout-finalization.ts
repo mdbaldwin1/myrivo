@@ -9,7 +9,6 @@ import {
 import {
   buildStubCheckoutWithManifestRpcPayload
 } from "@/lib/storefront/stub-checkout";
-import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 import { getStripeClient } from "@/lib/stripe/server";
 import { issueDigitalEntitlements } from "@/lib/digital-products/entitlements";
 import { lockManifestToOrder } from "@/lib/digital-products/manifest-service";
@@ -278,23 +277,6 @@ export async function finalizeStorefrontCheckout(
       await lockManifestToOrder(checkout.digital_manifest_id, checkout.order_id);
     }
     return { status: "completed" as const, orderId: checkout.order_id };
-  }
-
-  const { data: store, error: storeError } = await supabase
-    .from("stores")
-    .select("status")
-    .eq("id", checkout.store_id)
-    .maybeSingle<{
-      status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
-    }>();
-
-  if (storeError) {
-    throw new Error(storeError.message);
-  }
-
-  if (!store || (!isStorePubliclyAccessibleStatus(store.status) && store.status !== "offline")) {
-    await markStorefrontCheckoutFailed(checkout.id, "Store is no longer live. Checkout cannot be completed.", paymentIntentId);
-    return { status: "failed" as const, orderId: null, errorMessage: "Store is no longer live. Checkout cannot be completed." };
   }
 
   if (paymentIntentId) {

@@ -66,6 +66,26 @@ describe("checkout attempt identity", () => {
     expect(first.attemptKey.length).toBeLessThanOrEqual(128);
   });
 
+  it("scopes legacy guest attempts to the normalized customer email", () => {
+    const alice = resolveCheckoutAttemptIdentity({
+      checkoutAttemptId: undefined,
+      storeId: "10000000-0000-4000-8000-000000000001",
+      customerEmail: "alice@example.com",
+      sourceCartId: null,
+      intent: baseIntent
+    });
+    const rachel = resolveCheckoutAttemptIdentity({
+      checkoutAttemptId: undefined,
+      storeId: "10000000-0000-4000-8000-000000000001",
+      customerEmail: "rachel@example.com",
+      sourceCartId: null,
+      intent: { ...baseIntent, email: "rachel@example.com" }
+    });
+
+    expect(rachel.attemptKey).not.toBe(alice.attemptKey);
+    expect(rachel.fingerprintSha256).not.toBe(alice.fingerprintSha256);
+  });
+
   it("changes the fingerprint when the canonical purchase intent changes", () => {
     const original = resolveCheckoutAttemptIdentity({
       checkoutAttemptId: "018f6fc1-8adc-7f43-8000-000000000001",

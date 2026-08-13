@@ -514,10 +514,10 @@ async function resumeStripeCheckout(
     );
   }
 
-  if (!sessionId || !sessionUrl) {
+  if (!sessionId) {
     await supabase
       .from("storefront_checkout_sessions")
-      .update({ error_message: "Stripe checkout session did not return required session data." })
+      .update({ error_message: "Stripe checkout session did not return a session id." })
       .eq("id", checkout.id);
     return NextResponse.json(
       { error: "We could not confirm checkout yet. Please try again; you will not be charged twice." },
@@ -534,6 +534,17 @@ async function resumeStripeCheckout(
   if (error) {
     return NextResponse.json(
       { error: "Checkout was created, but we could not confirm it yet. Please try again; you will not be charged twice." },
+      { status: 503, headers: { "Retry-After": "2" } }
+    );
+  }
+
+  if (!sessionUrl) {
+    await supabase
+      .from("storefront_checkout_sessions")
+      .update({ error_message: "Stripe checkout session is accepted but its redirect URL is not available yet." })
+      .eq("id", checkout.id);
+    return NextResponse.json(
+      { error: "We could not confirm checkout yet. Please try again; you will not be charged twice." },
       { status: 503, headers: { "Retry-After": "2" } }
     );
   }
@@ -653,25 +664,27 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const findActiveCartId = async () => {
+  const findCustomerCartId = async (status: "active" | "ordered") => {
     if (!authenticatedUser) {
       return null;
     }
-    const { data: activeCart } = await serverSupabase
+    const { data: cart } = await serverSupabase
       .from("customer_carts")
       .select("id")
       .eq("user_id", authenticatedUser.id)
       .eq("store_id", store.id)
-      .eq("status", "active")
-      .order("created_at", { ascending: false })
+      .eq("status", status)
+      .order(status === "active" ? "created_at" : "updated_at", { ascending: false })
       .limit(1)
       .maybeSingle<{ id: string }>();
 
-    return activeCart?.id ?? null;
+    return cart?.id ?? null;
   };
   let sourceCartId: string | null = null;
   if (!checkoutAttemptId) {
-    sourceCartId = await findActiveCartId();
+    sourceCartId =
+      (await findCustomerCartId("active")) ??
+      (await findCustomerCartId("ordered"));
   }
 
   const checkoutAttemptIdentity = resolveCheckoutAttemptIdentity({
@@ -723,7 +736,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (checkoutAttemptId) {
-    sourceCartId = await findActiveCartId();
+    sourceCartId = await findCustomerCartId("active");
   }
   const sessionLink = await resolveStorefrontSessionLink(supabase, {
     storeId: store.id,

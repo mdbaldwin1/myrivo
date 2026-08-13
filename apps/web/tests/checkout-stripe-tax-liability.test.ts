@@ -18,10 +18,12 @@ const adminRpcMock = vi.fn();
 const serverFromMock = vi.fn();
 const stripeCheckoutCreateMock = vi.fn();
 const createOrReuseCheckoutManifestMock = vi.fn();
+const issueDigitalEntitlementsMock = vi.fn();
 const checkoutSessionUpdatePayloads: Array<Record<string, unknown>> = [];
 let checkoutProductType: "physical" | "digital";
 let checkoutStoreId: string;
 let pendingCheckoutId: string;
+let authenticatedUserId: string | null;
 
 class TestDigitalPurchaseManifestError extends Error {}
 
@@ -60,6 +62,10 @@ vi.mock("@/lib/notifications/order-emails", () => ({
   sendOrderCreatedNotifications: (...args: unknown[]) => sendOrderCreatedNotificationsMock(...args)
 }));
 
+vi.mock("@/lib/digital-products/entitlements", () => ({
+  issueDigitalEntitlements: (...args: unknown[]) => issueDigitalEntitlementsMock(...args)
+}));
+
 vi.mock("@/lib/env", () => ({
   getAppUrl: (...args: unknown[]) => getAppUrlMock(...args),
   isStripeStubMode: (...args: unknown[]) => isStripeStubModeMock(...args)
@@ -83,7 +89,9 @@ vi.mock("@/lib/supabase/admin", () => ({
 vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient: vi.fn(async () => ({
     auth: {
-      getUser: vi.fn(async () => ({ data: { user: null } }))
+      getUser: vi.fn(async () => ({
+        data: { user: authenticatedUserId ? { id: authenticatedUserId } : null }
+      }))
     },
     from: (...args: unknown[]) => serverFromMock(...args)
   }))
@@ -122,10 +130,12 @@ describe("checkout Stripe tax liability", () => {
     serverFromMock.mockReset();
     stripeCheckoutCreateMock.mockReset();
     createOrReuseCheckoutManifestMock.mockReset();
+    issueDigitalEntitlementsMock.mockReset();
     checkoutSessionUpdatePayloads.length = 0;
     checkoutProductType = "physical";
     checkoutStoreId = "store-1";
     pendingCheckoutId = "checkout-1";
+    authenticatedUserId = null;
 
     enforceTrustedOriginMock.mockReturnValue(null);
     checkRateLimitMock.mockResolvedValue(null);
@@ -139,6 +149,7 @@ describe("checkout Stripe tax liability", () => {
     calculatePlatformFeeCentsMock.mockReturnValue(125);
     writeOrderFeeBreakdownMock.mockResolvedValue(undefined);
     sendOrderCreatedNotificationsMock.mockResolvedValue(undefined);
+    issueDigitalEntitlementsMock.mockResolvedValue(null);
     isStripeStubModeMock.mockReturnValue(false);
     getAppUrlMock.mockReturnValue("https://www.myrivo.app");
     getStoreStripePaymentsReadinessMock.mockResolvedValue({
@@ -778,6 +789,132 @@ describe("checkout Stripe tax liability", () => {
       { idempotencyKey: `storefront-checkout:${pendingCheckoutId}` }
     ]);
     expect(checkoutSessionUpdatePayloads).not.toContainEqual(expect.objectContaining({ status: "failed" }));
+  });
+
+  test("binds a Stripe session id even when Stripe returns no redirect URL", async () => {
+    stripeCheckoutCreateMock.mockResolvedValue({
+      id: "cs_test_no_redirect_yet",
+      url: null
+    });
+    const route = await import("@/app/api/orders/checkout/route");
+    const response = await route.POST(
+      buildRequest({
+        checkoutAttemptId: "018f6fc1-8adc-7f43-8000-000000000006",
+        firstName: "Alice",
+        lastName: "Buyer",
+        phone: "555-0100",
+        email: "alice@example.com",
+        items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
+      })
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringContaining("try again")
+    });
+    expect(adminRpcMock).toHaveBeenCalledWith(
+      "bind_storefront_checkout_stripe_session",
+      {
+        p_checkout_session_id: pendingCheckoutId,
+        p_store_id: checkoutStoreId,
+        p_stripe_checkout_session_id: "cs_test_no_redirect_yet",
+        p_stripe_checkout_url: null
+      }
+    );
+  });
+
+  test("reuses a legacy authenticated checkout after its source cart becomes ordered", async () => {
+    authenticatedUserId = "20000000-0000-4000-8000-000000000001";
+    isStripeStubModeMock.mockReturnValue(true);
+    const cartId = "30000000-0000-4000-8000-000000000001";
+    const orderId = "50000000-0000-4000-8000-000000000001";
+    let cartStatus: "active" | "ordered" = "active";
+    serverFromMock.mockImplementation(() => ({
+      select: vi.fn(() => {
+        let requestedStatus: string | null = null;
+        const query = {
+          eq: vi.fn((column: string, value: string) => {
+            if (column === "status") requestedStatus = value;
+            return query;
+          }),
+          order: vi.fn(() => query),
+          limit: vi.fn(() => query),
+          maybeSingle: vi.fn(async () => ({
+            data: requestedStatus === cartStatus ? { id: cartId } : null,
+            error: null
+          }))
+        };
+        return query;
+      })
+    }));
+
+    const attempts = new Map<string, Record<string, unknown>>();
+    let checkoutCreates = 0;
+    let orderEffects = 0;
+    adminRpcMock.mockImplementation(async (name: string, args: Record<string, unknown>) => {
+      const attemptKey = String(args.p_checkout_attempt_key ?? "");
+      if (name === "get_storefront_checkout_attempt") {
+        return { data: attempts.get(attemptKey) ?? null, error: null };
+      }
+      if (name === "create_or_reuse_storefront_checkout_attempt") {
+        checkoutCreates += 1;
+        const checkout = {
+          ...(args.p_checkout as Record<string, unknown>),
+          id: `40000000-0000-4000-8000-${String(checkoutCreates).padStart(12, "0")}`,
+          status: "pending",
+          order_id: null,
+          digital_manifest_id: null,
+          stripe_checkout_session_id: null,
+          stripe_checkout_url: null,
+          checkout_attempt_key: attemptKey,
+          checkout_request_fingerprint_sha256: args.p_request_fingerprint_sha256,
+          created: true
+        };
+        attempts.set(attemptKey, checkout);
+        return { data: checkout, error: null };
+      }
+      if (name === "stub_checkout_create_paid_order_with_manifest") {
+        const checkout = [...attempts.values()].find(
+          (candidate) => candidate.id === args.p_checkout_session_id
+        );
+        if (!checkout) throw new Error("Checkout fixture missing");
+        if (checkout.status !== "completed") {
+          orderEffects += 1;
+          checkout.status = "completed";
+          checkout.order_id = orderId;
+          cartStatus = "ordered";
+        }
+        return {
+          data: {
+            order_id: checkout.order_id,
+            total_cents: 2500,
+            discount_cents: 0,
+            promo_code: null
+          },
+          error: null
+        };
+      }
+      throw new Error(`Unexpected RPC ${name}`);
+    });
+    const requestBody = {
+      firstName: "Legacy",
+      lastName: "Buyer",
+      phone: "555-0100",
+      email: "legacy@example.com",
+      items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
+    };
+    const route = await import("@/app/api/orders/checkout/route");
+
+    const first = await route.POST(buildRequest(requestBody));
+    const second = await route.POST(buildRequest(requestBody));
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    await expect(first.json()).resolves.toMatchObject({ orderId, status: "paid" });
+    await expect(second.json()).resolves.toMatchObject({ orderId, status: "paid" });
+    expect(checkoutCreates).toBe(1);
+    expect(attempts).toHaveLength(1);
+    expect(orderEffects).toBe(1);
   });
 
   test("returns an already-bound Stripe session without creating another", async () => {

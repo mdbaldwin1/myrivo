@@ -68,9 +68,6 @@ export async function GET(request: NextRequest) {
           return NextResponse.json({ status: "completed", orderId: finalized.orderId });
         }
 
-        if (finalized.status === "failed") {
-          return NextResponse.json({ status: "failed", error: finalized.errorMessage ?? "Checkout finalization failed." }, { status: 409 });
-        }
       }
     }
 

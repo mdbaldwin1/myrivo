@@ -58,11 +58,10 @@ beforeEach(() => {
 });
 
 describe("checkout status route", () => {
-  test("returns failed when finalization refuses a non-live store", async () => {
+  test("returns the completed order after a paid-session finalization", async () => {
     finalizeStorefrontCheckoutMock.mockResolvedValue({
-      status: "failed",
-      orderId: null,
-      errorMessage: "Store is no longer live. Checkout cannot be completed."
+      status: "completed",
+      orderId: "order-1"
     });
 
     const route = await import("@/app/api/orders/checkout-status/route");
@@ -70,10 +69,10 @@ describe("checkout status route", () => {
 
     const response = await route.GET(request);
 
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
-      status: "failed",
-      error: "Store is no longer live. Checkout cannot be completed."
+      status: "completed",
+      orderId: "order-1"
     });
   });
 
