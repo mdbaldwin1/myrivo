@@ -210,3 +210,57 @@ Refund validation searches for the transition word anywhere on the customer orde
 ### Round 4 release disposition
 
 Do not approve the UX/accessibility gate. Provider fixture absence is an acceptable external execution blocker, but the repository-side acceptance test itself must first describe a valid upload and an actual Stripe/Resend checkout-to-download journey with exact state assertions.
+
+---
+
+## Round 5 re-review — commit `8e43d02`
+
+### Verdict
+
+**FAIL** — valid image upload, hosted Stripe interaction, mixed-cart construction, exact financial-state assertions, and stalled-download recovery are now encoded. Two P1 gaps remain: the suite still does not verify Resend email delivery/access-link linkage, and the accessibility suite is unchanged from round 4 and remains insufficient for the required dynamic-state gate.
+
+### P1 — Checkout-to-access skips the delivered email and does not prove the access belongs to the completed purchase
+
+**Evidence:** `apps/web/e2e/digital-products.spec.ts:8-17` and `:33-50`.
+
+The test now enters Stripe's test card on hosted Checkout for both digital-only and mixed carts and waits for the application return page. That resolves the prior direct-return bypass. However, it immediately clicks the return page's “view/access downloads” link. It never polls or reads the configured Resend test recipient, verifies recipient/subject/order linkage, opens the URL from the delivered message, or asserts that its fragment was exchanged and removed. The final observation is only asserted to be truthy; it does not prove the observed order/composition/payment/email/token/manifest/grant corresponds to the purchase just completed.
+
+As a result, a stale authenticated download session or pre-seeded return-page link can satisfy the UI steps while delivery email is missing, linked to the wrong order, or contains an unusable access URL. This misses a central customer journey and the Task 15 real-provider acceptance requirement.
+
+**Required remediation:** Capture the just-created order/payment identity after each hosted checkout, poll the designated Resend test inbox/API for the matching message, assert recipient, order/store context, single fragment-token link, and absence of private paths, then open that exact link in a clean browser context. Verify fragment removal, files for the same immutable manifest/version, successful UI download, and exact committed grant count in the run-bound observation. Assert digital-only vs mixed composition and fulfillment copy separately.
+
+### P1 — Accessibility coverage still does not exercise the feature's critical dynamic states
+
+**Evidence:** `apps/web/e2e/digital-products-accessibility.spec.ts:19-40`, `:55-82`, and `:84-90`.
+
+This file has no substantive changes in round 5. The remaining round-4 gaps therefore persist:
+
+- Zoom validates the last generic action rather than named primary actions and never activates them at 200%.
+- Recovery focus order is only four unique strings, not an expected sequence.
+- Catalog file and publish controls are focused programmatically, not reached and operated with Tab/Enter/Space; replacement dialog focus trap/restoration and file-input keyboard behavior remain untested.
+- Cart, checkout return, delivered access, download, customer order, and merchant resend are not keyboard-operated.
+- Only recovery validation has an asserted announcement. Upload/preview/publish, checkout/delivery, download success/failure/timeout, and resend announcements remain unverified.
+- Axe does not run after upload/preview/publish, replacement dialog, delivery failure, suspended/revoked access, download failure/timeout, or resend success/error.
+
+Initial-page axe scans are valuable, but they cannot approve the explicit dynamic-state accessibility gate.
+
+**Required remediation:** Integrate accessibility assertions into deterministic UI journeys at mobile and desktop: operate named controls from the keyboard, assert exact focus order and dialog trap/return, activate named primary controls at zoom, verify each live-region message, and run axe after the important success/error/financial states.
+
+### P2 — Provider observations are not asserted beyond object truthiness
+
+**Evidence:** `apps/web/e2e/digital-products.spec.ts:29-30`, `:47-48`, `:65`, `:75`, `:83`, and `:93`.
+
+The acceptance evidence schema is stricter, but the browser suite does not assert its relevant fields. It therefore fails to bind UI outcomes to expected product/order IDs, payment livemode/status, checkout composition, email status, manifest versions, access status, grant count, or retry/resend attempts.
+
+**Remediation:** Parse observations with the shared evidence schema and assert exact expected fields after each action. In particular, prove five grants plus grace reuse and sixth rejection, prior-version preservation after replacement, no grant reset on recovery/resend, and retry convergence.
+
+### Resolved from round 4
+
+- **Valid upload fixture:** the base64 buffer at `digital-products.spec.ts:6` has a real PNG signature and decodable 1×1 payload; it is used for initial upload and replacement.
+- **Hosted checkout:** `completeStripeCheckout()` fills Stripe test-mode card fields and waits for the application return; both digital-only and mixed carts are constructed through UI controls.
+- **Financial UI states:** partial/full refunds and opened/won/lost disputes now use transition-specific copy and download-action visibility assertions (`digital-products.spec.ts:68-84`).
+- **Stall timeout:** the configurable timeout, retry announcement, iframe cleanup, and concurrent-attempt guard remain present and unit-covered.
+
+### Round 5 release disposition
+
+Do not approve the UX/accessibility gate. Real provider credentials may remain an external execution blocker, but the checked-in journey must encode email retrieval and access-link continuity, and the dynamic accessibility requirements must be represented by executable assertions before the release gate can be considered complete.
