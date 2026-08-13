@@ -1030,10 +1030,29 @@ export type DigitalDeliveryNotificationAttemptRecord = {
 
 export type DigitalDownloadReservationRecord = {
   grant_id: string;
+  store_id: string;
+  product_id: string;
+  asset_id: string;
   asset_version_id: string;
   customer_filename: string;
   grant_status: DigitalDownloadGrantStatus;
   reservation_expires_at: string;
+};
+
+export type AuthorizedDigitalDownloadAccessRecord = {
+  access_token_id: string;
+  order_id: string;
+  store_id: string;
+  expires_at: string;
+};
+
+export type ListedDigitalDownloadRecord = {
+  entitlement_id: string;
+  customer_filename: string;
+  mime_type: string;
+  byte_size: number;
+  status: DigitalEntitlementStatus;
+  grants_remaining: number;
 };
 
 export type InventoryMovementReason = "sale" | "restock" | "adjustment";

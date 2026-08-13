@@ -89,6 +89,10 @@ const digitalDeliveryNotificationsMigration = join(
   repoRoot,
   "supabase/migrations/20260813009000_reliable_digital_delivery_notifications.sql",
 );
+const atomicDigitalDownloadGrantsMigration = join(
+  repoRoot,
+  "supabase/migrations/20260813010000_atomic_digital_download_grants.sql",
+);
 
 const ids = {
   storeA: "10000000-0000-0000-0000-000000000001",
@@ -466,6 +470,9 @@ beforeAll(() => {
   }
   if (!existsSync(digitalDeliveryNotificationsMigration)) {
     throw new Error(`Missing digital delivery notifications migration: ${digitalDeliveryNotificationsMigration}`);
+  }
+  if (!existsSync(atomicDigitalDownloadGrantsMigration)) {
+    throw new Error(`Missing atomic digital download grants migration: ${atomicDigitalDownloadGrantsMigration}`);
   }
 
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-digital-migration-"));

@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- Added native digital products with private multi-file delivery, watermarked image previews, digital-only and mixed checkout support, 48-hour secure access links, five download grants per file, personal-use licensing, and refund/dispute access controls.
+- Added native digital products with private multi-file delivery, watermarked image previews, digital-only and mixed checkout support, 48-hour secure access links, five atomic download grants per file with 60-second same-session retry grace, personal-use licensing, and refund/dispute access controls.
 - Hardened digital-product uploads with tenant-bound upload intents, streamed byte verification, immutable replacements, safe catalog removal, bounded metadata-free watermarked previews, and stable same-store preview overrides.
 - Prevented undeliverable digital products from publishing with transactional rights, preview, and per-variant file readiness checks plus safe fulfillment-type conversion rules.
 - Made paid digital delivery durable with transactionally queued manifest jobs, leased retries, bounded exponential backoff, atomic entitlement and purchase-token materialization, provider-idempotent email handoff, and merchant-visible terminal failures.
