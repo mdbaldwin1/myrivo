@@ -84,6 +84,7 @@ describe("digital delivery worker", () => {
       succeeded: 2,
       retrying: 0,
       failed: 0,
+      configurationIssues: [],
     });
     expect(jobCalls).toBeGreaterThan(0);
     expect(notificationCalls).toBeGreaterThan(0);

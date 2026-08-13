@@ -49,11 +49,13 @@ The database is authoritative for financial state and digital access. A service-
 - `lost` revokes entitlements with the source dispute ID and revokes active tokens. This is terminal, including if a later provider event reports a win.
 - Precedence is full refund, then any lost dispute, then any open dispute, then active access.
 
-Webhook event IDs and provider-created timestamps are passed to the transition RPC. Exact event IDs are idempotent. Ordering uses the provider-created timestamp followed by the Stripe event ID in bytewise lexical order, so equal-time delivery races converge deterministically; a recorded lost dispute remains terminal. If the RPC fails, the webhook ledger is marked failed and Stripe receives a retryable error; operators must not mark that webhook processed manually.
+Webhook event IDs and provider-created timestamps are passed to the transition RPC. Exact event IDs are idempotent. Ordering uses the provider-created timestamp followed by the Stripe event ID in bytewise lexical order, so equal-time delivery races converge deterministically. An incoming loss still takes precedence over a current resolved/open state; once loss is recorded, later resolved/open states cannot replace it, and competing loss events advance only to the greatest source tuple. If the RPC fails, the webhook ledger is marked failed and Stripe receives a retryable error; operators must not mark that webhook processed manually.
 
 Merchant refund execution first claims the refund under an order/refund row lock. Only the winning request calls Stripe, using `refund-request:{refund UUID}` as the provider idempotency key. Concurrent callers receive the current processing record. If Stripe accepts the refund but synchronization fails, the record stays processing for webhook replay.
 
 Financial customer mail is not sent inline. Material refund/dispute changes enqueue an audited row in the durable notification queue within the same database transaction. The existing leased worker retries provider failures with one notification-scoped provider idempotency key and records each safe attempt. Superseded pending financial notices fail closed instead of describing an obsolete state.
+
+The internal processor always requires `DIGITAL_DELIVERY_PROCESS_SECRET` for request authentication. `DIGITAL_DELIVERY_TOKEN_SECRET` is required only for purchase, merchant-resend, and customer-recovery work that derives an access bearer. If token derivation is unavailable, the worker reports `digital_delivery_token_unconfigured`, skips delivery jobs and bearer-dependent notification rows without leasing or incrementing them, and continues draining refund/dispute notifications.
 
 ## Reconciliation
 

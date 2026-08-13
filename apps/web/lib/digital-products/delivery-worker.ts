@@ -110,19 +110,33 @@ type BatchWorkResult = {
 
 export type DigitalDeliveryBatchDependencies = {
   processJob: () => Promise<BatchWorkResult>;
-  processNotification: () => Promise<BatchWorkResult>;
+  processNotification: (options?: {
+    includeAccessNotifications: boolean;
+  }) => Promise<BatchWorkResult>;
 };
 
 function createDefaultBatchDependencies(): DigitalDeliveryBatchDependencies {
   return {
     processJob: () => processNextDigitalDelivery(),
-    processNotification: () => processNextDigitalDeliveryNotification(),
+    processNotification: (options) =>
+      processNextDigitalDeliveryNotification(undefined, undefined, options),
   };
 }
 
 export async function processDigitalDeliveryBatch(
-  dependencies: DigitalDeliveryBatchDependencies = createDefaultBatchDependencies(),
+  dependencies?: DigitalDeliveryBatchDependencies,
+  options: { tokenSecretConfigured?: boolean } = {},
 ) {
+  const resolvedDependencies =
+    dependencies ?? createDefaultBatchDependencies();
+  const tokenSecretConfigured =
+    options.tokenSecretConfigured ??
+    (dependencies
+      ? true
+      : Boolean(getServerEnv().DIGITAL_DELIVERY_TOKEN_SECRET?.trim()));
+  const configurationIssues = tokenSecretConfigured
+    ? []
+    : ["digital_delivery_token_unconfigured"];
   let claimed = 0;
   let succeeded = 0;
   let retrying = 0;
@@ -134,12 +148,23 @@ export async function processDigitalDeliveryBatch(
     index < DIGITAL_PRODUCT_CONFIG.deliveryProcessBatchSize;
     index += 1
   ) {
+    if (!tokenSecretConfigured) {
+      const result = await resolvedDependencies.processNotification({
+        includeAccessNotifications: false,
+      });
+      if (result.status === "idle") break;
+      claimed += 1;
+      if (result.status === "succeeded") succeeded += 1;
+      else if (result.status === "pending") retrying += 1;
+      else failed += 1;
+      continue;
+    }
     const primary = preferNotification
-      ? dependencies.processNotification
-      : dependencies.processJob;
+      ? resolvedDependencies.processNotification
+      : resolvedDependencies.processJob;
     const secondary = preferNotification
-      ? dependencies.processJob
-      : dependencies.processNotification;
+      ? resolvedDependencies.processJob
+      : resolvedDependencies.processNotification;
     let result = await primary();
     if (result.status === "idle") {
       result = await secondary();
@@ -152,5 +177,5 @@ export async function processDigitalDeliveryBatch(
     preferNotification = !preferNotification;
   }
 
-  return { claimed, succeeded, retrying, failed };
+  return { claimed, succeeded, retrying, failed, configurationIssues };
 }

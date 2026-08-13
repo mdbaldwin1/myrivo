@@ -28,13 +28,6 @@ export async function POST(request: NextRequest) {
   if (!isAuthorized(request, secret)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!env.DIGITAL_DELIVERY_TOKEN_SECRET?.trim()) {
-    return NextResponse.json(
-      { error: "Digital delivery processor is not configured." },
-      { status: 503 },
-    );
-  }
-
   try {
     const result = await processDigitalDeliveryBatch();
     return NextResponse.json({ ok: true, ...result });

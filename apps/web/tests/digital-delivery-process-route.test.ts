@@ -51,9 +51,16 @@ describe("digital delivery process route", () => {
     expect(processDigitalDeliveryBatchMock).not.toHaveBeenCalled();
   });
 
-  test("does not claim jobs while token derivation is unconfigured", async () => {
+  test("runs the capability-aware worker while token derivation is unconfigured", async () => {
     process.env.DIGITAL_DELIVERY_PROCESS_SECRET =
       "correct-process-secret-that-is-long-enough";
+    processDigitalDeliveryBatchMock.mockResolvedValue({
+      claimed: 0,
+      succeeded: 0,
+      retrying: 0,
+      failed: 0,
+      configurationIssues: ["digital_delivery_token_unconfigured"],
+    });
     const route = await import(
       "@/app/api/internal/digital-delivery/process/route"
     );
@@ -67,8 +74,16 @@ describe("digital delivery process route", () => {
       }),
     );
 
-    expect(response.status).toBe(503);
-    expect(processDigitalDeliveryBatchMock).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      claimed: 0,
+      succeeded: 0,
+      retrying: 0,
+      failed: 0,
+      configurationIssues: ["digital_delivery_token_unconfigured"],
+    });
+    expect(processDigitalDeliveryBatchMock).toHaveBeenCalledOnce();
   });
 
   test("processes a bounded batch with a valid bearer credential", async () => {
@@ -81,6 +96,7 @@ describe("digital delivery process route", () => {
       succeeded: 1,
       retrying: 1,
       failed: 0,
+      configurationIssues: [],
     });
     const route = await import(
       "@/app/api/internal/digital-delivery/process/route"
@@ -102,6 +118,7 @@ describe("digital delivery process route", () => {
       succeeded: 1,
       retrying: 1,
       failed: 0,
+      configurationIssues: [],
     });
     expect(processDigitalDeliveryBatchMock).toHaveBeenCalledTimes(1);
   });

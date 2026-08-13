@@ -55,6 +55,7 @@ type NotificationCompletion = {
 export type DigitalDeliveryNotificationProcessorDependencies = {
   claimNotification: (
     notificationId?: string,
+    options?: DigitalDeliveryNotificationClaimOptions,
   ) => Promise<DigitalDeliveryNotificationClaim | null>;
   buildMessage: (
     claim: DigitalDeliveryNotificationClaim,
@@ -69,6 +70,10 @@ export type DigitalDeliveryNotificationProcessorDependencies = {
     provider: "resend";
     safeError: string | null;
   }) => Promise<NotificationCompletion>;
+};
+
+export type DigitalDeliveryNotificationClaimOptions = {
+  includeAccessNotifications: boolean;
 };
 
 const claimSchema = z.object({
@@ -293,11 +298,15 @@ async function sendDefaultEmail(
 export async function claimDigitalDeliveryNotification(
   notificationId: string | undefined,
   client: DigitalDeliveryNotificationRpcClient = createSupabaseAdminClient(),
+  options: DigitalDeliveryNotificationClaimOptions = {
+    includeAccessNotifications: true,
+  },
 ): Promise<DigitalDeliveryNotificationClaim | null> {
   const { data, error } = await client.rpc("claim_digital_delivery_notification", {
     p_notification_id: notificationId ?? null,
     p_lease_seconds: DIGITAL_PRODUCT_CONFIG.deliveryLeaseSeconds,
     p_max_attempts: DIGITAL_PRODUCT_CONFIG.deliveryMaxAttempts,
+    p_include_access_notifications: options.includeAccessNotifications,
   });
   if (error) {
     throw new Error(error.message || "Digital delivery notification claim failed");
@@ -365,8 +374,8 @@ export async function completeDigitalDeliveryNotification(
 
 function createDefaultDependencies(): DigitalDeliveryNotificationProcessorDependencies {
   return {
-    claimNotification: (notificationId) =>
-      claimDigitalDeliveryNotification(notificationId),
+    claimNotification: (notificationId, options) =>
+      claimDigitalDeliveryNotification(notificationId, undefined, options),
     buildMessage: buildDefaultMessage,
     sendEmail: sendDefaultEmail,
     completeNotification: (input) => completeDigitalDeliveryNotification(input),
@@ -376,8 +385,11 @@ function createDefaultDependencies(): DigitalDeliveryNotificationProcessorDepend
 export async function processNextDigitalDeliveryNotification(
   dependencies: DigitalDeliveryNotificationProcessorDependencies = createDefaultDependencies(),
   notificationId?: string,
+  claimOptions: DigitalDeliveryNotificationClaimOptions = {
+    includeAccessNotifications: true,
+  },
 ) {
-  const claim = await dependencies.claimNotification(notificationId);
+  const claim = await dependencies.claimNotification(notificationId, claimOptions);
   if (!claim) {
     return { status: "idle" as const, notificationId: null, nextAttemptAt: null };
   }

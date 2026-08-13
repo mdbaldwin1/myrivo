@@ -843,16 +843,8 @@ begin
   );
 
   v_is_stale := v_had_dispute and (
-    (v_dispute.status = 'lost' and p_incoming_status <> 'lost')
-    or (
-      v_dispute.status in ('warning_closed', 'won', 'prevented')
-      and p_incoming_status in (
-        'warning_needs_response', 'warning_under_review',
-        'needs_response', 'under_review'
-      )
-    )
-    or (
-      p_incoming_status <> 'lost'
+    (
+      (p_incoming_status <> 'lost' or v_dispute.status = 'lost')
       and v_dispute.source_event_created_at is not null
       and (
         p_source_event_created_at < v_dispute.source_event_created_at
@@ -860,6 +852,14 @@ begin
           p_source_event_created_at = v_dispute.source_event_created_at
           and p_source_event_id collate "C" < v_dispute.source_event_id collate "C"
         )
+      )
+    )
+    or (v_dispute.status = 'lost' and p_incoming_status <> 'lost')
+    or (
+      v_dispute.status in ('warning_closed', 'won', 'prevented')
+      and p_incoming_status in (
+        'warning_needs_response', 'warning_under_review',
+        'needs_response', 'under_review'
       )
     )
   );
@@ -1113,7 +1113,8 @@ drop function public.claim_digital_delivery_notification(uuid, integer, integer)
 create function public.claim_digital_delivery_notification(
   p_notification_id uuid,
   p_lease_seconds integer,
-  p_max_attempts integer
+  p_max_attempts integer,
+  p_include_access_notifications boolean default true
 )
 returns table(
   id uuid,
@@ -1144,6 +1145,7 @@ declare
 begin
   if p_lease_seconds not between 1 and 3600
      or p_max_attempts not between 1 and 100
+     or p_include_access_notifications is null
   then
     raise exception 'Digital delivery notification claim configuration is invalid';
   end if;
@@ -1224,6 +1226,10 @@ begin
     and notification.next_attempt_at <= v_now
     and notification.attempt_count < p_max_attempts
     and (p_notification_id is null or notification.id = p_notification_id)
+    and (
+      p_include_access_notifications
+      or notification.notification_type in ('refund', 'dispute')
+    )
   order by notification.next_attempt_at, notification.created_at, notification.id
   for update skip locked
   limit 1;
@@ -1293,7 +1299,7 @@ revoke all on function public.find_digital_access_reconciliation_issues(integer)
   from public, anon, authenticated;
 revoke all on function public.claim_refund_for_processing(uuid,uuid,uuid)
   from public, anon, authenticated;
-revoke all on function public.claim_digital_delivery_notification(uuid,integer,integer)
+revoke all on function public.claim_digital_delivery_notification(uuid,integer,integer,boolean)
   from public, anon, authenticated;
 
 grant execute on function public.sync_refund_digital_access(uuid,text,text,text,text,text,uuid,text,timestamptz)
@@ -1304,5 +1310,5 @@ grant execute on function public.find_digital_access_reconciliation_issues(integ
   to service_role;
 grant execute on function public.claim_refund_for_processing(uuid,uuid,uuid)
   to service_role;
-grant execute on function public.claim_digital_delivery_notification(uuid,integer,integer)
+grant execute on function public.claim_digital_delivery_notification(uuid,integer,integer,boolean)
   to service_role;

@@ -105,3 +105,28 @@ The full suite retained the existing zero-size chart stderr. The build retained 
 - `git diff --check` — passed.
 
 The full suite retained the existing zero-size chart stderr. The build retained the existing Next.js middleware deprecation and stale Browserslist-data warnings.
+
+## Fix Round 2: Capability-Aware Processing and Lost-Event Ordering
+
+### Changes
+
+- Kept the processor authentication secret mandatory while removing the route-wide dependency on the access-token derivation secret. Without token derivation, the batch reports one safe configuration issue, skips purchase jobs, and asks the database to claim only tokenless refund/dispute notifications.
+- Added a claim capability to the leased notification RPC. Its filter runs before row locking, attempt increment, and attempt-log insertion, so bearer-dependent rows remain pending and unconsumed while financial mail continues fairly through mixed queues.
+- Applied source-tuple comparison to competing events after loss is already authoritative. Older or bytewise-lower loss events are ignored and audited exactly once; a newer loss may advance the recorded source tuple. Loss still dominates a current resolved/open state, and later resolved/open events cannot regress an existing loss.
+
+### TDD Evidence
+
+- Route RED: financial-only, access-only, and mixed queues all returned the route-level 503 before work classification. GREEN: the real route, batch, and notification processor send financial mail without the token secret, leave access work at `pending:0`, and report `digital_delivery_token_unconfigured`.
+- PostgreSQL RED: the capability-scoped claim did not exist, and lower/older loss events overwrote the authoritative source tuple in sequential and concurrent delivery. GREEN: the filtered claim preserves the older access row, both loss delivery orders converge, older loss is ignored, and a forced concurrent same-time race retains the bytewise-greater event ID with one ignored-event audit.
+- Focused processor suite: 4 files, 27 tests passed.
+- Real PostgreSQL migration suite: 112 tests passed.
+
+### Validation
+
+- `npm run lint --workspace @myrivo/web` — passed with zero warnings/errors; consistency checks passed.
+- `npm run typecheck --workspace @myrivo/web` — passed.
+- `npm test` — 260 files and 1,047 tests passed.
+- `npm run build` — passed; optimized Next.js build and TypeScript validation completed.
+- `git diff --check` — passed.
+
+The full suite retained the existing zero-size chart stderr. The build retained the existing Next.js middleware deprecation and stale Browserslist-data warnings.

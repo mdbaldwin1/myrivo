@@ -2504,7 +2504,7 @@ describe("durable digital delivery", () => {
       runSql(
         "full_chain",
         `select
-          has_function_privilege('anon', 'public.claim_digital_delivery_notification(uuid,integer,integer)', 'execute')::text || ':' ||
+          has_function_privilege('anon', 'public.claim_digital_delivery_notification(uuid,integer,integer,boolean)', 'execute')::text || ':' ||
           has_function_privilege('authenticated', 'public.prepare_merchant_digital_delivery_resend(uuid,uuid,uuid,text,uuid,uuid,uuid,text,integer)', 'execute')::text || ':' ||
           has_function_privilege('service_role', 'public.prepare_merchant_digital_delivery_resend(uuid,uuid,uuid,text,uuid,uuid,uuid,text,integer)', 'execute')::text || ':' ||
           has_function_privilege('service_role', 'public.prepare_merchant_digital_delivery_resend_unchecked(uuid,uuid,uuid,text,uuid,uuid,uuid,text,integer)', 'execute')::text || ':' ||
@@ -2674,6 +2674,58 @@ describe("durable digital delivery", () => {
     },
   );
 
+  it("claims financial notifications without consuming older access notifications", () => {
+    retireClaimableJobs();
+    const fixture = finalizeDeliveryCheckout("000000000193");
+    const job = claimDelivery();
+    const materialized = JSON.parse(
+      runSql("full_chain", materializeUniqueStatement(job, "task13-capability-filter")),
+    ) as { access_token_id: string };
+    const accessNotificationId = (
+      JSON.parse(
+        runSql(
+          "full_chain",
+          `select row_to_json(prepared) from public.prepare_purchase_digital_delivery_notification(
+            '${job.id}', '${job.lease_token}', '${materialized.access_token_id}'
+          ) prepared`,
+        ),
+      ) as { notification_id: string }
+    ).notification_id;
+    const refundId = insertRefund(fixture.orderId, "000000000193", 500);
+    runSql(
+      "full_chain",
+      refundSyncStatement({
+        refundId,
+        stripeRefundId: "re_task13_capability_filter",
+        status: "succeeded",
+        eventId: "evt_task13_capability_filter",
+        eventCreatedAt: "2026-08-13T19:15:00Z",
+      }),
+    );
+
+    const claimed = JSON.parse(
+      runSql(
+        "full_chain",
+        `select row_to_json(notification) from public.claim_digital_delivery_notification(
+          null, 120, 3, false
+        ) notification`,
+      ),
+    ) as { notification_type: string; refund_id: string };
+
+    expect(claimed).toMatchObject({
+      notification_type: "refund",
+      refund_id: refundId,
+    });
+    expect(
+      runSql(
+        "full_chain",
+        `select status || ':' || attempt_count::text
+         from public.digital_delivery_notifications
+         where id = '${accessNotificationId}'`,
+      ),
+    ).toBe("pending:0");
+  });
+
   it.each([
     ["won-then-lost", ["won", "lost"], "000000000188"],
     ["lost-then-won", ["lost", "won"], "000000000189"],
@@ -2775,6 +2827,157 @@ describe("durable digital delivery", () => {
          where entity_id = '${fixture.orderId}' and metadata ? 'sourceEventId'`,
       ),
     ).toBe("3");
+  });
+
+  it.each([
+    ["higher-first", ["z", "a"], "000000000194", 1],
+    ["lower-first", ["a", "z"], "000000000195", 0],
+  ] as const)(
+    "orders equal-time lost events by event id in both sequential orders (%s)",
+    (_label, eventIds, suffix, ignoredCount) => {
+      const fixture = createFinancialAccessFixture(suffix);
+      runSql(
+        "full_chain",
+        disputeSyncStatement({
+          orderId: fixture.orderId,
+          disputeSuffix: suffix,
+          status: "under_review",
+          eventId: `evt_task13_lost_open_${suffix}`,
+          eventCreatedAt: "2026-08-13T19:31:00Z",
+        }),
+      );
+      for (const eventId of eventIds) {
+        runSql(
+          "full_chain",
+          disputeSyncStatement({
+            orderId: fixture.orderId,
+            disputeSuffix: suffix,
+            status: "lost",
+            eventId: `evt_task13_lost_${suffix}_${eventId}`,
+            eventCreatedAt: "2026-08-13T19:32:00Z",
+          }),
+        );
+      }
+
+      expect(
+        runSql(
+          "full_chain",
+          `select status || ':' || source_event_id
+           from public.order_disputes where stripe_dispute_id = 'dp_${suffix}'`,
+        ),
+      ).toBe(`lost:evt_task13_lost_${suffix}_z`);
+      expect(
+        runSql(
+          "full_chain",
+          `select count(*) from public.audit_events
+           where entity_id = '${fixture.orderId}'
+             and action = 'dispute_event_ignored'
+             and metadata ->> 'sourceEventId' = 'evt_task13_lost_${suffix}_a'`,
+        ),
+      ).toBe(String(ignoredCount));
+    },
+  );
+
+  it("ignores and audits an older lost event exactly once", () => {
+    const fixture = createFinancialAccessFixture("000000000196");
+    const currentLost = disputeSyncStatement({
+      orderId: fixture.orderId,
+      disputeSuffix: "000000000196",
+      status: "lost",
+      eventId: "evt_task13_lost_current",
+      eventCreatedAt: "2026-08-13T19:34:00Z",
+    });
+    const olderLost = disputeSyncStatement({
+      orderId: fixture.orderId,
+      disputeSuffix: "000000000196",
+      status: "lost",
+      eventId: "evt_task13_lost_older",
+      eventCreatedAt: "2026-08-13T19:33:00Z",
+    });
+    runSql("full_chain", `${currentLost}; ${olderLost}; ${olderLost}`);
+
+    expect(
+      runSql(
+        "full_chain",
+        `select status || ':' || source_event_id
+         from public.order_disputes where stripe_dispute_id = 'dp_000000000196'`,
+      ),
+    ).toBe("lost:evt_task13_lost_current");
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.audit_events
+         where entity_id = '${fixture.orderId}'
+           and action = 'dispute_event_ignored'
+           and metadata ->> 'sourceEventId' = 'evt_task13_lost_older'`,
+      ),
+    ).toBe("1");
+  });
+
+  it("converges concurrent equal-time lost IDs and audits the stale ID once", async () => {
+    const fixture = createFinancialAccessFixture("000000000197");
+    runSql(
+      "full_chain",
+      disputeSyncStatement({
+        orderId: fixture.orderId,
+        disputeSuffix: "000000000197",
+        status: "under_review",
+        eventId: "evt_task13_concurrent_lost_open",
+        eventCreatedAt: "2026-08-13T19:35:00Z",
+      }),
+    );
+    const higherSession = "task13_equal_lost_higher_first";
+    const higher = runSqlAsync(
+      "full_chain",
+      `begin; ${disputeSyncStatement({
+        orderId: fixture.orderId,
+        disputeSuffix: "000000000197",
+        status: "lost",
+        eventId: "evt_task13_concurrent_lost_z",
+        eventCreatedAt: "2026-08-13T19:36:00Z",
+      })}; select pg_sleep(0.6); commit;`,
+      higherSession,
+    );
+    await waitForPostgresSession("full_chain", higherSession);
+    const lower = runSqlAsync(
+      "full_chain",
+      disputeSyncStatement({
+        orderId: fixture.orderId,
+        disputeSuffix: "000000000197",
+        status: "lost",
+        eventId: "evt_task13_concurrent_lost_a",
+        eventCreatedAt: "2026-08-13T19:36:00Z",
+      }),
+      "task13_equal_lost_lower_waiter",
+    );
+    await Promise.all([higher, lower]);
+    runSql(
+      "full_chain",
+      disputeSyncStatement({
+        orderId: fixture.orderId,
+        disputeSuffix: "000000000197",
+        status: "lost",
+        eventId: "evt_task13_concurrent_lost_a",
+        eventCreatedAt: "2026-08-13T19:36:00Z",
+      }),
+    );
+
+    expect(
+      runSql(
+        "full_chain",
+        `select status || ':' || source_event_id
+         from public.order_disputes where stripe_dispute_id = 'dp_000000000197'`,
+      ),
+    ).toBe("lost:evt_task13_concurrent_lost_z");
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.audit_events
+         where entity_id = '${fixture.orderId}'
+           and action = 'dispute_event_ignored'
+           and metadata ->> 'sourceEventId' = 'evt_task13_concurrent_lost_a'`,
+      ),
+    ).toBe("1");
   });
 
   it("never binds or restores a legacy source-null dispute suspension", () => {
