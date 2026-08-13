@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 const requirePlatformRoleMock = vi.fn();
 const enforceTrustedOriginMock = vi.fn();
 const rpcMock = vi.fn();
+const recordDigitalProductEventBestEffortMock = vi.fn();
 
 vi.mock("@/lib/auth/authorization", () => ({
   requirePlatformRole: (...args: unknown[]) => requirePlatformRoleMock(...args),
@@ -14,11 +15,16 @@ vi.mock("@/lib/security/request-origin", () => ({
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: vi.fn(() => ({ rpc: (...args: unknown[]) => rpcMock(...args) })),
 }));
+vi.mock("@/lib/digital-products/telemetry", () => ({
+  recordDigitalProductEventBestEffort: (...args: unknown[]) =>
+    recordDigitalProductEventBestEffortMock(...args),
+}));
 
 beforeEach(() => {
   requirePlatformRoleMock.mockReset();
   enforceTrustedOriginMock.mockReset().mockReturnValue(null);
   rpcMock.mockReset();
+  recordDigitalProductEventBestEffortMock.mockReset().mockResolvedValue(true);
 });
 
 describe("platform digital product operations route", () => {
@@ -36,6 +42,38 @@ describe("platform digital product operations route", () => {
     const route = await import("@/app/api/platform/digital-products/operations/route");
     const payload = await (await route.GET()).json();
     expect(Object.keys(payload.issues[0]).sort()).toEqual(["ageMinutes", "attemptCount", "generationAttemptCount", "issueType", "jobId", "orderId", "repairGeneration", "status", "storeId"].sort());
+  });
+
+  test("emits repeated-failure telemetry from the bounded generation attempt count", async () => {
+    const storeId = crypto.randomUUID();
+    const orderId = crypto.randomUUID();
+    requirePlatformRoleMock.mockResolvedValueOnce({ context: { userId: crypto.randomUUID() }, response: null });
+    rpcMock.mockResolvedValueOnce({
+      data: [{
+        issue_type: "repeated_delivery_failures",
+        store_id: storeId,
+        order_id: orderId,
+        job_id: crypto.randomUUID(),
+        status: "failed",
+        attempt_count: 10_001,
+        repair_generation: 7,
+        generation_attempt_count: 3,
+        age_minutes: 8,
+      }],
+      error: null,
+    });
+    const route = await import("@/app/api/platform/digital-products/operations/route");
+
+    expect((await route.GET()).status).toBe(200);
+    expect(recordDigitalProductEventBestEffortMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: "delivery_job_failed",
+        storeId,
+        orderId,
+        dimensions: { outcome: "failed", attemptNumber: 3 },
+      }),
+    );
   });
 
   test("dispatches an idempotent audited requeue RPC", async () => {

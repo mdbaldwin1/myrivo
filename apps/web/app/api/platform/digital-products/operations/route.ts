@@ -56,7 +56,7 @@ export async function GET() {
       dimensions: issue.issueType === "paid_delivery_pending_over_5m"
         ? { ageBucket: issue.ageMinutes >= 30 ? "30m_plus" : "5m_to_30m" }
         : issue.issueType === "repeated_delivery_failures"
-          ? { outcome: "failed", attemptNumber: issue.attemptCount }
+          ? { outcome: "failed", attemptNumber: issue.generationAttemptCount }
           : { issueType: issue.status },
     },
   )));

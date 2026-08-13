@@ -1000,45 +1000,88 @@ describe("digital product store rollout controls", () => {
     enableRollout();
   });
 
-  it("rejects direct telemetry inserts that bypass event-specific typed dimensions", () => {
+  it("enforces every event-specific dimension key and JSON type on direct inserts", () => {
+    const contracts = [
+      { eventType: "upload_failed", dimensions: { stage: "completion", outcome: "failed" } },
+      { eventType: "preview_failed", dimensions: { stage: "preview", outcome: "failed" } },
+      { eventType: "manifest_failed", dimensions: { stage: "checkout_manifest", outcome: "failed", composition: "mixed" } },
+      { eventType: "delivery_job_aged", dimensions: { ageBucket: "30m_plus" } },
+      { eventType: "delivery_job_failed", dimensions: { outcome: "failed", attemptNumber: 2 } },
+      { eventType: "delivery_email_attempted", dimensions: { notificationType: "purchase", outcome: "processing", attemptNumber: 1 } },
+      { eventType: "access_link_regenerated", dimensions: { notificationType: "merchant_resend", outcome: "queued" } },
+      { eventType: "download_signing_failed", dimensions: { stage: "storage_signing", outcome: "failed" } },
+      { eventType: "grant_exhausted", dimensions: { stage: "reservation", outcome: "denied" } },
+      { eventType: "reconciliation_mismatch", dimensions: { issueType: "token_access_mismatch" } },
+      { eventType: "refund_transition", dimensions: { outcome: "succeeded" } },
+      { eventType: "dispute_transition", dimensions: { disputeStatus: "under_review" } },
+    ] as const;
+    const validRows = contracts.map(({ eventType, dimensions }) =>
+      `('${eventType}', $case$${JSON.stringify(dimensions)}$case$::jsonb)`,
+    ).join(",\n");
     expect(
       runSql(
         "full_chain",
-        `insert into public.digital_product_events(event_type, dimensions)
-         values ('upload_failed', '{"stage":"completion","outcome":"failed"}'::jsonb)
-         returning event_type`,
+        `with valid(event_type, dimensions) as (values ${validRows})
+         select count(*)::text || ':' ||
+           count(*) filter (
+             where public.digital_product_event_dimensions_are_safe(event_type, dimensions)
+           )::text
+         from valid`,
       ),
-    ).toBe("upload_failed");
-    for (const dimensions of [
-      `'{"stage":"customer-name","outcome":"failed"}'::jsonb`,
-      `'{"stage":"upload","outcome":"failed","issueType":"token_access_mismatch"}'::jsonb`,
-      `'{"outcome":"failed","attemptNumber":10001}'::jsonb`,
-      `'{"issueType":"merchant-entered-label"}'::jsonb`,
-    ]) {
-      expectRejected(
+    ).toBe(`${contracts.length}:${contracts.length}`);
+
+    const invalidCases = contracts.flatMap(({ eventType, dimensions }) => {
+      const entries = Object.entries(dimensions) as [string, string | number][];
+      return entries.flatMap(([key, value]) => {
+        const wrongValues = typeof value === "number"
+          ? [null, "1", true, [], {}, 1.5, -1, 10_001]
+          : [null, 1, true, [], {}];
+        return [
+          { eventType, dimensions: Object.fromEntries(entries.filter(([name]) => name !== key)) },
+          ...wrongValues.map((wrongValue) => ({
+            eventType,
+            dimensions: { ...dimensions, [key]: wrongValue },
+          })),
+        ];
+      });
+    }).concat(contracts.map(({ eventType, dimensions }) => ({
+      eventType,
+      dimensions: { ...dimensions, unexpected: "value" },
+    })));
+    const invalidRows = invalidCases.map(({ eventType, dimensions }, index) =>
+      `(${index}, '${eventType}', $case$${JSON.stringify(dimensions)}$case$::jsonb)`,
+    ).join(",\n");
+    expect(
+      runSql(
         "full_chain",
-        `insert into public.digital_product_events(event_type, dimensions)
-         values (
-           case
-             when ${dimensions} ? 'attemptNumber' then 'delivery_job_failed'
-             when ${dimensions} ? 'issueType' and not (${dimensions} ? 'stage') then 'reconciliation_mismatch'
-             else 'upload_failed'
-           end,
-           ${dimensions}
-         )`,
-      );
-    }
-    for (const [eventType, dimensions] of [
-      ["delivery_job_failed", `'{"outcome":"failed"}'::jsonb`],
-      ["delivery_email_attempted", `'{"outcome":"processing","attemptNumber":1}'::jsonb`],
-      ["dispute_transition", `'{}'::jsonb`],
-    ] as const) {
-      expectRejected(
-        "full_chain",
-        `insert into public.digital_product_events(event_type, dimensions)
-         values ('${eventType}', ${dimensions})`,
-      );
-    }
+        `with invalid(case_id, event_type, dimensions) as (values ${invalidRows})
+         select count(*)::text || ':' ||
+           count(*) filter (
+             where public.digital_product_event_dimensions_are_safe(event_type, dimensions)
+           )::text
+         from invalid`,
+      ),
+    ).toBe(`${invalidCases.length}:0`);
+
+    runSql(
+      "full_chain",
+      `do $test$
+       declare invalid record;
+       begin
+         for invalid in
+           select * from (values ${invalidRows}) candidate(case_id, event_type, dimensions)
+         loop
+           begin
+             insert into public.digital_product_events(event_type, dimensions)
+             values (invalid.event_type, invalid.dimensions);
+             raise exception 'unsafe telemetry case % was accepted', invalid.case_id;
+           exception
+             when check_violation then null;
+           end;
+         end loop;
+       end
+       $test$`,
+    );
   });
 
   it("keeps rollout and health functions service-role-only", () => {
@@ -1919,6 +1962,38 @@ describe("durable digital delivery", () => {
            and entity_id = '${fixture.orderId}'`,
       ),
     ).toBe("1");
+  });
+
+  it("records a failed repair generation after the global attempt count exceeds telemetry bounds", () => {
+    retireClaimableJobs();
+    const fixture = finalizeDeliveryCheckout("000000000272");
+
+    runSql(
+      "full_chain",
+      `update public.digital_delivery_jobs
+       set status = 'failed', attempt_count = 10001,
+           repair_generation = 7, generation_attempt_count = 2,
+           lease_expires_at = null, lease_token = null, completed_at = now(),
+           last_safe_error = 'Repair generation failed', updated_at = now()
+       where id = '${fixture.jobId}'`,
+    );
+
+    expect(
+      runSql(
+        "full_chain",
+        `select job.status || ':' || job.attempt_count::text || ':' ||
+           job.generation_attempt_count::text || ':' ||
+           (event.dimensions ->> 'attemptNumber') || ':' ||
+           jsonb_typeof(event.dimensions -> 'attemptNumber')
+         from public.digital_delivery_jobs job
+         join public.digital_product_events event
+           on event.order_id = job.order_id
+          and event.event_type = 'delivery_job_failed'
+         where job.id = '${fixture.jobId}'
+         order by event.created_at desc
+         limit 1`,
+      ),
+    ).toBe("failed:10001:2:2:number");
   });
 
   it("serializes concurrent duplicate rollout, requeue, and reconcile operations", async () => {

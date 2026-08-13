@@ -36,7 +36,7 @@ Investigate these issue codes:
 - `repeated_delivery_failures`: a delivery job has failed at least three attempts.
 - `access_state_mismatch`: entitlement/token state differs from the authoritative refund or dispute state.
 
-Privacy-safe events cover upload and preview failures, manifest failures, aged/failed jobs, email attempts, link regeneration, download signing failures, grant exhaustion, reconciliation mismatches, and refund/dispute transitions. Each event has its own closed dimension schema: fixed keys, enum strings, and bounded small integers. Free-form names, labels, reasons, paths, URLs, emails, and oversized values are rejected in both the application and database.
+Privacy-safe events cover upload and preview failures, manifest failures, aged/failed jobs, email attempts, link regeneration, download signing failures, grant exhaustion, reconciliation mismatches, and refund/dispute transitions. Each event has its own closed dimension schema: fixed keys, explicitly typed enum strings, and bounded integers. Missing keys, JSON null, wrong JSON types, free-form names, labels, reasons, paths, URLs, emails, and oversized values are rejected in both the application and database. Failed-job event `attemptNumber` is the bounded current-generation attempt count; use the separate health `attemptCount` field only for monotonic global history.
 
 ## Repair actions
 
