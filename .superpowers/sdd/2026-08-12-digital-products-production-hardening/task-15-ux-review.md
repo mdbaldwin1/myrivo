@@ -101,3 +101,53 @@ The visible “Preparing…” state now clears after 2.5 seconds and both trans
 ### Round 2 release disposition
 
 Do not approve the UX/accessibility release gate. Resolve all three P1 findings and re-run the seeded browser suite with zero skipped tests. The strict fixture interlock prevents an empty CI run, but it does not compensate for assertions that do not exercise or substantiate the required experiences.
+
+---
+
+## Round 3 re-review — commit `a26c7b1`
+
+### Verdict
+
+**FAIL** — fragment retry and response-aware download messaging are materially improved, but the two acceptance-quality P1 blockers remain. The new “executable” scenario suite calls a privileged control endpoint instead of driving the claimed user journeys, and accessibility validation still covers only a small fraction of the required interaction semantics.
+
+### P1 — The executable suite mutates scenarios through a control API, not through the product UX
+
+**Evidence:** `apps/web/e2e/digital-products.spec.ts:9-16`, `:18-25`, `:27-43`, and `:45-52`; `apps/web/e2e/digital-products-fixture.ts:27-35`.
+
+The fixture helper POSTs an arbitrary action string to an externally supplied privileged `controlUrl` and trusts the returned state fields. Every high-risk operation is performed this way: `merchant-upload-publish`, Stripe payment, grant issuance, replacement, recovery, refunds, disputes, delivery failure/retry, and resend. The tests do not click upload/publish controls, add items or complete checkout, open the delivered email, activate a download, submit recovery, use merchant resend, or inspect customer/merchant UI after each financial transition. Despite the test title, the merchant scenario performs no catalog action between navigation and reload. The only post-action UI checks are “Ready to sell,” one checkout link, one files heading, and “Delivery sent.”
+
+This structure can verify a separately implemented acceptance controller while the actual merchant and buyer interfaces are broken. It also cannot demonstrate keyboard/mouse usability, state-specific copy/actions, immutable prior-version visibility, or the absence/presence of physical fulfillment throughout the real flow. Run binding and exact returned fields are useful anti-fabrication improvements, but they do not make the control API equivalent to the user experience.
+
+**Required remediation:** Reserve control actions for deterministic setup and provider event injection only. Perform merchant upload/preview/publish, cart construction, checkout navigation, delivered-link opening, five download clicks/grace behavior, recovery form submission, replacement management, and merchant resend through the rendered UI. After provider-side refund/dispute/failure injection, reload both customer and merchant views and assert exact access status, explanation, and available/unavailable actions. Correlate each action with the same run/order/entitlement and assert those identifiers or immutable filenames in the UI.
+
+### P1 — Accessibility validation remains incomplete for the required workflows
+
+**Evidence:** `apps/web/e2e/digital-products-accessibility.spec.ts:19-32`, `:35-45`, `:47-64`, and `:66-72`.
+
+The suite now uses distinct customer and merchant identities, validates a dynamic recovery error with focus, and evaluates reduced-motion style while the loading spinner exists. Those are sound improvements. However:
+
+- 200% zoom still checks only document-level horizontal overflow and scrolls the last generic button/link into view; it does not assert the primary action is unclipped, unobscured, named, focusable, or operable.
+- Keyboard order is checked only for four focus stops on the recovery page. Unique strings do not establish the intended order, and the suite still omits catalog/file upload, publish, cart, checkout, download, customer order, merchant order, dialog focus trap/restoration, and file-input keyboard access.
+- The only announcement assertion is recovery validation. Upload progress/failure, publish result, checkout polling/delivery, download success/failure, and resend status are not triggered or asserted.
+- Axe runs on initial pages and one recovery error only; it does not cover the required dynamic upload, dialog, delivery failure, suspension/revocation, download failure, or resend states. No explicit interaction or visual assertion establishes action usability at 200%.
+
+**Required remediation:** Couple the accessibility suite to the real UI journeys described above. At mobile and desktop zoom, assert each named primary action's bounding box fits the viewport, receives focus, and activates successfully. Assert exact focus sequences and dialog trap/return behavior across the critical merchant and buyer flows. Trigger and verify every important live-region message, and run axe after each dynamic/error/financial state.
+
+### P2 — Download preparation can remain indefinitely pending on network silence
+
+**Evidence:** `apps/web/components/customer/digital-download-list.tsx:149-175`.
+
+The iframe approach now distinguishes same-origin JSON failures from cross-origin signed-download initiation and announces the observed result, resolving round 2's unconditional success message. It has no abort or watchdog path, though. If the POST never completes, the iframe never emits a meaningful load event and the button remains “Preparing…” forever.
+
+**Remediation:** Add a bounded timeout that removes the iframe, clears `downloadingId`, and announces a retryable timeout without claiming the grant/download succeeded. Prevent or deliberately support concurrent clicks while a file is preparing, and cover timeout plus 409/429/503 behavior in browser tests.
+
+### Resolved from round 2
+
+- **Fragment retry:** `digital-download-list.tsx:104-117` retains the fragment credential in memory after removing it from the address bar, and clears it only after a successful exchange. “Try again” can therefore repeat a transiently failed exchange without re-exposing the token.
+- **Response-aware download feedback:** `digital-download-list.tsx:149-175` no longer uses a fixed success timer; it reports same-origin JSON failure and treats the cross-origin signed redirect as initiation.
+- **Reduced motion:** the test now delays the download API and checks computed animation while the spinner is actually mounted (`digital-products-accessibility.spec.ts:66-72`).
+- **Separate identities:** customer and merchant axe passes use distinct fixture accounts (`digital-products-accessibility.spec.ts:35-45`).
+
+### Round 3 release disposition
+
+Do not approve the UX/accessibility gate. The remaining P1s are acceptance-evidence failures rather than cosmetic polish: the current browser suite still cannot detect a broken end-user workflow across the feature's most consequential states.
