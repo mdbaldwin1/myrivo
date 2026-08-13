@@ -45,6 +45,10 @@ const publishingReadinessChildLockMigration = join(
   repoRoot,
   "supabase/migrations/20260812231000_lock_readiness_products_before_children.sql",
 );
+const publishingReadinessRelationMoveMigration = join(
+  repoRoot,
+  "supabase/migrations/20260812232000_validate_digital_readiness_relation_moves.sql",
+);
 
 const ids = {
   storeA: "10000000-0000-0000-0000-000000000001",
@@ -358,6 +362,11 @@ beforeAll(() => {
       `Missing publishing readiness child lock migration: ${publishingReadinessChildLockMigration}`,
     );
   }
+  if (!existsSync(publishingReadinessRelationMoveMigration)) {
+    throw new Error(
+      `Missing publishing readiness relation move migration: ${publishingReadinessRelationMoveMigration}`,
+    );
+  }
 
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-digital-migration-"));
   port = 55432 + (process.pid % 9000);
@@ -423,6 +432,7 @@ beforeAll(() => {
     applyMigration(database, publishingReadinessMigration);
     applyMigration(database, publishingReadinessSerializationMigration);
     applyMigration(database, publishingReadinessChildLockMigration);
+    applyMigration(database, publishingReadinessRelationMoveMigration);
   }
 
   execFileSync(createdb, ["full_chain"], {
@@ -1361,6 +1371,7 @@ describe("transactional digital product publishing", () => {
     variantTwo: "31000000-0000-4000-8000-000000000002",
     assetOne: "61000000-0000-4000-8000-000000000001",
     assetTwo: "61000000-0000-4000-8000-000000000002",
+    secondProductAsset: "61000000-0000-4000-8000-000000000003",
     versionOne: "71000000-0000-4000-8000-000000000001",
     versionTwo: "71000000-0000-4000-8000-000000000002",
   } as const;
@@ -1420,6 +1431,39 @@ describe("transactional digital product publishing", () => {
        );`,
     );
   });
+
+  function prepareRelationMoveFixture() {
+    runSql(
+      "full_chain",
+      `update public.products
+       set status = 'draft'
+       where id = '${publishingIds.product}';
+       update public.products
+       set product_type = 'digital',
+           digital_rights_affirmed_at = now(),
+           digital_rights_affirmed_by_user_id = '${publishingIds.user}'
+       where id = '${publishingIds.secondProduct}';
+       update public.product_variants
+       set status = 'archived'
+       where product_id = '${publishingIds.product}';
+       update public.digital_product_assets
+       set product_variant_id = null, active = true
+       where id = '${publishingIds.assetOne}';
+       update public.digital_product_asset_versions
+       set asset_id = '${publishingIds.assetOne}',
+           storage_path = '${publishingIds.store}/${publishingIds.product}/${publishingIds.assetOne}/v1/blue.pdf',
+           status = 'ready', retired_at = null
+       where id = '${publishingIds.versionOne}';
+       update public.digital_product_previews
+       set product_id = '${publishingIds.product}',
+           public_preview_path = '${publishingIds.store}/${publishingIds.product}/merchant-override-${"c".repeat(64)}.jpg',
+           status = 'ready'
+       where product_id in ('${publishingIds.product}', '${publishingIds.secondProduct}');
+       update public.products
+       set status = 'active'
+       where id = '${publishingIds.product}';`,
+    );
+  }
 
   it("rejects an uncovered proposed variant before changing product, variants, or option metadata", () => {
     const proposedVariants = JSON.stringify([
@@ -1887,5 +1931,65 @@ describe("transactional digital product publishing", () => {
            and v.id = '${publishingIds.variantOne}'`,
       ),
     ).toBe("draft:archived:Catalog wins after serialization");
+  });
+
+  it("rejects moving the sole ready preview away from an active digital product", () => {
+    prepareRelationMoveFixture();
+
+    expectRejected(
+      "full_chain",
+      `begin;
+       update public.digital_product_previews
+       set product_id = '${publishingIds.secondProduct}',
+           public_preview_path = '${publishingIds.store}/${publishingIds.secondProduct}/merchant-override-${"d".repeat(64)}.jpg'
+       where product_id = '${publishingIds.product}';
+       set constraints enforce_active_digital_product_readiness immediate;
+       rollback;`,
+    );
+    expect(
+      runSql(
+        "full_chain",
+        `select p.status || ':' || preview.product_id::text
+         from public.products p
+         join public.digital_product_previews preview on preview.product_id = p.id
+         where p.id = '${publishingIds.product}'`,
+      ),
+    ).toBe(`active:${publishingIds.product}`);
+  });
+
+  it("rejects moving the sole ready asset version away from an active digital product", () => {
+    prepareRelationMoveFixture();
+    runSql(
+      "full_chain",
+      `insert into public.digital_product_assets(
+         id, store_id, product_id, product_variant_id, label, active
+       ) values (
+         '${publishingIds.secondProductAsset}', '${publishingIds.store}',
+         '${publishingIds.secondProduct}', null, 'Destination asset', true
+       ) on conflict (id) do nothing;`,
+    );
+
+    expectRejected(
+      "full_chain",
+      `begin;
+       update public.digital_product_asset_versions
+       set asset_id = '${publishingIds.secondProductAsset}',
+           storage_path = '${publishingIds.store}/${publishingIds.secondProduct}/${publishingIds.secondProductAsset}/v1/blue.pdf'
+       where id = '${publishingIds.versionOne}';
+       set constraints enforce_active_digital_product_readiness immediate;
+       rollback;`,
+    );
+    expect(
+      runSql(
+        "full_chain",
+        `select p.status || ':' || version.asset_id::text || ':' || version.product_id::text
+         from public.products p
+         join public.digital_product_asset_versions version on version.product_id = p.id
+         where p.id = '${publishingIds.product}'
+           and version.id = '${publishingIds.versionOne}'`,
+      ),
+    ).toBe(
+      `active:${publishingIds.assetOne}:${publishingIds.product}`,
+    );
   });
 });
