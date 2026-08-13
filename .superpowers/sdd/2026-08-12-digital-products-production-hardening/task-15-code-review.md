@@ -128,3 +128,42 @@
 - **Pre-merge timing:** Resolved. `.github/workflows/ci.yml:53-54` now includes pull requests targeting `main`.
 - **Database release/digest binding:** The schema design now joins approval to a singleton runtime release/digest/target (`20260813020000_digital_release_acceptance_gate.sql:30-56`) and constrains timestamps/lifetime, resolving the design-level finding. It remains unverified because of the missing migration tests.
 - **Bearer/session behavior and accessibility improvements:** Remain resolved from Round 2.
+
+---
+
+## Round 4 Re-review — commit `14cafc6`
+
+### Verdict
+
+**FAIL** — the migration and CI plumbing findings are substantially addressed, but the committed acceptance flow is still non-executable and does not assert the required authoritative transitions.
+
+### P1 — Acceptance reset/injection actions call an RPC that does not exist
+
+**Evidence:** `apps/web/lib/digital-products/acceptance-control.ts:17-22` sends every non-observation action to Supabase RPC `acceptance_control_digital_products`. Repository-wide search finds that identifier only at this call site: no migration defines it, no service provides it, and no database fixture installs it. Yet the serial suite begins with `reset` and later requires `inject-refund`, `inject-dispute`, and `inject-delivery-failure` (`apps/web/e2e/digital-products.spec.ts:10,50-69`). The route test mocks the control service and therefore cannot detect the absent RPC.
+
+**Impact:** A correctly migrated non-production project returns an RPC-not-found error on the first acceptance test. Refund, dispute, and failure/retry coverage cannot execute, so the release command cannot pass legitimately.
+
+**Remediation:** Implement the test/preview-only control RPC in a reviewed migration or replace it with versioned provider/application adapters. Restrict execution to the acceptance service role and explicit environment, validate run/subject ownership, use real Stripe test-event paths where required, return no client-supplied state, and add native PostgreSQL plus route tests for each permitted action and denied production/application-role access.
+
+### P1 — The buyer “Stripe payment” journey never completes Stripe Checkout
+
+**Evidence:** `apps/web/e2e/digital-products.spec.ts:21-31` clicks Checkout, merely asserts that the URL contains `checkout|stripe`, then immediately navigates to the preconfigured `checkoutReturn` URL. It does not interact with Stripe's hosted page, submit a test payment method, wait for redirect/webhook processing, or assert a new paid order/delivery/email. The fixture has one pre-existing `orderId`, and `acceptance-control.ts:24-33` observes only that fixed order. Mixed checkout is no longer exercised anywhere in the spec.
+
+**Impact:** Checkout creation, real Stripe payment, webhook ingestion/retry, manifest locking, mixed-cart semantics, Resend delivery, and return-session establishment can all be broken while this test proceeds against an old seeded order. This still fails Task 15 Step 2 and the real-provider Definition of Done.
+
+**Remediation:** Drive Stripe test Checkout to completion (or use a provider-supported automated test-mode confirmation tied to the newly created checkout session), capture the resulting new order/payment/event IDs, wait for webhook/delivery convergence, verify the Resend delivery, and assert both digital-only and mixed compositions. The return URL must come from that completed session, not a static fixture.
+
+### P1 — Independent observations are recorded but not validated against required state
+
+**Evidence:** Observation responses do query order/job/grants and retrieve the Stripe PaymentIntent (`apps/web/lib/digital-products/acceptance-control.ts:24-33`), which is a meaningful improvement. But the E2E assertions only require the observation object to be truthy for publish (`apps/web/e2e/digital-products.spec.ts:17-18`) and ignore it entirely after download, replacement/resend, refunds, disputes, and retry (`:31,47,50-69`). The evidence verifier checks only signature, common metadata, and `observations.length >= 5` (`scripts/verify-digital-products-acceptance.mjs:35-41`); it does not require action coverage, exact sequences, non-null records, provider test mode/status, five grants plus grace/sixth rejection, immutable version identity, refund/dispute access state, email provider IDs, or retry convergence.
+
+**Impact:** Empty/null database observations can be HMAC-signed into a passing evidence artifact as long as five calls returned. UI regexes such as `available|unavailable|suspended|revoked` do not establish the correct state for each transition. The gate therefore remains vulnerable to false positives even after the controller becomes executable.
+
+**Remediation:** Define and validate a versioned observation schema per action. Assert exact before/after values and linked IDs in Playwright, including five distinct issued grants, grace reuse without increment, sixth denial, original asset-version preservation, partial/full refund outcomes, each dispute outcome, failed-to-succeeded job attempts, and Resend provider delivery. Have the verifier require the complete ordered scenario matrix and reject null, duplicate, stale, live-mode, or unlinked observations.
+
+### Previous findings disposition
+
+- **In-repo control/independent reads:** Partially resolved. The route/service is reviewable, production-disabled, strictly parsed, and independently reads Supabase/Stripe, but its mutation backend is absent and returned observations are not asserted.
+- **Current-run evidence:** Structurally resolved. Evidence is generated during the browser run and HMAC-bound to run/origin/release; semantic completeness remains the P1 above.
+- **CI operational coherence:** Resolved at the workflow-plumbing level. It supplies the approved remote host, creates a fresh output path, uses head SHA, and supports managed loopback. Actual execution remains blocked by the absent controller RPC and external fixture/provider credentials.
+- **Migration testing:** Resolved for the secure-session and release-approval migrations with native PostgreSQL privilege/match/mismatch/window tests plus unique version enforcement. Official Supabase fresh/upgrade validation remains a truthfully documented external release blocker.
