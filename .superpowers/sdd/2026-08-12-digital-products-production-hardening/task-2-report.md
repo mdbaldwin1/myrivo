@@ -164,5 +164,82 @@ The bounded alternative uses installed native PostgreSQL 17, matching `supabase/
 
 - Docker is unavailable, so the official Supabase reset and local type-generation commands could not run. Native PostgreSQL 17 fresh/upgrade/full-chain execution provides bounded schema evidence, but the Docker-backed Supabase stack should still be reset in CI or by a release operator before deployment.
 - No linked project or remote migration ledger was available. The forward-only decision is deliberately conservative; release operations must compare `20260812170000` and `20260812180000` against preview/production ledgers before applying.
-- This schema task intentionally removes the unsafe three-argument reserve RPC. The existing prototype download route still calls that signature and must not be deployed against this migration until the later access-service task moves it to reserve/sign/commit/release and supplies a fingerprint hash.
 - `bd` is not installed in the environment, so `bd prime` and `bd sync` could not be run.
+
+## Fix Round 1: Hardened Download Route Compatibility
+
+### Review finding
+
+The hardening migration correctly removed the unsafe three-argument `reserve_digital_download_grant` function, but the existing server route still called that signature and expected the prototype RPC to return `storage_path`. Applying the migration before later access tasks would therefore make every current download return a conflict response.
+
+### Root cause and implementation
+
+The schema and application boundary had changed atomically on only one side. The route was updated narrowly to consume the hardened boundary without adding later checkout, worker, or customer-UX scope:
+
+- derives a stable SHA-256 client/request fingerprint from the access-record ID, forwarded/real client address, and user agent; it never hashes or persists the bearer token as the fingerprint;
+- calls the four-argument reserve RPC and consumes only its safe `grant_id`, `asset_version_id`, customer filename, state, and expiry result;
+- performs the private storage-path lookup separately through the server-only service-role client;
+- creates the signed URL before committing, so storage lookup/signing failure cannot consume a grant;
+- commits only after signing succeeds and redirects only after commit returns `issued`;
+- releases the uncommitted reservation on asset lookup, signing, or commit failure;
+- returns a generic signing failure to the client so provider details or private paths cannot leak.
+
+The migration RPC remains path-free. No temporary three-argument SQL compatibility function was added and reserve/commit/release accounting was not weakened.
+
+### Files
+
+- `apps/web/app/api/digital-downloads/[token]/[entitlementId]/route.ts`
+- `apps/web/tests/digital-download-route.test.ts` (new)
+- `apps/web/tests/digital-products-migration.test.ts`
+- `.superpowers/sdd/2026-08-12-digital-products-production-hardening/task-2-report.md`
+
+### TDD evidence
+
+Initial route RED, before the application fix:
+
+```text
+npm test --workspace @myrivo/web -- digital-download-route.test.ts
+Test Files  1 failed (1)
+Tests       2 failed (2)
+TypeError: .toMatch() expects to receive a string, but got undefined
+```
+
+Both success and signing-failure cases stopped at reserve because the live route did not supply `p_client_fingerprint_hash`.
+
+A second security-focused RED proved that provider errors were still echoed:
+
+```text
+Test Files  1 failed (1)
+Tests       1 failed | 1 passed (2)
+Expected: { error: "Unable to prepare download." }
+Received: { error: "Provider unavailable" }
+```
+
+After the minimal route changes:
+
+```text
+npm test --workspace @myrivo/web -- digital-download-route.test.ts digital-products-migration.test.ts
+Test Files  2 passed (2)
+Tests       18 passed (18)
+```
+
+Route coverage verifies the observable redirect and the stateful order `reserve -> server path lookup -> sign -> commit`, plus signing failure `reserve -> server path lookup -> sign -> release`. The real PostgreSQL contract additionally asserts the hardened reserve result contains the expected safe fields and has no `storage_path` property.
+
+### Validation
+
+- Focused route plus PostgreSQL migration contracts — 2 files, 18 tests passed.
+- `npm run typecheck --workspace @myrivo/web` — passed.
+- `npm run lint --workspace @myrivo/web` — passed with zero warnings/errors and both repository consistency checks passed.
+- `npm test --workspace @myrivo/web` — 226 files, 671 tests passed.
+- `npm run build --workspace @myrivo/web` — passed, including TypeScript and 156-page generation.
+- `git diff --check` — passed.
+
+Existing full-suite refund/dispute mock stderr, analytics chart-size warnings, build middleware deprecation, and stale Browserslist-data warnings remain unchanged.
+
+### Fix-round self-review
+
+- The route never receives a private path from the reserve RPC and never returns a private path in an error or response.
+- The same fingerprint hash is used for reserve, commit, and release within the request.
+- Signing failures release reservations and leave entitlement usage unchanged by the schema contract.
+- Commit failure does not redirect to the already-generated signed URL; it attempts release and returns an error.
+- No migration history or schema behavior was relaxed for compatibility.

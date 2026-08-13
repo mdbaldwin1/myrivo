@@ -590,12 +590,22 @@ describe("durable delivery and download state", () => {
       )`,
     );
 
-    const grantId = runSql(
-      "upgrade",
-      `select grant_id from public.reserve_digital_download_grant(
-        '${ids.entitlementReserve}', '${ids.tokenA}', 'reservation-a', repeat('f', 64)
-      )`,
-    );
+    const reservation = JSON.parse(
+      runSql(
+        "upgrade",
+        `select to_jsonb(reservation) from public.reserve_digital_download_grant(
+          '${ids.entitlementReserve}', '${ids.tokenA}', 'reservation-a', repeat('f', 64)
+        ) reservation`,
+      ),
+    ) as Record<string, unknown>;
+    expect(reservation).toMatchObject({
+      asset_version_id: "70000000-0000-0000-0000-000000000004",
+      customer_filename: "a-v2.pdf",
+      grant_status: "reserved",
+    });
+    expect(reservation).not.toHaveProperty("storage_path");
+    const grantId = reservation.grant_id;
+    expect(grantId).toEqual(expect.any(String));
     expect(
       runSql(
         "upgrade",
@@ -605,7 +615,7 @@ describe("durable delivery and download state", () => {
 
     runSql(
       "upgrade",
-      `select public.commit_digital_download_grant('${grantId}', repeat('f', 64))`,
+      `select public.commit_digital_download_grant('${String(grantId)}', repeat('f', 64))`,
     );
     expect(
       runSql(
