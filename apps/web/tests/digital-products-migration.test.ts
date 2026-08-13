@@ -25,6 +25,10 @@ const assetLifecycleMigration = join(
   repoRoot,
   "supabase/migrations/20260812190000_transactional_digital_assets.sql",
 );
+const assetLifecycleConcurrencyMigration = join(
+  repoRoot,
+  "supabase/migrations/20260812200000_harden_digital_asset_concurrency.sql",
+);
 
 const ids = {
   storeA: "10000000-0000-0000-0000-000000000001",
@@ -261,6 +265,11 @@ beforeAll(() => {
   if (!existsSync(assetLifecycleMigration)) {
     throw new Error(`Missing asset lifecycle migration: ${assetLifecycleMigration}`);
   }
+  if (!existsSync(assetLifecycleConcurrencyMigration)) {
+    throw new Error(
+      `Missing asset lifecycle concurrency migration: ${assetLifecycleConcurrencyMigration}`,
+    );
+  }
 
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-digital-migration-"));
   port = 55432 + (process.pid % 9000);
@@ -286,6 +295,42 @@ beforeAll(() => {
     }
     applyMigration(database, hardeningMigration);
     applyMigration(database, assetLifecycleMigration);
+    if (database === "upgrade") {
+      runSql(
+        database,
+        `insert into public.digital_product_assets(
+          id, store_id, product_id, product_variant_id, label
+        ) values (
+          '60000000-0000-4000-8000-000000000030', '${ids.storeA}',
+          '${ids.productA}', '${ids.variantA}', 'Upgrade replacement fixture'
+        );
+        insert into public.digital_product_asset_versions(
+          id, asset_id, version_number, storage_path, customer_filename,
+          mime_type, byte_size, checksum_sha256, status
+        ) values (
+          '70000000-0000-4000-8000-000000000029',
+          '60000000-0000-4000-8000-000000000030', 1, 'private/upgrade-v1',
+          'upgrade-v1.pdf', 'application/pdf', 10, repeat('e', 64), 'ready'
+        );
+        select * from public.create_digital_asset_upload_intent(
+          'd0000000-0000-4000-8000-000000000030', '${ids.storeA}', null, null,
+          '60000000-0000-4000-8000-000000000030',
+          '70000000-0000-4000-8000-000000000030',
+          '60000000-0000-4000-8000-000000000030',
+          null, 'upgrade-older.pdf', 'application/pdf', 10, null, 'replace',
+          now() + interval '30 minutes'
+        );
+        select * from public.create_digital_asset_upload_intent(
+          'd0000000-0000-4000-8000-000000000031', '${ids.storeA}', null, null,
+          '60000000-0000-4000-8000-000000000030',
+          '70000000-0000-4000-8000-000000000031',
+          '60000000-0000-4000-8000-000000000030',
+          null, 'upgrade-newer.pdf', 'application/pdf', 10, null, 'replace',
+          now() + interval '30 minutes'
+        )`,
+      );
+    }
+    applyMigration(database, assetLifecycleConcurrencyMigration);
   }
 
   execFileSync(createdb, ["full_chain"], {
@@ -702,11 +747,39 @@ describe("transactional digital asset lifecycle", () => {
     expect(
       runSql(
         "fresh",
-        "select public.digital_asset_max_active_files()::text || ':' || public.digital_asset_max_file_bytes()::text || ':' || extract(epoch from public.digital_asset_max_intent_ttl())::bigint::text",
+        "select public.digital_asset_max_active_files()::text || ':' || public.digital_asset_max_file_bytes()::text || ':' || extract(epoch from public.digital_asset_max_intent_ttl())::bigint::text || ':' || extract(epoch from public.digital_preview_processing_lease())::bigint::text",
       ),
     ).toBe(
-      `${DIGITAL_PRODUCT_CONFIG.maxFilesPerProduct}:${DIGITAL_PRODUCT_CONFIG.maxFileBytes}:${DIGITAL_PRODUCT_CONFIG.maxUploadIntentTtlSeconds}`,
+      `${DIGITAL_PRODUCT_CONFIG.maxFilesPerProduct}:${DIGITAL_PRODUCT_CONFIG.maxFileBytes}:${DIGITAL_PRODUCT_CONFIG.maxUploadIntentTtlSeconds}:${DIGITAL_PRODUCT_CONFIG.previewProcessingLeaseSeconds}`,
     );
+  });
+
+  it("keeps concurrency lifecycle functions service-role only", () => {
+    expect(
+      runSql(
+        "fresh",
+        `select
+          has_function_privilege('anon', 'public.expire_digital_asset_upload_intent(uuid,uuid)', 'execute')::text || ':' ||
+          has_function_privilege('anon', 'public.finalize_digital_asset_upload_intent(uuid,uuid,bigint,text,text)', 'execute')::text || ':' ||
+          has_function_privilege('anon', 'public.begin_digital_product_preview(uuid,uuid,uuid)', 'execute')::text || ':' ||
+          has_function_privilege('anon', 'public.complete_digital_product_preview(uuid,uuid,uuid,text,uuid)', 'execute')::text || ':' ||
+          has_function_privilege('anon', 'public.fail_digital_product_preview(uuid,uuid,uuid,text)', 'execute')::text || ':' ||
+          has_function_privilege('service_role', 'public.expire_digital_asset_upload_intent(uuid,uuid)', 'execute')::text || ':' ||
+          has_function_privilege('service_role', 'public.complete_digital_product_preview(uuid,uuid,uuid,text,uuid)', 'execute')::text`,
+      ),
+    ).toBe("false:false:false:false:false:true:true");
+  });
+
+  it("normalizes duplicate pending replacements when upgrading existing data", () => {
+    expect(
+      runSql(
+        "upgrade",
+        `select string_agg(version_number::text || ':' || status, ',' order by version_number)
+         from public.digital_asset_upload_intents
+         where asset_id = '60000000-0000-4000-8000-000000000030'
+           and operation = 'replace'`,
+      ),
+    ).toBe("2:failed,3:pending");
   });
 
   it("persists an owned upload intent and finalizes it exactly once", () => {
@@ -918,5 +991,182 @@ describe("transactional digital asset lifecycle", () => {
         'create', now() + interval '30 minutes'
       )`,
     );
+  });
+
+  it("durably expires an elapsed intent without rolling back cleanup state", () => {
+    const intentId = "d0000000-0000-4000-8000-000000000020";
+    const assetId = "60000000-0000-4000-8000-000000000020";
+    const versionId = "70000000-0000-4000-8000-000000000020";
+    runSql(
+      "upgrade",
+      `select * from public.create_digital_asset_upload_intent(
+        '${intentId}', '${ids.storeB}', '${ids.productB}', '${ids.variantB}',
+        '${assetId}', '${versionId}', null, 'Expires', 'expires.pdf',
+        'application/pdf', 10,
+        '${ids.storeB}/${ids.productB}/${assetId}/v1/expires.pdf',
+        'create', now() + interval '30 minutes'
+      );
+      update public.digital_asset_upload_intents
+      set created_at = now() - interval '2 hours',
+          expires_at = now() - interval '1 hour'
+      where id = '${intentId}'`,
+    );
+
+    expect(
+      runSql(
+        "upgrade",
+        `select public.expire_digital_asset_upload_intent('${ids.storeB}', '${intentId}')::text`,
+      ),
+    ).toBe("true");
+    expect(
+      runSql(
+        "upgrade",
+        `select status || ':' || (cleanup_after <= now())::text
+         from public.digital_asset_upload_intents where id = '${intentId}'`,
+      ),
+    ).toBe("expired:true");
+    const finalized = JSON.parse(
+      runSql(
+        "upgrade",
+        `select to_jsonb(result) from public.finalize_digital_asset_upload_intent(
+          '${intentId}', '${ids.storeB}', 10, 'application/pdf', repeat('7', 64)
+        ) result`,
+      ),
+    ) as Record<string, unknown>;
+    expect(finalized.finalization_status).toBe("expired");
+    expect(
+      runSql(
+        "upgrade",
+        `select count(*) from public.digital_product_asset_versions where id = '${versionId}'`,
+      ),
+    ).toBe("0");
+  });
+
+  it("leases one preview processor and rejects stale completion and failure after override", () => {
+    const first = JSON.parse(
+      runSql(
+        "upgrade",
+        `select to_jsonb(result) from public.begin_digital_product_preview(
+          '${ids.storeA}', '${ids.productA2}', '${ids.versionA2}'
+        ) result`,
+      ),
+    ) as Record<string, unknown>;
+    expect(first).toMatchObject({
+      preview_status: "processing",
+      processing_acquired: true,
+    });
+    const generation = String(first.processing_generation);
+    expect(generation).toMatch(/^[a-f0-9-]{36}$/);
+
+    const concurrent = JSON.parse(
+      runSql(
+        "upgrade",
+        `select to_jsonb(result) from public.begin_digital_product_preview(
+          '${ids.storeA}', '${ids.productA2}', '${ids.versionA2}'
+        ) result`,
+      ),
+    ) as Record<string, unknown>;
+    expect(concurrent).toMatchObject({
+      preview_status: "processing",
+      processing_acquired: false,
+      processing_generation: null,
+    });
+
+    const overridePath = `${ids.storeA}/${ids.productA2}/merchant-override-${"a".repeat(64)}.jpg`;
+    runSql(
+      "upgrade",
+      `select public.complete_digital_preview_override(
+        '${ids.storeA}', '${ids.productA2}', '${overridePath}'
+      )`,
+    );
+    expect(
+      runSql(
+        "upgrade",
+        `select public.complete_digital_product_preview(
+          '${ids.storeA}', '${ids.productA2}', '${ids.versionA2}',
+          '${ids.storeA}/${ids.productA2}/watermarked-${ids.versionA2}.jpg',
+          '${generation}'
+        )::text`,
+      ),
+    ).toBe("false");
+    expect(
+      runSql(
+        "upgrade",
+        `select public.fail_digital_product_preview(
+          '${ids.storeA}', '${ids.productA2}', '${generation}', 'Stale worker failed'
+        )::text`,
+      ),
+    ).toBe("false");
+    expect(
+      runSql(
+        "upgrade",
+        `select status || ':' || is_merchant_override::text || ':' || public_preview_path
+         from public.digital_product_previews
+         where product_id = '${ids.productA2}'`,
+      ),
+    ).toBe(`ready:true:${overridePath}`);
+  });
+
+  it("prevents overlapping replacements and stale older finalization from regressing current version", () => {
+    const olderIntent = "d0000000-0000-4000-8000-000000000021";
+    const olderVersion = "70000000-0000-4000-8000-000000000021";
+    const newerIntent = "d0000000-0000-4000-8000-000000000022";
+    const newerVersion = "70000000-0000-4000-8000-000000000022";
+    runSql(
+      "upgrade",
+      `select * from public.create_digital_asset_upload_intent(
+        '${olderIntent}', '${ids.storeB}', null, null, '${ids.assetB}',
+        '${olderVersion}', '${ids.assetB}', null, 'older.pdf',
+        'application/pdf', 10, null, 'replace', now() + interval '30 minutes'
+      )`,
+    );
+    expectRejected(
+      "upgrade",
+      `select * from public.create_digital_asset_upload_intent(
+        '${newerIntent}', '${ids.storeB}', null, null, '${ids.assetB}',
+        '${newerVersion}', '${ids.assetB}', null, 'newer.pdf',
+        'application/pdf', 10, null, 'replace', now() + interval '30 minutes'
+      )`,
+    );
+
+    runSql(
+      "upgrade",
+      `select public.fail_digital_asset_upload_intent(
+        '${ids.storeB}', '${olderIntent}', 'Replacement superseded'
+      );
+      select * from public.create_digital_asset_upload_intent(
+        '${newerIntent}', '${ids.storeB}', null, null, '${ids.assetB}',
+        '${newerVersion}', '${ids.assetB}', null, 'newer.pdf',
+        'application/pdf', 10, null, 'replace', now() + interval '30 minutes'
+      );
+      select * from public.finalize_digital_asset_upload_intent(
+        '${newerIntent}', '${ids.storeB}', 10, 'application/pdf', repeat('6', 64)
+      )`,
+    );
+    expectRejected(
+      "upgrade",
+      `select * from public.retry_digital_asset_upload_intent(
+        '${ids.storeB}', '${olderIntent}', now() + interval '30 minutes'
+      )`,
+    );
+    expectRejected(
+      "upgrade",
+      `select * from public.finalize_digital_asset_upload_intent(
+        '${olderIntent}', '${ids.storeB}', 10, 'application/pdf', repeat('5', 64)
+      )`,
+    );
+    expect(
+      runSql(
+        "upgrade",
+        `select id from public.digital_product_asset_versions
+         where asset_id = '${ids.assetB}' and retired_at is null`,
+      ),
+    ).toBe(newerVersion);
+    expect(
+      runSql(
+        "upgrade",
+        `select count(*) from public.digital_product_asset_versions where id = '${olderVersion}'`,
+      ),
+    ).toBe("0");
   });
 });

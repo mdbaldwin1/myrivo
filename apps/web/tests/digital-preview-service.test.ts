@@ -78,6 +78,163 @@ describe("bounded watermarked preview rendering", () => {
 });
 
 describe("preview lifecycle", () => {
+  it("returns in-progress without fetching when another processor holds the lease", async () => {
+    const fetcher = vi.fn();
+    const admin = {
+      rpc: vi.fn(async () => ({
+        data: [
+          {
+            preview_status: "processing",
+            public_preview_path: null,
+            source_storage_path: "private/source.png",
+            source_mime_type: "image/png",
+            was_already_ready: false,
+            processing_acquired: false,
+            processing_generation: null,
+          },
+        ],
+        error: null,
+      })),
+      storage: { from: vi.fn() },
+    };
+
+    await expect(
+      processPreview({
+        admin,
+        storeId: STORE_ID,
+        productId: PRODUCT_ID,
+        sourceAssetVersionId: VERSION_ID,
+        storeName: "Studio",
+        fetcher,
+      }),
+    ).resolves.toEqual({ status: "processing", inProgress: true });
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(admin.storage.from).not.toHaveBeenCalled();
+  });
+
+  it("completes only the preview generation acquired by this processor", async () => {
+    const generation = "a0000000-0000-4000-8000-000000000010";
+    const previewStorage = {
+      upload: vi.fn(async () => ({ error: null })),
+      getPublicUrl: vi.fn((path: string) => ({
+        data: { publicUrl: `https://cdn.test/${path}` },
+      })),
+    };
+    const originalStorage = {
+      createSignedUrl: vi.fn(async () => ({
+        data: { signedUrl: "https://storage.test/source" },
+        error: null,
+      })),
+    };
+    const admin = {
+      rpc: vi.fn(async (name: string, args: Record<string, unknown>) => {
+        if (name === "begin_digital_product_preview") {
+          return {
+            data: [
+              {
+                preview_status: "processing",
+                public_preview_path: null,
+                source_storage_path: "private/source.png",
+                source_mime_type: "image/png",
+                was_already_ready: false,
+                processing_acquired: true,
+                processing_generation: generation,
+              },
+            ],
+            error: null,
+          };
+        }
+        if (name === "complete_digital_product_preview") {
+          expect(args.p_processing_generation).toBe(generation);
+          return { data: true, error: null };
+        }
+        throw new Error(`Unexpected RPC ${name}`);
+      }),
+      storage: {
+        from: vi.fn((bucket: string) =>
+          bucket === "digital-product-assets" ? originalStorage : previewStorage,
+        ),
+      },
+    };
+
+    await expect(
+      processPreview({
+        admin,
+        storeId: STORE_ID,
+        productId: PRODUCT_ID,
+        sourceAssetVersionId: VERSION_ID,
+        storeName: "Studio",
+        fetcher: vi.fn(async () => imageResponse(300, 200)),
+      }),
+    ).resolves.toMatchObject({ status: "ready", alreadyReady: false });
+  });
+
+  it("removes stale output without failing a preview superseded by an override", async () => {
+    const generation = "a0000000-0000-4000-8000-000000000012";
+    const previewStorage = {
+      upload: vi.fn(async () => ({ error: null })),
+      remove: vi.fn(async () => ({ error: null })),
+      getPublicUrl: vi.fn((path: string) => ({
+        data: { publicUrl: `https://cdn.test/${path}` },
+      })),
+    };
+    const originalStorage = {
+      createSignedUrl: vi.fn(async () => ({
+        data: { signedUrl: "https://storage.test/source" },
+        error: null,
+      })),
+    };
+    const rpcNames: string[] = [];
+    const admin = {
+      rpc: vi.fn(async (name: string) => {
+        rpcNames.push(name);
+        if (name === "begin_digital_product_preview") {
+          return {
+            data: [
+              {
+                preview_status: "processing",
+                public_preview_path: null,
+                source_storage_path: "private/source.png",
+                source_mime_type: "image/png",
+                was_already_ready: false,
+                processing_acquired: true,
+                processing_generation: generation,
+              },
+            ],
+            error: null,
+          };
+        }
+        if (name === "complete_digital_product_preview") {
+          return { data: false, error: null };
+        }
+        throw new Error(`Unexpected RPC ${name}`);
+      }),
+      storage: {
+        from: vi.fn((bucket: string) =>
+          bucket === "digital-product-assets" ? originalStorage : previewStorage,
+        ),
+      },
+    };
+
+    await expect(
+      processPreview({
+        admin,
+        storeId: STORE_ID,
+        productId: PRODUCT_ID,
+        sourceAssetVersionId: VERSION_ID,
+        storeName: "Studio",
+        fetcher: vi.fn(async () => imageResponse(300, 200)),
+      }),
+    ).rejects.toMatchObject({ status: 409, code: "preview_superseded" });
+    expect(rpcNames).toEqual([
+      "begin_digital_product_preview",
+      "complete_digital_product_preview",
+    ]);
+    expect(previewStorage.remove).toHaveBeenCalledWith([
+      `${STORE_ID}/${PRODUCT_ID}/watermarked-${VERSION_ID}.jpg`,
+    ]);
+  });
+
   it("is idempotent when the same source preview is already ready", async () => {
     const fetcher = vi.fn();
     const admin = {
@@ -91,6 +248,8 @@ describe("preview lifecycle", () => {
               source_storage_path: "private/source.png",
               source_mime_type: "image/png",
               was_already_ready: true,
+              processing_acquired: false,
+              processing_generation: null,
             },
           ],
           error: null,
@@ -128,6 +287,8 @@ describe("preview lifecycle", () => {
             source_storage_path: "private/source.pdf",
             source_mime_type: "application/pdf",
             was_already_ready: false,
+            processing_acquired: true,
+            processing_generation: "a0000000-0000-4000-8000-000000000011",
           },
         ],
         error: null,

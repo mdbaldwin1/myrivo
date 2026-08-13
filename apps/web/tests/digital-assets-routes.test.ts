@@ -262,6 +262,7 @@ describe("transactional digital asset service", () => {
               mime_type: "application/pdf",
               version_number: 1,
               was_already_completed: false,
+              finalization_status: "completed",
             },
           ],
           error: null,
@@ -321,6 +322,82 @@ describe("transactional digital asset service", () => {
     expect(result.versionId).toBe(VERSION_ID);
     expect(storageEvents).toEqual([]);
     expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("durably expires and cleans up an elapsed pending intent before returning", async () => {
+    const calls: string[] = [];
+    const { admin, storageEvents } = buildAdmin(async (name, args) => {
+      calls.push(name);
+      if (name === "get_digital_asset_upload_intent") {
+        return {
+          data: [intentRow({ expires_at: "2020-08-12T12:30:00.000Z" })],
+          error: null,
+        };
+      }
+      if (name === "expire_digital_asset_upload_intent") {
+        expect(args).toEqual({ p_store_id: STORE_ID, p_intent_id: INTENT_ID });
+        return { data: true, error: null };
+      }
+      throw new Error(`Unexpected RPC ${name}`);
+    });
+
+    await expect(
+      completeAssetUpload({ admin, storeId: STORE_ID, intentId: INTENT_ID }),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "intent_expired",
+      publicMessage: "Upload expired. Start a new upload.",
+    });
+    expect(calls).toEqual([
+      "get_digital_asset_upload_intent",
+      "expire_digital_asset_upload_intent",
+    ]);
+    expect(storageEvents).toContain(`remove:${STORAGE_PATH}`);
+  });
+
+  it("cleans up when finalization observes that the intent expired during verification", async () => {
+    const calls: string[] = [];
+    const { admin, storageEvents } = buildAdmin(async (name) => {
+      calls.push(name);
+      if (name === "get_digital_asset_upload_intent") {
+        return { data: [intentRow()], error: null };
+      }
+      if (name === "finalize_digital_asset_upload_intent") {
+        return {
+          data: [
+            {
+              asset_id: ASSET_ID,
+              asset_version_id: VERSION_ID,
+              product_id: PRODUCT_ID,
+              mime_type: "application/pdf",
+              version_number: 1,
+              was_already_completed: false,
+              finalization_status: "expired",
+            },
+          ],
+          error: null,
+        };
+      }
+      throw new Error(`Unexpected RPC ${name}`);
+    });
+
+    await expect(
+      completeAssetUpload({
+        admin,
+        storeId: STORE_ID,
+        intentId: INTENT_ID,
+        fetcher: vi.fn(async () =>
+          new Response(PDF_BYTES, {
+            headers: { "content-type": "application/pdf" },
+          }),
+        ),
+      }),
+    ).rejects.toMatchObject({ status: 409, code: "intent_expired" });
+    expect(calls).toEqual([
+      "get_digital_asset_upload_intent",
+      "finalize_digital_asset_upload_intent",
+    ]);
+    expect(storageEvents).toContain(`remove:${STORAGE_PATH}`);
   });
 
   it("marks and removes an invalid uploaded object without exposing its path", async () => {
@@ -421,6 +498,32 @@ describe("transactional digital asset service", () => {
     });
     expect(replacement).toMatchObject({ intentId: INTENT_ID, assetId: ASSET_ID });
     expect(replacement).not.toHaveProperty("storagePath");
+  });
+
+  it("returns a clear conflict when another replacement upload is pending", async () => {
+    const { admin } = buildAdmin(async () => ({
+      data: null,
+      error: {
+        message:
+          'duplicate key value violates unique constraint "digital_asset_upload_intents_one_pending_replacement_key"',
+        code: "23505",
+      },
+    }));
+
+    await expect(
+      replaceAssetVersion({
+        admin,
+        storeId: STORE_ID,
+        assetId: ASSET_ID,
+        fileName: "artwork.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: PDF_BYTES.byteLength,
+      }),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "replacement_in_progress",
+      publicMessage: "A replacement upload is already in progress.",
+    });
   });
 
   it("reorders the complete product list atomically", async () => {

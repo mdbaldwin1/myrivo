@@ -14,7 +14,10 @@ export async function completeOwnedAssetUpload(input: {
     intentId: input.intentId,
   });
 
-  let preview: { status: "ready"; publicUrl: string | null } | null = null;
+  let preview: {
+    status: "ready" | "processing";
+    publicUrl: string | null;
+  } | null = null;
   if (completed.mimeType === "image/jpeg" || completed.mimeType === "image/png") {
     const result = await processPreview({
       admin,
@@ -23,7 +26,10 @@ export async function completeOwnedAssetUpload(input: {
       sourceAssetVersionId: completed.versionId,
       storeName: input.storeName,
     });
-    preview = { status: result.status, publicUrl: result.publicUrl };
+    preview =
+      result.status === "ready"
+        ? { status: "ready", publicUrl: result.publicUrl }
+        : { status: "processing", publicUrl: null };
   }
 
   return { ...completed, preview };

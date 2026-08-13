@@ -19,6 +19,9 @@ type PreviewStorage = {
     path: string,
     options: { search: string; limit: number },
   ) => PromiseLike<{ data: Array<{ name: string }> | null; error: { message: string } | null }>;
+  remove?: (
+    paths: string[],
+  ) => PromiseLike<{ data?: unknown; error: { message: string } | null }>;
 };
 
 export type PreviewAdminClient = Omit<AssetAdminClient, "storage"> & {
@@ -31,6 +34,8 @@ type PreviewBeginRow = {
   source_storage_path: string;
   source_mime_type: string;
   was_already_ready: boolean;
+  processing_acquired: boolean;
+  processing_generation: string | null;
 };
 
 export class PreviewLifecycleError extends Error {
@@ -179,11 +184,13 @@ async function markPreviewFailed(
   admin: PreviewAdminClient,
   storeId: string,
   productId: string,
+  processingGeneration: string,
   safeError: string,
 ) {
   await Promise.resolve(admin.rpc("fail_digital_product_preview", {
       p_store_id: storeId,
       p_product_id: productId,
+      p_processing_generation: processingGeneration,
       p_safe_error: safeError.slice(0, 240),
     }))
     .catch(() => undefined);
@@ -215,8 +222,21 @@ export async function processPreview(input: {
       .getPublicUrl?.(row.public_preview_path).data.publicUrl;
     return { status: "ready" as const, publicUrl: publicUrl ?? null, alreadyReady: true };
   }
+  if (!row.processing_acquired) {
+    return { status: "processing" as const, inProgress: true };
+  }
+  if (!row.processing_generation) {
+    throw new PreviewLifecycleError(500, "Unable to create preview.", "preview_processing_failed");
+  }
+  const processingGeneration = row.processing_generation;
   if (row.source_mime_type !== "image/jpeg" && row.source_mime_type !== "image/png") {
-    await markPreviewFailed(input.admin, input.storeId, input.productId, "Separate preview image required");
+    await markPreviewFailed(
+      input.admin,
+      input.storeId,
+      input.productId,
+      processingGeneration,
+      "Separate preview image required",
+    );
     throw new PreviewLifecycleError(
       409,
       "Upload a separate storefront preview image for this file type.",
@@ -251,15 +271,32 @@ export async function processPreview(input: {
       p_product_id: input.productId,
       p_source_asset_version_id: input.sourceAssetVersionId,
       p_public_preview_path: publicPath,
+      p_processing_generation: processingGeneration,
     });
     if (completed.error) throw new Error("Preview persistence failed");
+    if (completed.data !== true) {
+      await Promise.resolve(previews.remove?.([publicPath])).catch(() => undefined);
+      throw new PreviewLifecycleError(
+        409,
+        "Preview generation was superseded.",
+        "preview_superseded",
+      );
+    }
     return {
       status: "ready" as const,
       publicUrl: previews.getPublicUrl?.(publicPath).data.publicUrl ?? null,
       alreadyReady: false,
     };
   } catch (error) {
-    await markPreviewFailed(input.admin, input.storeId, input.productId, "Preview processing failed");
+    if (!(error instanceof PreviewLifecycleError && error.code === "preview_superseded")) {
+      await markPreviewFailed(
+        input.admin,
+        input.storeId,
+        input.productId,
+        processingGeneration,
+        "Preview processing failed",
+      );
+    }
     if (error instanceof PreviewLifecycleError) throw error;
     throw new PreviewLifecycleError(500, "Unable to create preview.", "preview_processing_failed");
   }

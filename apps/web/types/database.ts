@@ -857,6 +857,8 @@ export type DigitalProductPreviewRecord = {
   status: DigitalPreviewStatus;
   is_merchant_override: boolean;
   failure_reason: string | null;
+  processing_generation: string;
+  processing_lease_expires_at: string | null;
   created_at: string;
   updated_at: string;
 };

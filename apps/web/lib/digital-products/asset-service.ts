@@ -46,6 +46,7 @@ type FinalizedRow = {
   mime_type: SupportedDigitalMime;
   version_number: number;
   was_already_completed: boolean;
+  finalization_status: "completed" | "already_completed" | "expired";
 };
 
 export class AssetLifecycleError extends Error {
@@ -71,6 +72,23 @@ function throwDatabaseError(error: DatabaseError | null): never {
       409,
       "This product already has the maximum number of files.",
       "active_file_limit",
+    );
+  }
+  if (
+    normalized.includes("one_pending_replacement") ||
+    normalized.includes("replacement upload is already pending")
+  ) {
+    throw new AssetLifecycleError(
+      409,
+      "A replacement upload is already in progress.",
+      "replacement_in_progress",
+    );
+  }
+  if (normalized.includes("replacement superseded")) {
+    throw new AssetLifecycleError(
+      409,
+      "This replacement is no longer current. Start a new upload.",
+      "replacement_superseded",
     );
   }
   if (
@@ -124,6 +142,25 @@ async function failIntent(
       p_safe_error: reason.slice(0, 240),
     }))
     .catch(() => undefined);
+}
+
+async function expireAndRemoveIntent(
+  admin: AssetAdminClient,
+  storeId: string,
+  intent: IntentRow,
+  transition: boolean,
+): Promise<never> {
+  if (transition) {
+    const expired = await admin.rpc("expire_digital_asset_upload_intent", {
+      p_store_id: storeId,
+      p_intent_id: intent.intent_id,
+    });
+    if (expired.error || expired.data !== true) throwDatabaseError(expired.error);
+  }
+  await Promise.resolve(
+    admin.storage.from(DIGITAL_ASSET_BUCKET).remove([intent.storage_path]),
+  ).catch(() => undefined);
+  throw new AssetLifecycleError(409, "Upload expired. Start a new upload.", "intent_expired");
 }
 
 async function signIntent(admin: AssetAdminClient, storeId: string, row: IntentRow) {
@@ -245,8 +282,14 @@ export async function completeAssetUpload(input: {
     throw new AssetLifecycleError(404, "Asset unavailable.", "asset_unavailable");
   }
   if (intent.intent_status === "completed") return completedResult(intent);
-  if (intent.intent_status !== "pending" || new Date(intent.expires_at).getTime() <= Date.now()) {
+  if (intent.intent_status === "expired") {
+    return expireAndRemoveIntent(input.admin, input.storeId, intent, false);
+  }
+  if (intent.intent_status !== "pending") {
     throw new AssetLifecycleError(409, "Upload expired. Start a new upload.", "intent_expired");
+  }
+  if (new Date(intent.expires_at).getTime() <= Date.now()) {
+    return expireAndRemoveIntent(input.admin, input.storeId, intent, true);
   }
 
   try {
@@ -274,6 +317,9 @@ export async function completeAssetUpload(input: {
     if (finalized.error) throwDatabaseError(finalized.error);
     const row = firstRow<FinalizedRow>(finalized.data);
     if (!row) throwDatabaseError(null);
+    if (row.finalization_status === "expired") {
+      return expireAndRemoveIntent(input.admin, input.storeId, intent, false);
+    }
     return {
       assetId: row.asset_id,
       versionId: row.asset_version_id,
