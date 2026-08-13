@@ -1,84 +1,49 @@
-# Task 15 Independent Security Re-review — Round 2
+# Task 15 Independent Security Re-review — Round 3
 
 ## Verdict
 
-**FAIL — two P1 release blockers remain.** No P0 issue was identified. Commit `0466edb` materially improves the design: emailed credentials now use URL fragments, legacy bearer-path routes are removed, the bearer is exchanged under an origin check, and established requests re-authorize a signed HttpOnly session. However, the complete no-bearer-in-public-API invariant and the pre-promotion acceptance interlock are not yet enforced.
+**FAIL — one P1 release blocker remains.** The prior bearer/API, CSRF, approval-binding, and pre-merge-gate findings are materially resolved in application code. However, the two security migrations use duplicate Supabase migration versions, so the actual deployment mechanism cannot reliably install the session authorization and release interlock. No P0 issue was identified.
 
-## Findings
+## Finding
 
-### P1 — Raw access bearers still leave the server in public API JSON responses
+### P1 — Security migrations reuse existing Supabase versions and therefore are not deployable as written
 
 Evidence:
 
-- The new email/recovery URLs correctly use fragments: `apps/web/lib/digital-products/entitlements.ts:109`, `apps/web/lib/digital-products/customer-access.ts:451`, and `apps/web/lib/digital-products/delivery-email.ts:262` produce `/downloads#token=...`. Fragments are not sent in HTTP request targets, and `apps/web/components/customer/digital-download-list.tsx:103-110` removes the fragment before a same-origin body exchange.
-- However, `apps/web/app/api/orders/checkout-status/route.ts:50-62` derives the raw access bearer and returns it as `digitalAccessUrl` in a JSON response.
-- `apps/web/lib/digital-products/authenticated-customer-access-handler.ts:94-106` validates and returns the same fragment-bearing URL from the authenticated customer access API.
-- `apps/web/components/customer/digital-order-downloads.tsx:36-43` expects that bearer-bearing API field.
-- These responses contradict the plan's Definition of Done: “No ... bearer token ... appears in public APIs, analytics, audit metadata, templates, or logs.” The runbook's statement that bearers are never logged cannot be guaranteed when response-body logging, tracing, or error capture can observe these API payloads.
-- There is also a functional mismatch at `apps/web/components/storefront/storefront-checkout-page.tsx:201-206`: the API now returns `/downloads#token=...`, but the checkout client accepts only `/downloads/<token>`. That prevents the intended first-access link and shows this path was not exercised end-to-end after the redesign.
+- `supabase/migrations/20260813019000_secure_digital_download_sessions.sql` has version prefix `20260813019000`, but `supabase/migrations/20260813019000_digital_product_rollout_fix1.sql` already uses that version.
+- `supabase/migrations/20260813020000_digital_release_acceptance_gate.sql` has version prefix `20260813020000`, but `supabase/migrations/20260813020000_digital_product_rollout_fix2.sql` already uses that version.
+- Supabase migration history identifies migrations by the timestamp/version prefix. Two files with the same version cannot both be represented reliably in `supabase_migrations.schema_migrations`; normal CLI push/reset/repair behavior will reject, conflate, or skip one of each pair.
+- The repository's native PostgreSQL test harness masks this because `apps/web/tests/digital-products-migration.test.ts:587-646` enumerates and executes every filename directly rather than reproducing Supabase migration-history semantics.
+- These duplicated files contain the service-role-only `authorize_digital_download_session` RPC and the database-authoritative `digital_products_release_approvals`/runtime trigger. Missing either migration leaves the application broken or removes the rollout defense in depth.
 
 Impact:
 
-The 48-hour order-wide credential remains available to API response logging/observability and client-side interception in two common buyer flows. A compromised log sink or captured response grants access to all entitled files and can consume download grants. The path/history leak was removed, but the approved stronger invariant remains false.
+A real preview/production deployment cannot be trusted to install both security changes. Depending on which duplicate is recorded/applied, established download sessions may fail or the database rollout approval interlock may be absent. This fails the data-safety and operations release gates and must block release.
 
 Required remediation:
 
-Never return the raw bearer from checkout-status or authenticated-order APIs. Establish the signed HttpOnly download session server-side in those responses after binding the checkout session or authenticated customer to the eligible order, and return only `/downloads` plus non-sensitive state. Restrict the session cookie path to the narrowest usable API scope and preserve expiry/revocation re-authorization. Email/recovery may carry the credential in a fragment because delivery requires an out-of-band bootstrap, but no JSON API should serialize it. Add behavioral tests that assert checkout and authenticated access set a secure session cookie, serialize no token-shaped value, and complete the actual storefront/customer flows.
+Rename the two new, undeployed migration files to unique monotonically increasing versions after every existing migration (for example `20260813021000_...` and `20260813022000_...`; choose versions after checking shared migration history). Add a migration-contract test that rejects duplicate filename version prefixes. Run the official Supabase migration/reset/list workflow against a fresh non-production project and an upgraded project, and record that both versions appear exactly once before re-review.
 
-### P1 — The strict provider gate runs after main is updated, so it does not prevent promotion
+## P2 observations
 
-Evidence:
+### P2 — Approval enforcement is tested indirectly, not with explicit mismatch/expiry cases
 
-- `scripts/verify-digital-products-acceptance.mjs:10-35` correctly fails closed for missing fixture/evidence/provider credentials and forces the digital Playwright suites into release-gate mode.
-- But `.github/workflows/ci.yml:53-63` runs it only when `github.ref == 'refs/heads/main'`.
-- For a pull request into `main`, `github.ref` is a pull-request ref, so the promotion PR can pass and merge without this step. The gate runs only on the subsequent push to `main`, when an automatic main deployment may already be underway or complete.
-- The database trigger at `supabase/migrations/20260813020000_digital_release_acceptance_gate.sql:23-44` is useful defense in depth, but it accepts any unexpired global approval. Although the table records `release_version`, `environment`, and `evidence_sha256` at lines 1-14, the trigger does not compare any of them with the deployed release or store/environment. Thus an approval for an older or unrelated build remains sufficient to enable stores after a later unaccepted deployment.
+The SQL now joins runtime to approval on exact `release_version`, `evidence_sha256`, and `target_environment` (`20260813020000_digital_release_acceptance_gate.sql:40-56`), bounds approval age/expiry at lines 15-21, and requires current non-revoked approval. Those rules are sound on inspection. However, no focused migration tests explicitly prove that wrong release, wrong digest/environment, stale/revoked approval, future review timestamps, and missing reviewer timestamps are rejected while an exact approval succeeds. Add those tests after assigning unique migration versions.
 
-Impact:
+### P2 — The pre-merge gate depends on pre-created evidence for GitHub's ephemeral SHA
 
-The external Stripe/Resend acceptance blocker remains documented and local gate invocation fails correctly, but it can still be bypassed operationally: code can be promoted/deployed before provider acceptance, and an old approval can authorize rollout for a different release. This does not meet the requirement that acceptance and three reviews be a hard rollout prerequisite.
+`.github/workflows/ci.yml:53-69` now runs the strict gate on pull requests targeting `main` and safely materializes base64 secrets into temporary files. `scripts/verify-digital-products-acceptance.mjs:31-39` requires evidence whose `releaseVersion` exactly equals `GITHUB_SHA` and is less than one hour old before running Playwright. This fails closed, but maintaining a pre-created secret for an ephemeral PR merge SHA is operationally fragile. Prefer generating/signing evidence from the live acceptance run, then persisting its digest/approval, rather than requiring mutable global evidence secrets to predict the workflow SHA.
 
-Required remediation:
+## Verified resolutions
 
-Run the strict acceptance gate as a required check on `pull_request` events targeting `main` (or in an explicit deployment/promotion workflow that must succeed before production deployment). Materialize fixture/evidence secret contents into ephemeral files rather than treating GitHub secret strings as runner-local paths. Bind database approval to an immutable deployed release identifier/evidence digest and require the current expected release in the rollout RPC/trigger transaction; reject mismatched environment, future review timestamps, expired/revoked approval, or an approval created for another build. Add native PostgreSQL tests proving old/mismatched approvals cannot enable rollout.
-
-### P2 — Grant issuance remains a state-changing cross-site-navigable GET
-
-Evidence:
-
-- `apps/web/app/api/digital-downloads/file/[entitlementId]/route.ts:12-23` reserves and commits one of five lifetime grants during `GET` and returns a redirect.
-- The session cookie is `SameSite=Lax` at `apps/web/lib/digital-products/download-service.ts:227-238`, so browsers send it on top-level cross-site GET navigation.
-- No trusted-origin or one-time form nonce is checked on the grant endpoint.
-
-Impact:
-
-An attacker who learns or can induce a victim to navigate to an entitlement UUID can consume a scarce grant and trigger a download. UUID entropy limits blind exploitation, but state mutation on a Lax-cookie GET is avoidable and weakens defense in depth.
-
-Recommended remediation:
-
-Issue grants through a same-origin POST protected by trusted-origin/CSRF validation, then return a short-lived redirect target or initiate the download from the successful response. Keep the final storage GET independently signed. Add a hostile-origin/top-level-navigation regression test.
-
-### P2 — Prior behavioral-test gap is only partially resolved
-
-Evidence:
-
-- `apps/web/tests/digital-download-session-route.test.ts:17-45` now behaviorally tests hostile origin, malformed credentials, hashed lookup, no echo, HttpOnly cookie, neutral unavailable response, and no-store. `apps/web/tests/digital-download-route.test.ts` behaviorally exercises rate limiting, session authorization, grant lifecycle, storage binding, and safe errors. These are meaningful improvements.
-- The former source-substring suite was deleted, but no replacement Task 15 cross-route attack suite was added for the full merchant asset/preview/recovery/platform/financial surface. Existing focused tests mitigate this, but the Task 15 claim that all relevant endpoints were behaviorally attacked remains broader than the evidence.
-- There is no test catching the checkout fragment-regex mismatch described in the first P1.
-
-Recommended remediation:
-
-Add a table-driven behavioral release suite covering every digital mutation with hostile origin, unauthenticated identity, cross-tenant IDs, malformed UUID/body size, throttler failure/denial, and safe response/log serialization. Include checkout-status and authenticated-access tests that prohibit bearer serialization and an end-to-end assertion for the bootstrap session.
-
-## Verified improvements
-
-- No production download page or API route contains the bearer in a request path. The legacy `[token]` page and API routes were removed.
-- The fragment is removed with `history.replaceState` before exchange, and exchange uses POST body plus `enforceTrustedOrigin` (`apps/web/app/api/digital-downloads/session/route.ts:13-30`).
-- The established cookie is signed over random session ID plus opaque access-token row ID, HttpOnly, SameSite=Lax, Secure in production, and every list/grant request calls service-role-only `authorize_digital_download_session` to re-check expiry, revocation, and payment eligibility (`20260813019000_secure_digital_download_sessions.sql:1-28`).
-- The strict verification script rejects missing acceptance prerequisites and free-form evidence is no longer sufficient. The E2E suites throw rather than skip when invoked in release-gate mode.
-- Focused session/download/platform operation tests passed: 3 files, 33 tests.
-- The external Stripe/Resend fixture remains explicitly unfulfilled and must continue to block rollout; this review does not classify the missing external credentials themselves as a defect.
+- **No bearer in public API/path/log surfaces:** checkout status and authenticated-customer access now set the signed HttpOnly session and return only `/downloads` (`apps/web/app/api/orders/checkout-status/route.ts:52-68`; `apps/web/lib/digital-products/authenticated-customer-access-handler.ts:90-104`). Email/recovery bootstrap URLs use fragments, and no production download route accepts a token path.
+- **Safe fragment retry:** `apps/web/components/customer/digital-download-list.tsx:98-118` removes the fragment immediately, retains the credential only in a React ref across transient failures, and clears it after successful exchange. It is not reinserted into history, DOM, storage, or API URLs.
+- **POST plus origin protection:** grant issuance is now `POST`; `apps/web/app/api/digital-downloads/file/[entitlementId]/route.ts:13-26` enforces trusted origin before session/database work. Behavioral tests verify hostile origin rejection.
+- **Exact rollout binding:** the approval/runtime join compares exact release, evidence digest, and target environment; approval timestamps are recent and expiry is at most seven days. Service-facing roles have no table access, and the trigger remains database-authoritative once deployed.
+- **Pre-merge strict CI:** the promotion step runs on main-target pull requests and main pushes, fails for absent provider/fixture/evidence values, restricts the target to loopback or an explicit HTTPS non-production host, validates same-origin routes, and forces Playwright release mode.
+- **Behavioral security coverage:** focused route tests execute hostile-origin, malformed credential, no-bearer serialization, session authorization, rate-limit failure, storage binding, grant release/commit, and safe-response behavior. Five focused suites passed: 68 tests.
+- **External acceptance remains honestly blocked:** no real Stripe/Resend run is claimed. The missing fixture remains a rollout blocker and the strict script fails closed.
 
 ## Review scope
 
-Reviewed fix report and diff `b96918e..0466edb`, credential generation/exchange/session/list/grant flows, checkout and authenticated-order access, new migrations, rollout operations, CI and verification script, E2E gates, focused unit tests, and the operations runbook. No implementation file was changed.
+Reviewed fix report and diff `bdb8612..a26c7b1`, checkout/auth/email fragment and session flows, POST download route and UI, release fixture/actions, strict verifier, CI promotion condition, approval/runtime SQL, migration harness, and focused behavioral tests. No implementation file was changed.
