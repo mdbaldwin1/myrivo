@@ -206,3 +206,42 @@
 - **Hosted digital/mixed Checkout encoding:** Partially resolved. Both hosted forms are filled and submitted, but their resulting orders are not linked or semantically verified.
 - **Evidence HMAC/current-run mechanics:** Resolved structurally with a separate CI key. Semantic validation remains P1.
 - **CI coherence:** Required secrets/approved host and current output are wired. `MYRIVO_DIGITAL_ACCEPTANCE_ENVIRONMENT`, origin, project ref, and control secret are expected on the deployed acceptance app rather than runner; no new runner-level blocker is identified here.
+
+---
+
+## Round 6 Re-review — commit `fb5720c`
+
+### Verdict
+
+**FAIL** — actual checkout-order linkage and Resend retrieval are improved, but the control path cannot execute as wired, the financial suite deliberately calls rejected actions, and evidence semantics remain insufficiently enforced.
+
+### P1 — Every acceptance-control mutation fails because required database session settings are never established
+
+**Evidence:** The RPC now rejects unless `current_setting('app.acceptance_environment', true)` and `current_setting('app.acceptance_project_ref', true)` exactly match its arguments (`supabase/migrations/20260813023000_nonproduction_digital_acceptance_control.sql:43-47`). The native test succeeds only after explicitly executing `SET app.acceptance_environment` and `SET app.acceptance_project_ref` on the same PostgreSQL session (`apps/web/tests/digital-products-migration.test.ts:1264-1279`). Production acceptance code calls `supabase.rpc(...)` directly and only passes arguments (`apps/web/lib/digital-products/acceptance-control.ts:18-25`); it never establishes those session GUCs, and a separate REST/RPC request could not reliably preserve them anyway.
+
+**Impact:** `expire-access` and `inject-delivery-failure` fail with `acceptance_control_nonproduction_required` even on a correctly allowlisted preview. The browser release suite therefore cannot complete.
+
+**Remediation:** Bind environment/project through a database-authenticated mechanism available atomically within the RPC invocation—such as signed claims or a secret-derived acceptance capability validated against the target row—rather than connection-local settings the caller cannot set. Preserve the explicit target/run/store/project checks and add a route-to-real-Postgres integration test proving an allowed call succeeds and mismatches fail.
+
+### P1 — Financial acceptance is guaranteed to fail and no provider path replaces it
+
+**Evidence:** The RPC intentionally raises `acceptance_control_provider_event_required` for every `inject-refund` and `inject-dispute` request (`20260813023000_nonproduction_digital_acceptance_control.sql:60-61`). Nevertheless the E2E still calls those exact actions for partial/full refunds and opened/won/lost disputes (`apps/web/e2e/digital-products.spec.ts:87-104`). There is no Stripe refund/dispute helper or webhook event driver in the fixture/spec. The required verifier scenarios can only be written after those calls, so the fail-closed gate can never produce its matrix.
+
+**Impact:** This is not merely absent external credentials; the committed harness cannot pass even when Stripe/Resend and a preview fixture are configured. Stripe test refunds are supported and must be exercised. If some dispute outcomes lack a supported provider path, the code should expose a clear externally supplied provider-event fixture/orchestrator contract and skip rollout, but it must not present an internally contradictory test.
+
+**Remediation:** Implement real Stripe test refund operations and deliver their signed webhook events through the application boundary. Implement the supported Stripe dispute test-event workflow or a versioned external provider action adapter whose results are independently verified; for unsupported outcomes, fail in prerequisite validation with a precise blocker before browser execution. Remove calls to actions designed always to reject.
+
+### P1 — The exact evidence schema is still unused and required semantics are not verified
+
+**Evidence:** `digitalAcceptanceObservationSchema` remains imported only by its unit test, not by the controller, fixture writer, Playwright spec, or verifier. Its field names still do not match actual observations (`payment`/`delivery`/`manifestVersionIds` versus `providerPayment`/`deliveryJob`/`manifestItems`). The verifier requires scenario names and order linkage, but only validates payment if it happens to be present (`scripts/verify-digital-products-acceptance.mjs:43-55`). It does not verify checkout composition, nonempty manifest, notification provider/status/recipient/message ID, grant counts/status/session grace, sixth denial, pre/post replacement version identity, refund/dispute state, or failed-to-succeeded delivery attempt progression. `five-grants` is a single post-click observation; there is no grace-reuse action/assertion, and no exact grant predicate (`apps/web/e2e/digital-products.spec.ts:51-61`).
+
+**Impact:** Once execution errors are fixed, semantically wrong or empty evidence can still satisfy the HMAC and scenario-name matrix. The feature's highest-risk invariants remain uncertified.
+
+**Remediation:** Replace the dead schema with the actual controller response model and parse every observation at creation and verification. Add scenario-specific schemas/predicates with exact linked IDs and before/after observations. Explicitly prove five issued grants, same-session grace reuse without increment, sixth rejection, immutable prior asset version, Resend delivery linkage, partial/full/dispute states, and retry convergence with increased attempt history.
+
+### Previous findings disposition
+
+- **Actual hosted-order linkage:** Resolved structurally. `completeStripeCheckout()` extracts each return order ID, and subsequent observations use that ID; the verifier no longer forces new checkout scenarios to the seeded order.
+- **Separate financial branches:** Resolved in fixture modeling with distinct orders, but unusable until real provider actions replace rejected injections.
+- **Resend retrieval/link exchange:** Materially improved. The test retrieves a message matching recipient/order, validates a fragment link, and opens it in a clean context. Its delivery semantics still need inclusion in the strict evidence schema.
+- **Fail-closed unsupported provider behavior:** Correct principle, incorrect harness integration: unsupported actions are rejected, but the suite still requires and invokes them rather than using a supported provider path or prerequisite blocker.
