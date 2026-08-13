@@ -789,6 +789,8 @@ export type DigitalPurchaseManifestStatus = "draft" | "locked";
 export type DigitalDownloadGrantStatus = "reserved" | "issued" | "released" | "failed";
 export type DigitalDeliveryJobStatus = "pending" | "processing" | "succeeded" | "failed";
 export type DigitalDeliveryAttemptStatus = Exclude<DigitalDeliveryJobStatus, "pending">;
+export type DigitalDeliveryNotificationType = "purchase" | "merchant_resend";
+export type DigitalDeliveryNotificationStatus = DigitalDeliveryJobStatus;
 
 export type DigitalProductAssetRecord = {
   id: string;
@@ -890,6 +892,8 @@ export type DigitalOrderAccessTokenRecord = {
   id: string;
   store_id: string;
   order_id: string;
+  delivery_job_id: string | null;
+  token_derivation_nonce: string | null;
   token_hash: string;
   issuance_reason: "purchase" | "customer_request" | "merchant_resend";
   expires_at: string;
@@ -964,11 +968,14 @@ export type DigitalDeliveryJobRecord = {
   id: string;
   store_id: string;
   order_id: string;
+  manifest_id: string | null;
   job_type: string;
   status: DigitalDeliveryJobStatus;
   attempt_count: number;
   next_attempt_at: string;
   lease_expires_at: string | null;
+  lease_token: string | null;
+  notification_sent_at: string | null;
   last_safe_error: string | null;
   completed_at: string | null;
   created_at: string;
@@ -981,6 +988,40 @@ export type DigitalDeliveryAttemptRecord = {
   order_id: string;
   store_id: string;
   attempt_number: number;
+  status: DigitalDeliveryAttemptStatus;
+  safe_error: string | null;
+  started_at: string;
+  finished_at: string | null;
+};
+
+export type DigitalDeliveryNotificationRecord = {
+  id: string;
+  store_id: string;
+  order_id: string;
+  delivery_job_id: string | null;
+  access_token_id: string;
+  notification_type: DigitalDeliveryNotificationType;
+  request_key_hash: string | null;
+  requested_by_user_id: string | null;
+  status: DigitalDeliveryNotificationStatus;
+  attempt_count: number;
+  next_attempt_at: string;
+  lease_token: string | null;
+  lease_expires_at: string | null;
+  provider: "resend" | null;
+  last_safe_error: string | null;
+  sent_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DigitalDeliveryNotificationAttemptRecord = {
+  id: string;
+  notification_id: string;
+  order_id: string;
+  store_id: string;
+  attempt_number: number;
+  provider: "resend";
   status: DigitalDeliveryAttemptStatus;
   safe_error: string | null;
   started_at: string;

@@ -1,6 +1,9 @@
 import { getServerEnv } from "@/lib/env";
-import { sendTransactionalEmail } from "@/lib/notifications/email-provider";
 import { DIGITAL_PRODUCT_CONFIG } from "./config";
+import {
+  deliverPurchaseDigitalDeliveryNotification,
+  processNextDigitalDeliveryNotification,
+} from "./delivery-email";
 import {
   claimDigitalDeliveryJob,
   completeDigitalDeliveryJob,
@@ -47,31 +50,6 @@ export function sanitizeDigitalDeliveryError(error: unknown) {
   return safe || "Digital delivery failed";
 }
 
-async function sendDigitalDeliveryNotification({
-  delivery,
-  idempotencyKey,
-}: {
-  job: DigitalDeliveryJobClaim;
-  delivery: DigitalEntitlementMaterialization;
-  idempotencyKey: string;
-}) {
-  const env = getServerEnv();
-  const from = env.MYRIVO_EMAIL_PLATFORM_FROM?.trim() || env.MYRIVO_EMAIL_FROM?.trim();
-  if (!from || !delivery.customerEmail) {
-    throw new Error("Digital delivery email configuration is unavailable");
-  }
-  const result = await sendTransactionalEmail({
-    from,
-    to: [delivery.customerEmail],
-    subject: `Your ${delivery.storeName ?? "Myrivo"} digital downloads are ready`,
-    text: `Download your purchase: ${delivery.accessUrl}\n\nThis secure link expires in 48 hours. You may request a fresh link using your order email. Personal-use license applies.`,
-    idempotencyKey,
-  });
-  if (!result.ok) {
-    throw new Error(result.error || "Digital delivery email provider failed");
-  }
-}
-
 function createDefaultDependencies(): DigitalDeliveryWorkerDependencies {
   return {
     claimJob: () => claimDigitalDeliveryJob(),
@@ -82,7 +60,11 @@ function createDefaultDependencies(): DigitalDeliveryWorkerDependencies {
       }
       return materializeEntitlementsFromManifest({ job, tokenSecret });
     },
-    sendNotification: sendDigitalDeliveryNotification,
+    sendNotification: ({ job, delivery }) =>
+      deliverPurchaseDigitalDeliveryNotification({
+        job,
+        accessTokenId: delivery.accessTokenId,
+      }),
     markNotificationSent: (job) => markDigitalDeliveryNotificationSent(job),
     completeJob: (input) => completeDigitalDeliveryJob(input),
   };
@@ -121,23 +103,53 @@ export async function processNextDigitalDelivery(
   }
 }
 
-export async function processDigitalDeliveryBatch() {
+type BatchWorkResult = {
+  status: "idle" | "pending" | "succeeded" | "failed";
+  nextAttemptAt: string | null;
+};
+
+export type DigitalDeliveryBatchDependencies = {
+  processJob: () => Promise<BatchWorkResult>;
+  processNotification: () => Promise<BatchWorkResult>;
+};
+
+function createDefaultBatchDependencies(): DigitalDeliveryBatchDependencies {
+  return {
+    processJob: () => processNextDigitalDelivery(),
+    processNotification: () => processNextDigitalDeliveryNotification(),
+  };
+}
+
+export async function processDigitalDeliveryBatch(
+  dependencies: DigitalDeliveryBatchDependencies = createDefaultBatchDependencies(),
+) {
   let claimed = 0;
   let succeeded = 0;
   let retrying = 0;
   let failed = 0;
+  let preferNotification = false;
 
   for (
     let index = 0;
     index < DIGITAL_PRODUCT_CONFIG.deliveryProcessBatchSize;
     index += 1
   ) {
-    const result = await processNextDigitalDelivery();
+    const primary = preferNotification
+      ? dependencies.processNotification
+      : dependencies.processJob;
+    const secondary = preferNotification
+      ? dependencies.processJob
+      : dependencies.processNotification;
+    let result = await primary();
+    if (result.status === "idle") {
+      result = await secondary();
+    }
     if (result.status === "idle") break;
     claimed += 1;
     if (result.status === "succeeded") succeeded += 1;
     else if (result.status === "pending") retrying += 1;
     else failed += 1;
+    preferNotification = !preferNotification;
   }
 
   return { claimed, succeeded, retrying, failed };

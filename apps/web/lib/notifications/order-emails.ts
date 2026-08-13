@@ -24,6 +24,7 @@ type OrderEmailItem = {
   variantLabel: string | null;
   quantity: number;
   unitPriceCents: number;
+  productType: "physical" | "digital";
 };
 
 type OrderEmailContext = {
@@ -48,7 +49,7 @@ type OrderEmailContext = {
   trackingUrl: string | null;
   trackingNumber: string | null;
   carrier: string | null;
-  fulfillmentMethod: "pickup" | "shipping" | null;
+  fulfillmentMethod: "pickup" | "shipping" | "digital_delivery" | null;
   pickupLocationSnapshot: Record<string, unknown> | null;
   pickupWindowStartAt: string | null;
   pickupWindowEndAt: string | null;
@@ -56,7 +57,27 @@ type OrderEmailContext = {
   items: OrderEmailItem[];
   emailDocument: EmailStudioDocument;
   customerHasAccount: boolean;
+  hasDigitalItems: boolean;
 };
+
+export type PreparedOrderEmailMessage = {
+  from: string;
+  to: string[];
+  subject: string;
+  text: string;
+  html: string;
+  replyTo: string | null;
+};
+
+export function shouldSendCustomerOrderConfirmation({
+  alreadySent,
+  hasDigitalItems,
+}: {
+  alreadySent: boolean;
+  hasDigitalItems: boolean;
+}) {
+  return !alreadySent && !hasDigitalItems;
+}
 
 type PickupSummaryInput = Pick<
   OrderEmailContext,
@@ -229,6 +250,16 @@ export function resolveCustomerName(firstName: string | null, lastName: string |
 }
 
 function resolvePickupTemplateFields(input: PickupSummaryInput): ResolvedPickupTemplateFields {
+  if (input.fulfillmentMethod === "digital_delivery") {
+    return {
+      locationName: "",
+      address: "",
+      cityRegion: "",
+      window: "",
+      instructions: "",
+      details: "Fulfillment: Digital delivery",
+    };
+  }
   if (input.fulfillmentMethod !== "pickup") {
     return {
       locationName: "",
@@ -442,7 +473,7 @@ async function loadOrderEmailContext(orderId: string): Promise<OrderEmailContext
       tracking_url: string | null;
       tracking_number: string | null;
       carrier: string | null;
-      fulfillment_method: "pickup" | "shipping" | null;
+      fulfillment_method: "pickup" | "shipping" | "digital_delivery" | null;
       pickup_location_snapshot_json: Record<string, unknown> | null;
       pickup_window_start_at: string | null;
       pickup_window_end_at: string | null;
@@ -466,9 +497,9 @@ async function loadOrderEmailContext(orderId: string): Promise<OrderEmailContext
       .maybeSingle<{ policies_page_json: Record<string, unknown> | null; emails_json: Record<string, unknown> | null }>(),
     supabase
       .from("order_items")
-      .select("quantity,unit_price_cents,variant_label,products(title)")
+      .select("quantity,unit_price_cents,variant_label,product_type,products(title)")
       .eq("order_id", order.id)
-      .returns<Array<{ quantity: number; unit_price_cents: number; variant_label: string | null; products: { title: string } | { title: string }[] | null }>>(),
+      .returns<Array<{ quantity: number; unit_price_cents: number; variant_label: string | null; product_type: "physical" | "digital"; products: { title: string } | { title: string }[] | null }>>(),
     supabase
       .from("store_domains")
       .select("domain,email_sender_enabled,email_status")
@@ -561,11 +592,57 @@ async function loadOrderEmailContext(orderId: string): Promise<OrderEmailContext
         title: product?.title ?? "Item",
         variantLabel: item.variant_label,
         quantity: item.quantity,
-        unitPriceCents: item.unit_price_cents
+        unitPriceCents: item.unit_price_cents,
+        productType: item.product_type,
       };
     }),
     emailDocument: createEmailStudioDocumentFromSection(emailsSection, store?.name ?? "Your store"),
-    customerHasAccount: Boolean(customerUserLookup?.id)
+    customerHasAccount: Boolean(customerUserLookup?.id),
+    hasDigitalItems: (items ?? []).some((item) => item.product_type === "digital"),
+  };
+}
+
+export async function prepareDigitalDeliveryOrderConfirmationEmail(
+  orderId: string,
+  digitalDelivery: {
+    fileCount: number;
+    accessWindowCopy: string;
+    accessPageUrl: string;
+  },
+): Promise<PreparedOrderEmailMessage | null> {
+  const context = await loadOrderEmailContext(orderId);
+  if (!context?.hasDigitalItems) return null;
+  const sender = resolveSenderConfig(context);
+  if (!sender.from) {
+    throw new Error("Digital delivery email configuration is unavailable");
+  }
+  const orderSummary = context.items
+    .map((item) => buildOrderLine(item, context.currency))
+    .join("\n");
+  const rendered = renderOrderEmailTemplate(
+    context,
+    "customerConfirmation",
+    {
+      ...buildTemplateValues(context, {
+        items: orderSummary,
+        dashboardUrl: `${getExternalAppUrl()}/dashboard/customer-orders/${context.orderId}`,
+        hasDigitalItems: "Yes",
+        digitalFileCount: String(digitalDelivery.fileCount),
+        digitalAccessWindow: digitalDelivery.accessWindowCopy,
+        digitalAccessPageUrl: digitalDelivery.accessPageUrl,
+      }),
+      pickupDetails: buildPickupSummaryText(context),
+    },
+  );
+  return {
+    from: sender.senderName
+      ? `${sender.senderName} <${sender.from}>`
+      : sender.from,
+    to: [context.customerEmail],
+    subject: rendered.subject,
+    text: rendered.text,
+    html: rendered.html,
+    replyTo: sender.replyTo,
   };
 }
 
@@ -1088,7 +1165,14 @@ export async function sendOrderCreatedNotifications(orderId: string) {
       dashboardUrl: customerDashboardLink
     });
 
-    if (!customerAlreadySent) {
+    // Digital confirmations are held until the durable worker has materialized
+    // the immutable entitlements and can include the short-lived access page.
+    if (
+      shouldSendCustomerOrderConfirmation({
+        alreadySent: customerAlreadySent,
+        hasDigitalItems: context.hasDigitalItems,
+      })
+    ) {
       const renderedCustomer = renderOrderEmailTemplate(context, "customerConfirmation", {
         ...customerTemplateValues,
         pickupDetails: pickupSummary

@@ -6,7 +6,9 @@ import {
 } from "@/lib/digital-products/entitlements";
 import {
   processNextDigitalDelivery,
+  processDigitalDeliveryBatch,
   sanitizeDigitalDeliveryError,
+  type DigitalDeliveryBatchDependencies,
   type DigitalDeliveryWorkerDependencies,
 } from "@/lib/digital-products/delivery-worker";
 import type { DigitalDeliveryJobClaim } from "@/lib/digital-products/delivery-jobs";
@@ -47,6 +49,46 @@ function makeDependencies(
 }
 
 describe("digital delivery worker", () => {
+  test("processes durable resend notifications even while purchase jobs are available", async () => {
+    let jobCalls = 0;
+    let notificationCalls = 0;
+    const dependencies: DigitalDeliveryBatchDependencies = {
+      processJob: async () => {
+        jobCalls += 1;
+        return jobCalls === 1
+          ? {
+              status: "succeeded" as const,
+              jobId: claim.id,
+              nextAttemptAt: null,
+            }
+          : { status: "idle" as const, jobId: null, nextAttemptAt: null };
+      },
+      processNotification: async () => {
+        notificationCalls += 1;
+        return notificationCalls === 1
+          ? {
+              status: "succeeded" as const,
+              notificationId: "80000000-0000-4000-8000-000000000001",
+              nextAttemptAt: null,
+            }
+          : {
+              status: "idle" as const,
+              notificationId: null,
+              nextAttemptAt: null,
+            };
+      },
+    };
+
+    await expect(processDigitalDeliveryBatch(dependencies)).resolves.toEqual({
+      claimed: 2,
+      succeeded: 2,
+      retrying: 0,
+      failed: 0,
+    });
+    expect(jobCalls).toBeGreaterThan(0);
+    expect(notificationCalls).toBeGreaterThan(0);
+  });
+
   test("retries an email failure without changing the purchase token", async () => {
     let attempt = 0;
     const successfulNotifications: string[] = [];

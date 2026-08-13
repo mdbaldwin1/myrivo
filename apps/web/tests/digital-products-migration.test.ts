@@ -85,6 +85,10 @@ const durableDigitalDeliveryMigration = join(
   repoRoot,
   "supabase/migrations/20260813008000_durable_digital_delivery.sql",
 );
+const digitalDeliveryNotificationsMigration = join(
+  repoRoot,
+  "supabase/migrations/20260813009000_reliable_digital_delivery_notifications.sql",
+);
 
 const ids = {
   storeA: "10000000-0000-0000-0000-000000000001",
@@ -459,6 +463,9 @@ beforeAll(() => {
   }
   if (!existsSync(durableDigitalDeliveryMigration)) {
     throw new Error(`Missing durable digital delivery migration: ${durableDigitalDeliveryMigration}`);
+  }
+  if (!existsSync(digitalDeliveryNotificationsMigration)) {
+    throw new Error(`Missing digital delivery notifications migration: ${digitalDeliveryNotificationsMigration}`);
   }
 
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-digital-migration-"));
@@ -1335,10 +1342,13 @@ describe("durable digital delivery", () => {
     };
   }
 
-  function materializeStatement(job: ReturnType<typeof claimDelivery>) {
+  function materializeStatement(
+    job: ReturnType<typeof claimDelivery>,
+    tokenHashCharacter = "a",
+  ) {
     return `select public.materialize_digital_delivery_from_manifest(
       '${job.id}', '${job.lease_token}',
-      '70000000-0000-4000-8000-000000000071', repeat('a', 64),
+      '70000000-0000-4000-8000-000000000071', repeat('${tokenHashCharacter}', 64),
       172800, ${DIGITAL_PRODUCT_CONFIG.grantsPerFile}
     )`;
   }
@@ -1636,6 +1646,333 @@ describe("durable digital delivery", () => {
          from public.digital_delivery_jobs where id = '${fixture.jobId}'`,
       ),
     ).toBe("failed:3:true");
+  });
+
+  it("audits every purchase notification attempt and retries with one stable notification", () => {
+    retireClaimableJobs();
+    const fixture = finalizeDeliveryCheckout("000000000081");
+    const job = claimDelivery();
+    const materialized = JSON.parse(
+      runSql("full_chain", materializeStatement(job, "c")),
+    ) as { access_token_id: string };
+
+    const first = JSON.parse(
+      runSql(
+        "full_chain",
+        `select row_to_json(notification) from public.prepare_purchase_digital_delivery_notification(
+          '${job.id}', '${job.lease_token}', '${materialized.access_token_id}'
+        ) notification`,
+      ),
+    ) as { notification_id: string; duplicate: boolean; status: string };
+    const duplicate = JSON.parse(
+      runSql(
+        "full_chain",
+        `select row_to_json(notification) from public.prepare_purchase_digital_delivery_notification(
+          '${job.id}', '${job.lease_token}', '${materialized.access_token_id}'
+        ) notification`,
+      ),
+    ) as { notification_id: string; duplicate: boolean; status: string };
+
+    expect(first).toMatchObject({ duplicate: false, status: "pending" });
+    expect(duplicate).toMatchObject({
+      notification_id: first.notification_id,
+      duplicate: true,
+      status: "pending",
+    });
+
+    const claimed = JSON.parse(
+      runSql(
+        "full_chain",
+        `select row_to_json(notification) from public.claim_digital_delivery_notification(
+          '${first.notification_id}', 120, 3
+        ) notification`,
+      ),
+    ) as {
+      id: string;
+      lease_token: string;
+      attempt_number: number;
+      token_derivation_nonce: string;
+      token_hash: string;
+      file_count: number;
+    };
+    expect(claimed).toMatchObject({
+      id: first.notification_id,
+      attempt_number: 1,
+      file_count: 2,
+    });
+    expect(claimed.token_derivation_nonce).toMatch(/^[a-f0-9-]{36}$/);
+    expect(claimed.token_hash).toMatch(/^[a-f0-9]{64}$/);
+
+    const failed = JSON.parse(
+      runSql(
+        "full_chain",
+        `select public.complete_digital_delivery_notification(
+          '${claimed.id}', '${claimed.lease_token}', 'failed', 'resend',
+          'buyer@example.test request req_private https://myrivo.test/downloads/raw-token',
+          3, 10, 30
+        )`,
+      ),
+    ) as { status: string; next_attempt_at: string };
+    expect(failed.status).toBe("pending");
+    expect(
+      runSql(
+        "full_chain",
+        `select safe_error from public.digital_delivery_notification_attempts
+         where notification_id = '${claimed.id}' and attempt_number = 1`,
+      ),
+    ).toBe("Digital delivery notification failed");
+
+    runSql(
+      "full_chain",
+      `update public.digital_delivery_notifications
+       set next_attempt_at = now() where id = '${claimed.id}'`,
+    );
+    const retried = JSON.parse(
+      runSql(
+        "full_chain",
+        `select row_to_json(notification) from public.claim_digital_delivery_notification(
+          '${claimed.id}', 120, 3
+        ) notification`,
+      ),
+    ) as { id: string; lease_token: string; attempt_number: number };
+    expect(retried.attempt_number).toBe(2);
+    expect(
+      JSON.parse(
+        runSql(
+          "full_chain",
+          `select public.complete_digital_delivery_notification(
+            '${retried.id}', '${retried.lease_token}', 'succeeded', 'resend',
+            null, 3, 10, 30
+          )`,
+        ),
+      ),
+    ).toEqual({ status: "succeeded", next_attempt_at: null });
+    expect(
+      runSql(
+        "full_chain",
+        `select string_agg(
+           attempt_number::text || ':' || provider || ':' || status,
+           ',' order by attempt_number
+         ) from public.digital_delivery_notification_attempts
+         where notification_id = '${claimed.id}'`,
+      ),
+    ).toBe("1:resend:failed,2:resend:succeeded");
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.audit_events
+         where entity = 'order' and entity_id = '${fixture.orderId}'
+           and action = 'digital_order_delivery_sent'
+           and metadata ->> 'notificationId' = '${claimed.id}'`,
+      ),
+    ).toBe("1");
+  });
+
+  it("atomically rotates purchase and resend tokens once for concurrent duplicate merchant submits", async () => {
+    retireClaimableJobs();
+    const fixture = finalizeDeliveryCheckout("000000000082");
+    const job = claimDelivery();
+    runSql("full_chain", materializeStatement(job, "d"));
+    runSql(
+      "full_chain",
+      `update public.digital_order_entitlements
+       set download_grants_used = 2 where order_id = '${fixture.orderId}'`,
+    );
+    const statement = (suffix: string, tokenHash: string) =>
+      `select row_to_json(notification) from public.prepare_merchant_digital_delivery_resend(
+        '${fixture.orderId}', '${ids.manifestStore}',
+        '00000000-0000-4000-8000-000000000011', repeat('b', 64),
+        '91000000-0000-4000-8000-${suffix}',
+        '92000000-0000-4000-8000-${suffix}',
+        '93000000-0000-4000-8000-${suffix}',
+        repeat('${tokenHash}', 64), 172800
+      ) notification`;
+    const [firstRaw, secondRaw] = await Promise.all([
+      runSqlAsync(
+        "full_chain",
+        statement("000000000082", "f"),
+        "delivery-resend-a",
+      ),
+      runSqlAsync(
+        "full_chain",
+        statement("000000000083", "0"),
+        "delivery-resend-b",
+      ),
+    ]);
+    const first = JSON.parse(firstRaw) as {
+      notification_id: string;
+      duplicate: boolean;
+    };
+    const second = JSON.parse(secondRaw) as {
+      notification_id: string;
+      duplicate: boolean;
+    };
+    expect(first.notification_id).toBe(second.notification_id);
+    expect([first.duplicate, second.duplicate].sort()).toEqual([false, true]);
+    expect(
+      runSql(
+        "full_chain",
+        `select issuance_reason || ':' ||
+          extract(epoch from expires_at - created_at)::integer::text
+         from public.digital_order_access_tokens
+         where order_id = '${fixture.orderId}' and revoked_at is null
+           and issuance_reason in ('purchase', 'merchant_resend')`,
+      ),
+    ).toBe("merchant_resend:172800");
+    expect(
+      runSql(
+        "full_chain",
+        `select string_agg(download_grants_used::text, ',' order by id)
+         from public.digital_order_entitlements where order_id = '${fixture.orderId}'`,
+      ),
+    ).toBe("2,2");
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*)::text || ':' ||
+          bool_and(metadata ? 'notificationId')::text || ':' ||
+          bool_and(metadata::text !~* '(token|downloads/|storage|private/)')::text
+         from public.audit_events
+         where entity = 'order' and entity_id = '${fixture.orderId}'
+           and action = 'digital_order_delivery_resend_queued'`,
+      ),
+    ).toBe("1:true:true");
+  });
+
+  it("rejects merchant resend after revocation, full refund, or an active dispute", () => {
+    const prepare = (suffix: string) => {
+      retireClaimableJobs();
+      const fixture = finalizeDeliveryCheckout(suffix);
+      const job = claimDelivery();
+      runSql("full_chain", materializeStatement(job, suffix.slice(-1)));
+      return fixture;
+    };
+    const resendStatement = (orderId: string, suffix: string) =>
+      `select * from public.prepare_merchant_digital_delivery_resend(
+        '${orderId}', '${ids.manifestStore}',
+        '00000000-0000-4000-8000-000000000011', repeat('${suffix.slice(-1)}', 64),
+        '94000000-0000-4000-8000-${suffix}',
+        '95000000-0000-4000-8000-${suffix}',
+        '96000000-0000-4000-8000-${suffix}', repeat('e', 64), 172800
+      )`;
+
+    const revoked = prepare("000000000084");
+    runSql(
+      "full_chain",
+      `update public.digital_order_entitlements
+       set status = 'revoked', status_reason = 'full_refund'
+       where order_id = '${revoked.orderId}'`,
+    );
+    expectRejected(
+      "full_chain",
+      resendStatement(revoked.orderId, "000000000084"),
+    );
+
+    const refunded = prepare("000000000085");
+    runSql(
+      "full_chain",
+      `insert into public.order_refunds(
+        order_id, store_id, requested_by_user_id, amount_cents,
+        reason_key, status, processed_at
+      ) select id, store_id, '00000000-0000-4000-8000-000000000011',
+        total_cents, 'customer_request', 'succeeded', now()
+        from public.orders where id = '${refunded.orderId}'`,
+    );
+    expectRejected(
+      "full_chain",
+      resendStatement(refunded.orderId, "000000000085"),
+    );
+
+    const disputed = prepare("000000000086");
+    runSql(
+      "full_chain",
+      `insert into public.order_disputes(
+        order_id, store_id, stripe_dispute_id, amount_cents, currency,
+        reason, status
+      ) values (
+        '${disputed.orderId}', '${ids.manifestStore}', 'dp_task8_active',
+        2500, 'usd', 'fraudulent', 'under_review'
+      )`,
+    );
+    expectRejected(
+      "full_chain",
+      resendStatement(disputed.orderId, "000000000086"),
+    );
+  });
+
+  it("keeps merchant resend eligible for free orders and partial refunds", () => {
+    const prepare = (suffix: string, tokenHashCharacter: string) => {
+      retireClaimableJobs();
+      const fixture = finalizeDeliveryCheckout(suffix);
+      const job = claimDelivery();
+      runSql(
+        "full_chain",
+        materializeStatement(job, tokenHashCharacter),
+      );
+      return fixture;
+    };
+    const resend = (orderId: string, suffix: string, hashCharacter: string) =>
+      JSON.parse(
+        runSql(
+          "full_chain",
+          `select row_to_json(notification) from public.prepare_merchant_digital_delivery_resend(
+            '${orderId}', '${ids.manifestStore}',
+            '00000000-0000-4000-8000-000000000011', repeat('${hashCharacter}', 64),
+            '97000000-0000-4000-8000-${suffix}',
+            '98000000-0000-4000-8000-${suffix}',
+            '99000000-0000-4000-8000-${suffix}', repeat('${hashCharacter}', 64), 172800
+          ) notification`,
+        ),
+      ) as { status: string };
+
+    const free = prepare("000000000087", "7");
+    runSql(
+      "full_chain",
+      `update public.orders set subtotal_cents = 0, total_cents = 0
+       where id = '${free.orderId}'`,
+    );
+    expect(resend(free.orderId, "000000000087", "8").status).toBe("pending");
+
+    const partiallyRefunded = prepare("000000000088", "9");
+    runSql(
+      "full_chain",
+      `insert into public.order_refunds(
+        order_id, store_id, requested_by_user_id, amount_cents,
+        reason_key, status, processed_at
+      ) values (
+        '${partiallyRefunded.orderId}', '${ids.manifestStore}',
+        '00000000-0000-4000-8000-000000000011', 500,
+        'customer_request', 'succeeded', now()
+      )`,
+    );
+    expect(
+      resend(partiallyRefunded.orderId, "000000000088", "b").status,
+    ).toBe("pending");
+  });
+
+  it("keeps notification mutations service-role-only and notification failures merchant-readable", () => {
+    expect(
+      runSql(
+        "full_chain",
+        `select
+          has_function_privilege('anon', 'public.claim_digital_delivery_notification(uuid,integer,integer)', 'execute')::text || ':' ||
+          has_function_privilege('authenticated', 'public.prepare_merchant_digital_delivery_resend(uuid,uuid,uuid,text,uuid,uuid,uuid,text,integer)', 'execute')::text || ':' ||
+          has_function_privilege('service_role', 'public.prepare_purchase_digital_delivery_notification(uuid,uuid,uuid)', 'execute')::text || ':' ||
+          has_function_privilege('service_role', 'public.complete_digital_delivery_notification(uuid,uuid,text,text,text,integer,integer,integer)', 'execute')::text`,
+      ),
+    ).toBe("false:false:true:true");
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from pg_policies
+         where schemaname = 'public'
+           and tablename in (
+             'digital_delivery_notifications',
+             'digital_delivery_notification_attempts'
+           )
+           and cmd = 'SELECT'`,
+      ),
+    ).toBe("2");
   });
 
   it("keeps every delivery mutation service-role-only while merchants can read failures", () => {
@@ -2233,6 +2570,11 @@ describe("digital checkout composition database contract", () => {
       `select consent_version || ':' || license_version
        from public.digital_checkout_policy_versions where singleton = true`,
     )).toBe(`${DIGITAL_PRODUCT_CONFIG.consentVersion}:${DIGITAL_PRODUCT_CONFIG.licenseVersion}`);
+    expect(runSql(
+      "full_chain",
+      `select access_link_ttl_seconds::text
+       from public.digital_checkout_policy_versions where singleton = true`,
+    )).toBe(String(DIGITAL_PRODUCT_CONFIG.accessLinkTtlHours * 60 * 60));
     expect(runSql(
       "full_chain",
       `select

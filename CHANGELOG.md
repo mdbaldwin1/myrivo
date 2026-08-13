@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - Hardened digital-product uploads with tenant-bound upload intents, streamed byte verification, immutable replacements, safe catalog removal, bounded metadata-free watermarked previews, and stable same-store preview overrides.
 - Prevented undeliverable digital products from publishing with transactional rights, preview, and per-variant file readiness checks plus safe fulfillment-type conversion rules.
 - Made paid digital delivery durable with transactionally queued manifest jobs, leased retries, bounded exponential backoff, atomic entitlement and purchase-token materialization, provider-idempotent email handoff, and merchant-visible terminal failures.
+- Added reliable digital order-delivery notifications with enriched order confirmations, attempt-by-attempt provider auditing, durable retries, neutral 48-hour access copy, and tenant-authorized idempotent merchant resend that rotates links without resetting download grants.
 
 ### Fixed
 - Fixed digital storefront cart handling so zero-inventory downloads remain purchasable and visibly available in product grids, persisted carts are transactionally repaired from the active catalog, stale or mismatched selections are removed, duplicate digital quantities are constrained to one, and checkout type/composition snapshots are enforced against authoritative catalog data.
