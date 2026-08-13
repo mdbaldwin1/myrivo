@@ -104,3 +104,53 @@ The full test run emitted pre-existing test-environment stderr from refund/dispu
 
 - The `bd` executable is not installed in the environment, so `bd prime` and end-of-session `bd sync` could not be run (`zsh: command not found: bd`). The explicitly supplied task brief remained sufficient to execute the task.
 - This task centralizes preview/config values but intentionally does not update the prototype preview route's existing `1400`/`78` literals; that route belongs to the later transactional asset/preview lifecycle task. Later work must consume `DIGITAL_PRODUCT_CONFIG.previewMaxEdgePixels` and `previewJpegQuality` when replacing that flow.
+
+## Review Fix Round 1
+
+### Findings Addressed
+
+- Changed `DigitalPurchaseManifest.checkoutSessionId` from `string` to `string | null`, making the pre-Stripe immutable snapshot valid before its later Checkout Session association. `orderId` and `orderItemId` remain nullable for the corresponding later lock-to-order association.
+- Made `DigitalProductConfig` recursively readonly at compile time and froze `acceptedFiles` at runtime before freezing the top-level validated config.
+
+### RED Evidence
+
+After adding a typed pre-Stripe manifest fixture and nested-freeze behavior test:
+
+```text
+npm test --workspace @myrivo/web -- digital-products-domain.test.ts
+Test Files  1 failed (1)
+Tests       1 failed | 14 passed (15)
+AssertionError: expected Object.isFrozen(DIGITAL_PRODUCT_CONFIG.acceptedFiles) false to be true
+Exit code: 1
+```
+
+```text
+npm run typecheck --workspace @myrivo/web
+tests/digital-products-domain.test.ts(30,3): error TS2322: Type 'null' is not assignable to type 'string'.
+Exit code: 2
+```
+
+These failures independently demonstrated both review findings against the production contract.
+
+### GREEN Evidence
+
+After the minimal contract changes:
+
+```text
+npm test --workspace @myrivo/web -- digital-products-domain.test.ts
+Test Files  1 passed (1)
+Tests       15 passed (15)
+Exit code: 0
+```
+
+```text
+npm run typecheck --workspace @myrivo/web
+Exit code: 0
+```
+
+### Fix-Round Self-Review
+
+- The manifest remains a readonly snapshot; only the association field's value domain changed to represent its real pre-session lifecycle state.
+- The fix does not introduce a second manifest shape or broaden later-task scope.
+- The MIME-extension mapping is now protected by both `DeepReadonly` and `Object.freeze()`.
+- Mutation check: restoring a required `checkoutSessionId` fails typecheck at the pre-Stripe fixture; removing the nested freeze fails the focused runtime test.

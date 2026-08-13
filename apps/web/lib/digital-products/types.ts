@@ -35,7 +35,7 @@ export type DigitalPurchaseManifestItem = {
 export type DigitalPurchaseManifest = {
   readonly manifestId: string;
   readonly orderId: string | null;
-  readonly checkoutSessionId: string;
+  readonly checkoutSessionId: string | null;
   readonly storeId: string;
   readonly consentVersion: string;
   readonly licenseVersion: string;

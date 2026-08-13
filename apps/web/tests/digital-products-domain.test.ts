@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { DIGITAL_PRODUCT_CONFIG } from "@/lib/digital-products/config";
 import {
   isDigitalProductPublishable,
   resolveDigitalProductReadiness,
   resolveApplicableDigitalAssets,
   type DigitalAssetCandidate,
 } from "@/lib/digital-products/domain";
-import type { DigitalProductReadinessInput } from "@/lib/digital-products/types";
+import type {
+  DigitalProductReadinessInput,
+  DigitalPurchaseManifest,
+} from "@/lib/digital-products/types";
 
 const readyProductAsset: DigitalAssetCandidate = {
   id: "asset-product",
@@ -18,6 +22,17 @@ const readyVersion = {
   id: "version-ready",
   status: "ready" as const,
   retiredAt: null,
+};
+
+const preStripeManifest: DigitalPurchaseManifest = {
+  manifestId: "manifest-1",
+  orderId: null,
+  checkoutSessionId: null,
+  storeId: "store-1",
+  consentVersion: "immediate-delivery-v1",
+  licenseVersion: "personal-use-v1",
+  createdAt: "2026-08-12T12:00:00.000Z",
+  items: [],
 };
 
 function makeReadinessInput(
@@ -346,5 +361,16 @@ describe("digital product publishing readiness", () => {
       applicableFileCount: 0,
       previewStatus: "missing",
     });
+  });
+});
+
+describe("digital product production contract", () => {
+  it("allows an immutable manifest snapshot before Stripe session association", () => {
+    expect(preStripeManifest.checkoutSessionId).toBeNull();
+  });
+
+  it("freezes the nested supported MIME-extension mapping", () => {
+    expect(Object.isFrozen(DIGITAL_PRODUCT_CONFIG)).toBe(true);
+    expect(Object.isFrozen(DIGITAL_PRODUCT_CONFIG.acceptedFiles)).toBe(true);
   });
 });
