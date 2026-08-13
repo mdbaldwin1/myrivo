@@ -5,8 +5,12 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { StorefrontCheckoutPage } from "@/components/storefront/storefront-checkout-page";
 
+const navigationState = vi.hoisted(() => ({
+  search: "status=success&session_id=cs_test_digital_return&checkoutComposition=digital_only"
+}));
+
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams({ status: "success", session_id: "cs_test_digital_return" })
+  useSearchParams: () => new URLSearchParams(navigationState.search)
 }));
 vi.mock("next/link", () => ({
   default: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) => <a href={href} {...props}>{children}</a>
@@ -48,7 +52,10 @@ function renderPage() {
 }
 
 describe("digital checkout return", () => {
-  beforeEach(() => vi.restoreAllMocks());
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    navigationState.search = "status=success&session_id=cs_test_digital_return&checkoutComposition=digital_only";
+  });
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
@@ -141,14 +148,28 @@ describe("digital checkout return", () => {
     expect(signals[0]?.aborted).toBe(true);
   });
 
-  test("offers a manual status retry after the long-poll timeout", async () => {
+  test("offers and resumes a manual status retry when transient responses never reveal delivery status", async () => {
     vi.useFakeTimers();
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
-      status: "completed",
-      orderId: "order-timeout",
-      checkoutComposition: "digital_only",
-      digitalDeliveryStatus: "processing"
-    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    let recoveryAttempt = 0;
+    let recovering = false;
+    const fetchMock = vi.fn(async () => {
+      if (!recovering) {
+        return new Response("not-json", { status: 503 });
+      }
+      recoveryAttempt += 1;
+      return new Response(JSON.stringify(recoveryAttempt === 1 ? {
+        status: "completed",
+        orderId: "order-timeout",
+        checkoutComposition: "digital_only",
+        digitalDeliveryStatus: "processing"
+      } : {
+        status: "completed",
+        orderId: "order-timeout",
+        checkoutComposition: "digital_only",
+        digitalDeliveryStatus: "succeeded",
+        digitalAccessUrl: "/downloads/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO12"
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     renderPage();
@@ -157,18 +178,30 @@ describe("digital checkout return", () => {
     });
 
     const retry = screen.getByRole("button", { name: "Check again" });
-    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
-      status: "completed",
-      orderId: "order-timeout",
-      checkoutComposition: "digital_only",
-      digitalDeliveryStatus: "succeeded",
-      digitalAccessUrl: "/downloads/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO12"
-    }), { status: 200, headers: { "Content-Type": "application/json" } }));
-
+    recovering = true;
     retry.click();
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.queryByRole("button", { name: "Check again" })).toBeNull();
+    expect(screen.getByText("Preparing files")).toBeTruthy();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2);
     });
     expect(screen.getByRole("link", { name: "View downloads" })).toBeTruthy();
+  });
+
+  test("does not offer digital recovery for a physical-only checkout timeout", async () => {
+    vi.useFakeTimers();
+    navigationState.search = "status=success&session_id=cs_test_physical_return&checkoutComposition=physical_only";
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("not-json", { status: 503 })));
+
+    renderPage();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+
+    expect(screen.queryByRole("button", { name: "Check again" })).toBeNull();
+    expect(screen.queryByText("Still preparing files")).toBeNull();
   });
 });

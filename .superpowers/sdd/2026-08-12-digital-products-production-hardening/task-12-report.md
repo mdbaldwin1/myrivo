@@ -136,3 +136,43 @@ The PostgreSQL cases cover processing delivery denial, a succeeded job with a st
 - `git diff --check` — passed.
 
 The full suite and build retained the same pre-existing stderr and advisory warnings documented above.
+
+## Fix 2: Unknown-Status Recovery and Purchase Email Semantics
+
+### Changes
+
+- Stripe success URLs now carry the immutable checkout composition as non-sensitive return context. The checkout page initializes and retains the last valid composition independently from delivery status.
+- Digital-only and mixed checkout returns now keep their preparation surface visible when repeated transient, malformed, or `503` responses never produce a delivery status. At the bounded timeout, buyers can use **Check again**; retry clears the timeout state and resumes polling. Physical-only returns do not show digital recovery controls.
+- Merchant order summaries now select only the `purchase_delivery` job and `purchase` notification for the initial delivery/email state. Initial-email attempt history is likewise restricted to the purchase notification IDs.
+- Renamed the merchant summary fields to `initialDeliveryEmailStatus` and `initialDeliveryEmailAttempts`, making their policy meaning explicit. A later pending or failed merchant resend no longer relabels the initial purchase email or incorrectly disables another eligible resend.
+- The existing guarded resend RPC remains the authoritative backend precondition and still requires a succeeded purchase job plus succeeded/sent purchase notification for the same order and store.
+
+### TDD Evidence
+
+Initial focused run:
+
+```text
+Test Files 5 failed | 1 passed (6)
+Tests 11 failed | 13 passed (24)
+```
+
+The failures reproduced the absent unknown-status retry, missing composition in Stripe return URLs, and generic notification selection/fields that allowed a resend row to mask purchase-email state. The physical-only timeout assertion was green from the outset and confirmed digital controls stayed suppressed.
+
+Green focused evidence:
+
+```text
+Test Files 7 passed (7)
+Tests 34 passed (34)
+```
+
+Coverage includes repeated malformed `503` responses through timeout, manual retry reset and successful resumption, physical-only suppression, digital-only/mixed return context, and a succeeded purchase email with a newer failed resend whose state/attempts remain separate.
+
+### Validation
+
+- `npm run lint` — passed with zero warnings/errors; consistency checks passed.
+- `npm run typecheck` — passed.
+- `npm test` — 258 files and 1,012 tests passed.
+- `npm run build` — passed; optimized Next.js compilation and TypeScript validation completed.
+- `git diff --check` — passed.
+
+The full suite and build retained the same pre-existing stderr and advisory warnings documented above.

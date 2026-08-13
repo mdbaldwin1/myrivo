@@ -302,6 +302,9 @@ describe("digital checkout composition", () => {
     });
     const stripePayload = stripeCheckoutCreateMock.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(stripePayload).toMatchObject({ automatic_tax: { enabled: true } });
+    expect(stripePayload.success_url).toBe(
+      "https://www.myrivo.app/s/digital-shop/checkout?status=success&session_id={CHECKOUT_SESSION_ID}&checkoutComposition=digital_only"
+    );
     expect(stripePayload).not.toHaveProperty("billing_address_collection");
     expect(stripePayload).not.toHaveProperty("shipping_address_collection");
     expect(stripePayload).not.toHaveProperty("shipping_options");
@@ -431,6 +434,7 @@ describe("digital checkout composition", () => {
     });
     const stripePayload = stripeCheckoutCreateMock.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(stripePayload).toMatchObject({
+      success_url: "https://www.myrivo.app/s/digital-shop/checkout?status=success&session_id={CHECKOUT_SESSION_ID}&checkoutComposition=mixed",
       billing_address_collection: "auto",
       shipping_address_collection: { allowed_countries: ["US"] },
       shipping_options: [expect.objectContaining({

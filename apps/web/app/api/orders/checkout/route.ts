@@ -674,7 +674,7 @@ async function resumeStripeCheckout(
             }]
           }
         : {}),
-      success_url: `${getAppUrl()}${buildStorefrontCheckoutPath(checkout.store_slug)}?status=success&session_id={CHECKOUT_SESSION_ID}`,
+      success_url: `${getAppUrl()}${buildStorefrontCheckoutPath(checkout.store_slug)}?status=success&session_id={CHECKOUT_SESSION_ID}&checkoutComposition=${checkoutComposition}`,
       cancel_url: `${getAppUrl()}${buildStorefrontCheckoutPath(checkout.store_slug)}?status=cancelled`,
       metadata: { ...metadata, promo_code: checkout.promo_code ?? "" },
       payment_intent_data: paymentIntentData

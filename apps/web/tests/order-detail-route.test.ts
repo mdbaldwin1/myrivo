@@ -43,12 +43,12 @@ beforeEach(() => {
   loadMerchantDigitalOrderSummaryMock.mockResolvedValue({
     fileCount: 1,
     deliveryStatus: "succeeded",
-    notificationStatus: "succeeded",
+    initialDeliveryEmailStatus: "succeeded",
     accessStatus: "active",
     firstAccessedAt: null,
     lastAccessedAt: null,
     attempts: [],
-    notificationAttempts: [],
+    initialDeliveryEmailAttempts: [],
     files: [{ label: "Printable", filename: "print.pdf", format: "PDF", grantsRemaining: 5, status: "active" }],
     activeLinkExpiresAt: "2099-08-15T00:00:00.000Z",
     activeDisputeStatus: null

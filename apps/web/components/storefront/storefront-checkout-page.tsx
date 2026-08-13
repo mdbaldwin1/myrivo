@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { StorefrontStudioCheckoutPreviewStatePicker, type StorefrontStudioCheckoutPreviewState } from "@/components/storefront/storefront-studio-checkout-preview-state-picker";
@@ -83,6 +83,12 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
   const status = searchParams.get("status");
   const sessionId = searchParams.get("session_id");
   const orderId = searchParams.get("orderId");
+  const checkoutCompositionParam = searchParams.get("checkoutComposition");
+  const initialCheckoutComposition = checkoutCompositionParam === "digital_only"
+    || checkoutCompositionParam === "physical_only"
+    || checkoutCompositionParam === "mixed"
+    ? checkoutCompositionParam
+    : null;
 
   const resolvedStore = runtime?.store ?? store;
   const resolvedViewer = runtime?.viewer ?? viewer;
@@ -126,9 +132,11 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
   const [deliveryFailureOrderId, setDeliveryFailureOrderId] = useState<string | null>(null);
   const [digitalDeliveryStatus, setDigitalDeliveryStatus] = useState<"pending" | "processing" | "succeeded" | "failed" | null>(null);
   const [digitalAccessUrl, setDigitalAccessUrl] = useState<string | null>(null);
-  const [checkoutComposition, setCheckoutComposition] = useState<"digital_only" | "physical_only" | "mixed" | null>(null);
+  const [checkoutComposition, setCheckoutComposition] = useState<"digital_only" | "physical_only" | "mixed" | null>(initialCheckoutComposition);
+  const checkoutCompositionRef = useRef<"digital_only" | "physical_only" | "mixed" | null>(initialCheckoutComposition);
   const [pollTimedOut, setPollTimedOut] = useState(false);
   const [pollRequest, setPollRequest] = useState(0);
+  const isPollingDigitalDelivery = checkoutComposition === "digital_only" || checkoutComposition === "mixed";
 
   useStorefrontPageView("checkout", {
     status: status ?? "return",
@@ -181,7 +189,10 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
             });
           }
           setMessage(formatCopyTemplate(orderPlacedTemplate, { orderId: payload.orderId }));
-          setCheckoutComposition(payload.checkoutComposition ?? null);
+          if (payload.checkoutComposition) {
+            checkoutCompositionRef.current = payload.checkoutComposition;
+            setCheckoutComposition(payload.checkoutComposition);
+          }
           if (payload.digitalDeliveryStatus) {
             setDigitalDeliveryStatus(payload.digitalDeliveryStatus);
           }
@@ -195,6 +206,9 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
             return;
           }
           if (!payload.digitalDeliveryStatus) {
+            if (checkoutCompositionRef.current === "digital_only" || checkoutCompositionRef.current === "mixed") {
+              continue;
+            }
             setPollTimedOut(false);
             return;
           }
@@ -217,7 +231,10 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
           }
           setError(payload.error ?? digitalDeliveryFailedFallback);
           setDigitalDeliveryStatus("failed");
-          setCheckoutComposition(payload.checkoutComposition ?? null);
+          if (payload.checkoutComposition) {
+            checkoutCompositionRef.current = payload.checkoutComposition;
+            setCheckoutComposition(payload.checkoutComposition);
+          }
           setPollTimedOut(false);
           return;
         }
@@ -405,7 +422,7 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
               {previewMessage}
             </p>
           )}
-          {!studioEnabled && digitalDeliveryStatus && (digitalDeliveryStatus !== "failed" || checkoutComposition === "mixed") ? (
+          {!studioEnabled && isPollingDigitalDelivery && (digitalDeliveryStatus !== "failed" || checkoutComposition === "mixed") ? (
             <section
               aria-live="polite"
               className={cn("space-y-3 border border-border/60 bg-muted/20 p-4", radiusClass)}

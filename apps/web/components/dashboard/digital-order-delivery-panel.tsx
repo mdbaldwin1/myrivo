@@ -14,12 +14,12 @@ type AttemptSummary = {
 export type DigitalOrderDeliverySummary = {
   fileCount: number;
   deliveryStatus: "pending" | "processing" | "succeeded" | "failed";
-  notificationStatus: "pending" | "processing" | "succeeded" | "failed" | "not_queued";
+  initialDeliveryEmailStatus: "pending" | "processing" | "succeeded" | "failed" | "not_queued";
   accessStatus: "active" | "suspended" | "revoked" | "expired" | "pending";
   firstAccessedAt: string | null;
   lastAccessedAt: string | null;
   attempts: AttemptSummary[];
-  notificationAttempts: AttemptSummary[];
+  initialDeliveryEmailAttempts: AttemptSummary[];
   files: Array<{
     label: string;
     filename: string;
@@ -86,11 +86,11 @@ export function DigitalOrderDeliveryPanel({
   const deliveryLabel = summary.deliveryStatus === "failed"
     ? "Delivery needs attention"
     : `Delivery ${formatStatus(summary.deliveryStatus).toLowerCase()}`;
-  const notificationLabel = summary.notificationStatus === "failed"
-    ? "Email needs attention"
-    : summary.notificationStatus === "not_queued"
-      ? "Email not queued"
-      : `Email ${formatStatus(summary.notificationStatus).toLowerCase()}`;
+  const initialDeliveryEmailLabel = summary.initialDeliveryEmailStatus === "failed"
+    ? "Initial email needs attention"
+    : summary.initialDeliveryEmailStatus === "not_queued"
+      ? "Initial email not queued"
+      : `Initial email ${formatStatus(summary.initialDeliveryEmailStatus).toLowerCase()}`;
   const accessLabel = summary.activeDisputeStatus && summary.accessStatus === "suspended"
     ? "Downloads suspended during the open dispute"
     : summary.accessStatus === "expired"
@@ -98,7 +98,7 @@ export function DigitalOrderDeliveryPanel({
       : `Access ${summary.accessStatus}`;
   const resendUnavailableReason = summary.deliveryStatus !== "succeeded"
     ? "Complete the initial delivery before sending a fresh link."
-    : summary.notificationStatus !== "succeeded"
+    : summary.initialDeliveryEmailStatus !== "succeeded"
       ? "The initial delivery email must be sent before sending a fresh link."
       : summary.activeDisputeStatus || summary.accessStatus === "suspended"
         ? "Downloads are suspended and cannot receive a fresh link."
@@ -125,7 +125,7 @@ export function DigitalOrderDeliveryPanel({
 
       <div className="flex flex-wrap gap-2">
         <StatusChip label={deliveryLabel} tone={statusTone(summary.deliveryStatus)} />
-        <StatusChip label={notificationLabel} tone={statusTone(summary.notificationStatus)} />
+        <StatusChip label={initialDeliveryEmailLabel} tone={statusTone(summary.initialDeliveryEmailStatus)} />
         <StatusChip label={accessLabel} tone={statusTone(summary.accessStatus)} />
       </div>
 
@@ -155,12 +155,12 @@ export function DigitalOrderDeliveryPanel({
         </ul>
       </div>
 
-      {summary.attempts.length > 0 || summary.notificationAttempts.length > 0 ? (
+      {summary.attempts.length > 0 || summary.initialDeliveryEmailAttempts.length > 0 ? (
         <div>
           <h4 className="font-medium">Attempt history</h4>
           <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
             {summary.attempts.map((attempt) => <li key={`delivery:${attempt.attemptNumber}`}>Attempt {attempt.attemptNumber} · {formatStatus(attempt.status)}</li>)}
-            {summary.notificationAttempts.map((attempt) => <li key={`email:${attempt.attemptNumber}`}>Email attempt {attempt.attemptNumber} · {formatStatus(attempt.status)}</li>)}
+            {summary.initialDeliveryEmailAttempts.map((attempt) => <li key={`email:${attempt.attemptNumber}`}>Initial email attempt {attempt.attemptNumber} · {formatStatus(attempt.status)}</li>)}
           </ul>
         </div>
       ) : null}

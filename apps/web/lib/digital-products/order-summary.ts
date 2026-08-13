@@ -50,12 +50,12 @@ const accessTokenSchema = z.object({ expires_at: z.string().datetime({ offset: t
 export type MerchantDigitalOrderSummary = {
   fileCount: number;
   deliveryStatus: z.infer<typeof deliveryStatusSchema>;
-  notificationStatus: z.infer<typeof deliveryStatusSchema> | "not_queued";
+  initialDeliveryEmailStatus: z.infer<typeof deliveryStatusSchema> | "not_queued";
   accessStatus: z.infer<typeof entitlementStatusSchema> | "expired" | "pending";
   firstAccessedAt: string | null;
   lastAccessedAt: string | null;
   attempts: Array<{ attemptNumber: number; status: "processing" | "succeeded" | "failed"; startedAt: string; finishedAt: string | null }>;
-  notificationAttempts: Array<{ attemptNumber: number; status: "processing" | "succeeded" | "failed"; startedAt: string; finishedAt: string | null }>;
+  initialDeliveryEmailAttempts: Array<{ attemptNumber: number; status: "processing" | "succeeded" | "failed"; startedAt: string; finishedAt: string | null }>;
   files: Array<{
     label: string;
     filename: string;
@@ -120,9 +120,9 @@ export async function loadMerchantDigitalOrderSummary({
       .select("order_item_id,asset_version_id,customer_filename,mime_type,max_download_grants,download_grants_used,status,first_accessed_at,last_accessed_at")
       .eq("order_id", orderId).eq("store_id", storeId).order("created_at", { ascending: true }).returns(),
     client.from("digital_delivery_jobs")
-      .select("id,status").eq("order_id", orderId).eq("store_id", storeId).order("created_at", { ascending: false }).returns(),
+      .select("id,status").eq("order_id", orderId).eq("store_id", storeId).eq("job_type", "purchase_delivery").order("created_at", { ascending: false }).returns(),
     client.from("digital_delivery_notifications")
-      .select("id,status").eq("order_id", orderId).eq("store_id", storeId).order("created_at", { ascending: false }).returns(),
+      .select("id,status").eq("order_id", orderId).eq("store_id", storeId).eq("notification_type", "purchase").order("created_at", { ascending: false }).returns(),
     client.from("digital_order_access_tokens")
       .select("expires_at").eq("order_id", orderId).eq("store_id", storeId).is("revoked_at", null).order("expires_at", { ascending: false }).returns()
   ]);
@@ -130,7 +130,7 @@ export async function loadMerchantDigitalOrderSummary({
   const manifestItems = unwrapRows(manifestResult, z.array(manifestItemSchema));
   const entitlements = unwrapRows(entitlementResult, z.array(entitlementSchema));
   const jobs = unwrapRows(jobResult, z.array(jobSchema));
-  const notifications = unwrapRows(notificationResult, z.array(notificationSchema));
+  const purchaseNotifications = unwrapRows(notificationResult, z.array(notificationSchema));
   const accessTokens = unwrapRows(tokenResult, z.array(accessTokenSchema));
 
   const [attemptResult, notificationAttemptResult] = await Promise.all([
@@ -139,14 +139,14 @@ export async function loadMerchantDigitalOrderSummary({
           .select("attempt_number,status,started_at,finished_at").in("job_id", jobs.map(({ id }) => id))
           .order("attempt_number", { ascending: true }).returns()
       : Promise.resolve({ data: [], error: null }),
-    notifications.length > 0
+    purchaseNotifications.length > 0
       ? client.from("digital_delivery_notification_attempts")
-          .select("attempt_number,status,started_at,finished_at").in("notification_id", notifications.map(({ id }) => id))
+          .select("attempt_number,status,started_at,finished_at").in("notification_id", purchaseNotifications.map(({ id }) => id))
           .order("started_at", { ascending: true }).returns()
       : Promise.resolve({ data: [], error: null })
   ]);
   const attempts = unwrapRows(attemptResult, z.array(attemptSchema));
-  const notificationAttempts = unwrapRows(notificationAttemptResult, z.array(attemptSchema));
+  const initialDeliveryEmailAttempts = unwrapRows(notificationAttemptResult, z.array(attemptSchema));
   const entitlementByFile = new Map(entitlements.map((entitlement) => [fileKey(entitlement), entitlement]));
   const sourceFiles = manifestItems.length > 0
     ? manifestItems
@@ -179,7 +179,7 @@ export async function loadMerchantDigitalOrderSummary({
   return {
     fileCount: files.length,
     deliveryStatus: jobs[0]?.status ?? "pending",
-    notificationStatus: notifications[0]?.status ?? "not_queued",
+    initialDeliveryEmailStatus: purchaseNotifications[0]?.status ?? "not_queued",
     accessStatus,
     firstAccessedAt: earliestTimestamp(entitlements.map(({ first_accessed_at }) => first_accessed_at)),
     lastAccessedAt: latestTimestamp(entitlements.map(({ last_accessed_at }) => last_accessed_at)),
@@ -189,7 +189,7 @@ export async function loadMerchantDigitalOrderSummary({
       startedAt: attempt.started_at,
       finishedAt: attempt.finished_at
     })),
-    notificationAttempts: notificationAttempts.map((attempt) => ({
+    initialDeliveryEmailAttempts: initialDeliveryEmailAttempts.map((attempt) => ({
       attemptNumber: attempt.attempt_number,
       status: attempt.status,
       startedAt: attempt.started_at,

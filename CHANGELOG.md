@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - Finished the digital buyer and order experience with safe variant file summaries, digital/physical cart grouping, post-payment first access, signed-in refund/dispute states, merchant delivery operations, and explicit digital refund consequences.
 
 ### Fixed
+- Kept digital checkout timeout recovery available when transient status responses are empty or malformed, while separating initial purchase-email state from later merchant resend notifications in order operations.
 - Made post-payment digital preparation resilient beyond the initial polling window with a safe manual retry, preserved physical next steps for mixed-order delivery failures, restored checkout form ownership and accessible pre-submit validation, and restricted fresh-link resend to completed eligible deliveries.
 - Kept merchant digital-product readiness authoritative after rights, file, and preview changes; isolated async catalog work across product switches; restored failed private uploads after reload; removed physical inventory language from digital variants; and enforced zero-stock/non-made-to-order digital invariants in both API and database writes.
 - Hardened digital-link recovery with platform-trusted keyed IP throttling that survives cookie resets, bounded quantized response envelopes plus audit-free database decoy work, and removal of UUID-derived order references from bearer responses.

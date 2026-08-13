@@ -18,14 +18,14 @@ describe("DigitalOrderDeliveryPanel", () => {
         summary={{
           fileCount: 2,
           deliveryStatus: "failed",
-          notificationStatus: "failed",
+          initialDeliveryEmailStatus: "failed",
           accessStatus: "suspended",
           firstAccessedAt: "2026-08-13T12:00:00.000Z",
           lastAccessedAt: "2026-08-13T13:00:00.000Z",
           attempts: [
             { attemptNumber: 1, status: "failed", startedAt: "2026-08-13T11:00:00.000Z", finishedAt: "2026-08-13T11:01:00.000Z" }
           ],
-          notificationAttempts: [
+          initialDeliveryEmailAttempts: [
             { attemptNumber: 1, status: "failed", startedAt: "2026-08-13T11:01:00.000Z", finishedAt: "2026-08-13T11:02:00.000Z" }
           ],
           files: [
@@ -41,7 +41,7 @@ describe("DigitalOrderDeliveryPanel", () => {
     expect(screen.getByRole("heading", { name: "Digital delivery" })).toBeTruthy();
     expect(screen.getByText("2 manifest files")).toBeTruthy();
     expect(screen.getByText("Delivery needs attention")).toBeTruthy();
-    expect(screen.getByText("Email needs attention")).toBeTruthy();
+    expect(screen.getByText("Initial email needs attention")).toBeTruthy();
     expect(screen.getByText("Downloads suspended during the open dispute")).toBeTruthy();
     expect(screen.getByText("4 of 5 grants remaining")).toBeTruthy();
     expect(screen.getByText("Attempt 1 · Failed")).toBeTruthy();
@@ -56,37 +56,37 @@ describe("DigitalOrderDeliveryPanel", () => {
     {
       label: "processing delivery",
       deliveryStatus: "processing" as const,
-      notificationStatus: "not_queued" as const,
+      initialDeliveryEmailStatus: "not_queued" as const,
       accessStatus: "pending" as const,
       reason: /complete the initial delivery/i
     },
     {
       label: "unsent purchase email",
       deliveryStatus: "succeeded" as const,
-      notificationStatus: "processing" as const,
+      initialDeliveryEmailStatus: "processing" as const,
       accessStatus: "active" as const,
       reason: /initial delivery email must be sent/i
     },
     {
       label: "suspended access",
       deliveryStatus: "succeeded" as const,
-      notificationStatus: "succeeded" as const,
+      initialDeliveryEmailStatus: "succeeded" as const,
       accessStatus: "suspended" as const,
       reason: /downloads are suspended/i
     }
-  ])("disables resend for $label and explains why", ({ deliveryStatus, notificationStatus, accessStatus, reason }) => {
+  ])("disables resend for $label and explains why", ({ deliveryStatus, initialDeliveryEmailStatus, accessStatus, reason }) => {
     render(
       <DigitalOrderDeliveryPanel
         orderId="order-ineligible"
         summary={{
           fileCount: 1,
           deliveryStatus,
-          notificationStatus,
+          initialDeliveryEmailStatus,
           accessStatus,
           firstAccessedAt: null,
           lastAccessedAt: null,
           attempts: [],
-          notificationAttempts: [],
+          initialDeliveryEmailAttempts: [],
           files: [{ label: "Printable", filename: "print.pdf", format: "PDF", grantsRemaining: null, status: accessStatus === "suspended" ? "suspended" : "pending" }],
           activeLinkExpiresAt: null,
           activeDisputeStatus: accessStatus === "suspended" ? "needs_response" : null
@@ -120,12 +120,12 @@ describe("DigitalOrderDeliveryPanel", () => {
         summary={{
           fileCount: 1,
           deliveryStatus: "succeeded",
-          notificationStatus: "succeeded",
+          initialDeliveryEmailStatus: "succeeded",
           accessStatus: "active",
           firstAccessedAt: null,
           lastAccessedAt: null,
           attempts: [],
-          notificationAttempts: [],
+          initialDeliveryEmailAttempts: [],
           files: [{ label: "Printable", filename: "print.pdf", format: "PDF", grantsRemaining: 5, status: "active" }],
           activeLinkExpiresAt: "2099-08-15T11:00:00.000Z",
           activeDisputeStatus: null
