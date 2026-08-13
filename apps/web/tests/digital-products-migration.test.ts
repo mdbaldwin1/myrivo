@@ -69,6 +69,10 @@ const digitalCheckoutPolicyMigration = join(
   repoRoot,
   "supabase/migrations/20260813004000_enforce_digital_checkout_policy.sql",
 );
+const authoritativeDigitalCheckoutPolicyMigration = join(
+  repoRoot,
+  "supabase/migrations/20260813005000_enforce_authoritative_digital_checkout_policy.sql",
+);
 
 const ids = {
   storeA: "10000000-0000-0000-0000-000000000001",
@@ -419,6 +423,9 @@ beforeAll(() => {
   }
   if (!existsSync(digitalCheckoutPolicyMigration)) {
     throw new Error(`Missing digital checkout policy migration: ${digitalCheckoutPolicyMigration}`);
+  }
+  if (!existsSync(authoritativeDigitalCheckoutPolicyMigration)) {
+    throw new Error(`Missing authoritative digital checkout policy migration: ${authoritativeDigitalCheckoutPolicyMigration}`);
   }
 
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-digital-migration-"));
@@ -1574,6 +1581,47 @@ describe("digital checkout composition database contract", () => {
         'digital_consent_accepted_at', now() + interval '1 day',
         'digital_license_version', '${DIGITAL_PRODUCT_CONFIG.licenseVersion}'`
     }));
+  });
+
+  it("derives digital policy requirements from catalog identity instead of forged item labels", () => {
+    expectRejected(
+      "full_chain",
+      `insert into public.storefront_checkout_sessions(
+         id, store_id, store_slug, customer_email, items, checkout_composition,
+         fulfillment_method, fulfillment_label, shipping_fee_cents, checkout_mode,
+         tax_collection_mode_snapshot, applied_promotions_json, status
+       ) values (
+         '42000000-0000-4000-8000-000000000622', '${ids.manifestStore}',
+         'manifest-store', 'forged-label@example.test',
+         jsonb_build_array(jsonb_build_object(
+           'productId', '${ids.manifestProduct}',
+           'variantId', '${ids.manifestVariant}',
+           'quantity', 1,
+           'productType', 'physical',
+           'unitPriceCents', 2500
+         )),
+         'physical_only', 'shipping', 'Shipping', 0, 'stub',
+         'seller_attested_no_tax', '[]'::jsonb, 'pending'
+       )`,
+    );
+
+    expectRejected(
+      "full_chain",
+      `insert into public.storefront_checkout_sessions(
+         id, store_id, store_slug, customer_email, items, status
+       ) values (
+         '42000000-0000-4000-8000-000000000623', '${ids.manifestStore}',
+         'manifest-store', 'mismatch@example.test',
+         jsonb_build_array(jsonb_build_object(
+           'productId', '${ids.manifestProduct}',
+           'variantId', '${ids.manifestPhysicalVariant}',
+           'quantity', 1,
+           'productType', 'physical',
+           'unitPriceCents', 1500
+         )),
+         'pending'
+       )`,
+    );
   });
 
   it("accepts configured digital policy snapshots while leaving physical-only attempts unaffected", () => {

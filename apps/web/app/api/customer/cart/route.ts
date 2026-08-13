@@ -222,23 +222,35 @@ export async function PUT(request: NextRequest) {
       variantId: item.variantId
     });
     if (selectionLookup.response) {
-      return selectionLookup.response;
+      if (selectionLookup.response.status >= 500) {
+        return selectionLookup.response;
+      }
+      continue;
     }
 
     normalizedSelections.push({
       productId: selectionLookup.selection.productId,
       variantId: selectionLookup.selection.variantId,
-      quantity: item.quantity,
+      productType: selectionLookup.selection.productType,
+      quantity: selectionLookup.selection.productType === "digital" ? 1 : item.quantity,
       unitPriceSnapshotCents: selectionLookup.selection.unitPriceSnapshotCents
     });
   }
 
-  const mergedSelections = new Map<string, { productId: string | null; variantId: string | null; quantity: number; unitPriceSnapshotCents: number }>();
+  const mergedSelections = new Map<string, {
+    productId: string | null;
+    variantId: string | null;
+    productType: "physical" | "digital";
+    quantity: number;
+    unitPriceSnapshotCents: number;
+  }>();
   for (const selection of normalizedSelections) {
     const key = `${selection.productId ?? ""}::${selection.variantId ?? ""}`;
     const existing = mergedSelections.get(key);
     if (existing) {
-      existing.quantity = Math.min(99, existing.quantity + selection.quantity);
+      existing.quantity = selection.productType === "digital"
+        ? 1
+        : Math.min(99, existing.quantity + selection.quantity);
       continue;
     }
     mergedSelections.set(key, { ...selection });

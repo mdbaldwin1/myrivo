@@ -13,7 +13,14 @@ import { buildStorefrontThemeStyle, resolveStorefrontThemeConfig } from "@/lib/t
 import { sanitizeRichTextHtml } from "@/lib/rich-text";
 import { formatVariantLabel } from "@/lib/products/variants";
 import { setEditorValueAtPath } from "@/lib/store-editor/object-path";
-import { readStorefrontCart, syncStorefrontCart, writeStorefrontCart } from "@/lib/storefront/cart";
+import {
+  normalizeStorefrontCart,
+  readStorefrontCart,
+  syncStorefrontCart,
+  writeStorefrontCart,
+  type StorefrontCartEntry,
+  type StorefrontCartProduct
+} from "@/lib/storefront/cart";
 import { cn } from "@/lib/utils";
 import { StorefrontHeader } from "@/components/storefront/storefront-header";
 import { StorefrontImageCarousel } from "@/components/storefront/storefront-image-carousel";
@@ -132,6 +139,27 @@ export function getProductDetailDisplayPrice(unitPriceCents: number, quantity: n
     quantity: normalizedQuantity,
     totalPriceCents: normalizedUnitPriceCents * normalizedQuantity
   };
+}
+
+export function isStorefrontVariantPurchasable(
+  productType: "physical" | "digital",
+  variant: Pick<StorefrontVariant, "inventory_qty" | "is_made_to_order"> | null
+) {
+  return Boolean(
+    variant && (
+      productType === "digital" ||
+      variant.is_made_to_order ||
+      variant.inventory_qty > 0
+    )
+  );
+}
+
+export function buildNormalizedProductDetailCart(
+  current: readonly StorefrontCartEntry[],
+  addition: StorefrontCartEntry,
+  products: readonly StorefrontCartProduct[]
+) {
+  return normalizeStorefrontCart([...current, addition], products);
 }
 
 function getVariantOptionNames(product: StorefrontProduct, variants: StorefrontVariant[]) {
@@ -316,15 +344,20 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
   const addToCartResetTimeoutRef = useRef<number | null>(null);
 
   const selectedVariant = variants.find((variant) => variant.id === selectedVariantId) ?? defaultVariant;
-  const isDigital = resolvedProduct.product_type === "digital";
+  const productType = resolvedProduct.product_type ?? "physical";
+  const isDigital = productType === "digital";
   const displayPrice = getProductDetailDisplayPrice(selectedVariant?.price_cents ?? 0, isDigital ? 1 : quantity);
   const selectedOptionValues = selectedVariant?.option_values ?? {};
   const images = getVariantImages(selectedVariant, resolvedProduct);
-  const canPurchaseSelectedVariant = Boolean(selectedVariant && (selectedVariant.is_made_to_order || selectedVariant.inventory_qty > 0));
+  const canPurchaseSelectedVariant = isStorefrontVariantPurchasable(productType, selectedVariant ?? null);
   const studioEnabledWithDocument = studioEnabled && Boolean(studioDocument);
   const availabilityField = getAvailabilityCopyField(selectedVariant ?? null);
-  const availabilityLabel = getAvailabilityLabel(selectedVariant ?? null, resolvedSettings?.fulfillment_message ?? null, copy);
-  const baseAddToCartLabel = !selectedVariant
+  const availabilityLabel = isDigital
+    ? "Available for instant download"
+    : getAvailabilityLabel(selectedVariant ?? null, resolvedSettings?.fulfillment_message ?? null, copy);
+  const baseAddToCartLabel = isDigital && selectedVariant
+    ? copy.productDetail.addToCart
+    : !selectedVariant
     ? copy.productDetail.outOfStockButton
     : selectedVariant.is_made_to_order && selectedVariant.inventory_qty < 1
       ? copy.productDetail.addToCartMadeToOrder
@@ -375,19 +408,21 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
     }
     setAddToCartState("adding");
     const current = readStorefrontCart();
-    const key = `${resolvedProduct.id}:${selectedVariant.id}`;
-    const existing = current.find((item) => `${item.productId}:${item.variantId}` === key);
-    const next = existing
-      ? current.map((item) =>
-          `${item.productId}:${item.variantId}` === key ? { ...item, quantity: isDigital ? 1 : Math.min(item.quantity + quantity, 99) } : item
-        )
-      : [...current, { productId: resolvedProduct.id, variantId: selectedVariant.id, quantity: isDigital ? 1 : quantity }];
+    const next = buildNormalizedProductDetailCart(
+      current,
+      {
+        productId: resolvedProduct.id,
+        variantId: selectedVariant.id,
+        quantity: isDigital ? 1 : quantity
+      },
+      runtime?.products ?? [resolvedProduct]
+    );
     analytics?.track({
       eventType: "add_to_cart",
       productId: resolvedProduct.id,
       value: buildStorefrontAddToCartValue({
         variantId: selectedVariant.id,
-        quantity,
+        quantity: isDigital ? 1 : quantity,
         unitPriceCents: selectedVariant.price_cents,
         source: "product_detail"
       })
@@ -544,7 +579,9 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
                   {displayPrice.quantity} x ${(displayPrice.unitPriceCents / 100).toFixed(2)} each
                 </p>
               ) : null}
-              {studioEnabledWithDocument ? (
+              {isDigital ? (
+                <p className="text-sm text-muted-foreground">{availabilityLabel}</p>
+              ) : studioEnabledWithDocument ? (
                 availabilityField === "madeToOrderWithFulfillmentTemplate" ? (
                   <StorefrontStudioEditableTemplateText
                     renderedValue={availabilityLabel}
@@ -650,6 +687,11 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
                   labelClassName="inline-flex items-center justify-center text-sm font-medium text-[color:var(--storefront-primary-foreground)]"
                   panelClassName="left-1/2 top-[calc(100%+0.5rem)] -translate-x-1/2"
                   onChange={(value) => {
+                    if (isDigital && selectedVariant) {
+                      updateProductsField("copy.productDetail.addToCart", value);
+                      return;
+                    }
+
                     if (!selectedVariant) {
                       updateProductsField("copy.productDetail.outOfStockButton", value);
                       return;
@@ -671,7 +713,7 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
               ) : null}
             </div>
 
-            {selectedVariant && !selectedVariant.is_made_to_order && selectedVariant.inventory_qty <= 0 ? (
+            {!isDigital && selectedVariant && !selectedVariant.is_made_to_order && selectedVariant.inventory_qty <= 0 ? (
               <StorefrontBackInStockAlertForm
                 storeSlug={resolvedStore.slug}
                 productId={resolvedProduct.id}

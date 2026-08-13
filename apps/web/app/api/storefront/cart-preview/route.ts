@@ -19,6 +19,7 @@ const previewSchema = z.object({
 type VariantRow = {
   id: string;
   product_id: string;
+  status: "active" | "archived";
   price_cents: number;
   option_values: Record<string, string> | null;
   title: string | null;
@@ -27,6 +28,8 @@ type VariantRow = {
 type ProductRow = {
   id: string;
   title: string;
+  status: "draft" | "active" | "archived";
+  product_type: "physical" | "digital";
 };
 
 export async function POST(request: NextRequest) {
@@ -61,13 +64,15 @@ export async function POST(request: NextRequest) {
   const [{ data: variants, error: variantsError }, { data: products, error: productsError }] = await Promise.all([
     supabase
       .from("product_variants")
-      .select("id,product_id,price_cents,option_values,title")
+      .select("id,product_id,status,price_cents,option_values,title")
       .eq("store_id", store.id)
+      .eq("status", "active")
       .in("id", variantIds),
     supabase
       .from("products")
-      .select("id,title")
+      .select("id,title,status,product_type")
       .eq("store_id", store.id)
+      .eq("status", "active")
       .in("id", productIds)
   ]);
 
@@ -78,27 +83,59 @@ export async function POST(request: NextRequest) {
   const variantsById = new Map<string, VariantRow>((variants ?? []).map((variant) => [variant.id, variant as VariantRow]));
   const productsById = new Map<string, ProductRow>((products ?? []).map((product) => [product.id, product as ProductRow]));
 
-  const items = payload.data.entries
+  const normalizedEntries = new Map<string, {
+    productId: string;
+    variantId: string;
+    quantity: number;
+    variant: VariantRow;
+    product: ProductRow;
+  }>();
+
+  for (const entry of payload.data.entries) {
+    const variant = variantsById.get(entry.variantId);
+    const product = productsById.get(entry.productId);
+    if (
+      !variant ||
+      !product ||
+      variant.status !== "active" ||
+      product.status !== "active" ||
+      variant.product_id !== product.id
+    ) {
+      continue;
+    }
+
+    const key = `${entry.productId}:${entry.variantId}`;
+    const existing = normalizedEntries.get(key);
+    normalizedEntries.set(key, {
+      productId: entry.productId,
+      variantId: entry.variantId,
+      variant,
+      product,
+      quantity: product.product_type === "digital"
+        ? 1
+        : Math.min(99, (existing?.quantity ?? 0) + entry.quantity)
+    });
+  }
+
+  const items = [...normalizedEntries.values()]
     .map((entry) => {
-      const variant = variantsById.get(entry.variantId);
-      const product = productsById.get(entry.productId);
-      if (!variant || !product || variant.product_id !== product.id) {
-        return null;
-      }
+      const { variant, product } = entry;
 
       const optionValues = Object.values(variant.option_values ?? {}).filter((value) => value.trim().length > 0);
       const variantLabel = optionValues.length > 0 ? optionValues.join(" · ") : variant.title?.trim() || "Default";
 
       return {
         key: `${entry.productId}:${entry.variantId}`,
+        productId: entry.productId,
+        variantId: entry.variantId,
         productTitle: product.title,
         variantLabel,
+        productType: product.product_type,
         quantity: entry.quantity,
         unitPriceCents: variant.price_cents,
         lineTotalCents: variant.price_cents * entry.quantity
       };
-    })
-    .filter((item): item is NonNullable<typeof item> => item !== null);
+    });
 
   const subtotalCents = items.reduce((sum, item) => sum + item.lineTotalCents, 0);
   return NextResponse.json({ items, subtotalCents });

@@ -187,7 +187,13 @@ describe("customer cart route", () => {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
                 maybeSingle: vi.fn(async () => ({
-                data: { id: "11111111-1111-4111-8111-111111111111", store_id: "store-1", status: "active", price_cents: 2300 },
+                data: {
+                  id: "11111111-1111-4111-8111-111111111111",
+                  store_id: "store-1",
+                  status: "active",
+                  price_cents: 2300,
+                  product_type: "physical"
+                },
                 error: null
               }))
             }))
@@ -271,6 +277,128 @@ describe("customer cart route", () => {
     );
     expect(cartUpdateEqIdMock).toHaveBeenCalledWith("id", cartId);
     expect(cartUpdateEqUserMock).toHaveBeenCalledWith("user_id", "user-1");
+  });
+
+  test("PUT discards invalid selections and collapses duplicate digital items to quantity one", async () => {
+    const validProductId = "11111111-1111-4111-8111-111111111111";
+    const validVariantId = "22222222-2222-4222-8222-222222222222";
+    const invalidProductId = "99999999-9999-4999-8999-999999999999";
+    cartUpdateEqUserMock.mockResolvedValue({ error: null });
+    cartUpdateEqIdMock.mockReturnValue({ eq: cartUpdateEqUserMock });
+    cartUpdateMock.mockReturnValue({ eq: cartUpdateEqIdMock });
+
+    serverFromMock.mockImplementation((table: string) => {
+      if (table === "stores") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({ data: { id: "store-1", slug: "curby", status: "live" }, error: null }))
+            }))
+          }))
+        };
+      }
+      if (table === "customer_carts") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    limit: vi.fn(() => ({
+                      maybeSingle: vi.fn(async () => ({
+                        data: {
+                          id: "cart-1",
+                          created_at: "2026-03-12T00:00:00.000Z",
+                          metadata_json: {},
+                          analytics_session_id: null,
+                          analytics_session_key: null
+                        },
+                        error: null
+                      }))
+                    }))
+                  }))
+                }))
+              }))
+            }))
+          })),
+          update: cartUpdateMock
+        };
+      }
+      if (table === "storefront_sessions") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({ maybeSingle: vi.fn(async () => ({ data: null, error: null })) }))
+            }))
+          }))
+        };
+      }
+      if (table === "products") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn((_column: string, productId: string) => ({
+              maybeSingle: vi.fn(async () => ({
+                data: productId === validProductId
+                  ? { id: validProductId, store_id: "store-1", status: "active", price_cents: 1200, product_type: "digital" }
+                  : null,
+                error: null
+              }))
+            }))
+          }))
+        };
+      }
+      if (table === "product_variants") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn((_column: string, variantId: string) => ({
+              maybeSingle: vi.fn(async () => ({
+                data: variantId === validVariantId
+                  ? {
+                      id: validVariantId,
+                      store_id: "store-1",
+                      product_id: validProductId,
+                      status: "active",
+                      price_cents: 1200
+                    }
+                  : null,
+                error: null
+              }))
+            }))
+          }))
+        };
+      }
+      if (table === "customer_cart_items") {
+        return {
+          delete: vi.fn(() => ({ eq: vi.fn(async () => ({ error: null })) })),
+          insert: cartItemsInsertMock.mockResolvedValue({ error: null })
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const route = await import("@/app/api/customer/cart/route");
+    const response = await route.PUT(new NextRequest("http://localhost:3000/api/customer/cart?store=curby", {
+      method: "PUT",
+      headers: { "content-type": "application/json", origin: "http://localhost:3000", host: "localhost:3000" },
+      body: JSON.stringify({
+        items: [
+          { productId: validProductId, variantId: validVariantId, quantity: 7 },
+          { productId: validProductId, variantId: validVariantId, quantity: 4 },
+          { productId: invalidProductId, variantId: validVariantId, quantity: 1 }
+        ]
+      })
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(cartItemsInsertMock).toHaveBeenCalledWith([
+      expect.objectContaining({
+        product_id: validProductId,
+        product_variant_id: validVariantId,
+        quantity: 1,
+        unit_price_snapshot_cents: 1200
+      })
+    ]);
   });
 
   test("DELETE rejects invalid cartId parameter", async () => {

@@ -13,7 +13,13 @@ type SupabaseCustomerClient = {
 };
 
 type StoreLookup = { id: string; slug: string; status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed" };
-type ProductLookup = { id: string; store_id: string; status: "draft" | "active" | "archived"; price_cents: number };
+type ProductLookup = {
+  id: string;
+  store_id: string;
+  status: "draft" | "active" | "archived";
+  price_cents: number;
+  product_type: "physical" | "digital";
+};
 type VariantLookup = {
   id: string;
   store_id: string;
@@ -91,7 +97,7 @@ export async function validateStoreItemSelection(
   if (params.productId) {
     const { data, error } = await client
       .from("products")
-      .select("id,store_id,status,price_cents")
+      .select("id,store_id,status,price_cents,product_type")
       .eq("id", params.productId)
       .maybeSingle();
     if (error) {
@@ -126,11 +132,32 @@ export async function validateStoreItemSelection(
     return { selection: null, response: NextResponse.json({ error: "Variant does not belong to the selected product." }, { status: 400 }) } as const;
   }
 
+  if (!product && resolvedProductId) {
+    const { data, error } = await client
+      .from("products")
+      .select("id,store_id,status,price_cents,product_type")
+      .eq("id", resolvedProductId)
+      .maybeSingle();
+    if (error) {
+      return { selection: null, response: NextResponse.json({ error: error.message }, { status: 500 }) } as const;
+    }
+    const productData = data as ProductLookup | null;
+    if (!productData || productData.store_id !== params.storeId || productData.status !== "active") {
+      return { selection: null, response: NextResponse.json({ error: "Product is unavailable for this store." }, { status: 400 }) } as const;
+    }
+    product = productData;
+  }
+
+  if (!product) {
+    return { selection: null, response: NextResponse.json({ error: "Product is unavailable for this store." }, { status: 400 }) } as const;
+  }
+
   return {
     selection: {
       productId: resolvedProductId,
       variantId: params.variantId ?? null,
-      unitPriceSnapshotCents: variant?.price_cents ?? product?.price_cents ?? 0
+      unitPriceSnapshotCents: variant?.price_cents ?? product?.price_cents ?? 0,
+      productType: product.product_type
     },
     response: null
   } as const;

@@ -157,3 +157,64 @@ The full suite/build retained only the previously documented refund/dispute mock
 - **Database enforcement:** the trigger defends the persisted boundary independently of route validation and inspects both composition and item snapshots.
 - **Upgrade safety:** existing checkout rows are not scanned or rewritten; an immutable pre-migration attempt retries from its stored snapshot.
 - **Least privilege:** policy values are platform-owned and private, while the existing service-role-only RPC boundary remains explicit.
+
+## Fix Round 2: Product Detail, Cart APIs, and Authoritative Policy Trigger
+
+### Storefront product detail
+
+- Active digital variants are purchasable even when their physical inventory counter is zero; they show instant-download availability, retain the normal add-to-cart CTA, and never render the back-in-stock form.
+- Product-detail additions now pass the complete current cart plus the new line through the shared catalog-aware normalizer before local persistence, analytics quantity capture, and authenticated sync.
+- The runtime product catalog is authoritative, so stale, archived, missing, and cross-product selections are removed while digital duplicates converge to quantity one.
+
+### Authenticated cart and preview APIs
+
+- Customer selection validation now returns the product type from the active catalog row. A successful validation cannot default an absent type to physical.
+- Authenticated cart persistence discards unavailable or identity-invalid selections, propagates genuine database errors, constrains digital lines to one, and merges physical duplicates up to 99.
+- Cart preview queries active products and variants with catalog product type, validates the exact relationship, discards invalid pairs, merges duplicates, and returns canonical product/variant/type fields with authoritative totals.
+- The mini-cart accepts the preview response as the server-authoritative cart projection and reconciles local storage/count when the server removes or normalizes entries.
+
+### Database trust boundary
+
+- Added `20260813005000_enforce_authoritative_digital_checkout_policy.sql` as a forward-only replacement for the policy trigger function.
+- The trigger parses every item identity and joins product, variant, and checkout store before deciding whether digital consent and license evidence is required.
+- Client `productType` and `checkout_composition` values no longer influence digital-policy detection. Unknown, cross-product, and cross-store identities are rejected.
+- A direct forged regression proves that an actual digital catalog item labeled `physical` with `physical_only` composition cannot bypass the configured policy requirement.
+
+### TDD evidence
+
+RED was observed for all intended gaps:
+
+```text
+digital zero-inventory product-detail helper was absent and the variant remained blocked
+product-detail whole-cart normalization helper was absent
+customer cart returned 400 instead of discarding an invalid line and persisted duplicate digital quantity
+cart preview echoed duplicates/quantities, retained inactive entries, and omitted authoritative identity/type
+PostgreSQL suite rejected the missing authoritative-policy migration
+```
+
+GREEN focused evidence:
+
+```text
+Product detail/customer cart/cart preview/mini-cart: 4 files, 11 tests passed
+Native PostgreSQL migration contract: 62 tests passed
+```
+
+### Validation
+
+- `npm run lint` — passed with zero warnings/errors and both repository consistency checks.
+- `npm run typecheck` — passed.
+- `npm test` — 236 files and 812 tests passed.
+- `npm run build` — passed; production compilation, TypeScript, 158-page generation, optimization, and trace collection completed.
+- `git diff --check` — passed.
+
+The full suite/build retained only the previously documented refund/dispute mock stderr, zero-size chart warnings, Next.js middleware deprecation notice, and stale Browserslist-data notice.
+
+### Self-review
+
+- **Catalog authority:** product type and valid selection identity come from active catalog rows in both cart APIs; client-supplied labels never establish fulfillment type.
+- **Digital availability:** the product-detail UX no longer applies physical stock semantics to a download and clearly communicates instant delivery.
+- **Cart convergence:** product detail, cart preview, mini-cart reconciliation, and authenticated persistence all converge digital duplicates to exactly one.
+- **Failure handling:** invalid/unavailable cart pairs are safely discarded while infrastructure/database errors remain visible as server failures.
+- **Tenant and identity safety:** preview filtering and the policy trigger require the variant to belong to both the supplied product and selected store.
+- **Defense in depth:** even a direct database insert with forged physical item metadata cannot avoid digital consent/license enforcement.
+- **React quality:** derived product availability remains render-time state, existing callback memoization remains stable, and server reconciliation does not add fetch waterfalls or new global listeners.

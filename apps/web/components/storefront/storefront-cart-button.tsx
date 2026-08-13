@@ -26,12 +26,14 @@ type StorefrontCartButtonProps = {
 
 type CartPreviewItem = {
   key: string;
+  productId: string;
+  variantId: string;
   productTitle: string;
   variantLabel: string;
   quantity: number;
   unitPriceCents: number;
   lineTotalCents: number;
-  productType?: "physical" | "digital";
+  productType: "physical" | "digital";
 };
 
 type CartPreviewResponse = {
@@ -133,17 +135,17 @@ export function StorefrontCartButton({
       return;
     }
 
-    setPreviewItems((payload.items ?? []).map((item) => {
-      const [productId, variantId] = item.key.split(":");
-      const product = runtime?.products.find((candidate) => candidate.id === productId);
-      const hasActiveVariant = product?.product_variants.some(
-        (variant) => variant.id === variantId && variant.status === "active"
-      );
-      return {
-        ...item,
-        productType: hasActiveVariant ? product?.product_type ?? "physical" : undefined
-      };
+    const authoritativeItems = payload.items ?? [];
+    const authoritativeEntries = authoritativeItems.map((item) => ({
+      productId: item.productId,
+      variantId: item.variantId,
+      quantity: item.quantity
     }));
+    if (JSON.stringify(authoritativeEntries) !== JSON.stringify(entries)) {
+      writeStorefrontCart(authoritativeEntries);
+      setCount(authoritativeEntries.reduce((sum, entry) => sum + entry.quantity, 0));
+    }
+    setPreviewItems(authoritativeItems);
     setPreviewSubtotalCents(payload.subtotalCents ?? 0);
   }
 
