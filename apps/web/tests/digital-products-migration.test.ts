@@ -29,6 +29,10 @@ const assetLifecycleConcurrencyMigration = join(
   repoRoot,
   "supabase/migrations/20260812200000_harden_digital_asset_concurrency.sql",
 );
+const previewCanonicalPathMigration = join(
+  repoRoot,
+  "supabase/migrations/20260812210000_enforce_digital_preview_canonical_paths.sql",
+);
 
 const ids = {
   storeA: "10000000-0000-0000-0000-000000000001",
@@ -270,6 +274,9 @@ beforeAll(() => {
       `Missing asset lifecycle concurrency migration: ${assetLifecycleConcurrencyMigration}`,
     );
   }
+  if (!existsSync(previewCanonicalPathMigration)) {
+    throw new Error(`Missing preview canonical path migration: ${previewCanonicalPathMigration}`);
+  }
 
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-digital-migration-"));
   port = 55432 + (process.pid % 9000);
@@ -331,6 +338,7 @@ beforeAll(() => {
       );
     }
     applyMigration(database, assetLifecycleConcurrencyMigration);
+    applyMigration(database, previewCanonicalPathMigration);
   }
 
   execFileSync(createdb, ["full_chain"], {
@@ -1084,7 +1092,7 @@ describe("transactional digital asset lifecycle", () => {
         "upgrade",
         `select public.complete_digital_product_preview(
           '${ids.storeA}', '${ids.productA2}', '${ids.versionA2}',
-          '${ids.storeA}/${ids.productA2}/watermarked-${ids.versionA2}.jpg',
+          '${ids.storeA}/${ids.productA2}/watermarked-${ids.versionA2}-${generation}.jpg',
           '${generation}'
         )::text`,
       ),
@@ -1164,6 +1172,35 @@ describe("transactional digital asset lifecycle", () => {
          where product_id = '${ids.productA2}'`,
       ),
     ).toBe(winningPath);
+  });
+
+  it("rejects a preview path that does not match the completing generation", () => {
+    const begun = JSON.parse(
+      runSql(
+        "upgrade",
+        `select to_jsonb(result) from public.begin_digital_product_preview(
+          '${ids.storeB}', '${ids.productB}', '${ids.versionB}'
+        ) result`,
+      ),
+    ) as Record<string, unknown>;
+    const generation = String(begun.processing_generation);
+    const foreignGeneration = "a0000000-0000-4000-8000-000000000099";
+    const mismatchedPath = `${ids.storeB}/${ids.productB}/watermarked-${ids.versionB}-${foreignGeneration}.jpg`;
+
+    expectRejected(
+      "upgrade",
+      `select public.complete_digital_product_preview(
+        '${ids.storeB}', '${ids.productB}', '${ids.versionB}',
+        '${mismatchedPath}', '${generation}'
+      )`,
+    );
+    expect(
+      runSql(
+        "upgrade",
+        `select status || ':' || coalesce(public_preview_path, 'none') || ':' || processing_generation::text
+         from public.digital_product_previews where product_id = '${ids.productB}'`,
+      ),
+    ).toBe(`processing:none:${generation}`);
   });
 
   it("prevents overlapping replacements and stale older finalization from regressing current version", () => {
