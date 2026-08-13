@@ -32,7 +32,7 @@ vi.mock("@/lib/digital-products/checkout-access", () => ({
 
 vi.mock("@/lib/env", () => ({
   isStripeStubMode: () => false,
-  getServerEnv: () => ({ DIGITAL_DELIVERY_TOKEN_SECRET: "s".repeat(32) })
+  getServerEnv: () => ({ DIGITAL_DELIVERY_TOKEN_SECRET: "s".repeat(32), DIGITAL_DOWNLOAD_SESSION_SECRET: "d".repeat(32) })
 }));
 
 vi.mock("@/lib/stripe/server", () => ({
@@ -219,7 +219,7 @@ describe("checkout status route", () => {
       id: "33333333-3333-4333-8333-333333333333",
       status: "succeeded"
     });
-    loadCheckoutDigitalAccessUrlMock.mockResolvedValue(`/downloads/${"a".repeat(43)}`);
+    loadCheckoutDigitalAccessUrlMock.mockResolvedValue({ accessToken: "a".repeat(43), accessTokenId: "44444444-4444-4444-8444-444444444444" });
 
     const route = await import("@/app/api/orders/checkout-status/route");
     const request = new NextRequest("http://localhost:3000/api/orders/checkout-status?sessionId=cs_test_ready_access");
@@ -231,8 +231,9 @@ describe("checkout status route", () => {
       orderId: "11111111-1111-4111-8111-111111111111",
       checkoutComposition: "mixed",
       digitalDeliveryStatus: "succeeded",
-      digitalAccessUrl: `/downloads/${"a".repeat(43)}`
+      digitalAccessUrl: "/downloads"
     });
+    expect(response.headers.get("set-cookie")).not.toContain("a".repeat(43));
     expect(loadCheckoutDigitalAccessUrlMock).toHaveBeenCalledWith(expect.objectContaining({
       orderId: "11111111-1111-4111-8111-111111111111",
       jobId: "33333333-3333-4333-8333-333333333333",

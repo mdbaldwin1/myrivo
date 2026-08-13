@@ -259,7 +259,7 @@ function downloadRequest(options: {
   }
   return new NextRequest(
     `https://app.myrivo.test/api/digital-downloads/file/${entitlementId}`,
-    { headers },
+    { method: "POST", headers: { ...Object.fromEntries(headers), origin: "https://app.myrivo.test", host: "app.myrivo.test" } },
   );
 }
 
@@ -267,10 +267,10 @@ async function invokeDownload(
   request = downloadRequest(),
   params: { token?: string; entitlementId?: string } = {},
 ) {
-  const { GET } = await import(
+  const { POST } = await import(
     "@/app/api/digital-downloads/file/[entitlementId]/route"
   );
-  return GET(request, {
+  return POST(request, {
     params: Promise.resolve({
       entitlementId: params.entitlementId ?? ENTITLEMENT_ID,
     }),
@@ -311,6 +311,15 @@ beforeEach(async () => {
 });
 
 describe("digital download grant route", () => {
+  test("rejects cross-site grant mutation before rate limits or database access", async () => {
+    const state = buildAdmin();
+    createSupabaseAdminClientMock.mockReturnValue(state.admin);
+    const hostile = downloadRequest();
+    hostile.headers.set("origin", "https://evil.test");
+    const response = await invokeDownload(hostile);
+    expect(response.status).toBe(403);
+    expect(state.events).toEqual([]);
+  });
   test("authorizes, reserves, looks up the bound version, signs for 300 seconds, commits, and redirects", async () => {
     const state = buildAdmin();
     createSupabaseAdminClientMock.mockReturnValue(state.admin);

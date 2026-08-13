@@ -51,13 +51,19 @@ jobs:
             echo "Skipping rollout verification: missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY."
           fi
       - name: Digital products release acceptance (promotion only)
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.base_ref == 'main')
         env:
-          MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE: ${{ secrets.MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE }}
-          MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE: ${{ secrets.MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE }}
+          MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE_BASE64: ${{ secrets.MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE_BASE64 }}
+          MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_BASE64: ${{ secrets.MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_BASE64 }}
           MYRIVO_DIGITAL_TEST_RECIPIENT: ${{ secrets.MYRIVO_DIGITAL_TEST_RECIPIENT }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_TEST_WEBHOOK_SECRET }}
           STRIPE_STUB_MODE: "false"
           RESEND_API_KEY: ${{ secrets.RESEND_TEST_API_KEY }}
-        run: npm run verify:digital-products-release
+        run: |
+          fixture_file="$(mktemp)"
+          evidence_file="$(mktemp)"
+          trap 'rm -f "$fixture_file" "$evidence_file"' EXIT
+          printf '%s' "$MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE_BASE64" | base64 --decode > "$fixture_file"
+          printf '%s' "$MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_BASE64" | base64 --decode > "$evidence_file"
+          MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE="$fixture_file" MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE="$evidence_file" npm run verify:digital-products-release

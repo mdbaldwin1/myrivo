@@ -8,6 +8,7 @@ import {
 } from "@/lib/digital-products/customer-access";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { attachDigitalDownloadSession, getDigitalDownloadSession } from "@/lib/digital-products/download-service";
 
 const paramsSchema = z.object({ orderId: z.string().uuid() });
 
@@ -25,7 +26,7 @@ type HandlerDependencies = {
     orderId: string;
     actorUserId: string;
     email: string;
-  }) => Promise<{ accessUrl: string; expiresAt: string } | null>;
+  }) => Promise<{ accessToken: string; accessTokenId: string; expiresAt: string } | null>;
 };
 
 function response(body: Record<string, unknown>, status: number) {
@@ -97,13 +98,9 @@ export function createAuthenticatedDigitalAccessHandler(
       return response({ error: "Digital access is temporarily unavailable." }, 503);
     }
     if (!issued) return response({ error: "Order not found." }, 404);
-    const url = new URL(issued.accessUrl);
-    if (url.pathname !== "/downloads" || !/^#token=[A-Za-z0-9_-]{43}$/.test(url.hash)) {
-      return response({ error: "Digital access is temporarily unavailable." }, 503);
-    }
-    return response(
-      { accessUrl: `${url.pathname}${url.hash}`, expiresAt: issued.expiresAt },
-      201,
+    return attachDigitalDownloadSession(
+      response({ accessUrl: "/downloads", expiresAt: issued.expiresAt }, 201),
+      getDigitalDownloadSession(request, issued.accessToken, issued.accessTokenId),
     );
   };
 }

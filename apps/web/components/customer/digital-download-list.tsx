@@ -95,13 +95,15 @@ export function DigitalDownloadList() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [downloadFeedback, setDownloadFeedback] = useState<string | null>(null);
+  const bootstrapTokenRef = useRef<string | null>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setState({ status: "loading" });
     try {
-      const fragmentToken = new URLSearchParams(window.location.hash.slice(1)).get("token");
+      const fragmentToken = bootstrapTokenRef.current ?? new URLSearchParams(window.location.hash.slice(1)).get("token");
       if (fragmentToken) {
+        bootstrapTokenRef.current = fragmentToken;
         window.history.replaceState(null, "", "/downloads");
         const exchange = await fetch("/api/digital-downloads/session", {
           method: "POST", credentials: "same-origin", cache: "no-store", signal,
@@ -112,6 +114,7 @@ export function DigitalDownloadList() {
           if (exchange.status === 410) { setState({ status: "unavailable" }); return; }
           throw new Error("We could not open this secure link. Please try again.");
         }
+        bootstrapTokenRef.current = null;
       }
       const response = await fetch("/api/digital-downloads", { cache: "no-store", credentials: "same-origin", signal });
       if (response.status === 410 || response.status === 404) {
@@ -146,10 +149,29 @@ export function DigitalDownloadList() {
   function beginDownload(fileId: string, label: string) {
     setDownloadingId(fileId);
     setDownloadFeedback(`Preparing ${label}.`);
-    window.setTimeout(() => {
-      setDownloadingId((current) => current === fileId ? null : current);
-      setDownloadFeedback(`${label} download started. If it did not begin, try again.`);
-    }, 2_500);
+    const iframe = document.createElement("iframe");
+    iframe.hidden = true;
+    iframe.name = `digital-download-${crypto.randomUUID()}`;
+    const handleFrameLoad = () => {
+      let failed = false;
+      try {
+        if (iframe.contentWindow?.location.href === "about:blank") return;
+        failed = iframe.contentDocument?.contentType === "application/json";
+      } catch { /* Cross-origin redirect confirms initiation. */ }
+      iframe.removeEventListener("load", handleFrameLoad);
+      setDownloadingId(null);
+      setDownloadFeedback(failed ? `${label} could not be downloaded. Please try again.` : `${label} download started.`);
+      window.setTimeout(() => iframe.remove(), 1_000);
+    };
+    iframe.addEventListener("load", handleFrameLoad);
+    document.body.append(iframe);
+    const form = document.createElement("form");
+    form.method = "post";
+    form.action = `/api/digital-downloads/file/${fileId}`;
+    form.target = iframe.name;
+    document.body.append(form);
+    form.submit();
+    form.remove();
   }
 
   useEffect(() => {
@@ -269,15 +291,15 @@ export function DigitalDownloadList() {
                       </div>
                     </div>
                     {available ? (
-                      <Link
-                        href={`/api/digital-downloads/file/${file.id}`}
+                      <Button
+                        type="button"
                         className={cn(buttonVariants(), "w-full shrink-0 sm:w-auto")}
                         aria-label={`Download ${file.label}`}
                         onClick={() => beginDownload(file.id, file.label)}
                       >
                         <Download className="mr-2 h-4 w-4" aria-hidden="true" />
                         {downloadingId === file.id ? "Preparing…" : "Download"}
-                      </Link>
+                      </Button>
                     ) : null}
                   </div>
                 </li>

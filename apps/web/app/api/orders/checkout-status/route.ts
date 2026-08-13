@@ -8,12 +8,14 @@ import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
 import { finalizeStorefrontCheckout, getStorefrontCheckoutBySessionId } from "@/lib/storefront/checkout-finalization";
 import { getStripeClient } from "@/lib/stripe/server";
 import type { CheckoutComposition } from "@/lib/storefront/checkout-composition";
+import { attachDigitalDownloadSession, getDigitalDownloadSession } from "@/lib/digital-products/download-service";
 
 const querySchema = z.object({
   sessionId: z.string().min(10)
 });
 
 async function completedCheckoutResponse(
+  request: NextRequest,
   orderId: string | null,
   digitalManifestId: string | null,
   checkoutComposition: CheckoutComposition | null
@@ -47,20 +49,23 @@ async function completedCheckoutResponse(
         { status: 409 }
       );
     }
-    const digitalAccessUrl = delivery.status === "succeeded"
+    const digitalAccess = delivery.status === "succeeded"
       ? await loadCheckoutDigitalAccessUrl({
           orderId,
           jobId: delivery.id,
           secret: getServerEnv().DIGITAL_DELIVERY_TOKEN_SECRET?.trim() ?? ""
         })
       : null;
-    return NextResponse.json({
+    const response = NextResponse.json({
       status: "completed",
       orderId,
       ...(checkoutComposition ? { checkoutComposition } : {}),
       digitalDeliveryStatus: delivery.status,
-      ...(digitalAccessUrl ? { digitalAccessUrl } : {})
+      ...(digitalAccess ? { digitalAccessUrl: "/downloads" } : {})
     });
+    return digitalAccess
+      ? attachDigitalDownloadSession(response, getDigitalDownloadSession(request, digitalAccess.accessToken, digitalAccess.accessTokenId))
+      : response;
   } catch {
     return NextResponse.json(
       { status: "pending", error: "Digital delivery is still being prepared." },
@@ -103,7 +108,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (checkout.status === "completed") {
-      return completedCheckoutResponse(
+      return completedCheckoutResponse(request,
         checkout.order_id,
         checkout.digital_manifest_id,
         checkout.checkout_composition
@@ -128,7 +133,7 @@ export async function GET(request: NextRequest) {
         );
 
         if (finalized.status === "completed") {
-          return completedCheckoutResponse(
+          return completedCheckoutResponse(request,
             finalized.orderId,
             checkout.digital_manifest_id,
             checkout.checkout_composition

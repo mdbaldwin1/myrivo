@@ -473,12 +473,12 @@ describe("customer digital access service", () => {
       actorUserId: USER_ID,
       email: "Buyer@Example.COM",
       client,
-      externalAppUrl: "https://app.myrivo.test/",
       createAccessToken: () => ACCESS_TOKEN,
     });
 
     expect(result).toEqual({
-      accessUrl: `https://app.myrivo.test/downloads#token=${ACCESS_TOKEN}`,
+      accessToken: ACCESS_TOKEN,
+      accessTokenId: expect.any(String),
       expiresAt: "2026-08-13T12:15:00.000Z",
     });
     expect(calls[0]?.name).toBe(
@@ -516,7 +516,8 @@ describe("authenticated customer digital access route", () => {
         events.push("issue");
         expect(input.email).toBe("buyer@example.com");
         return {
-          accessUrl: `https://app.myrivo.test/downloads#token=${ACCESS_TOKEN}`,
+          accessToken: ACCESS_TOKEN,
+          accessTokenId: "90000000-0000-4000-8000-000000000001",
           expiresAt: "2026-08-13T12:15:00.000Z",
         };
       },
@@ -528,10 +529,11 @@ describe("authenticated customer digital access route", () => {
 
     expect(response.status).toBe(201);
     expect(await response.json()).toEqual({
-      accessUrl: `/downloads#token=${ACCESS_TOKEN}`,
+      accessUrl: "/downloads",
       expiresAt: "2026-08-13T12:15:00.000Z",
     });
     expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(response.headers.get("set-cookie")).not.toContain(ACCESS_TOKEN);
     expect(events).toEqual(["authenticate", "rate-limit", "issue"]);
   });
 

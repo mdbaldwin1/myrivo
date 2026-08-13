@@ -1,34 +1,9 @@
-import fs from "node:fs";
 import { expect, test } from "@playwright/test";
 import { expectNoSeriousAccessibilityViolations } from "./accessibility-helpers";
 import { login } from "./helpers";
+import { loadDigitalAcceptanceFixture } from "./digital-products-fixture";
 
-type AccessibilityFixture = {
-  merchant: { email: string; password: string };
-  customer: { email: string; password: string };
-  routes: {
-    catalogFiles: string;
-    product: string;
-    cart: string;
-    checkoutReturn: string;
-    download: string;
-    recovery: string;
-    customerOrder: string;
-    merchantOrder: string;
-  };
-};
-
-function fixture(): AccessibilityFixture | null {
-  const fixturePath = process.env.MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE;
-  if (!fixturePath || !fs.existsSync(fixturePath)) return null;
-  const raw = JSON.parse(fs.readFileSync(fixturePath, "utf8")) as Record<string, unknown>;
-  return raw.accessibility as AccessibilityFixture | null;
-}
-
-const acceptance = fixture();
-if (!acceptance && process.env.MYRIVO_DIGITAL_RELEASE_GATE === "true") {
-  throw new Error("Digital release gate requires a validated accessibility fixture.");
-}
+const acceptance = loadDigitalAcceptanceFixture();
 test.skip(!acceptance, "Digital accessibility acceptance requires a non-production seeded fixture.");
 
 for (const viewport of [
@@ -71,22 +46,29 @@ for (const viewport of [
 
     test("keyboard focus and status announcements remain perceivable", async ({ page }) => {
       await page.goto(acceptance!.routes.recovery);
-      await page.keyboard.press("Tab");
-      await expect(page.locator(":focus-visible")).toBeVisible();
-      await expect(page.locator("[role=status], [role=alert], [aria-live]").first()).toBeAttached();
-      const controls = page.locator("input, button, a[href]");
-      const count = await controls.count();
-      for (let index = 0; index < Math.min(count, 8); index += 1) {
-        const control = controls.nth(index);
-        if (await control.isVisible()) {
-          const name = await control.getAttribute("aria-label") ?? await control.textContent() ?? await control.getAttribute("name");
-          expect(name?.trim()).toBeTruthy();
-        }
+      const order: string[] = [];
+      for (let index = 0; index < 4; index += 1) {
+        await page.keyboard.press("Tab");
+        const focused = page.locator(":focus-visible");
+        await expect(focused).toBeVisible();
+        order.push(await focused.evaluate((node) => node.id || node.textContent?.trim() || node.getAttribute("aria-label") || ""));
       }
-      const animated = page.locator(".animate-spin");
-      for (let index = 0; index < await animated.count(); index += 1) {
-        expect(await animated.nth(index).evaluate((node) => getComputedStyle(node).animationName)).toBe("none");
-      }
+      expect(new Set(order).size).toBe(order.length);
+      await page.getByLabel("Order ID").fill("invalid");
+      await page.getByLabel("Order email").fill("invalid");
+      await page.getByRole("button", { name: "Email me a fresh link" }).press("Enter");
+      const alert = page.getByRole("alert");
+      await expect(alert).toContainText("Enter the full order ID");
+      await expect(alert).toBeFocused();
+      await expectNoSeriousAccessibilityViolations(page, `${viewport.name} recovery dynamic error`);
+    });
+
+    test("loading animation respects reduced motion while the asynchronous state is active", async ({ page }) => {
+      await page.route("**/api/digital-downloads", async (route) => new Promise((resolve) => setTimeout(() => resolve(route.continue()), 1_000)));
+      await page.goto(acceptance!.routes.download);
+      const spinner = page.locator(".animate-spin").first();
+      await expect(spinner).toBeVisible();
+      expect(await spinner.evaluate((node) => getComputedStyle(node).animationName)).toBe("none");
     });
   });
 }

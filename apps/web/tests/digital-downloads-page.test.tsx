@@ -94,11 +94,7 @@ describe("active digital downloads page", () => {
     expect(
       screen.getByRole("link", { name: "Read the personal-use license" }).getAttribute("href"),
     ).toBe("/legal/digital-personal-use-license");
-    expect(
-      screen.getByRole("link", { name: "Download Printable wall art" }).getAttribute("href"),
-    ).toBe(
-      "/api/digital-downloads/file/80000000-0000-4000-8000-000000000501",
-    );
+    expect(screen.getByRole("button", { name: "Download Printable wall art" })).toBeTruthy();
   });
 
   test("shows suspended files without an actionable grant link", async () => {
@@ -169,6 +165,24 @@ describe("active digital downloads page", () => {
       expect(screen.getByText("Printable wall art")).toBeTruthy();
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("scrubs a fragment immediately and retains its bearer only in memory for a transient exchange retry", async () => {
+    window.history.replaceState(null, "", `/downloads#token=${TOKEN}`);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: "Temporary" }), { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 201 }))
+      .mockResolvedValueOnce(successfulListResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<DigitalDownloadList />);
+    expect(window.location.hash).toBe("");
+    await user.click(await screen.findByRole("button", { name: "Try again" }));
+    await screen.findByRole("heading", { name: "Rachel's Prints" });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/digital-downloads/session", expect.objectContaining({
+      method: "POST", body: JSON.stringify({ token: TOKEN }),
+    }));
+    expect(window.location.hash).toBe("");
   });
 });
 
@@ -251,7 +265,7 @@ describe("signed-in order downloads", () => {
     const fetchMock = vi.fn(async () =>
       new Response(
         JSON.stringify({
-          accessUrl: `/downloads#token=${TOKEN}`,
+          accessUrl: "/downloads",
           expiresAt: "2099-08-13T16:00:00.000Z",
         }),
         { status: 201, headers: { "Content-Type": "application/json" } },
@@ -264,7 +278,7 @@ describe("signed-in order downloads", () => {
     await user.click(screen.getByRole("button", { name: "View 2 downloads" }));
 
     await waitFor(() => {
-      expect(routerPush).toHaveBeenCalledWith(`/downloads#token=${TOKEN}`);
+      expect(routerPush).toHaveBeenCalledWith("/downloads");
     });
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/customer/orders/${ORDER_ID}/digital-access`,

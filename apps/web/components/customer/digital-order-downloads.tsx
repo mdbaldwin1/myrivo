@@ -38,7 +38,7 @@ export function DigitalOrderDownloads({
         !response.ok ||
         !body ||
         typeof body.accessUrl !== "string" ||
-        !/^\/downloads#token=[A-Za-z0-9_-]{43}$/.test(body.accessUrl)
+        body.accessUrl !== "/downloads"
       ) {
         throw new Error(
           body && typeof body.error === "string"

@@ -2,6 +2,7 @@ create table public.digital_products_release_approvals (
   id uuid primary key default gen_random_uuid(),
   release_version text not null,
   environment text not null check (environment in ('test', 'preview')),
+  target_environment text not null default 'production' check (target_environment = 'production'),
   evidence_sha256 text not null check (evidence_sha256 ~ '^[a-f0-9]{64}$'),
   provider_accepted_at timestamptz not null,
   security_reviewed_at timestamptz not null,
@@ -11,7 +12,13 @@ create table public.digital_products_release_approvals (
   approved_by_user_id uuid not null references auth.users(id),
   revoked_at timestamptz,
   created_at timestamptz not null default now(),
-  constraint digital_products_release_approvals_window check (expires_at > created_at)
+  constraint digital_products_release_approvals_window check (expires_at > created_at and expires_at <= created_at + interval '7 days'),
+  constraint digital_products_release_approvals_timestamps check (
+    provider_accepted_at between created_at - interval '24 hours' and created_at + interval '5 minutes'
+    and security_reviewed_at between created_at - interval '24 hours' and created_at + interval '5 minutes'
+    and code_reviewed_at between created_at - interval '24 hours' and created_at + interval '5 minutes'
+    and ux_reviewed_at between created_at - interval '24 hours' and created_at + interval '5 minutes'
+  )
 );
 
 alter table public.digital_products_release_approvals enable row level security;
@@ -20,11 +27,26 @@ create index digital_products_release_approvals_current_idx
   on public.digital_products_release_approvals(expires_at desc)
   where revoked_at is null;
 
+create table public.digital_products_release_runtime (
+  singleton boolean primary key default true check (singleton),
+  release_version text not null,
+  evidence_sha256 text not null check (evidence_sha256 ~ '^[a-f0-9]{64}$'),
+  target_environment text not null check (target_environment = 'production'),
+  deployed_at timestamptz not null default now()
+);
+alter table public.digital_products_release_runtime enable row level security;
+revoke all on table public.digital_products_release_runtime from public, anon, authenticated;
+
 create or replace function public.enforce_digital_products_release_approval()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
   if session_user <> 'postgres' and new.digital_products = true and coalesce(old.digital_products, false) = false and not exists (
     select 1 from public.digital_products_release_approvals approval
+    join public.digital_products_release_runtime runtime
+      on runtime.singleton
+     and runtime.release_version = approval.release_version
+     and runtime.evidence_sha256 = approval.evidence_sha256
+     and runtime.target_environment = approval.target_environment
     where approval.revoked_at is null
       and approval.expires_at > now()
       and approval.provider_accepted_at is not null

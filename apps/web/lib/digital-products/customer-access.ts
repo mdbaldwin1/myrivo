@@ -8,7 +8,7 @@ import {
 import { isIP } from "node:net";
 import type { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getExternalAppUrl, getServerEnv } from "@/lib/env";
+import { getServerEnv } from "@/lib/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { DIGITAL_PRODUCT_CONFIG } from "./config";
 import { hashDigitalAccessToken } from "./entitlements";
@@ -397,16 +397,14 @@ export async function issueAuthenticatedCustomerDigitalAccess({
   actorUserId,
   email,
   client = createSupabaseAdminClient(),
-  externalAppUrl = getExternalAppUrl(),
   createAccessToken = () => randomBytes(32).toString("base64url"),
 }: {
   orderId: string;
   actorUserId: string;
   email: string;
   client?: CustomerDigitalAccessRpcClient;
-  externalAppUrl?: string;
   createAccessToken?: () => string;
-}): Promise<{ accessUrl: string; expiresAt: string } | null> {
+}): Promise<{ accessToken: string; accessTokenId: string; expiresAt: string } | null> {
   const parsed = z
     .object({
       orderId: z.string().uuid(),
@@ -448,7 +446,8 @@ export async function issueAuthenticatedCustomerDigitalAccess({
     throw new Error("Digital customer access returned an invalid result");
   }
   return {
-    accessUrl: `${externalAppUrl.replace(/\/$/, "")}/downloads#token=${accessToken}`,
+    accessToken,
+    accessTokenId,
     expiresAt: parsedResult.data.expires_at,
   };
 }

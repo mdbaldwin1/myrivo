@@ -5,11 +5,14 @@ import {
   isValidDigitalEntitlementId, prepareDigitalDownload, type DigitalDownloadClient,
 } from "@/lib/digital-products/download-service";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 
 type RouteContext = { params: Promise<{ entitlementId: string }> };
 const response = (error: string, status: number) => hardenDigitalDownloadResponse(NextResponse.json({ error }, { status }));
 
-export async function GET(request: NextRequest, context: RouteContext) {
+export async function POST(request: NextRequest, context: RouteContext) {
+  const originFailure = enforceTrustedOrigin(request);
+  if (originFailure) return originFailure;
   const { entitlementId } = await context.params;
   let session;
   try { session = getEstablishedDigitalDownloadSession(request); } catch { return response("Download service is temporarily unavailable.", 503); }

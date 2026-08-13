@@ -201,7 +201,7 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
           if (
             payload.digitalDeliveryStatus === "succeeded" &&
             typeof payload.digitalAccessUrl === "string" &&
-            /^\/downloads\/[A-Za-z0-9_-]{43}$/.test(payload.digitalAccessUrl)
+            payload.digitalAccessUrl === "/downloads"
           ) {
             setDigitalAccessUrl(payload.digitalAccessUrl);
             setPollTimedOut(false);

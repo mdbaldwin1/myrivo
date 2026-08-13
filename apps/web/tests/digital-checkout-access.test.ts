@@ -7,6 +7,7 @@ describe("checkout digital access", () => {
     const token = deriveDigitalAccessToken({ jobId: "11111111-1111-4111-8111-111111111111", nonce: "22222222-2222-4222-8222-222222222222", secret: "s".repeat(32) });
     const maybeSingle = vi.fn(async () => ({
       data: {
+        id: "44444444-4444-4444-8444-444444444444",
         token_derivation_nonce: "22222222-2222-4222-8222-222222222222",
         token_hash: hashDigitalAccessToken(token),
         expires_at: "2099-08-15T00:00:00.000Z"
@@ -27,7 +28,7 @@ describe("checkout digital access", () => {
       jobId: "11111111-1111-4111-8111-111111111111",
       secret: "s".repeat(32),
       now: new Date("2026-08-13T00:00:00.000Z")
-    })).resolves.toBe(`/downloads#token=${token}`);
+    })).resolves.toEqual({ accessToken: token, accessTokenId: "44444444-4444-4444-8444-444444444444" });
     expect(query.eq).toHaveBeenCalledWith("issuance_reason", "purchase");
     expect(query.is).toHaveBeenCalledWith("revoked_at", null);
   });
@@ -39,6 +40,7 @@ describe("checkout digital access", () => {
       is: vi.fn(() => query),
       maybeSingle: vi.fn(async () => ({
         data: {
+          id: "44444444-4444-4444-8444-444444444444",
           token_derivation_nonce: "22222222-2222-4222-8222-222222222222",
           token_hash: "a".repeat(64),
           expires_at: "2026-08-12T00:00:00.000Z"

@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { deriveDigitalAccessToken, hashDigitalAccessToken } from "./entitlements";
 
 type CheckoutAccessRow = {
+  id: string;
   token_derivation_nonce: string;
   token_hash: string;
   expires_at: string;
@@ -30,6 +31,7 @@ const inputSchema = z.object({
 });
 
 const accessRowSchema = z.object({
+  id: z.string().uuid(),
   token_derivation_nonce: z.string().uuid(),
   token_hash: z.string().regex(/^[a-f0-9]{64}$/),
   expires_at: z.string().datetime({ offset: true }),
@@ -53,7 +55,7 @@ export async function loadCheckoutDigitalAccessUrl({
   secret: string;
   now?: Date;
   client?: CheckoutAccessClient;
-}): Promise<string | null> {
+}): Promise<{ accessToken: string; accessTokenId: string } | null> {
   const parsedInput = inputSchema.safeParse({ orderId, jobId, secret });
   if (!parsedInput.success || Number.isNaN(now.getTime())) {
     return null;
@@ -61,7 +63,7 @@ export async function loadCheckoutDigitalAccessUrl({
 
   const { data, error } = await client
     .from("digital_order_access_tokens")
-    .select("token_derivation_nonce,token_hash,expires_at")
+    .select("id,token_derivation_nonce,token_hash,expires_at")
     .eq("order_id", parsedInput.data.orderId)
     .eq("delivery_job_id", parsedInput.data.jobId)
     .eq("issuance_reason", "purchase")
@@ -82,5 +84,5 @@ export async function loadCheckoutDigitalAccessUrl({
     return null;
   }
 
-  return `/downloads#token=${token}`;
+  return { accessToken: token, accessTokenId: row.data.id };
 }

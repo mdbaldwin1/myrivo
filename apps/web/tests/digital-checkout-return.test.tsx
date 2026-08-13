@@ -75,14 +75,14 @@ describe("digital checkout return", () => {
         orderId: "order-1",
         checkoutComposition: "mixed",
         digitalDeliveryStatus: "succeeded",
-        digitalAccessUrl: "/downloads/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO12"
+        digitalAccessUrl: "/downloads"
       }), { status: 200, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
     renderPage();
 
     expect(await screen.findByText("Preparing files")).toBeTruthy();
     const link = await screen.findByRole("link", { name: "View downloads" });
-    expect(link.getAttribute("href")).toBe("/downloads/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO12");
+    expect(link.getAttribute("href")).toBe("/downloads");
     expect(screen.getByText(/physical items will continue through shipping or pickup/i)).toBeTruthy();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   });
@@ -114,7 +114,7 @@ describe("digital checkout return", () => {
         orderId: "order-long-running",
         checkoutComposition: "digital_only",
         digitalDeliveryStatus: "succeeded",
-        digitalAccessUrl: "/downloads/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO12"
+        digitalAccessUrl: "/downloads"
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -167,7 +167,7 @@ describe("digital checkout return", () => {
         orderId: "order-timeout",
         checkoutComposition: "digital_only",
         digitalDeliveryStatus: "succeeded",
-        digitalAccessUrl: "/downloads/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO12"
+        digitalAccessUrl: "/downloads"
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     });
     vi.stubGlobal("fetch", fetchMock);
