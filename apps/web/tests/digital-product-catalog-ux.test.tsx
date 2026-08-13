@@ -1,0 +1,336 @@
+/** @vitest-environment jsdom */
+
+import React from "react";
+import { cleanup, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { DigitalPreviewManager } from "@/components/dashboard/digital-preview-manager";
+import { DigitalProductOverview } from "@/components/dashboard/digital-product-overview";
+import { ProductManager, type ProductListItem } from "@/components/dashboard/product-manager";
+import { enrichDigitalCatalogProducts } from "@/lib/digital-products/catalog-state";
+
+const PRODUCT_ID = "10000000-0000-4000-8000-000000000001";
+const VARIANT_ID = "20000000-0000-4000-8000-000000000001";
+
+vi.mock("next/image", () => ({
+  default: ({ alt, src, fill, unoptimized, ...props }: React.ImgHTMLAttributes<HTMLImageElement> & { fill?: boolean; unoptimized?: boolean }) => {
+    void fill;
+    void unoptimized;
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img alt={alt ?? ""} src={typeof src === "string" ? src : ""} {...props} />
+    );
+  },
+}));
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/dashboard/stores/studio/catalog",
+  useRouter: () => ({ replace: vi.fn(), refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+vi.mock("@/components/ui/rich-text-editor", () => ({
+  RichTextEditor: ({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder?: string }) => (
+    <textarea aria-label="Description" value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />
+  ),
+}));
+
+vi.mock("@/components/dashboard/digital-product-files", () => ({
+  DigitalProductFiles: () => <div>Files manager</div>,
+}));
+
+vi.mock("@/lib/feedback/toast", () => ({
+  notify: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
+}));
+
+function product(overrides: Partial<ProductListItem> = {}): ProductListItem {
+  return {
+    id: PRODUCT_ID,
+    title: "Sunrise printable",
+    description: "A downloadable wall print.",
+    slug: "sunrise-printable",
+    sku: "SUNRISE",
+    image_urls: ["https://project.supabase.co/storage/v1/object/public/store-products/store-1/products/sunrise.jpg"],
+    image_alt_text: "Sunrise artwork",
+    seo_title: null,
+    seo_description: null,
+    is_featured: false,
+    price_cents: 1200,
+    inventory_qty: 0,
+    status: "draft",
+    product_type: "digital",
+    digital_rights_affirmed_at: null,
+    created_at: "2026-08-13T12:00:00.000Z",
+    digital_readiness: {
+      ready: false,
+      reasons: ["rights_missing", "preview_not_ready", `variant_missing_file:${VARIANT_ID}`],
+      applicableFileCount: 1,
+      previewStatus: "processing",
+    },
+    digital_preview: {
+      status: "processing",
+      sourceAssetVersionId: null,
+      publicUrl: null,
+      isMerchantOverride: false,
+      failureReason: null,
+    },
+    product_variants: [
+      {
+        id: VARIANT_ID,
+        title: "Square",
+        sku: "SUNRISE-SQUARE",
+        sku_mode: "auto",
+        image_urls: [],
+        group_image_urls: [],
+        option_values: { Size: "Square" },
+        price_cents: 1200,
+        inventory_qty: 0,
+        is_made_to_order: false,
+        is_default: true,
+        status: "active",
+        sort_order: 0,
+        created_at: "2026-08-13T12:00:00.000Z",
+      },
+    ],
+    ...overrides,
+  };
+}
+
+describe("digital catalog overview and media", () => {
+  afterEach(() => cleanup());
+
+  test("summarizes delivery policy and gives every publish blocker an exact repair action", async () => {
+    const onNavigate = vi.fn();
+    const onEdit = vi.fn();
+    const onPublish = vi.fn();
+    const user = userEvent.setup();
+
+    render(
+      <DigitalProductOverview
+        product={product()}
+        onNavigate={onNavigate}
+        onEdit={onEdit}
+        onPublish={onPublish}
+      />,
+    );
+
+    expect(screen.getByText("Digital download")).toBeTruthy();
+    expect(screen.getByText("$12.00")).toBeTruthy();
+    expect(screen.getByText("1 applicable file")).toBeTruthy();
+    expect(screen.getByText("Preview processing")).toBeTruthy();
+    expect(screen.getByText(/48-hour access links/i)).toBeTruthy();
+    expect(screen.getByText(/5 downloads per purchased file/i)).toBeTruthy();
+    expect(screen.getByText(/personal-use license/i)).toBeTruthy();
+
+    const readiness = screen.getByRole("region", { name: "Publishing readiness" });
+    expect(within(readiness).getByText("3 steps remaining")).toBeTruthy();
+    await user.click(within(readiness).getByRole("button", { name: "Confirm distribution rights" }));
+    expect(onEdit).toHaveBeenCalledWith("rights");
+    await user.click(within(readiness).getByRole("button", { name: "Finish storefront preview" }));
+    expect(onNavigate).toHaveBeenCalledWith("media", "preview");
+    await user.click(within(readiness).getByRole("button", { name: "Attach a file to Square" }));
+    expect(onNavigate).toHaveBeenCalledWith("files", VARIANT_ID);
+    expect(within(readiness).getByRole("button", { name: "Publish product" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  test("separates storefront images from private deliverables and selects an exact public preview override", async () => {
+    const publicUrl = "https://project.supabase.co/storage/v1/object/public/store-products/store-1/products/sunrise.jpg";
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ publicUrl: "https://cdn.example/watermarked-sunrise.jpg" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    render(
+      <DigitalPreviewManager
+        productId={PRODUCT_ID}
+        productTitle="Sunrise printable"
+        storefrontImages={[publicUrl]}
+        preview={{
+          status: "missing",
+          sourceAssetVersionId: null,
+          publicUrl: null,
+          isMerchantOverride: false,
+          failureReason: null,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Storefront images" })).toBeTruthy();
+    expect(screen.getByText(/public product photography/i)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Customer deliverables" })).toBeTruthy();
+    expect(screen.getByText(/managed privately in Files/i)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Buyer preview" })).toBeTruthy();
+    expect(screen.getByText(/No public preview is ready/i)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Use as buyer preview" }));
+    expect(await screen.findByAltText("Public preview buyers see for Sunrise printable")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/products/digital-preview",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ mode: "override", productId: PRODUCT_ID, sourceUrl: publicUrl }),
+      }),
+    );
+  });
+
+  test("retries a failed automatic preview through the existing preview lifecycle", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ publicUrl: "https://cdn.example/recovered-preview.jpg" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    render(<DigitalPreviewManager
+      productId={PRODUCT_ID}
+      productTitle="Sunrise printable"
+      storefrontImages={[]}
+      preview={{
+        status: "failed",
+        sourceAssetVersionId: "40000000-0000-4000-8000-000000000002",
+        publicUrl: null,
+        isMerchantOverride: false,
+        failureReason: "Preview processing failed",
+      }}
+    />);
+
+    await user.click(screen.getByRole("button", { name: "Retry automatic preview" }));
+    expect(fetchMock).toHaveBeenCalledWith("/api/products/digital-preview", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ mode: "asset", productId: PRODUCT_ID, sourceAssetVersionId: "40000000-0000-4000-8000-000000000002" }),
+    }));
+    expect(await screen.findByAltText("Public preview buyers see for Sunrise printable")).toBeTruthy();
+  });
+});
+
+describe("digital catalog server state", () => {
+  test("loads readiness and exposes only the public preview URL", async () => {
+    const privatePreviewPath = `store-1/${PRODUCT_ID}/watermarked.jpg`;
+    const from = vi.fn((table: string) => {
+      let selection = "";
+      const query = {
+        select(value: string) { selection = value; return query; },
+        eq() { return query; },
+        in() { return query; },
+        single: async () => ({ data: { product_type: "digital", digital_rights_affirmed_at: "2026-08-13T12:00:00.000Z" }, error: null }),
+        maybeSingle: async () => ({ data: { status: "ready" }, error: null }),
+        returns: async () => {
+          if (table === "product_variants") return { data: [{ id: VARIANT_ID, status: "active" }], error: null };
+          if (table === "digital_product_assets") {
+            return { data: [{ id: "asset-1", product_variant_id: VARIANT_ID, active: true, digital_product_asset_versions: [{ id: "version-1", status: "ready", retired_at: null }] }], error: null };
+          }
+          if (table === "digital_product_previews" && selection.includes("public_preview_path")) {
+            return { data: [{ product_id: PRODUCT_ID, status: "ready", source_asset_version_id: "version-1", public_preview_path: privatePreviewPath, is_merchant_override: false, failure_reason: null }], error: null };
+          }
+          return { data: [], error: null };
+        },
+      };
+      return query;
+    });
+    const admin = {
+      from,
+      storage: { from: () => ({ getPublicUrl: () => ({ data: { publicUrl: "https://cdn.example/public-preview.jpg" } }) }) },
+    };
+
+    const [enriched] = await enrichDigitalCatalogProducts({
+      admin: admin as never,
+      storeId: "store-1",
+      products: [{ id: PRODUCT_ID, product_type: "digital" as const }],
+    });
+
+    expect(enriched?.digital_readiness?.ready).toBe(true);
+    expect(enriched?.digital_preview?.publicUrl).toBe("https://cdn.example/public-preview.jpg");
+    expect(JSON.stringify(enriched)).not.toContain(privatePreviewPath);
+  });
+});
+
+describe("ProductManager digital catalog integration", () => {
+  beforeEach(() => {
+    Element.prototype.hasPointerCapture = vi.fn(() => false);
+    Element.prototype.setPointerCapture = vi.fn();
+    Element.prototype.releasePointerCapture = vi.fn();
+    Element.prototype.scrollIntoView = vi.fn();
+    vi.stubGlobal("ResizeObserver", class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  test("is fulfillment-first and never exposes physical stock controls for a digital product", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ products: [product()] }), { status: 200 })));
+    const user = userEvent.setup();
+    render(<ProductManager initialProducts={[product()]} />);
+
+    const table = screen.getByRole("table");
+    expect(within(table).getByRole("columnheader", { name: "Fulfillment" })).toBeTruthy();
+    expect(within(table).queryByRole("columnheader", { name: "Inventory" })).toBeNull();
+    expect(within(table).getByText("Digital download")).toBeTruthy();
+    expect(within(table).queryByRole("button", { name: /Adjust inventory/i })).toBeNull();
+
+    const tabs = screen.getByRole("tablist", { name: "Product details" });
+    expect(within(tabs).getByRole("tab", { name: "Files" })).toBeTruthy();
+    expect(within(tabs).queryByRole("tab", { name: "Inventory" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByText(/Files are attached after this draft is created/i)).toBeTruthy();
+    expect(screen.queryByText("Enable made to order")).toBeNull();
+    expect(screen.queryByText("Inventory")).toBeNull();
+    expect(screen.getByRole("checkbox", { name: /I own or control the rights/i })).toBeTruthy();
+  });
+
+  test("keeps physical inventory controls unchanged", () => {
+    const physical = product({
+      title: "Framed print",
+      product_type: "physical",
+      inventory_qty: 8,
+      digital_readiness: null,
+      digital_preview: null,
+      digital_rights_affirmed_at: null,
+      product_variants: [{ ...product().product_variants[0]!, inventory_qty: 8 }],
+    });
+    render(<ProductManager initialProducts={[physical]} />);
+
+    expect(screen.getByRole("tab", { name: "Inventory" })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "Files" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Adjust inventory for Framed print" })).toBeTruthy();
+  });
+
+  test("clears rights when fulfillment changes so conversion can never submit stale consent", async () => {
+    const putBodies: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === "/api/products" && init?.method === "PATCH") {
+          putBodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+          return new Response(JSON.stringify({ product: product({ product_type: "physical" }) }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ products: [product()] }), { status: 200 });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<ProductManager initialProducts={[product({ digital_rights_affirmed_at: "2026-08-13T12:00:00.000Z" })]} />);
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const fulfillment = screen.getByRole("combobox", { name: "Fulfillment" });
+    await user.click(fulfillment);
+    await user.click(screen.getByRole("option", { name: "Physical product" }));
+    await user.click(fulfillment);
+    await user.click(screen.getByRole("option", { name: "Digital download" }));
+
+    expect(screen.getByRole("checkbox", { name: /I own or control the rights/i }).getAttribute("aria-checked")).toBe("false");
+    await user.click(screen.getByRole("button", { name: "Save product" }));
+    expect(putBodies[0]?.digitalRightsAffirmed).toBe(false);
+  });
+});

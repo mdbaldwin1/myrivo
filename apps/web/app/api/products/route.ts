@@ -5,11 +5,11 @@ import { logAuditEvent } from "@/lib/audit/log";
 import { findRestockedVariantIds, processBackInStockAlertsForVariants } from "@/lib/back-in-stock/alerts";
 import {
   applyDigitalProductCatalogUpdate,
-  loadDigitalProductReadiness,
   readinessFailurePayload,
   type DigitalCatalogVariantMutation,
   type ReadinessAdminClient
 } from "@/lib/digital-products/readiness-service";
+import { enrichDigitalCatalogProducts } from "@/lib/digital-products/catalog-state";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { notifyOwnersInventoryLevel } from "@/lib/notifications/owner-notifications";
 import { buildProductSlug, normalizeProductSlug } from "@/lib/products/slug";
@@ -1082,19 +1082,11 @@ export async function GET() {
         }))
     }));
 
-  const productsWithReadiness = await Promise.all(
-    products.map(async (product) => ({
-      ...product,
-      digital_readiness:
-        product.product_type === "digital"
-          ? await loadDigitalProductReadiness({
-              admin: resolved.supabase as unknown as ReadinessAdminClient,
-              storeId: resolved.storeId,
-              productId: product.id
-            })
-          : null
-    }))
-  );
+  const productsWithReadiness = await enrichDigitalCatalogProducts({
+    admin: resolved.supabase,
+    storeId: resolved.storeId,
+    products,
+  });
 
   return NextResponse.json({ products: productsWithReadiness });
 }

@@ -1,5 +1,6 @@
 import { ProductManager, type ProductListItem } from "@/components/dashboard/product-manager";
 import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
+import { enrichDigitalCatalogProducts } from "@/lib/digital-products/catalog-state";
 import { getOwnedStoreBundleForSlug } from "@/lib/stores/owner-store";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
@@ -88,9 +89,15 @@ export default async function StoreWorkspaceCatalogPage({ params }: PageProps) {
     throw new Error(productsError.message);
   }
 
+  const initialProducts = await enrichDigitalCatalogProducts({
+    admin,
+    storeId: bundle.store.id,
+    products: normalizeProducts(products),
+  });
+
   return (
-    <DashboardPageScaffold title="Catalog" description="Manage products, stock, and publishing status." className="p-3">
-      <ProductManager initialProducts={normalizeProducts(products)} />
+    <DashboardPageScaffold title="Catalog" description="Manage products, fulfillment, and publishing status." className="p-3">
+      <ProductManager initialProducts={initialProducts} />
     </DashboardPageScaffold>
   );
 }

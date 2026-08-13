@@ -39,6 +39,7 @@ export type ProductListItem = Pick<
   | "created_at"
 > & {
   digital_readiness?: DigitalProductReadiness | null;
+  digital_preview?: DigitalProductPreview | null;
   product_variants: ProductVariantListItem[];
   product_option_axes?: Array<{
     id: string;
@@ -52,6 +53,14 @@ export type ProductListItem = Pick<
       is_active: boolean;
     }>;
   }>;
+};
+
+export type DigitalProductPreview = {
+  status: "missing" | "processing" | "ready" | "failed";
+  sourceAssetVersionId: string | null;
+  publicUrl: string | null;
+  isMerchantOverride: boolean;
+  failureReason: string | null;
 };
 
 export type OptionPairDraft = {
@@ -84,6 +93,51 @@ export function buildDigitalPublishReadinessView(readiness: DigitalProductReadin
     previewStatus: readiness.previewStatus,
     blockers: readiness.reasons.map(digitalReadinessReasonLabel)
   };
+}
+
+export type CatalogInspectorTab = "overview" | "variants" | "inventory" | "files" | "media";
+
+export type DigitalReadinessAction = {
+  reason: DigitalProductReadiness["reasons"][number];
+  label: string;
+  tab: "files" | "media" | null;
+  target: string;
+};
+
+export function buildDigitalReadinessActions(
+  product: Pick<ProductListItem, "product_variants">,
+  readiness: DigitalProductReadiness,
+): DigitalReadinessAction[] {
+  return readiness.reasons.map((reason) => {
+    if (reason === "rights_missing") {
+      return { reason, label: "Confirm distribution rights", tab: null, target: "rights" };
+    }
+    if (reason === "preview_not_ready") {
+      return { reason, label: "Finish storefront preview", tab: "media", target: "preview" };
+    }
+    if (reason === "product_missing_file") {
+      return { reason, label: "Attach a customer file", tab: "files", target: "upload" };
+    }
+    const variantId = reason.slice("variant_missing_file:".length);
+    const variant = product.product_variants.find((candidate) => candidate.id === variantId);
+    return {
+      reason,
+      label: `Attach a file to ${variant ? formatVariantLabelForReadiness(variant) : "the active variant"}`,
+      tab: "files",
+      target: variantId,
+    };
+  });
+}
+
+function formatVariantLabelForReadiness(variant: ProductVariantListItem) {
+  const values = Object.values(variant.option_values ?? {}).filter((value) => value.trim());
+  return values.join(" · ") || variant.title?.trim() || "the active variant";
+}
+
+export function inspectorTabsForProduct(productType: ProductListItem["product_type"]): CatalogInspectorTab[] {
+  return productType === "digital"
+    ? ["overview", "variants", "files", "media"]
+    : ["overview", "variants", "inventory", "media"];
 }
 
 export function resolvePriceRange(variants: ProductVariantListItem[]) {

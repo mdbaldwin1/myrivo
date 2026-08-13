@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - Made paid digital delivery durable with transactionally queued manifest jobs, leased retries, bounded exponential backoff, atomic entitlement and purchase-token materialization, provider-idempotent email handoff, and merchant-visible terminal failures.
 - Added reliable digital order-delivery notifications with enriched order confirmations, attempt-by-attempt provider auditing, durable retries, neutral 48-hour access copy, and tenant-authorized idempotent merchant resend that rotates links without resetting download grants.
 - Completed customer digital access with anti-enumeration link recovery, transactionally queued 48-hour recovery emails, short authenticated order-history sessions, polished accessible download and recovery pages, and a versioned personal-use license.
+- Rebuilt the merchant catalog for digital products with fulfillment-first browsing, publish-readiness guidance, multi-file upload and lifecycle management, variant-scoped deliverables, and an exact public-preview workspace that keeps originals private.
 
 ### Fixed
 - Hardened digital-link recovery with platform-trusted keyed IP throttling that survives cookie resets, bounded quantized response envelopes plus audit-free database decoy work, and removal of UUID-derived order references from bearer responses.
