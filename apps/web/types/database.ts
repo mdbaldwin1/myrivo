@@ -781,6 +781,8 @@ export type OrderItemRecord = {
 };
 
 export type DigitalAssetStatus = "uploading" | "processing" | "ready" | "failed";
+export type DigitalAssetUploadIntentStatus = "pending" | "completed" | "failed" | "expired";
+export type DigitalAssetUploadOperation = "create" | "replace";
 export type DigitalPreviewStatus = "missing" | "processing" | "ready" | "failed";
 export type DigitalEntitlementStatus = "active" | "suspended" | "revoked";
 export type DigitalPurchaseManifestStatus = "draft" | "locked";
@@ -818,6 +820,32 @@ export type DigitalProductAssetVersionRecord = {
   orphan_cleanup_after: string | null;
   orphaned_at: string | null;
   retired_at: string | null;
+};
+
+export type DigitalAssetUploadIntentRecord = {
+  id: string;
+  store_id: string;
+  product_id: string;
+  product_variant_id: string | null;
+  asset_id: string;
+  asset_version_id: string;
+  existing_asset_id: string | null;
+  operation: DigitalAssetUploadOperation;
+  version_number: number;
+  label: string;
+  expected_filename: string;
+  expected_mime_type: string;
+  expected_byte_size: number;
+  storage_path: string;
+  status: DigitalAssetUploadIntentStatus;
+  expires_at: string;
+  completed_version_id: string | null;
+  completed_at: string | null;
+  last_safe_error: string | null;
+  cleanup_after: string | null;
+  orphaned_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type DigitalProductPreviewRecord = {

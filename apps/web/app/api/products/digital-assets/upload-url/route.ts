@@ -1,13 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { buildDigitalAssetStoragePath, DIGITAL_ASSET_BUCKET, newDigitalAssetId, validateDigitalAssetUpload } from "@/lib/digital-products/assets";
+import { AssetLifecycleError, createAssetUploadIntent } from "@/lib/digital-products/asset-service";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-const schema = z.object({ productId: z.string().uuid(), fileName: z.string().min(1).max(255), mimeType: z.string(), sizeBytes: z.number().int().positive() });
+const schema = z
+  .object({
+    productId: z.string().uuid(),
+    productVariantId: z.string().uuid().nullable().optional(),
+    label: z.string().trim().min(1).max(160),
+    fileName: z.string().trim().min(1).max(255),
+    mimeType: z.string().trim().min(1).max(100),
+    sizeBytes: z.number().int().positive(),
+  })
+  .strict();
 
 export async function POST(request: NextRequest) {
   const originFailure = enforceTrustedOrigin(request);
@@ -15,19 +24,29 @@ export async function POST(request: NextRequest) {
   const parsed = await parseJsonRequest(request, schema);
   if (!parsed.ok) return parsed.response;
   const client = await createSupabaseServerClient();
-  const { data: { user } } = await client.auth.getUser();
+  const {
+    data: { user },
+  } = await client.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const bundle = await getOwnedStoreBundle(user.id, "staff");
-  if (!bundle) return NextResponse.json({ error: "No store found for account" }, { status: 404 });
-  const check = validateDigitalAssetUpload(parsed.data);
-  if (!check.ok) return NextResponse.json({ error: check.error }, { status: 400 });
+  if (!bundle) return NextResponse.json({ error: "Store unavailable." }, { status: 404 });
 
-  const admin = createSupabaseAdminClient();
-  const { data: product } = await admin.from("products").select("id").eq("id", parsed.data.productId).eq("store_id", bundle.store.id).maybeSingle();
-  if (!product) return NextResponse.json({ error: "Product not found" }, { status: 404 });
-  const assetId = newDigitalAssetId();
-  const storagePath = buildDigitalAssetStoragePath({ storeId: bundle.store.id, productId: product.id, assetId, version: 1, fileName: parsed.data.fileName });
-  const { data, error } = await admin.storage.from(DIGITAL_ASSET_BUCKET).createSignedUploadUrl(storagePath);
-  if (error || !data?.signedUrl) return NextResponse.json({ error: error?.message ?? "Unable to create upload URL" }, { status: 500 });
-  return NextResponse.json({ assetId, storagePath, uploadUrl: data.signedUrl, token: data.token }, { status: 201 });
+  try {
+    const result = await createAssetUploadIntent({
+      admin: createSupabaseAdminClient(),
+      storeId: bundle.store.id,
+      productId: parsed.data.productId,
+      productVariantId: parsed.data.productVariantId ?? null,
+      label: parsed.data.label,
+      fileName: parsed.data.fileName,
+      mimeType: parsed.data.mimeType,
+      sizeBytes: parsed.data.sizeBytes,
+    });
+    return NextResponse.json(result, { status: 201 });
+  } catch (error) {
+    if (error instanceof AssetLifecycleError) {
+      return NextResponse.json({ error: error.publicMessage }, { status: error.status });
+    }
+    return NextResponse.json({ error: "Unable to prepare upload." }, { status: 500 });
+  }
 }

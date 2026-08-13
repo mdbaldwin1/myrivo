@@ -373,4 +373,10 @@ describe("digital product production contract", () => {
     expect(Object.isFrozen(DIGITAL_PRODUCT_CONFIG)).toBe(true);
     expect(Object.isFrozen(DIGITAL_PRODUCT_CONFIG.acceptedFiles)).toBe(true);
   });
+
+  it("keeps the upload intent lifetime within the validated server ceiling", () => {
+    expect(DIGITAL_PRODUCT_CONFIG.uploadIntentTtlSeconds).toBeLessThanOrEqual(
+      DIGITAL_PRODUCT_CONFIG.maxUploadIntentTtlSeconds,
+    );
+  });
 });

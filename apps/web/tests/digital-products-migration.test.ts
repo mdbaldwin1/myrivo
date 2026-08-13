@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { DIGITAL_PRODUCT_CONFIG } from "@/lib/digital-products/config";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const prototypeMigration = join(
@@ -19,6 +20,10 @@ const prototypeMigration = join(
 const hardeningMigration = join(
   repoRoot,
   "supabase/migrations/20260812180000_harden_digital_products.sql",
+);
+const assetLifecycleMigration = join(
+  repoRoot,
+  "supabase/migrations/20260812190000_transactional_digital_assets.sql",
 );
 
 const ids = {
@@ -144,6 +149,7 @@ insert into public.products(id, store_id) values
   ('${ids.productA}', '${ids.storeA}'),
   ('${ids.productA2}', '${ids.storeA}'),
   ('${ids.productB}', '${ids.storeB}');
+update public.products set product_type = 'digital';
 insert into public.product_variants(id, store_id, product_id) values
   ('${ids.variantA}', '${ids.storeA}', '${ids.productA}'),
   ('${ids.variantA2}', '${ids.storeA}', '${ids.productA2}'),
@@ -252,6 +258,9 @@ beforeAll(() => {
   if (!existsSync(hardeningMigration)) {
     throw new Error(`Missing hardening migration: ${hardeningMigration}`);
   }
+  if (!existsSync(assetLifecycleMigration)) {
+    throw new Error(`Missing asset lifecycle migration: ${assetLifecycleMigration}`);
+  }
 
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-digital-migration-"));
   port = 55432 + (process.pid % 9000);
@@ -276,6 +285,7 @@ beforeAll(() => {
       runSql(database, prototypeFixtures);
     }
     applyMigration(database, hardeningMigration);
+    applyMigration(database, assetLifecycleMigration);
   }
 
   execFileSync(createdb, ["full_chain"], {
@@ -684,5 +694,229 @@ describe("durable delivery and download state", () => {
            and policyname in ('digital_originals_never_public_read', 'digital_previews_public_read')`,
       ),
     ).toBe("2");
+  });
+});
+
+describe("transactional digital asset lifecycle", () => {
+  it("keeps database lifecycle limits aligned with validated application config", () => {
+    expect(
+      runSql(
+        "fresh",
+        "select public.digital_asset_max_active_files()::text || ':' || public.digital_asset_max_file_bytes()::text || ':' || extract(epoch from public.digital_asset_max_intent_ttl())::bigint::text",
+      ),
+    ).toBe(
+      `${DIGITAL_PRODUCT_CONFIG.maxFilesPerProduct}:${DIGITAL_PRODUCT_CONFIG.maxFileBytes}:${DIGITAL_PRODUCT_CONFIG.maxUploadIntentTtlSeconds}`,
+    );
+  });
+
+  it("persists an owned upload intent and finalizes it exactly once", () => {
+    const intentId = "d0000000-0000-4000-8000-000000000001";
+    const assetId = "60000000-0000-4000-8000-000000000010";
+    const versionId = "70000000-0000-4000-8000-000000000010";
+    const path = `${ids.storeB}/${ids.productB}/${assetId}/v1/new-file.pdf`;
+    const intent = JSON.parse(
+      runSql(
+        "upgrade",
+        `select to_jsonb(i) from public.create_digital_asset_upload_intent(
+          '${intentId}', '${ids.storeB}', '${ids.productB}', '${ids.variantB}',
+          '${assetId}', '${versionId}', null, 'New file', 'new-file.pdf',
+          'application/pdf', 10, '${path}', 'create', now() + interval '30 minutes'
+        ) i`,
+      ),
+    ) as Record<string, unknown>;
+    expect(intent).toMatchObject({
+      intent_id: intentId,
+      asset_id: assetId,
+      asset_version_id: versionId,
+      storage_path: path,
+      intent_status: "pending",
+      version_number: 1,
+    });
+
+    const first = JSON.parse(
+      runSql(
+        "upgrade",
+        `select to_jsonb(v) from public.finalize_digital_asset_upload_intent(
+          '${intentId}', '${ids.storeB}', 10, 'application/pdf', repeat('9', 64)
+        ) v`,
+      ),
+    ) as Record<string, unknown>;
+    const repeated = JSON.parse(
+      runSql(
+        "upgrade",
+        `select to_jsonb(v) from public.finalize_digital_asset_upload_intent(
+          '${intentId}', '${ids.storeB}', 10, 'application/pdf', repeat('9', 64)
+        ) v`,
+      ),
+    ) as Record<string, unknown>;
+    expect(first).toMatchObject({
+      asset_id: assetId,
+      asset_version_id: versionId,
+      was_already_completed: false,
+    });
+    expect(repeated).toMatchObject({
+      asset_id: assetId,
+      asset_version_id: versionId,
+      was_already_completed: true,
+    });
+    expect(
+      runSql(
+        "upgrade",
+        `select count(*) from public.digital_product_asset_versions where id = '${versionId}'`,
+      ),
+    ).toBe("1");
+  });
+
+  it("rejects cross-store and wrong-product variant intents without exposing a writable path", () => {
+    expectRejected(
+      "upgrade",
+      `select * from public.create_digital_asset_upload_intent(
+        'd0000000-0000-4000-8000-000000000002', '${ids.storeA}', '${ids.productB}', '${ids.variantB}',
+        '60000000-0000-4000-8000-000000000011', '70000000-0000-4000-8000-000000000011',
+        null, 'Wrong store', 'wrong.pdf', 'application/pdf', 10,
+        '${ids.storeA}/${ids.productB}/60000000-0000-4000-8000-000000000011/v1/wrong.pdf',
+        'create', now() + interval '30 minutes'
+      )`,
+    );
+    expectRejected(
+      "upgrade",
+      `select * from public.create_digital_asset_upload_intent(
+        'd0000000-0000-4000-8000-000000000003', '${ids.storeA}', '${ids.productA}', '${ids.variantA2}',
+        '60000000-0000-4000-8000-000000000012', '70000000-0000-4000-8000-000000000012',
+        null, 'Wrong variant', 'wrong.pdf', 'application/pdf', 10,
+        '${ids.storeA}/${ids.productA}/60000000-0000-4000-8000-000000000012/v1/wrong.pdf',
+        'create', now() + interval '30 minutes'
+      )`,
+    );
+    expectRejected(
+      "upgrade",
+      `select * from public.create_digital_asset_upload_intent(
+        'd0000000-0000-4000-8000-000000000009', '${ids.storeA}', '${ids.productA}', '${ids.variantA}',
+        '60000000-0000-4000-8000-000000000019', '70000000-0000-4000-8000-000000000019',
+        null, 'Tampered path', 'safe.pdf', 'application/pdf', 10,
+        '${ids.storeB}/${ids.productA}/60000000-0000-4000-8000-000000000019/v1/safe.pdf',
+        'create', now() + interval '30 minutes'
+      )`,
+    );
+  });
+
+  it("returns the stable intent contract when retrying a safely failed upload", () => {
+    const intentId = "d0000000-0000-4000-8000-000000000005";
+    const assetId = "60000000-0000-4000-8000-000000000014";
+    runSql(
+      "upgrade",
+      `select * from public.create_digital_asset_upload_intent(
+        '${intentId}', '${ids.storeB}', '${ids.productB}', '${ids.variantB}',
+        '${assetId}', '70000000-0000-4000-8000-000000000014', null,
+        'Retry file', 'retry.pdf', 'application/pdf', 10,
+        '${ids.storeB}/${ids.productB}/${assetId}/v1/retry.pdf',
+        'create', now() + interval '30 minutes'
+      );
+      select public.fail_digital_asset_upload_intent(
+        '${ids.storeB}', '${intentId}', 'Stored object verification failed'
+      )`,
+    );
+    expect(
+      runSql(
+        "upgrade",
+        `select (cleanup_after is not null)::text from public.digital_asset_upload_intents
+         where id = '${intentId}' and status = 'failed'`,
+      ),
+    ).toBe("true");
+    const retried = JSON.parse(
+      runSql(
+        "upgrade",
+        `select to_jsonb(i) from public.retry_digital_asset_upload_intent(
+          '${ids.storeB}', '${intentId}', now() + interval '30 minutes'
+        ) i`,
+      ),
+    ) as Record<string, unknown>;
+    expect(retried).toMatchObject({
+      intent_id: intentId,
+      asset_id: assetId,
+      intent_status: "pending",
+    });
+    expect(retried).not.toHaveProperty("id");
+  });
+
+  it("replaces immutably and preserves the exact purchased version", () => {
+    const replacementIntent = "d0000000-0000-4000-8000-000000000004";
+    const replacementVersion = "70000000-0000-4000-8000-000000000013";
+    const intent = JSON.parse(
+      runSql(
+        "upgrade",
+        `select to_jsonb(i) from public.create_digital_asset_upload_intent(
+          '${replacementIntent}', '${ids.storeA}', null, null, '${ids.assetA}',
+          '${replacementVersion}', '${ids.assetA}', null, 'replacement.pdf',
+          'application/pdf', 11, null, 'replace', now() + interval '30 minutes'
+        ) i`,
+      ),
+    ) as Record<string, unknown>;
+    expect(intent.version_number).toBe(4);
+    runSql(
+      "upgrade",
+      `select * from public.finalize_digital_asset_upload_intent(
+        '${replacementIntent}', '${ids.storeA}', 11, 'application/pdf', repeat('8', 64)
+      )`,
+    );
+    expect(
+      runSql(
+        "upgrade",
+        `select asset_version_id from public.digital_order_entitlements where id = '${ids.entitlementA}'`,
+      ),
+    ).toBe(ids.versionA);
+    expect(
+      runSql(
+        "upgrade",
+        `select count(*) from public.digital_product_asset_versions
+         where asset_id = '${ids.assetA}' and id in ('${ids.versionA}', '${replacementVersion}')`,
+      ),
+    ).toBe("2");
+  });
+
+  it("deactivates catalog assets without deleting versions or entitlements", () => {
+    const result = JSON.parse(
+      runSql(
+        "upgrade",
+        `select to_jsonb(r) from public.deactivate_digital_product_asset(
+          '${ids.storeA}', '${ids.assetA}'
+        ) r`,
+      ),
+    ) as Record<string, unknown>;
+    expect(result).toMatchObject({
+      deactivated: true,
+      entitlement_count: 2,
+    });
+    expect(
+      runSql(
+        "upgrade",
+        `select active::text from public.digital_product_assets where id = '${ids.assetA}'`,
+      ),
+    ).toBe("false");
+    expect(
+      runSql(
+        "upgrade",
+        `select count(*) from public.digital_order_entitlements where id = '${ids.entitlementA}'`,
+      ),
+    ).toBe("1");
+  });
+
+  it("enforces the active plus pending file limit while holding the product lock", () => {
+    runSql(
+      "upgrade",
+      `insert into public.digital_product_assets(store_id, product_id, product_variant_id, label)
+       select '${ids.storeA}', '${ids.productA2}', '${ids.variantA2}', 'Limit ' || value
+       from generate_series(1, 19) value`,
+    );
+    expectRejected(
+      "upgrade",
+      `select * from public.create_digital_asset_upload_intent(
+        'd0000000-0000-4000-8000-000000000006', '${ids.storeA}', '${ids.productA2}', '${ids.variantA2}',
+        '60000000-0000-4000-8000-000000000015', '70000000-0000-4000-8000-000000000015',
+        null, 'File 21', 'limit.pdf', 'application/pdf', 10,
+        '${ids.storeA}/${ids.productA2}/60000000-0000-4000-8000-000000000015/v1/limit.pdf',
+        'create', now() + interval '30 minutes'
+      )`,
+    );
   });
 });

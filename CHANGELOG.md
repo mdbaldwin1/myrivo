@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 - Added native digital products with private multi-file delivery, watermarked image previews, digital-only and mixed checkout support, 48-hour secure access links, five download grants per file, personal-use licensing, and refund/dispute access controls.
+- Hardened digital-product uploads with tenant-bound upload intents, streamed byte verification, immutable replacements, safe catalog removal, bounded metadata-free watermarked previews, and stable same-store preview overrides.
 
 ### Fixed
 - Fixed shipping-order checkout capture so Stripe-collected shipping addresses are saved onto orders and shown in the merchant order flyout.
