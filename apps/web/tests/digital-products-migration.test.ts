@@ -57,6 +57,10 @@ const checkoutAttemptRecoveryMigration = join(
   repoRoot,
   "supabase/migrations/20260813001000_checkout_attempt_recovery.sql",
 );
+const checkoutAttemptHardeningMigration = join(
+  repoRoot,
+  "supabase/migrations/20260813002000_checkout_attempt_recovery_hardening.sql",
+);
 
 const ids = {
   storeA: "10000000-0000-0000-0000-000000000001",
@@ -396,6 +400,9 @@ beforeAll(() => {
   }
   if (!existsSync(checkoutAttemptRecoveryMigration)) {
     throw new Error(`Missing checkout attempt recovery migration: ${checkoutAttemptRecoveryMigration}`);
+  }
+  if (!existsSync(checkoutAttemptHardeningMigration)) {
+    throw new Error(`Missing checkout attempt hardening migration: ${checkoutAttemptHardeningMigration}`);
   }
 
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-digital-migration-"));
@@ -944,6 +951,15 @@ describe("transactional checkout manifests", () => {
   it("rolls stub order creation back when manifest locking fails, then retries cleanly", () => {
     const checkoutId = "42000000-0000-4000-8000-000000000020";
     const paymentRef = "stub_pi_manifest_atomicity";
+    const checkoutItemsSql = `jsonb_build_array(jsonb_build_object(
+      'productId', '${ids.manifestProduct}',
+      'variantId', '${ids.manifestVariant}',
+      'quantity', 1,
+      'variantLabel', 'Blue',
+      'productTitle', 'Digital set',
+      'productType', 'digital',
+      'unitPriceCents', 2500
+    ))`;
     runSql(
       "full_chain",
       `insert into public.storefront_checkout_sessions(
@@ -951,7 +967,7 @@ describe("transactional checkout manifests", () => {
         digital_consent_version, digital_consent_accepted_at, digital_license_version
       ) values (
         '${checkoutId}', '${ids.manifestStore}', 'manifest-store',
-        'buyer@example.test', ${digitalItemsSql}, 'pending',
+        'buyer@example.test', ${checkoutItemsSql}, 'pending',
         'immediate-delivery-v1', '2026-08-13T04:02:00Z', 'personal-use-v1'
       )`,
     );
@@ -959,7 +975,7 @@ describe("transactional checkout manifests", () => {
       runSql(
         "full_chain",
         `select public.create_or_reuse_digital_checkout_manifest(
-          '${checkoutId}', '${ids.manifestStore}', ${digitalItemsSql},
+          '${checkoutId}', '${ids.manifestStore}', ${checkoutItemsSql},
           'immediate-delivery-v1', '2026-08-13T04:02:00Z', 'personal-use-v1'
         )`,
       ),
@@ -988,7 +1004,7 @@ describe("transactional checkout manifests", () => {
     expectRejected(
       "full_chain",
       `select * from public.stub_checkout_create_paid_order_with_manifest(
-        'manifest-store', 'buyer@example.test', null, ${digitalItemsSql},
+        'manifest-store', 'buyer@example.test', null, ${checkoutItemsSql},
         '${paymentRef}', 0, null, '${checkoutId}', '${manifest.manifestId}'
       )`,
     );
@@ -1020,7 +1036,7 @@ describe("transactional checkout manifests", () => {
     const orderId = runSql(
       "full_chain",
       `select order_id from public.stub_checkout_create_paid_order_with_manifest(
-        'manifest-store', 'buyer@example.test', null, ${digitalItemsSql},
+        'manifest-store', 'buyer@example.test', null, ${checkoutItemsSql},
         '${paymentRef}', 0, null, '${checkoutId}', '${manifest.manifestId}'
       )`,
     );
@@ -1117,6 +1133,7 @@ describe("checkout attempt recovery", () => {
     'shipping_fee_cents', 0,
     'promo_code', null,
     'promo_codes_json', '[]'::jsonb,
+    'applied_promotions_json', '[]'::jsonb,
     'fee_plan_key', 'standard',
     'fee_bps', 500,
     'fee_fixed_cents', 0,
@@ -1129,8 +1146,12 @@ describe("checkout attempt recovery", () => {
       'quantity', 1,
       'variantLabel', 'Blue',
       'productTitle', 'Digital set',
+      'productType', 'digital',
       'unitPriceCents', 2500
     )),
+    'checkout_mode', 'stub',
+    'stripe_account_id_snapshot', null,
+    'tax_collection_mode_snapshot', 'seller_attested_no_tax',
     'status', 'pending'
   )`;
 
@@ -1226,11 +1247,152 @@ describe("checkout attempt recovery", () => {
       runSql(
         "full_chain",
         `select
+          has_function_privilege('anon', 'public.get_storefront_checkout_attempt(uuid,text,text)', 'execute')::text || ':' ||
+          has_function_privilege('authenticated', 'public.get_storefront_checkout_attempt(uuid,text,text)', 'execute')::text || ':' ||
+          has_function_privilege('service_role', 'public.get_storefront_checkout_attempt(uuid,text,text)', 'execute')::text`,
+      ),
+    ).toBe("false:false:true");
+    expect(
+      runSql(
+        "full_chain",
+        `select
           has_function_privilege('anon', 'public.bind_storefront_checkout_stripe_session(uuid,uuid,text,text)', 'execute')::text || ':' ||
           has_function_privilege('authenticated', 'public.bind_storefront_checkout_stripe_session(uuid,uuid,text,text)', 'execute')::text || ':' ||
           has_function_privilege('service_role', 'public.bind_storefront_checkout_stripe_session(uuid,uuid,text,text)', 'execute')::text`,
       ),
     ).toBe("false:false:true");
+  });
+
+  it("creates one stub order from the immutable checkout snapshot under concurrent retries", async () => {
+    const attemptKey = "018f6fc1-8adc-7f43-8000-000000000104";
+    const fingerprint = "e".repeat(64);
+    const paymentRef = "stub_pi_018f6fc18adc7f438000000000000104";
+    const checkout = JSON.parse(
+      runSql(
+        "full_chain",
+        `select public.create_or_reuse_storefront_checkout_attempt(
+          '${ids.manifestStore}', '${attemptKey}', '${fingerprint}',
+          jsonb_build_object(
+            'store_slug', 'manifest-store',
+            'customer_email', 'snapshot@example.test',
+            'customer_first_name', 'Snapshot',
+            'customer_last_name', 'Buyer',
+            'customer_phone', '555-0199',
+            'customer_note', 'Persist this note',
+            'fulfillment_method', 'shipping',
+            'fulfillment_label', 'Archived shipping option',
+            'shipping_fee_cents', 321,
+            'promo_code', 'SNAPSHOT',
+            'promo_codes_json', '["SNAPSHOT"]'::jsonb,
+            'fee_plan_key', 'standard',
+            'fee_bps', 777,
+            'fee_fixed_cents', 12,
+            'item_total_cents', 1234,
+            'platform_fee_cents', 108,
+            'attribution_json', '{}'::jsonb,
+            'items', jsonb_build_array(jsonb_build_object(
+              'productId', '${ids.manifestPhysicalProduct}',
+              'variantId', '${ids.manifestPhysicalVariant}',
+              'quantity', 1,
+              'variantLabel', 'Snapshot oak',
+              'productTitle', 'Snapshot frame',
+              'productType', 'physical',
+              'unitPriceCents', 1500
+            )),
+            'digital_consent_version', null,
+            'digital_consent_accepted_at', null,
+            'digital_license_version', null,
+            'checkout_mode', 'stub',
+            'stripe_account_id_snapshot', null,
+            'tax_collection_mode_snapshot', 'seller_attested_no_tax',
+            'applied_promotions_json', '[]'::jsonb,
+            'status', 'pending'
+          )
+        )`,
+      ),
+    ) as { id: string };
+    const inventoryBefore = Number(
+      runSql(
+        "full_chain",
+        `select inventory_qty from public.product_variants where id = '${ids.manifestPhysicalVariant}'`,
+      ),
+    );
+
+    runSql(
+      "full_chain",
+      `update public.product_variants
+       set price_cents = 9999, status = 'archived'
+       where id = '${ids.manifestPhysicalVariant}';
+       update public.products
+       set status = 'archived'
+       where id = '${ids.manifestPhysicalProduct}'`,
+    );
+
+    const statement = `select row_to_json(result) from public.stub_checkout_create_paid_order_with_manifest(
+      'manifest-store', 'changed@example.test', null,
+      jsonb_build_array(jsonb_build_object(
+        'productId', '${ids.manifestPhysicalProduct}',
+        'variantId', '${ids.manifestPhysicalVariant}',
+        'quantity', 99,
+        'unitPriceCents', 9999
+      )),
+      '${paymentRef}', 9999, 'CHANGED', '${checkout.id}', null
+    ) result`;
+    const [first, second] = await Promise.all([
+      runSqlAsync("full_chain", statement, "stub-attempt-a"),
+      runSqlAsync("full_chain", statement, "stub-attempt-b"),
+    ]);
+    const firstResult = JSON.parse(first) as { order_id: string };
+    const secondResult = JSON.parse(second) as { order_id: string };
+
+    expect(secondResult.order_id).toBe(firstResult.order_id);
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.orders where stripe_payment_intent_id = '${paymentRef}'`,
+      ),
+    ).toBe("1");
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.inventory_movements where order_id = '${firstResult.order_id}'`,
+      ),
+    ).toBe("1");
+    expect(
+      Number(
+        runSql(
+          "full_chain",
+          `select inventory_qty from public.product_variants where id = '${ids.manifestPhysicalVariant}'`,
+        ),
+      ),
+    ).toBe(inventoryBefore - 1);
+    expect(
+      runSql(
+        "full_chain",
+        `select placed_order.customer_email || ':' || placed_order.customer_first_name || ':' || placed_order.customer_last_name || ':' ||
+          placed_order.shipping_fee_cents::text || ':' || placed_order.subtotal_cents::text || ':' || placed_order.discount_cents::text || ':' ||
+          placed_order.total_cents::text || ':' || fees.fee_bps::text || ':' || fees.platform_fee_cents::text || ':' || placed_order.promo_code
+         from public.orders placed_order
+         join public.order_fee_breakdowns fees on fees.order_id = placed_order.id
+         where placed_order.id = '${firstResult.order_id}'`,
+      ),
+    ).toBe("snapshot@example.test:Snapshot:Buyer:321:1500:266:1555:777:108:SNAPSHOT");
+    expect(
+      runSql(
+        "full_chain",
+        `select unit_price_cents::text || ':' || quantity::text || ':' || variant_label
+         from public.order_items where order_id = '${firstResult.order_id}'`,
+      ),
+    ).toBe("1500:1:Snapshot oak");
+    runSql(
+      "full_chain",
+      `update public.product_variants
+       set price_cents = 1500, status = 'active'
+       where id = '${ids.manifestPhysicalVariant}';
+       update public.products
+       set status = 'active'
+       where id = '${ids.manifestPhysicalProduct}'`,
+    );
   });
 });
 

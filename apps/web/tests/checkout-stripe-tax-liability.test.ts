@@ -164,6 +164,9 @@ describe("checkout Stripe tax liability", () => {
       }
     });
     adminRpcMock.mockImplementation(async (name: string, args: Record<string, unknown>) => {
+      if (name === "get_storefront_checkout_attempt") {
+        return { data: null, error: null };
+      }
       if (name === "create_or_reuse_storefront_checkout_attempt") {
         return {
           data: {
@@ -686,9 +689,22 @@ describe("checkout Stripe tax liability", () => {
     });
     let createAttemptCalls = 0;
     let bindCalls = 0;
+    let persistedCheckout: Record<string, unknown> | null = null;
     adminRpcMock.mockImplementation(async (name: string, args: Record<string, unknown>) => {
+      if (name === "get_storefront_checkout_attempt") {
+        return { data: persistedCheckout, error: null };
+      }
       if (name === "create_or_reuse_storefront_checkout_attempt") {
         createAttemptCalls += 1;
+        persistedCheckout = {
+          ...(args.p_checkout as Record<string, unknown>),
+          id: pendingCheckoutId,
+          order_id: null,
+          digital_manifest_id: "b0000000-0000-4000-8000-000000000001",
+          stripe_checkout_session_id: null,
+          stripe_checkout_url: null,
+          created: createAttemptCalls === 1
+        };
         return {
           data: {
             ...(args.p_checkout as Record<string, unknown>),
@@ -766,6 +782,9 @@ describe("checkout Stripe tax liability", () => {
 
   test("returns an already-bound Stripe session without creating another", async () => {
     adminRpcMock.mockImplementation(async (name: string, args: Record<string, unknown>) => {
+      if (name === "get_storefront_checkout_attempt") {
+        return { data: null, error: null };
+      }
       if (name === "create_or_reuse_storefront_checkout_attempt") {
         return {
           data: {
@@ -801,5 +820,183 @@ describe("checkout Stripe tax liability", () => {
       checkoutUrl: "https://checkout.stripe.com/pay/cs_test_existing"
     });
     expect(stripeCheckoutCreateMock).not.toHaveBeenCalled();
+  });
+
+  test("resolves a matching bound attempt before mutable catalog, promo, or Stripe readiness checks", async () => {
+    adminRpcMock.mockImplementation(async (name: string) => {
+      if (name === "get_storefront_checkout_attempt") {
+        return {
+          data: {
+            id: pendingCheckoutId,
+            store_id: checkoutStoreId,
+            store_slug: "stripe-shop",
+            customer_email: "alice@example.com",
+            customer_first_name: "Alice",
+            customer_last_name: "Buyer",
+            customer_phone: "555-0100",
+            customer_note: null,
+            fulfillment_method: "shipping",
+            fulfillment_label: "Shipping snapshot",
+            shipping_fee_cents: 0,
+            pickup_location_id: null,
+            pickup_location_snapshot_json: null,
+            pickup_window_start_at: null,
+            pickup_window_end_at: null,
+            pickup_timezone: null,
+            promo_code: "OLDPROMO",
+            promo_codes_json: ["OLDPROMO"],
+            applied_promotions_json: [],
+            analytics_session_key: null,
+            analytics_session_id: null,
+            source_cart_id: null,
+            fee_plan_key: "standard",
+            fee_bps: 500,
+            fee_fixed_cents: 0,
+            item_total_cents: 2500,
+            platform_fee_cents: 125,
+            attribution_json: {},
+            digital_consent_version: null,
+            digital_consent_accepted_at: null,
+            digital_license_version: null,
+            digital_manifest_id: null,
+            items: [{
+              productId: "11111111-1111-4111-8111-111111111111",
+              variantId: "33333333-3333-4333-8333-333333333333",
+              quantity: 1,
+              variantLabel: "Standard snapshot",
+              productTitle: "Starter Kit snapshot",
+              productType: "physical",
+              unitPriceCents: 2500
+            }],
+            order_id: null,
+            status: "pending",
+            stripe_checkout_session_id: "cs_test_existing",
+            stripe_checkout_url: "https://checkout.stripe.com/pay/cs_test_existing",
+            checkout_mode: "stripe",
+            stripe_account_id_snapshot: "acct_123",
+            tax_collection_mode_snapshot: "stripe_tax"
+          },
+          error: null
+        };
+      }
+      throw new Error(`Unexpected RPC ${name}`);
+    });
+    getStoreStripePaymentsReadinessMock.mockRejectedValue(new Error("Readiness changed"));
+    const route = await import("@/app/api/orders/checkout/route");
+    const response = await route.POST(
+      buildRequest({
+        checkoutAttemptId: "018f6fc1-8adc-7f43-8000-000000000004",
+        firstName: "Alice",
+        lastName: "Buyer",
+        phone: "555-0100",
+        email: "alice@example.com",
+        items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
+      })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      sessionId: "cs_test_existing",
+      checkoutUrl: "https://checkout.stripe.com/pay/cs_test_existing"
+    });
+    expect(getStoreStripePaymentsReadinessMock).not.toHaveBeenCalled();
+    expect(stripeCheckoutCreateMock).not.toHaveBeenCalled();
+  });
+
+  test("resumes an unbound attempt from its persisted snapshot after catalog and readiness change", async () => {
+    adminRpcMock.mockImplementation(async (name: string) => {
+      if (name === "get_storefront_checkout_attempt") {
+        return {
+          data: {
+            id: pendingCheckoutId,
+            store_id: checkoutStoreId,
+            store_slug: "stripe-shop",
+            customer_email: "snapshot@example.com",
+            customer_first_name: "Snapshot",
+            customer_last_name: "Buyer",
+            customer_phone: "555-0100",
+            customer_note: null,
+            fulfillment_method: "shipping",
+            fulfillment_label: "Shipping snapshot",
+            shipping_fee_cents: 321,
+            pickup_location_id: null,
+            pickup_location_snapshot_json: null,
+            pickup_window_start_at: null,
+            pickup_window_end_at: null,
+            pickup_timezone: null,
+            promo_code: "OLDPROMO",
+            promo_codes_json: ["OLDPROMO"],
+            applied_promotions_json: [],
+            analytics_session_key: null,
+            analytics_session_id: null,
+            source_cart_id: null,
+            fee_plan_key: "standard",
+            fee_bps: 500,
+            fee_fixed_cents: 0,
+            item_total_cents: 2000,
+            platform_fee_cents: 125,
+            attribution_json: {},
+            digital_consent_version: null,
+            digital_consent_accepted_at: null,
+            digital_license_version: null,
+            digital_manifest_id: null,
+            items: [{
+              productId: "11111111-1111-4111-8111-111111111111",
+              variantId: "33333333-3333-4333-8333-333333333333",
+              quantity: 1,
+              variantLabel: "Archived variant snapshot",
+              productTitle: "Archived product snapshot",
+              productType: "physical",
+              unitPriceCents: 2500
+            }],
+            order_id: null,
+            status: "pending",
+            stripe_checkout_session_id: null,
+            stripe_checkout_url: null,
+            checkout_mode: "stripe",
+            stripe_account_id_snapshot: "acct_123",
+            tax_collection_mode_snapshot: "seller_attested_no_tax"
+          },
+          error: null
+        };
+      }
+      if (name === "bind_storefront_checkout_stripe_session") {
+        return { data: { id: pendingCheckoutId }, error: null };
+      }
+      throw new Error(`Unexpected RPC ${name}`);
+    });
+    getStoreStripePaymentsReadinessMock.mockRejectedValue(new Error("Readiness changed"));
+    const route = await import("@/app/api/orders/checkout/route");
+    const response = await route.POST(
+      buildRequest({
+        checkoutAttemptId: "018f6fc1-8adc-7f43-8000-000000000005",
+        firstName: "Alice",
+        lastName: "Buyer",
+        phone: "555-0100",
+        email: "alice@example.com",
+        promoCode: "OLDPROMO",
+        items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(getStoreStripePaymentsReadinessMock).not.toHaveBeenCalled();
+    expect(stripeCheckoutCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customer_email: "snapshot@example.com",
+        shipping_options: [expect.objectContaining({
+          shipping_rate_data: expect.objectContaining({
+            display_name: "Shipping snapshot",
+            fixed_amount: { amount: 321, currency: "usd" }
+          })
+        })],
+        line_items: expect.arrayContaining([
+          expect.objectContaining({
+            price_data: expect.objectContaining({ unit_amount: 2000 })
+          })
+        ])
+      }),
+      { idempotencyKey: `storefront-checkout:${pendingCheckoutId}` }
+    );
   });
 });

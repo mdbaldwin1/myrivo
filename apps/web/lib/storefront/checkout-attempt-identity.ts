@@ -63,7 +63,10 @@ export function resolveCheckoutAttemptIdentity({
     canonicalize({
       storeId,
       customerEmail: customerEmail.trim().toLowerCase(),
-      sourceCartId,
+      // Explicit attempt IDs are client-stable while an active cart becomes
+      // ordered during completion. Legacy callers still need cart scoping to
+      // avoid sharing a derived key across distinct carts.
+      sourceCartId: checkoutAttemptId ? undefined : sourceCartId,
       intent: normalizeCheckoutIntent(intent)
     })
   );

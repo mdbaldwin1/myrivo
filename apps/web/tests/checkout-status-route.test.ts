@@ -76,4 +76,24 @@ describe("checkout status route", () => {
       error: "Store is no longer live. Checkout cannot be completed."
     });
   });
+
+  test("returns the paid order by the webhook-bound session id without another Stripe lookup", async () => {
+    getStorefrontCheckoutBySessionIdMock.mockResolvedValue({
+      id: "checkout-1",
+      status: "completed",
+      order_id: "order-1",
+      error_message: null,
+      stripe_payment_intent_id: "pi_123"
+    });
+    const route = await import("@/app/api/orders/checkout-status/route");
+    const request = new NextRequest("http://localhost:3000/api/orders/checkout-status?sessionId=cs_test_webhook_bound");
+
+    const response = await route.GET(request);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ status: "completed", orderId: "order-1" });
+    expect(getStorefrontCheckoutBySessionIdMock).toHaveBeenCalledWith("demo-store", "cs_test_webhook_bound");
+    expect(retrieveCheckoutSessionMock).not.toHaveBeenCalled();
+    expect(finalizeStorefrontCheckoutMock).not.toHaveBeenCalled();
+  });
 });

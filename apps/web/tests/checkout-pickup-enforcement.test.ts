@@ -54,7 +54,8 @@ vi.mock("@/lib/pickup/scheduling", () => ({
 
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: vi.fn(() => ({
-    from: (...args: unknown[]) => adminFromMock(...args)
+    from: (...args: unknown[]) => adminFromMock(...args),
+    rpc: vi.fn(async () => ({ data: null, error: null }))
   }))
 }));
 

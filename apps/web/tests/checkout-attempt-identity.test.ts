@@ -89,6 +89,25 @@ describe("checkout attempt identity", () => {
     expect(changed.fingerprintSha256).not.toBe(original.fingerprintSha256);
   });
 
+  it("keeps an explicit attempt stable when its server-resolved active cart changes", () => {
+    const withActiveCart = resolveCheckoutAttemptIdentity({
+      checkoutAttemptId: "018f6fc1-8adc-7f43-8000-000000000001",
+      storeId: "10000000-0000-4000-8000-000000000001",
+      customerEmail: "alice@example.com",
+      sourceCartId: "20000000-0000-4000-8000-000000000001",
+      intent: baseIntent
+    });
+    const afterCartCompletion = resolveCheckoutAttemptIdentity({
+      checkoutAttemptId: "018f6fc1-8adc-7f43-8000-000000000001",
+      storeId: "10000000-0000-4000-8000-000000000001",
+      customerEmail: "alice@example.com",
+      sourceCartId: null,
+      intent: baseIntent
+    });
+
+    expect(afterCartCompletion).toEqual(withActiveCart);
+  });
+
   it("treats reordered and split cart lines as the same canonical purchase intent", () => {
     const itemA = {
       productId: "11111111-1111-4111-8111-111111111111",

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { resolveStorefrontSessionLink } from "@/lib/analytics/session-linking";
 import { getAppUrl, isStripeStubMode } from "@/lib/env";
-import { calculatePlatformFeeCents, resolveStoreFeeProfile, writeOrderFeeBreakdown } from "@/lib/billing/fees";
+import { calculatePlatformFeeCents, resolveStoreFeeProfile } from "@/lib/billing/fees";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { sendOrderCreatedNotifications } from "@/lib/notifications/order-emails";
 import { resolveAvailablePickupLocations } from "@/lib/pickup/availability";
@@ -14,10 +14,6 @@ import {
   type AppliedPromotionSummary,
   type PromotionApplicationRecord
 } from "@/lib/promotions/apply-promotions";
-import {
-  persistPromotionRedemptions,
-  type PromotionRedemptionPersistenceClient
-} from "@/lib/promotions/persist-redemptions";
 import { normalizePromotionRedemptionEmail, PROMOTION_CUSTOMER_CAP_REACHED_ERROR } from "@/lib/promotions/redemption";
 import { checkRateLimit } from "@/lib/security/rate-limit";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
@@ -115,6 +111,60 @@ type StripeCheckoutLineSource = {
   quantity: number;
   unitPriceCents: number;
 };
+
+type CheckoutSnapshotItem = StripeCheckoutLineSource & {
+  productId: string;
+  variantId: string;
+  productType: "physical" | "digital";
+};
+
+type CheckoutAttemptRow = {
+  id: string;
+  store_id: string;
+  store_slug: string;
+  customer_email: string;
+  customer_first_name: string | null;
+  customer_last_name: string | null;
+  customer_phone: string | null;
+  customer_note: string | null;
+  fulfillment_method: "pickup" | "shipping" | null;
+  fulfillment_label: string | null;
+  shipping_fee_cents: number;
+  pickup_location_id: string | null;
+  pickup_location_snapshot_json: Record<string, unknown> | null;
+  pickup_window_start_at: string | null;
+  pickup_window_end_at: string | null;
+  pickup_timezone: string | null;
+  promo_code: string | null;
+  promo_codes_json: string[];
+  applied_promotions_json: AppliedPromotionSummary[];
+  analytics_session_key: string | null;
+  analytics_session_id: string | null;
+  source_cart_id: string | null;
+  fee_plan_key: string | null;
+  fee_bps: number | null;
+  fee_fixed_cents: number | null;
+  item_total_cents: number | null;
+  platform_fee_cents: number | null;
+  attribution_json: Record<string, unknown>;
+  items: CheckoutSnapshotItem[];
+  digital_consent_version: string | null;
+  digital_consent_accepted_at: string | null;
+  digital_license_version: string | null;
+  digital_manifest_id: string | null;
+  checkout_mode: "stripe" | "stub" | null;
+  stripe_account_id_snapshot: string | null;
+  tax_collection_mode_snapshot: StoreTaxCollectionMode | null;
+  status: "pending" | "completed" | "failed";
+  order_id: string | null;
+  stripe_checkout_session_id: string | null;
+  stripe_checkout_url: string | null;
+  checkout_attempt_key: string;
+  checkout_request_fingerprint_sha256: string;
+  created: boolean;
+};
+
+type CheckoutAdminClient = ReturnType<typeof createSupabaseAdminClient>;
 
 type StripeCheckoutLineItem = {
   price_data: {
@@ -236,6 +286,266 @@ function buildStripeCheckoutLineItems(items: StripeCheckoutLineSource[], discoun
   return lineItems;
 }
 
+async function createDigitalManifestForCheckout(checkout: CheckoutAttemptRow) {
+  if (!checkout.digital_consent_accepted_at) {
+    return null;
+  }
+
+  return createOrReuseCheckoutManifest({
+    checkoutSessionId: checkout.id,
+    storeId: checkout.store_id,
+    items: checkout.items,
+    consent: {
+      version: checkout.digital_consent_version ?? DIGITAL_PRODUCT_CONFIG.consentVersion,
+      acceptedAt: checkout.digital_consent_accepted_at
+    }
+  });
+}
+
+async function markManifestFailure(
+  supabase: CheckoutAdminClient,
+  checkout: CheckoutAttemptRow,
+  error: unknown
+) {
+  await supabase
+    .from("storefront_checkout_sessions")
+    .update({ status: "failed", error_message: "Digital files were not ready for checkout." })
+    .eq("id", checkout.id);
+
+  return NextResponse.json(
+    { error: error instanceof Error ? error.message : "Digital files are not ready for checkout." },
+    { status: error instanceof DigitalPurchaseManifestError ? 409 : 500 }
+  );
+}
+
+async function resumeStubCheckout(
+  supabase: CheckoutAdminClient,
+  checkout: CheckoutAttemptRow
+) {
+  if (checkout.status === "failed") {
+    return NextResponse.json(
+      { error: "This checkout attempt can no longer be used. Please try checkout again." },
+      { status: 409 }
+    );
+  }
+
+  const hasDigitalItems = checkout.items.some((item) => item.productType === "digital");
+  let manifestId = checkout.digital_manifest_id;
+  if (hasDigitalItems && !manifestId) {
+    try {
+      manifestId = (await createDigitalManifestForCheckout(checkout))?.manifestId ?? null;
+    } catch (error) {
+      return markManifestFailure(supabase, checkout, error);
+    }
+  }
+
+  const subtotalCents = checkout.items.reduce(
+    (sum, item) => sum + item.unitPriceCents * item.quantity,
+    0
+  );
+  const discountCents = Math.max(0, subtotalCents - (checkout.item_total_cents ?? subtotalCents));
+  const stubPaymentRef = `stub_pi_${checkout.id.replaceAll("-", "")}`;
+  const { data, error } = await supabase.rpc(
+    "stub_checkout_create_paid_order_with_manifest",
+    buildStubCheckoutWithManifestRpcPayload({
+      storeSlug: checkout.store_slug,
+      customerEmail: checkout.customer_email,
+      customerUserId: null,
+      items: checkout.items,
+      stubPaymentRef,
+      discountCents,
+      promoCode: checkout.promo_code,
+      checkoutSessionId: checkout.id,
+      digitalManifestId: manifestId
+    })
+  );
+
+  if (error) {
+    const message = error.message || "Unable to complete checkout.";
+    if (message.includes("Store not found")) {
+      return NextResponse.json({ error: message }, { status: 404 });
+    }
+    if (message.includes("Insufficient inventory") || message.includes("unavailable") || message.includes("Promo")) {
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+
+  const result = Array.isArray(data) ? data[0] : data;
+  if (!result?.order_id) {
+    return NextResponse.json({ error: "Checkout did not return an order id." }, { status: 500 });
+  }
+
+  await sendOrderCreatedNotifications(result.order_id);
+  await issueDigitalEntitlements(result.order_id);
+
+  return NextResponse.json({
+    orderId: result.order_id,
+    status: "paid",
+    totalCents: result.total_cents,
+    discountCents: result.discount_cents,
+    promoCode: result.promo_code,
+    paymentMode: "stub"
+  });
+}
+
+async function resumeStripeCheckout(
+  supabase: CheckoutAdminClient,
+  checkout: CheckoutAttemptRow
+) {
+  if (checkout.status === "completed" && checkout.order_id) {
+    return NextResponse.json({
+      orderId: checkout.order_id,
+      status: "paid",
+      paymentMode: "stripe"
+    });
+  }
+  if (checkout.status !== "pending") {
+    return NextResponse.json(
+      { error: "This checkout attempt can no longer be used. Please try checkout again." },
+      { status: 409 }
+    );
+  }
+  if (checkout.stripe_checkout_session_id && checkout.stripe_checkout_url) {
+    return NextResponse.json({
+      mode: "checkout",
+      checkoutUrl: checkout.stripe_checkout_url,
+      sessionId: checkout.stripe_checkout_session_id,
+      paymentMode: "stripe"
+    });
+  }
+  if (!checkout.stripe_account_id_snapshot) {
+    return NextResponse.json({ error: "This checkout attempt is missing its payment configuration." }, { status: 409 });
+  }
+
+  const checkoutHasDigitalItems = checkout.items.some((item) => item.productType === "digital");
+  const checkoutHasPhysicalItems = checkout.items.some((item) => item.productType !== "digital");
+  const checkoutSubtotalCents = checkout.items.reduce(
+    (sum, item) => sum + item.unitPriceCents * item.quantity,
+    0
+  );
+  const checkoutDiscountCents = Math.max(
+    0,
+    checkoutSubtotalCents - (checkout.item_total_cents ?? checkoutSubtotalCents)
+  );
+  let digitalManifestId = checkout.digital_manifest_id;
+  if (checkoutHasDigitalItems && !digitalManifestId) {
+    try {
+      digitalManifestId = (await createDigitalManifestForCheckout(checkout))?.manifestId ?? null;
+    } catch (error) {
+      return markManifestFailure(supabase, checkout, error);
+    }
+  }
+
+  const digitalManifestMetadata = digitalManifestId
+    ? buildDigitalManifestStripeMetadata(digitalManifestId)
+    : {};
+  const stripeAccountId = checkout.stripe_account_id_snapshot;
+  const metadata = {
+    checkout_kind: "storefront_order",
+    storefront_checkout_id: checkout.id,
+    store_id: checkout.store_id,
+    store_slug: checkout.store_slug,
+    promo_codes: checkout.promo_codes_json.join(","),
+    pickup_location_id: checkout.pickup_location_id ?? "",
+    pickup_window_start_at: checkout.pickup_window_start_at ?? "",
+    pickup_window_end_at: checkout.pickup_window_end_at ?? "",
+    ...digitalManifestMetadata
+  };
+  const paymentIntentData: {
+    transfer_data: { destination: string };
+    application_fee_amount?: number;
+    metadata: Record<string, string>;
+  } = {
+    transfer_data: { destination: stripeAccountId },
+    metadata
+  };
+  if ((checkout.platform_fee_cents ?? 0) > 0) {
+    paymentIntentData.application_fee_amount = checkout.platform_fee_cents ?? 0;
+  }
+
+  let sessionId: string | null = null;
+  let sessionUrl: string | null = null;
+  try {
+    const session = await getStripeClient().checkout.sessions.create({
+      mode: "payment",
+      customer_email: checkout.customer_email,
+      ...(checkout.tax_collection_mode_snapshot === "stripe_tax"
+        ? {
+            automatic_tax: {
+              enabled: true,
+              liability: { type: "account" as const, account: stripeAccountId }
+            }
+          }
+        : {}),
+      billing_address_collection: "auto",
+      ...(checkoutHasPhysicalItems && checkout.fulfillment_method === "shipping"
+        ? { shipping_address_collection: { allowed_countries: ["US" as const] } }
+        : {}),
+      line_items: buildStripeCheckoutLineItems(checkout.items, checkoutDiscountCents),
+      ...(checkoutHasPhysicalItems && checkout.fulfillment_method === "shipping"
+        ? {
+            shipping_options: [{
+              shipping_rate_data: {
+                display_name: checkout.fulfillment_label ?? "Shipping",
+                type: "fixed_amount" as const,
+                fixed_amount: { amount: checkout.shipping_fee_cents, currency: "usd" }
+              }
+            }]
+          }
+        : {}),
+      success_url: `${getAppUrl()}${buildStorefrontCheckoutPath(checkout.store_slug)}?status=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${getAppUrl()}${buildStorefrontCheckoutPath(checkout.store_slug)}?status=cancelled`,
+      metadata: { ...metadata, promo_code: checkout.promo_code ?? "" },
+      payment_intent_data: paymentIntentData
+    }, {
+      idempotencyKey: `storefront-checkout:${checkout.id}`
+    });
+    sessionId = session.id;
+    sessionUrl = session.url;
+  } catch (error) {
+    await supabase
+      .from("storefront_checkout_sessions")
+      .update({ error_message: error instanceof Error ? error.message : "Stripe checkout session creation failed." })
+      .eq("id", checkout.id);
+    return NextResponse.json(
+      { error: "We could not confirm checkout yet. Please try again; you will not be charged twice." },
+      { status: 503, headers: { "Retry-After": "2" } }
+    );
+  }
+
+  if (!sessionId || !sessionUrl) {
+    await supabase
+      .from("storefront_checkout_sessions")
+      .update({ error_message: "Stripe checkout session did not return required session data." })
+      .eq("id", checkout.id);
+    return NextResponse.json(
+      { error: "We could not confirm checkout yet. Please try again; you will not be charged twice." },
+      { status: 503, headers: { "Retry-After": "2" } }
+    );
+  }
+
+  const { error } = await supabase.rpc("bind_storefront_checkout_stripe_session", {
+    p_checkout_session_id: checkout.id,
+    p_store_id: checkout.store_id,
+    p_stripe_checkout_session_id: sessionId,
+    p_stripe_checkout_url: sessionUrl
+  });
+  if (error) {
+    return NextResponse.json(
+      { error: "Checkout was created, but we could not confirm it yet. Please try again; you will not be charged twice." },
+      { status: 503, headers: { "Retry-After": "2" } }
+    );
+  }
+
+  return NextResponse.json({
+    mode: "checkout",
+    checkoutUrl: sessionUrl,
+    sessionId,
+    paymentMode: "stripe"
+  });
+}
+
 export async function POST(request: NextRequest) {
   const trustedOriginResponse = enforceTrustedOrigin(request);
 
@@ -343,27 +653,10 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const { data: taxDecision, error: taxDecisionError } = await supabase
-    .from("stores")
-    .select("tax_collection_mode")
-    .eq("id", store.id)
-    .maybeSingle<{ tax_collection_mode: StoreTaxCollectionMode }>();
-
-  if (taxDecisionError && !isMissingColumnInSchemaCache(taxDecisionError, "tax_collection_mode")) {
-    return NextResponse.json({ error: taxDecisionError.message }, { status: 500 });
-  }
-
-  const taxCollectionMode: StoreTaxCollectionMode = isMissingColumnInSchemaCache(taxDecisionError, "tax_collection_mode")
-    ? "unconfigured"
-    : (taxDecision?.tax_collection_mode ?? "unconfigured");
-
-  const sessionLink = await resolveStorefrontSessionLink(supabase, {
-    storeId: store.id,
-    sessionKey: analyticsSessionId
-  });
-
-  let sourceCartId: string | null = null;
-  if (authenticatedUser) {
+  const findActiveCartId = async () => {
+    if (!authenticatedUser) {
+      return null;
+    }
     const { data: activeCart } = await serverSupabase
       .from("customer_carts")
       .select("id")
@@ -374,7 +667,11 @@ export async function POST(request: NextRequest) {
       .limit(1)
       .maybeSingle<{ id: string }>();
 
-    sourceCartId = activeCart?.id ?? null;
+    return activeCart?.id ?? null;
+  };
+  let sourceCartId: string | null = null;
+  if (!checkoutAttemptId) {
+    sourceCartId = await findActiveCartId();
   }
 
   const checkoutAttemptIdentity = resolveCheckoutAttemptIdentity({
@@ -400,6 +697,52 @@ export async function POST(request: NextRequest) {
       items
     }
   });
+
+  const { data: existingCheckoutData, error: existingCheckoutError } = await supabase.rpc(
+    "get_storefront_checkout_attempt",
+    {
+      p_store_id: store.id,
+      p_checkout_attempt_key: checkoutAttemptIdentity.attemptKey,
+      p_request_fingerprint_sha256: checkoutAttemptIdentity.fingerprintSha256
+    }
+  );
+  if (existingCheckoutError) {
+    const fingerprintConflict = existingCheckoutError.message?.includes("different purchase details");
+    return NextResponse.json(
+      { error: fingerprintConflict ? "This checkout attempt does not match the original purchase." : "Unable to resume checkout." },
+      { status: fingerprintConflict ? 409 : 500 }
+    );
+  }
+
+  const existingCheckout = existingCheckoutData as CheckoutAttemptRow | null;
+  if (existingCheckout?.checkout_mode === "stub") {
+    return resumeStubCheckout(supabase, existingCheckout);
+  }
+  if (existingCheckout?.checkout_mode === "stripe") {
+    return resumeStripeCheckout(supabase, existingCheckout);
+  }
+
+  if (checkoutAttemptId) {
+    sourceCartId = await findActiveCartId();
+  }
+  const sessionLink = await resolveStorefrontSessionLink(supabase, {
+    storeId: store.id,
+    sessionKey: analyticsSessionId
+  });
+
+  const { data: taxDecision, error: taxDecisionError } = await supabase
+    .from("stores")
+    .select("tax_collection_mode")
+    .eq("id", store.id)
+    .maybeSingle<{ tax_collection_mode: StoreTaxCollectionMode }>();
+
+  if (taxDecisionError && !isMissingColumnInSchemaCache(taxDecisionError, "tax_collection_mode")) {
+    return NextResponse.json({ error: taxDecisionError.message }, { status: 500 });
+  }
+
+  const taxCollectionMode: StoreTaxCollectionMode = isMissingColumnInSchemaCache(taxDecisionError, "tax_collection_mode")
+    ? "unconfigured"
+    : (taxDecision?.tax_collection_mode ?? "unconfigured");
 
   const { data: checkoutSettings, error: checkoutSettingsError } = await supabase
     .from("store_settings")
@@ -956,6 +1299,7 @@ export async function POST(request: NextRequest) {
     pickup_timezone: resolvedPickupTimezone,
     promo_code: normalizedPromoCode,
     promo_codes_json: normalizedPromoCodes,
+    applied_promotions_json: appliedPromotions,
     analytics_session_key: sessionLink?.sessionKey ?? null,
     analytics_session_id: sessionLink?.id ?? null,
     source_cart_id: sourceCartId,
@@ -966,20 +1310,11 @@ export async function POST(request: NextRequest) {
     platform_fee_cents: platformFeeCents,
     attribution_json: attribution ?? {},
     items: rpcItems,
+    checkout_mode: shouldUseStubMode ? "stub" : "stripe",
+    stripe_account_id_snapshot: shouldUseStubMode ? null : store.stripe_account_id,
+    tax_collection_mode_snapshot: taxCollectionMode,
     status: "pending"
   } as const;
-
-  type CheckoutAttemptRow = Omit<typeof pendingCheckoutValues, "status"> & {
-    id: string;
-    status: "pending" | "completed" | "failed";
-    order_id: string | null;
-    digital_manifest_id: string | null;
-    stripe_checkout_session_id: string | null;
-    stripe_checkout_url: string | null;
-    checkout_attempt_key: string;
-    checkout_request_fingerprint_sha256: string;
-    created: boolean;
-  };
 
   const createPendingCheckout = async () => {
     const result = await supabase.rpc("create_or_reuse_storefront_checkout_attempt", {
@@ -995,21 +1330,6 @@ export async function POST(request: NextRequest) {
     };
   };
 
-  const createDigitalManifest = async (checkout: CheckoutAttemptRow) => {
-    if (!checkout.digital_consent_accepted_at) {
-      return null;
-    }
-    return createOrReuseCheckoutManifest({
-      checkoutSessionId: checkout.id,
-      storeId: store.id,
-      items: [...checkout.items],
-      consent: {
-        version: checkout.digital_consent_version ?? DIGITAL_PRODUCT_CONFIG.consentVersion,
-        acceptedAt: checkout.digital_consent_accepted_at
-      }
-    });
-  };
-
   if (shouldUseStubMode) {
     const { data: pendingCheckout, error: pendingCheckoutError } = await createPendingCheckout();
     if (pendingCheckoutError || !pendingCheckout) {
@@ -1019,142 +1339,7 @@ export async function POST(request: NextRequest) {
         { status: fingerprintConflict ? 409 : 500 }
       );
     }
-    if (pendingCheckout.status === "completed" && pendingCheckout.order_id) {
-      return NextResponse.json({
-        orderId: pendingCheckout.order_id,
-        status: "paid",
-        totalCents: (pendingCheckout.item_total_cents ?? 0) + pendingCheckout.shipping_fee_cents,
-        paymentMode: "stub"
-      });
-    }
-    if (pendingCheckout.status !== "pending") {
-      return NextResponse.json(
-        { error: "This checkout attempt can no longer be used. Please try checkout again." },
-        { status: 409 }
-      );
-    }
-
-    const stubPaymentRef = `stub_pi_${pendingCheckout.id.replaceAll("-", "")}`;
-    let manifestId: string | null = null;
-
-    if (hasDigitalItems) {
-      try {
-        manifestId = pendingCheckout.digital_manifest_id ?? (await createDigitalManifest(pendingCheckout))?.manifestId ?? null;
-      } catch (error) {
-        await supabase
-          .from("storefront_checkout_sessions")
-          .update({ status: "failed", error_message: "Digital files were not ready for checkout." })
-          .eq("id", pendingCheckout.id);
-        const status = error instanceof DigitalPurchaseManifestError ? 409 : 500;
-        return NextResponse.json(
-          { error: error instanceof Error ? error.message : "Digital files are not ready for checkout." },
-          { status }
-        );
-      }
-    }
-
-    const { data, error } = await supabase.rpc(
-      "stub_checkout_create_paid_order_with_manifest",
-      buildStubCheckoutWithManifestRpcPayload({
-        storeSlug,
-        customerEmail: pendingCheckout.customer_email,
-        customerUserId: authenticatedUser?.id ?? null,
-        items: pendingCheckout.items,
-        stubPaymentRef,
-        discountCents,
-        promoCode: null,
-        checkoutSessionId: pendingCheckout.id,
-        digitalManifestId: manifestId
-      })
-    );
-
-    if (error) {
-      const message = error.message || "Unable to complete checkout.";
-      if (message.includes("Store not found")) {
-        return NextResponse.json({ error: message }, { status: 404 });
-      }
-      if (message.includes("Insufficient inventory") || message.includes("unavailable") || message.includes("Promo")) {
-        return NextResponse.json({ error: message }, { status: 400 });
-      }
-      return NextResponse.json({ error: message }, { status: 500 });
-    }
-
-    const result = Array.isArray(data) ? data[0] : data;
-
-    if (!result?.order_id) {
-      return NextResponse.json({ error: "Checkout did not return an order id." }, { status: 500 });
-    }
-
-    const { data: orderBeforeUpdate, error: orderBeforeUpdateError } = await supabase
-      .from("orders")
-      .select("subtotal_cents,discount_cents")
-      .eq("id", result.order_id)
-      .single<{ subtotal_cents: number; discount_cents: number }>();
-
-    if (orderBeforeUpdateError || !orderBeforeUpdate) {
-      return NextResponse.json({ error: orderBeforeUpdateError?.message ?? "Unable to finalize order details." }, { status: 500 });
-    }
-
-    const computedTotalCents = Math.max(0, orderBeforeUpdate.subtotal_cents - orderBeforeUpdate.discount_cents) + shippingFeeCents;
-
-    const { error: orderUpdateError } = await supabase
-      .from("orders")
-      .update({
-        customer_first_name: firstName,
-        customer_last_name: lastName,
-        customer_phone: normalizedPhone,
-        customer_note: normalizedCustomerNote,
-        fulfillment_method: selectedFulfillment.method,
-        fulfillment_label: selectedFulfillment.label,
-        pickup_location_id: resolvedPickupLocationId,
-        pickup_location_snapshot_json: resolvedPickupLocationSnapshot,
-        pickup_window_start_at: resolvedPickupWindowStartAt,
-        pickup_window_end_at: resolvedPickupWindowEndAt,
-        pickup_timezone: resolvedPickupTimezone,
-        promo_code: normalizedPromoCode,
-        shipping_fee_cents: shippingFeeCents,
-        digital_consent_version: hasDigitalItems ? DIGITAL_PRODUCT_CONFIG.consentVersion : null,
-        digital_consent_accepted_at: digitalConsentAcceptedAt,
-        digital_license_version: hasDigitalItems ? DIGITAL_PRODUCT_CONFIG.licenseVersion : null,
-        total_cents: computedTotalCents
-      })
-      .eq("id", result.order_id);
-
-    if (orderUpdateError) {
-      return NextResponse.json({ error: orderUpdateError.message }, { status: 500 });
-    }
-
-    const promotionPersistenceClient = supabase as unknown as PromotionRedemptionPersistenceClient;
-
-    await persistPromotionRedemptions({
-      supabase: promotionPersistenceClient,
-      appliedPromotions,
-      storeId: store.id,
-      orderId: result.order_id,
-      customerEmail: email,
-      customerUserId: authenticatedUser?.id ?? null
-    });
-
-    await writeOrderFeeBreakdown({
-      orderId: result.order_id,
-      storeId: store.id,
-      feeBaseCents: computedTotalCents,
-      feeProfile,
-      platformFeeCents,
-      netPayoutCents: Math.max(0, computedTotalCents - platformFeeCents)
-    });
-
-    await sendOrderCreatedNotifications(result.order_id);
-    await issueDigitalEntitlements(result.order_id);
-
-    return NextResponse.json({
-      orderId: result.order_id,
-      status: "paid",
-      totalCents: computedTotalCents,
-      discountCents: result.discount_cents,
-      promoCode: result.promo_code,
-      paymentMode: "stub"
-    });
+    return resumeStubCheckout(supabase, pendingCheckout);
   }
 
   if (!store.stripe_account_id) {
@@ -1175,8 +1360,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "This store's Stripe account is not ready to accept live payments yet." }, { status: 409 });
   }
 
-  const stripe = getStripeClient();
-
   const { data: pendingCheckout, error: pendingCheckoutError } = await createPendingCheckout();
 
   if (pendingCheckoutError || !pendingCheckout) {
@@ -1187,212 +1370,5 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (pendingCheckout.status === "completed" && pendingCheckout.order_id) {
-    return NextResponse.json({
-      orderId: pendingCheckout.order_id,
-      status: "paid",
-      paymentMode: "stripe"
-    });
-  }
-
-  if (pendingCheckout.status !== "pending") {
-    return NextResponse.json(
-      { error: "This checkout attempt can no longer be used. Please try checkout again." },
-      { status: 409 }
-    );
-  }
-
-  if (pendingCheckout.stripe_checkout_session_id && pendingCheckout.stripe_checkout_url) {
-    return NextResponse.json({
-      mode: "checkout",
-      checkoutUrl: pendingCheckout.stripe_checkout_url,
-      sessionId: pendingCheckout.stripe_checkout_session_id,
-      paymentMode: "stripe"
-    });
-  }
-
-  const checkoutItems = [...pendingCheckout.items];
-  const checkoutHasDigitalItems = checkoutItems.some((item) => item.productType === "digital");
-  const checkoutHasPhysicalItems = checkoutItems.some((item) => item.productType !== "digital");
-  const checkoutSubtotalCents = checkoutItems.reduce(
-    (sum, item) => sum + item.unitPriceCents * item.quantity,
-    0
-  );
-  const checkoutDiscountCents = Math.max(
-    0,
-    checkoutSubtotalCents - (pendingCheckout.item_total_cents ?? checkoutSubtotalCents)
-  );
-  const applicationFeeAmount = pendingCheckout.platform_fee_cents ?? 0;
-  let digitalManifestId: string | null = pendingCheckout.digital_manifest_id;
-  if (checkoutHasDigitalItems && !digitalManifestId) {
-    try {
-      digitalManifestId = (await createDigitalManifest(pendingCheckout))?.manifestId ?? null;
-    } catch (error) {
-      await supabase
-        .from("storefront_checkout_sessions")
-        .update({ status: "failed", error_message: "Digital files were not ready for checkout." })
-        .eq("id", pendingCheckout.id);
-      const status = error instanceof DigitalPurchaseManifestError ? 409 : 500;
-      return NextResponse.json(
-        { error: error instanceof Error ? error.message : "Digital files are not ready for checkout." },
-        { status }
-      );
-    }
-  }
-
-  const digitalManifestMetadata = digitalManifestId
-    ? buildDigitalManifestStripeMetadata(digitalManifestId)
-    : {};
-
-  const appUrl = getAppUrl();
-
-  const paymentIntentData: {
-    transfer_data: { destination: string };
-    application_fee_amount?: number;
-    metadata: Record<string, string>;
-  } = {
-    transfer_data: {
-      destination: store.stripe_account_id
-    },
-    metadata: {
-      checkout_kind: "storefront_order",
-      storefront_checkout_id: pendingCheckout.id,
-      store_id: store.id,
-      store_slug: store.slug,
-      promo_codes: pendingCheckout.promo_codes_json.join(","),
-      pickup_location_id: pendingCheckout.pickup_location_id ?? "",
-      pickup_window_start_at: pendingCheckout.pickup_window_start_at ?? "",
-      pickup_window_end_at: pendingCheckout.pickup_window_end_at ?? "",
-      ...digitalManifestMetadata
-    }
-  };
-
-  if (applicationFeeAmount > 0) {
-    paymentIntentData.application_fee_amount = applicationFeeAmount;
-  }
-
-  let sessionId: string | null = null;
-  let sessionUrl: string | null = null;
-  const stripeLineItems = buildStripeCheckoutLineItems(
-    checkoutItems.map((item) => ({
-      productTitle: item.productTitle,
-      variantLabel: item.variantLabel,
-      quantity: item.quantity,
-      unitPriceCents: item.unitPriceCents
-    })),
-    checkoutDiscountCents
-  );
-
-  try {
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      customer_email: pendingCheckout.customer_email,
-      ...(taxCollectionMode === "stripe_tax"
-        ? {
-            automatic_tax: {
-              enabled: true,
-              liability: {
-                type: "account",
-                account: store.stripe_account_id
-              }
-            }
-          }
-        : {}),
-      billing_address_collection: "auto",
-      ...(checkoutHasPhysicalItems && pendingCheckout.fulfillment_method === "shipping"
-        ? {
-            shipping_address_collection: {
-              allowed_countries: ["US"]
-            }
-          }
-        : {}),
-      line_items: stripeLineItems,
-      ...(checkoutHasPhysicalItems && pendingCheckout.fulfillment_method === "shipping"
-        ? {
-            shipping_options: [
-              {
-                shipping_rate_data: {
-                  display_name: pendingCheckout.fulfillment_label ?? "Shipping",
-                  type: "fixed_amount",
-                  fixed_amount: {
-                    amount: pendingCheckout.shipping_fee_cents,
-                    currency: "usd"
-                  }
-                }
-              }
-            ]
-          }
-        : {}),
-      success_url: `${appUrl}${buildStorefrontCheckoutPath(store.slug)}?status=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${appUrl}${buildStorefrontCheckoutPath(store.slug)}?status=cancelled`,
-      metadata: {
-        checkout_kind: "storefront_order",
-        storefront_checkout_id: pendingCheckout.id,
-        store_id: store.id,
-        store_slug: store.slug,
-        promo_code: pendingCheckout.promo_code ?? "",
-        promo_codes: pendingCheckout.promo_codes_json.join(","),
-        pickup_location_id: pendingCheckout.pickup_location_id ?? "",
-        pickup_window_start_at: pendingCheckout.pickup_window_start_at ?? "",
-        pickup_window_end_at: pendingCheckout.pickup_window_end_at ?? "",
-        ...digitalManifestMetadata
-      },
-      payment_intent_data: paymentIntentData
-    }, {
-      idempotencyKey: `storefront-checkout:${pendingCheckout.id}`
-    });
-
-    sessionId = session.id;
-    sessionUrl = session.url;
-  } catch (error) {
-    await supabase
-      .from("storefront_checkout_sessions")
-      .update({
-        error_message: error instanceof Error ? error.message : "Stripe checkout session creation failed."
-      })
-      .eq("id", pendingCheckout.id);
-
-    return NextResponse.json(
-      { error: "We could not confirm checkout yet. Please try again; you will not be charged twice." },
-      { status: 503, headers: { "Retry-After": "2" } }
-    );
-  }
-
-  if (!sessionId || !sessionUrl) {
-    await supabase
-      .from("storefront_checkout_sessions")
-      .update({
-        error_message: "Stripe checkout session did not return required session data."
-      })
-      .eq("id", pendingCheckout.id);
-
-    return NextResponse.json(
-      { error: "We could not confirm checkout yet. Please try again; you will not be charged twice." },
-      { status: 503, headers: { "Retry-After": "2" } }
-    );
-  }
-
-  const { error: updateCheckoutError } = await supabase.rpc(
-    "bind_storefront_checkout_stripe_session",
-    {
-      p_checkout_session_id: pendingCheckout.id,
-      p_store_id: store.id,
-      p_stripe_checkout_session_id: sessionId,
-      p_stripe_checkout_url: sessionUrl
-    }
-  );
-
-  if (updateCheckoutError) {
-    return NextResponse.json(
-      { error: "Checkout was created, but we could not confirm it yet. Please try again; you will not be charged twice." },
-      { status: 503, headers: { "Retry-After": "2" } }
-    );
-  }
-
-  return NextResponse.json({
-    mode: "checkout",
-    checkoutUrl: sessionUrl,
-    sessionId,
-    paymentMode: "stripe"
-  });
+  return resumeStripeCheckout(supabase, pendingCheckout);
 }

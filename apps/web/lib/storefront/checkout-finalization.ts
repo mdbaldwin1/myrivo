@@ -7,7 +7,6 @@ import {
   type PromotionRedemptionPersistenceClient
 } from "@/lib/promotions/persist-redemptions";
 import {
-  buildStubCheckoutRpcPayload,
   buildStubCheckoutWithManifestRpcPayload
 } from "@/lib/storefront/stub-checkout";
 import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
@@ -103,6 +102,30 @@ type StorefrontCheckoutRecord = {
 function normalizeAddressField(value: string | null | undefined) {
   const next = value?.trim();
   return next ? next : undefined;
+}
+
+export async function bindStorefrontCheckoutStripeSession({
+  checkoutSessionId,
+  storeId,
+  stripeCheckoutSessionId,
+  stripeCheckoutUrl
+}: {
+  checkoutSessionId: string;
+  storeId: string;
+  stripeCheckoutSessionId: string;
+  stripeCheckoutUrl: string | null;
+}) {
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase.rpc("bind_storefront_checkout_stripe_session", {
+    p_checkout_session_id: checkoutSessionId,
+    p_store_id: storeId,
+    p_stripe_checkout_session_id: stripeCheckoutSessionId,
+    p_stripe_checkout_url: stripeCheckoutUrl
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
 }
 
 export function extractShippingAddressSnapshot(
@@ -382,31 +405,19 @@ export async function finalizeStorefrontCheckout(
   }
 
   const { data: rpcResult, error: rpcError } = await supabase.rpc(
-    checkout.digital_manifest_id
-      ? "stub_checkout_create_paid_order_with_manifest"
-      : "stub_checkout_create_paid_order",
-    checkout.digital_manifest_id
-      ? buildStubCheckoutWithManifestRpcPayload({
-          storeSlug: checkout.store_slug,
-          customerEmail: checkout.customer_email,
-          customerUserId: await resolveCheckoutCustomerUserId(supabase, checkout.source_cart_id),
-          items: checkout.items,
-          stubPaymentRef: paymentIntentId,
-          discountCents: resolveCheckoutDiscountCents(checkout),
-          promoCode: null,
-          checkoutSessionId: checkout.id,
-          digitalManifestId: checkout.digital_manifest_id
-        })
-      : buildStubCheckoutRpcPayload({
-        storeSlug: checkout.store_slug,
-        customerEmail: checkout.customer_email,
-        customerUserId: await resolveCheckoutCustomerUserId(supabase, checkout.source_cart_id),
-        items: checkout.items,
-        stubPaymentRef: paymentIntentId,
-        discountCents: resolveCheckoutDiscountCents(checkout),
-        promoCode: null
-        })
-    );
+    "stub_checkout_create_paid_order_with_manifest",
+    buildStubCheckoutWithManifestRpcPayload({
+      storeSlug: checkout.store_slug,
+      customerEmail: checkout.customer_email,
+      customerUserId: null,
+      items: checkout.items,
+      stubPaymentRef: paymentIntentId,
+      discountCents: resolveCheckoutDiscountCents(checkout),
+      promoCode: checkout.promo_code,
+      checkoutSessionId: checkout.id,
+      digitalManifestId: checkout.digital_manifest_id
+    })
+  );
 
   if (rpcError) {
     const { error: markFailedError } = await supabase
@@ -440,11 +451,6 @@ export async function finalizeStorefrontCheckout(
 
   const shippingFeeCents = Math.max(0, checkout.shipping_fee_cents ?? 0);
   const computedTotalCents = Math.max(0, createdOrderRow.subtotal_cents - createdOrderRow.discount_cents) + shippingFeeCents;
-  const fallbackFeeProfile = await resolveStoreFeeProfile(checkout.store_id);
-  const feeProfile = resolveCheckoutFeeSnapshot(checkout, fallbackFeeProfile);
-  const platformFeeCents =
-    checkout.platform_fee_cents ??
-    calculatePlatformFeeCents(computedTotalCents, feeProfile);
 
   const { error: orderSyncError } = await supabase
     .from("orders")
@@ -478,21 +484,6 @@ export async function finalizeStorefrontCheckout(
     throw new Error(orderSyncError.message);
   }
 
-  const promotionPersistenceClient = supabase as unknown as PromotionRedemptionPersistenceClient;
-
-  await persistPromotionRedemptions({
-    supabase: promotionPersistenceClient,
-    appliedPromotions: await resolveAppliedCheckoutPromotions(supabase, checkout),
-    storeId: checkout.store_id,
-    orderId,
-    customerEmail: checkout.customer_email,
-    customerUserId: await resolveCheckoutCustomerUserId(supabase, checkout.source_cart_id)
-  });
-
-  if (checkout.source_cart_id) {
-    await supabase.from("customer_carts").update({ status: "ordered" }).eq("id", checkout.source_cart_id);
-  }
-
   const { error: updateError } = await supabase
     .from("storefront_checkout_sessions")
     .update({
@@ -507,15 +498,6 @@ export async function finalizeStorefrontCheckout(
   if (updateError) {
     throw new Error(updateError.message);
   }
-
-  await writeOrderFeeBreakdown({
-    orderId,
-    storeId: checkout.store_id,
-    feeBaseCents: computedTotalCents,
-    feeProfile,
-    platformFeeCents,
-    netPayoutCents: Math.max(0, computedTotalCents - platformFeeCents)
-  });
 
   await sendOrderCreatedNotifications(orderId);
   await issueDigitalEntitlements(orderId);

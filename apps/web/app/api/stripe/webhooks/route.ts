@@ -3,7 +3,11 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { getStripeEnv, isStripeStubMode } from "@/lib/env";
 import { syncStripeDisputeRecord, syncStripeRefundRecord } from "@/lib/orders/refund-dispute-sync";
-import { finalizeStorefrontCheckout, markStorefrontCheckoutFailed } from "@/lib/storefront/checkout-finalization";
+import {
+  bindStorefrontCheckoutStripeSession,
+  finalizeStorefrontCheckout,
+  markStorefrontCheckoutFailed
+} from "@/lib/storefront/checkout-finalization";
 import {
   beginStripeWebhookEventProcessing,
   markStripeWebhookEventFailed,
@@ -43,8 +47,15 @@ export async function POST(request: Request) {
 
       if (checkoutKind === "storefront_order") {
         const checkoutId = session.metadata?.storefront_checkout_id;
+        const storeId = session.metadata?.store_id;
 
-        if (checkoutId) {
+        if (checkoutId && storeId && session.id) {
+          await bindStorefrontCheckoutStripeSession({
+            checkoutSessionId: checkoutId,
+            storeId,
+            stripeCheckoutSessionId: session.id,
+            stripeCheckoutUrl: session.url ?? null
+          });
           const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
           if (session.payment_status === "paid") {
             await finalizeStorefrontCheckout(
@@ -53,6 +64,8 @@ export async function POST(request: Request) {
               session as unknown as { shipping_details?: { name?: string | null; address?: { line1?: string | null; line2?: string | null; city?: string | null; state?: string | null; postal_code?: string | null; country?: string | null } | null } | null }
             );
           }
+        } else if (checkoutId) {
+          throw new Error("Storefront checkout session metadata is incomplete.");
         }
 
         await markStripeWebhookEventProcessed(event.id);
