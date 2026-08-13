@@ -96,6 +96,17 @@ export function DigitalOrderDeliveryPanel({
     : summary.accessStatus === "expired"
       ? "Access link expired — files remain eligible for a fresh link"
       : `Access ${summary.accessStatus}`;
+  const resendUnavailableReason = summary.deliveryStatus !== "succeeded"
+    ? "Complete the initial delivery before sending a fresh link."
+    : summary.notificationStatus !== "succeeded"
+      ? "The initial delivery email must be sent before sending a fresh link."
+      : summary.activeDisputeStatus || summary.accessStatus === "suspended"
+        ? "Downloads are suspended and cannot receive a fresh link."
+        : summary.accessStatus === "revoked"
+          ? "Downloads were revoked and cannot receive a fresh link."
+          : summary.accessStatus === "pending"
+            ? "Download access is not ready for a fresh link."
+            : null;
 
   return (
     <section className="space-y-4 rounded-xl border border-border/70 bg-background p-4" aria-labelledby="digital-delivery-heading">
@@ -104,9 +115,12 @@ export function DigitalOrderDeliveryPanel({
           <h3 id="digital-delivery-heading" className="text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Digital delivery</h3>
           <p className="mt-1 font-medium">{summary.fileCount} manifest {summary.fileCount === 1 ? "file" : "files"}</p>
         </div>
-        <Button type="button" size="sm" variant="outline" disabled={sending || summary.accessStatus === "revoked" || summary.accessStatus === "pending"} onClick={() => void resend()}>
-          {sending ? "Queueing…" : feedback?.kind === "error" ? "Try sending again" : "Send fresh access link"}
-        </Button>
+        <div className="max-w-sm space-y-1 sm:text-right">
+          <Button type="button" size="sm" variant="outline" disabled={sending || Boolean(resendUnavailableReason)} aria-describedby={resendUnavailableReason ? "digital-resend-unavailable" : undefined} onClick={() => void resend()}>
+            {sending ? "Queueing…" : feedback?.kind === "error" ? "Try sending again" : "Send fresh access link"}
+          </Button>
+          {resendUnavailableReason ? <p id="digital-resend-unavailable" className="text-xs text-muted-foreground">{resendUnavailableReason}</p> : null}
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2">

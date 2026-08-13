@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import React from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { StorefrontCheckoutPage } from "@/components/storefront/storefront-checkout-page";
 
@@ -18,9 +18,17 @@ vi.mock("@/components/storefront/storefront-runtime-provider", () => ({ useOptio
 vi.mock("@/components/storefront/storefront-analytics-provider", () => ({ useOptionalStorefrontAnalytics: () => null }));
 vi.mock("@/components/storefront/use-storefront-analytics-events", () => ({ useStorefrontPageView: () => undefined }));
 vi.mock("@/lib/analytics/storefront-instrumentation", () => ({ markStorefrontCheckoutCompletedTracked: () => true }));
+vi.mock("@/lib/storefront/checkout-return-polling", () => ({
+  CHECKOUT_RETURN_POLLING: {
+    timeoutMs: 250,
+    initialDelayMs: 1,
+    maximumDelayMs: 4,
+    backoffMultiplier: 2
+  }
+}));
 
 function renderPage() {
-  render(
+  return render(
     <StorefrontCheckoutPage
       store={{ id: "store-1", name: "Art Store", slug: "art-store" }}
       branding={null}
@@ -44,6 +52,7 @@ describe("digital checkout return", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   test("keeps polling while files are processing, then shows a safe download action and mixed-order next steps", async () => {
@@ -82,5 +91,84 @@ describe("digital checkout return", () => {
 
     expect(await screen.findByText("Preparing files")).toBeTruthy();
     expect(screen.queryByRole("link", { name: "View downloads" })).toBeNull();
+  });
+
+  test("continues polling beyond the previous eight-attempt limit", async () => {
+    let attempt = 0;
+    const fetchMock = vi.fn(async () => {
+      attempt += 1;
+      return new Response(JSON.stringify(attempt <= 10 ? {
+        status: "completed",
+        orderId: "order-long-running",
+        checkoutComposition: "digital_only",
+        digitalDeliveryStatus: "processing"
+      } : {
+        status: "completed",
+        orderId: "order-long-running",
+        checkoutComposition: "digital_only",
+        digitalDeliveryStatus: "succeeded",
+        digitalAccessUrl: "/downloads/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO12"
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+
+    expect(await screen.findByRole("link", { name: "View downloads" })).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(11);
+  });
+
+  test("stops polling after unmount and aborts the active request", async () => {
+    const signals: AbortSignal[] = [];
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      signals.push(init?.signal as AbortSignal);
+      return new Response(JSON.stringify({
+        status: "completed",
+        orderId: "order-unmounted",
+        checkoutComposition: "digital_only",
+        digitalDeliveryStatus: "processing"
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const view = renderPage();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    view.unmount();
+    const callsAtUnmount = fetchMock.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 15));
+
+    expect(fetchMock).toHaveBeenCalledTimes(callsAtUnmount);
+    expect(signals[0]?.aborted).toBe(true);
+  });
+
+  test("offers a manual status retry after the long-poll timeout", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      status: "completed",
+      orderId: "order-timeout",
+      checkoutComposition: "digital_only",
+      digitalDeliveryStatus: "processing"
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+
+    const retry = screen.getByRole("button", { name: "Check again" });
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      status: "completed",
+      orderId: "order-timeout",
+      checkoutComposition: "digital_only",
+      digitalDeliveryStatus: "succeeded",
+      digitalAccessUrl: "/downloads/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO12"
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+    retry.click();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(screen.getByRole("link", { name: "View downloads" })).toBeTruthy();
   });
 });

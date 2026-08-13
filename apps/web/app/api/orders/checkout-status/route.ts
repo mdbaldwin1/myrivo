@@ -39,6 +39,7 @@ async function completedCheckoutResponse(
         {
           status: "delivery_failed",
           orderId,
+          ...(checkoutComposition ? { checkoutComposition } : {}),
           digitalDeliveryStatus: "failed",
           error:
             "Payment was received, but the digital downloads could not be prepared. Contact the store for help with this order."

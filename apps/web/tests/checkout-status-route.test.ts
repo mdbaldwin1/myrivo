@@ -99,7 +99,8 @@ describe("checkout status route", () => {
       order_id: null,
       error_message: null,
       stripe_payment_intent_id: "pi_123",
-      digital_manifest_id: "manifest-1"
+      digital_manifest_id: "manifest-1",
+      checkout_composition: "mixed"
     });
     finalizeStorefrontCheckoutMock.mockResolvedValue({
       status: "completed",
@@ -121,6 +122,7 @@ describe("checkout status route", () => {
     await expect(response.json()).resolves.toMatchObject({
       status: "delivery_failed",
       orderId: "order-1",
+      checkoutComposition: "mixed",
       digitalDeliveryStatus: "failed"
     });
   });
@@ -275,7 +277,8 @@ describe("checkout status route", () => {
       order_id: "order-1",
       error_message: null,
       stripe_payment_intent_id: "pi_123",
-      digital_manifest_id: "manifest-1"
+      digital_manifest_id: "manifest-1",
+      checkout_composition: "mixed"
     });
     enqueueDigitalDeliveryMock.mockResolvedValue({
       id: "delivery-job-1",
@@ -295,6 +298,7 @@ describe("checkout status route", () => {
     expect(payload).toEqual({
       status: "delivery_failed",
       orderId: "order-1",
+      checkoutComposition: "mixed",
       digitalDeliveryStatus: "failed",
       error:
         "Payment was received, but the digital downloads could not be prepared. Contact the store for help with this order."

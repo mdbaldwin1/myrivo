@@ -96,3 +96,43 @@ The full suite retained the pre-existing refund/dispute mock stderr and zero-siz
 
 - Post-payment first access intentionally fails closed: if delivery is not succeeded or the active purchase token cannot be reconstructed and verified, the response contains no bearer URL and the buyer remains on the retry-safe preparing/support path.
 - Refund/dispute access transitions remain owned by their existing webhook/database workflow; this task makes their current entitlement states and policy consequences explicit in customer and merchant UX.
+
+## Fix 1: Checkout Resilience, Resend Eligibility, and Form Ownership
+
+### Changes
+
+- Replaced the eight-attempt checkout-return loop with configurable bounded-backoff polling for up to ten minutes. Polling now aborts fetches and timers on unmount/navigation, tolerates transient response failures, and exposes a safe **Check again** action after the timeout.
+- Preserved `checkoutComposition` in terminal digital-delivery failures. Mixed-order failures continue to show physical shipping/pickup next steps while digital support guidance remains visible.
+- Associated all required buyer and fulfillment controls with the checkout form and added explicit composition-aware client validation. Invalid submissions stop before fetch, focus the first invalid control, expose an accessible error relationship, require phone only for physical delivery, and continue to let Stripe collect shipping addresses for shipped orders.
+- Disabled merchant resend until the purchase delivery and purchase email both succeed and access remains eligible. Processing, unsent, suspended, revoked, pending, and disputed states now explain why resend is unavailable.
+- Added forward migration `20260813016000_require_completed_purchase_before_digital_resend.sql`. The guarded RPC locks the matching order, requires a succeeded purchase job and succeeded/sent purchase notification bound to the same order/store, preserves the existing serialized/idempotent resend mutation, and removes `service_role` execution from the renamed unchecked implementation.
+
+### TDD Evidence
+
+Initial focused run:
+
+```text
+Test Files 5 failed (5)
+Tests 12 failed | 16 passed (28)
+```
+
+The failures captured the old eight-poll cutoff, absent timeout retry, missing failure composition/physical next step, non-owned required controls, missing pre-fetch validation/focus, and overly broad resend availability. Two assertions were then adapted to the repository's matcher setup without weakening the behavioral checks.
+
+Green focused evidence:
+
+```text
+UI/route/form: 28 passed (28)
+PostgreSQL migration contract: 88 passed (88)
+```
+
+The PostgreSQL cases cover processing delivery denial, a succeeded job with a stuck purchase notification, success after the notification is sent, suspended entitlement denial, and concurrent duplicate eligible resends.
+
+### Validation
+
+- `npm run lint` — passed with zero warnings/errors; consistency checks passed.
+- `npm run typecheck` — passed.
+- `npm test` — 258 files and 1,010 tests passed.
+- `npm run build` — passed; optimized Next.js compilation and TypeScript validation completed.
+- `git diff --check` — passed.
+
+The full suite and build retained the same pre-existing stderr and advisory warnings documented above.

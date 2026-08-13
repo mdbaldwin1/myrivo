@@ -241,6 +241,104 @@ describe("StorefrontCartPage", () => {
     ]);
   });
 
+  test("owns required buyer fields and focuses each invalid field before checkout fetch", async () => {
+    const user = userEvent.setup();
+    const checkoutBodies: Array<Record<string, unknown>> = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith("/api/customer/cart")) {
+        return new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (url.startsWith("/api/orders/checkout")) {
+        checkoutBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response(JSON.stringify({ error: "Unexpected checkout" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    window.localStorage.setItem(
+      "aha-cart:single-store",
+      JSON.stringify([{ productId: "product-validation", variantId: "variant-validation", quantity: 1 }])
+    );
+
+    render(
+      <StorefrontCartPage
+        store={{ id: "store-1", name: "Validation Store", slug: "validation-store" }}
+        branding={null}
+        settings={{
+          announcement: null,
+          support_email: "support@example.test",
+          footer_tagline: null,
+          footer_note: null,
+          instagram_url: null,
+          facebook_url: null,
+          tiktok_url: null,
+          storefront_copy_json: null,
+          checkout_enable_local_pickup: false,
+          checkout_enable_flat_rate_shipping: true,
+          checkout_flat_rate_shipping_label: "Shipping",
+          checkout_flat_rate_shipping_fee_cents: 500,
+          checkout_allow_order_note: false
+        }}
+        products={[{
+          id: "product-validation",
+          title: "Physical print",
+          slug: "physical-print",
+          product_type: "physical",
+          product_variants: [{
+            id: "variant-validation",
+            title: "Default",
+            option_values: {},
+            price_cents: 1800,
+            inventory_qty: 12,
+            is_made_to_order: false,
+            is_default: true,
+            status: "active",
+            sort_order: 0,
+            created_at: "2026-08-13T00:00:00.000Z"
+          }]
+        }]}
+      />
+    );
+
+    const firstName = await screen.findByPlaceholderText("First name") as HTMLInputElement;
+    const lastName = screen.getByPlaceholderText("Last name") as HTMLInputElement;
+    const phone = screen.getByPlaceholderText("Phone") as HTMLInputElement;
+    const email = screen.getByPlaceholderText("you@example.com") as HTMLInputElement;
+    const checkoutButton = screen.getByRole("button", { name: "Checkout" });
+    const checkoutForm = checkoutButton.closest("form");
+
+    expect(firstName.form).toBe(checkoutForm);
+    expect(lastName.form).toBe(checkoutForm);
+    expect(phone.form).toBe(checkoutForm);
+    expect(email.form).toBe(checkoutForm);
+
+    await user.click(checkoutButton);
+    expect(document.activeElement).toBe(firstName);
+    expect(screen.getByRole("status").textContent).toMatch(/first name is required/i);
+
+    await user.type(firstName, "Alice");
+    await user.click(checkoutButton);
+    expect(document.activeElement).toBe(lastName);
+
+    await user.type(lastName, "Buyer");
+    await user.click(checkoutButton);
+    expect(document.activeElement).toBe(phone);
+
+    await user.type(phone, "555-0100");
+    await user.type(email, "not-an-email");
+    await user.click(checkoutButton);
+    expect(document.activeElement).toBe(email);
+    expect(screen.getByRole("status").textContent).toMatch(/valid email address/i);
+    expect(checkoutBodies).toHaveLength(0);
+  });
+
   test("collapses duplicate digital lines and presents instant delivery without physical controls", async () => {
     const promoBodies: Array<Record<string, unknown>> = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -463,13 +561,16 @@ describe("StorefrontCartPage", () => {
       />
     );
 
-    await user.type(await screen.findByPlaceholderText("First name"), "Alice");
+    const firstName = await screen.findByPlaceholderText("First name") as HTMLInputElement;
+    await user.type(firstName, "Alice");
     await user.type(screen.getByPlaceholderText("Last name"), "Buyer");
     await user.type(screen.getByPlaceholderText("you@example.com"), "alice@example.com");
     await user.click(screen.getByRole("checkbox"));
     await user.click(screen.getByRole("button", { name: "Checkout" }));
 
     await waitFor(() => expect(checkoutBody).not.toBeNull());
+    expect(firstName.form).toBe(screen.getByRole("button", { name: "Checkout" }).closest("form"));
+    expect(screen.queryByPlaceholderText("Phone")).toBeNull();
     expect(checkoutBody).not.toHaveProperty("phone");
     expect(checkoutBody).not.toHaveProperty("fulfillmentMethod");
     expect(checkoutBody).toMatchObject({

@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { StorefrontStudioCheckoutPreviewStatePicker, type StorefrontStudioCheckoutPreviewState } from "@/components/storefront/storefront-studio-checkout-preview-state-picker";
 import { StorefrontStudioEditableText } from "@/components/storefront/storefront-studio-editable-text";
 import { AppAlert } from "@/components/ui/app-alert";
+import { Button } from "@/components/ui/button";
 import { buildStorefrontThemeStyle, resolveStorefrontThemeConfig } from "@/lib/theme/storefront-theme";
 import { getStorefrontButtonRadiusClass, getStorefrontCardStyleClass, getStorefrontRadiusClass } from "@/lib/storefront/appearance";
 import { formatCopyTemplate, resolveStorefrontCopy } from "@/lib/storefront/copy";
@@ -27,6 +28,7 @@ import {
   buildStorefrontProductsPath
 } from "@/lib/storefront/paths";
 import { cn } from "@/lib/utils";
+import { CHECKOUT_RETURN_POLLING } from "@/lib/storefront/checkout-return-polling";
 
 type CheckoutStatusResponse = {
   status?: "pending" | "completed" | "delivery_failed" | "failed";
@@ -125,6 +127,8 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
   const [digitalDeliveryStatus, setDigitalDeliveryStatus] = useState<"pending" | "processing" | "succeeded" | "failed" | null>(null);
   const [digitalAccessUrl, setDigitalAccessUrl] = useState<string | null>(null);
   const [checkoutComposition, setCheckoutComposition] = useState<"digital_only" | "physical_only" | "mixed" | null>(null);
+  const [pollTimedOut, setPollTimedOut] = useState(false);
+  const [pollRequest, setPollRequest] = useState(0);
 
   useStorefrontPageView("checkout", {
     status: status ?? "return",
@@ -139,27 +143,33 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
     const safeSessionId = sessionId;
 
     const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      controller.abort();
+      setPollTimedOut(true);
+    }, CHECKOUT_RETURN_POLLING.timeoutMs);
 
     async function poll() {
       setMessage(checkoutPaymentReceivedFinalizing);
       setError(null);
       setDeliveryFailureOrderId(null);
+      setPollTimedOut(false);
 
-      for (let attempt = 0; attempt < 8; attempt += 1) {
-        let response: Response;
+      for (let attempt = 0; !controller.signal.aborted; attempt += 1) {
+        let response: Response | null = null;
+        let payload: CheckoutStatusResponse;
         try {
           response = await fetch(
             `/api/orders/checkout-status?sessionId=${encodeURIComponent(safeSessionId)}&store=${encodeURIComponent(resolvedStore.slug)}`,
             { cache: "no-store", signal: controller.signal }
           );
-        } catch (caught) {
+          payload = (await response.json()) as CheckoutStatusResponse;
+        } catch {
           if (controller.signal.aborted) return;
-          throw caught;
+          payload = {};
         }
-        const payload = (await response.json()) as CheckoutStatusResponse;
         if (controller.signal.aborted) return;
 
-        if (response.ok && payload.status === "completed" && payload.orderId) {
+        if (response?.ok && payload.status === "completed" && payload.orderId) {
           if (markStorefrontCheckoutCompletedTracked(payload.orderId)) {
             analytics?.track({
               eventType: "checkout_completed",
@@ -181,9 +191,11 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
             /^\/downloads\/[A-Za-z0-9_-]{43}$/.test(payload.digitalAccessUrl)
           ) {
             setDigitalAccessUrl(payload.digitalAccessUrl);
+            setPollTimedOut(false);
             return;
           }
           if (!payload.digitalDeliveryStatus) {
+            setPollTimedOut(false);
             return;
           }
         }
@@ -206,30 +218,40 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
           setError(payload.error ?? digitalDeliveryFailedFallback);
           setDigitalDeliveryStatus("failed");
           setCheckoutComposition(payload.checkoutComposition ?? null);
+          setPollTimedOut(false);
           return;
         }
 
         if (payload.status === "failed") {
           setError(payload.error ?? finalizationFailedMessage);
+          setPollTimedOut(false);
           return;
         }
 
+        const delayMs = Math.min(
+          CHECKOUT_RETURN_POLLING.initialDelayMs * CHECKOUT_RETURN_POLLING.backoffMultiplier ** attempt,
+          CHECKOUT_RETURN_POLLING.maximumDelayMs
+        );
         await new Promise<void>((resolve) => {
-          const timeout = setTimeout(resolve, 500);
-          controller.signal.addEventListener("abort", () => {
-            clearTimeout(timeout);
+          let delay: ReturnType<typeof setTimeout> | null = null;
+          const finish = () => {
+            if (delay) clearTimeout(delay);
+            controller.signal.removeEventListener("abort", finish);
             resolve();
-          }, { once: true });
+          };
+          delay = setTimeout(finish, delayMs);
+          controller.signal.addEventListener("abort", finish, { once: true });
         });
         if (controller.signal.aborted) return;
       }
     }
 
-    void poll();
+    void poll().finally(() => clearTimeout(timeout));
     return () => {
+      clearTimeout(timeout);
       controller.abort();
     };
-  }, [analytics, checkoutPaymentReceivedFinalizing, finalizationFailedMessage, orderPlacedTemplate, resolvedStore.slug, sessionId, status, studioEnabled]);
+  }, [analytics, checkoutPaymentReceivedFinalizing, finalizationFailedMessage, orderPlacedTemplate, pollRequest, resolvedStore.slug, sessionId, status, studioEnabled]);
 
   useEffect(() => {
     if (studioEnabled || status !== "success" || !orderId) {
@@ -383,7 +405,7 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
               {previewMessage}
             </p>
           )}
-          {!studioEnabled && digitalDeliveryStatus && digitalDeliveryStatus !== "failed" ? (
+          {!studioEnabled && digitalDeliveryStatus && (digitalDeliveryStatus !== "failed" || checkoutComposition === "mixed") ? (
             <section
               aria-live="polite"
               className={cn("space-y-3 border border-border/60 bg-muted/20 p-4", radiusClass)}
@@ -406,14 +428,21 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
                     View downloads
                   </Link>
                 </>
-              ) : (
+              ) : digitalDeliveryStatus !== "failed" ? (
                 <div role="status">
-                  <h2 className="text-lg font-semibold">Preparing files</h2>
+                  <h2 className="text-lg font-semibold">{pollTimedOut ? "Still preparing files" : "Preparing files"}</h2>
                   <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                    Payment is complete. Keep this page open while secure access is finalized; retrying this page will not charge you again.
+                    {pollTimedOut
+                      ? "Payment is complete, but file preparation is taking longer than expected. You can safely check the status again."
+                      : "Payment is complete. Keep this page open while secure access is finalized; retrying this page will not charge you again."}
                   </p>
+                  {pollTimedOut ? (
+                    <Button type="button" variant="outline" className={cn("mt-3", buttonRadiusClass)} onClick={() => setPollRequest((value) => value + 1)}>
+                      Check again
+                    </Button>
+                  ) : null}
                 </div>
-              )}
+              ) : null}
               {checkoutComposition === "mixed" ? (
                 <p className="border-t border-border/60 pt-3 text-sm text-muted-foreground">
                   Your physical items will continue through shipping or pickup separately.

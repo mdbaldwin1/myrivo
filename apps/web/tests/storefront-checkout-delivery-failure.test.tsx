@@ -60,6 +60,7 @@ function renderCheckout(supportEmail: string | null, orderId: string) {
         JSON.stringify({
           status: "delivery_failed",
           orderId,
+          checkoutComposition: "mixed",
           digitalDeliveryStatus: "failed",
           error: terminalError
         }),
@@ -109,6 +110,7 @@ describe("storefront checkout terminal digital delivery failure", () => {
 
     expect(screen.getByRole("status").textContent).toContain(terminalError);
     expect(screen.getByRole("status").textContent).toContain("Digital delivery needs help");
+    expect(screen.getByText(/physical items will continue through shipping or pickup/i)).toBeTruthy();
     expect(screen.queryByText("Payment received. Finalizing your order...")).toBeNull();
     expect(screen.getByRole("link", { name: "Contact store support" }).getAttribute("href")).toBe(
       "mailto:support@example.test?subject=Digital%20download%20help%20for%20order%20order%2F42%3Fsource%3Demail"

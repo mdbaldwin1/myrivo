@@ -1400,6 +1400,45 @@ describe("durable digital delivery", () => {
     )`;
   }
 
+  function completeInitialDelivery(
+    job: ReturnType<typeof claimDelivery>,
+    tokenHashSeed: string,
+  ) {
+    const materialized = JSON.parse(
+      runSql("full_chain", materializeUniqueStatement(job, tokenHashSeed)),
+    ) as { access_token_id: string };
+    const notification = JSON.parse(
+      runSql(
+        "full_chain",
+        `select row_to_json(prepared) from public.prepare_purchase_digital_delivery_notification(
+          '${job.id}', '${job.lease_token}', '${materialized.access_token_id}'
+        ) prepared`,
+      ),
+    ) as { notification_id: string };
+    const claimed = JSON.parse(
+      runSql(
+        "full_chain",
+        `select row_to_json(claimed) from public.claim_digital_delivery_notification(
+          '${notification.notification_id}', 120, 3
+        ) claimed`,
+      ),
+    ) as { id: string; lease_token: string };
+    runSql(
+      "full_chain",
+      `select public.complete_digital_delivery_notification(
+         '${claimed.id}', '${claimed.lease_token}', 'succeeded', 'resend',
+         null, 3, 10, 30
+       );
+       select public.mark_digital_delivery_notification_sent(
+         '${job.id}', '${job.lease_token}'
+       );
+       select public.complete_digital_delivery_job(
+         '${job.id}', '${job.lease_token}', 'succeeded', null, 8, 60, 21600
+       )`,
+    );
+    return { materialized, notification };
+  }
+
   it("rolls the paid order back when its durable job cannot be inserted", () => {
     retireClaimableJobs();
     const fixture = prepareDeliveryCheckout("000000000071");
@@ -1819,7 +1858,7 @@ describe("durable digital delivery", () => {
     retireClaimableJobs();
     const fixture = finalizeDeliveryCheckout("000000000082");
     const job = claimDelivery();
-    runSql("full_chain", materializeStatement(job, "d"));
+    completeInitialDelivery(job, "task12-resend-concurrency");
     runSql(
       "full_chain",
       `update public.digital_order_entitlements
@@ -1908,7 +1947,7 @@ describe("durable digital delivery", () => {
       retireClaimableJobs();
       const fixture = finalizeDeliveryCheckout(suffix);
       const job = claimDelivery();
-      runSql("full_chain", materializeStatement(job, suffix.slice(-1)));
+      completeInitialDelivery(job, `task12-resend-ineligible-${suffix}`);
       return fixture;
     };
     const resendStatement = (orderId: string, suffix: string) =>
@@ -1969,10 +2008,7 @@ describe("durable digital delivery", () => {
       retireClaimableJobs();
       const fixture = finalizeDeliveryCheckout(suffix);
       const job = claimDelivery();
-      runSql(
-        "full_chain",
-        materializeStatement(job, tokenHashCharacter),
-      );
+      completeInitialDelivery(job, `task12-resend-eligible-${tokenHashCharacter}-${suffix}`);
       return fixture;
     };
     const resend = (orderId: string, suffix: string, hashCharacter: string) =>
@@ -2012,6 +2048,76 @@ describe("durable digital delivery", () => {
     expect(
       resend(partiallyRefunded.orderId, "000000000088", "b").status,
     ).toBe("pending");
+  });
+
+  it("requires a succeeded purchase job and sent purchase notification before merchant resend", () => {
+    const resendStatement = (orderId: string, suffix: string) =>
+      `select row_to_json(notification) from public.prepare_merchant_digital_delivery_resend(
+        '${orderId}', '${ids.manifestStore}',
+        '00000000-0000-4000-8000-000000000011', repeat('a', 64),
+        'a1000000-0000-4000-8000-${suffix}',
+        'a2000000-0000-4000-8000-${suffix}',
+        'a3000000-0000-4000-8000-${suffix}',
+        encode(digest('task12-resend-token-${suffix}', 'sha256'), 'hex'), 172800
+      ) notification`;
+
+    retireClaimableJobs();
+    const staged = finalizeDeliveryCheckout("000000000089");
+    const stagedJob = claimDelivery();
+    const materialized = JSON.parse(
+      runSql("full_chain", materializeUniqueStatement(stagedJob, "task12-staged-resend")),
+    ) as { access_token_id: string };
+    expectRejected("full_chain", resendStatement(staged.orderId, "000000000089"));
+
+    const notification = JSON.parse(
+      runSql(
+        "full_chain",
+        `select row_to_json(prepared) from public.prepare_purchase_digital_delivery_notification(
+          '${stagedJob.id}', '${stagedJob.lease_token}', '${materialized.access_token_id}'
+        ) prepared`,
+      ),
+    ) as { notification_id: string };
+    runSql(
+      "full_chain",
+      `select public.mark_digital_delivery_notification_sent(
+         '${stagedJob.id}', '${stagedJob.lease_token}'
+       );
+       select public.complete_digital_delivery_job(
+         '${stagedJob.id}', '${stagedJob.lease_token}', 'succeeded', null, 8, 60, 21600
+       )`,
+    );
+    expectRejected("full_chain", resendStatement(staged.orderId, "000000000089"));
+
+    const claimedNotification = JSON.parse(
+      runSql(
+        "full_chain",
+        `select row_to_json(claimed) from public.claim_digital_delivery_notification(
+          '${notification.notification_id}', 120, 3
+        ) claimed`,
+      ),
+    ) as { id: string; lease_token: string };
+    runSql(
+      "full_chain",
+      `select public.complete_digital_delivery_notification(
+        '${claimedNotification.id}', '${claimedNotification.lease_token}',
+        'succeeded', 'resend', null, 3, 10, 30
+      )`,
+    );
+    expect(
+      (JSON.parse(runSql("full_chain", resendStatement(staged.orderId, "000000000089"))) as { status: string }).status,
+    ).toBe("pending");
+
+    retireClaimableJobs();
+    const suspended = finalizeDeliveryCheckout("000000000090");
+    const suspendedJob = claimDelivery();
+    completeInitialDelivery(suspendedJob, "task12-suspended-resend");
+    runSql(
+      "full_chain",
+      `update public.digital_order_entitlements
+       set status = 'suspended', status_reason = 'open_dispute'
+       where order_id = '${suspended.orderId}'`,
+    );
+    expectRejected("full_chain", resendStatement(suspended.orderId, "000000000090"));
   });
 
   it("atomically queues a case-normalized 48-hour customer recovery and rotates only prior recovery links", () => {
@@ -2392,10 +2498,12 @@ describe("durable digital delivery", () => {
         `select
           has_function_privilege('anon', 'public.claim_digital_delivery_notification(uuid,integer,integer)', 'execute')::text || ':' ||
           has_function_privilege('authenticated', 'public.prepare_merchant_digital_delivery_resend(uuid,uuid,uuid,text,uuid,uuid,uuid,text,integer)', 'execute')::text || ':' ||
+          has_function_privilege('service_role', 'public.prepare_merchant_digital_delivery_resend(uuid,uuid,uuid,text,uuid,uuid,uuid,text,integer)', 'execute')::text || ':' ||
+          has_function_privilege('service_role', 'public.prepare_merchant_digital_delivery_resend_unchecked(uuid,uuid,uuid,text,uuid,uuid,uuid,text,integer)', 'execute')::text || ':' ||
           has_function_privilege('service_role', 'public.prepare_purchase_digital_delivery_notification(uuid,uuid,uuid)', 'execute')::text || ':' ||
           has_function_privilege('service_role', 'public.complete_digital_delivery_notification(uuid,uuid,text,text,text,integer,integer,integer)', 'execute')::text`,
       ),
-    ).toBe("false:false:true:true");
+    ).toBe("false:false:true:false:true:true");
     expect(
       runSql(
         "full_chain",

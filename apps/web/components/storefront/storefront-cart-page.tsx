@@ -103,6 +103,8 @@ type PickupOptionsResponse = {
   error?: string;
 };
 
+const STOREFRONT_CHECKOUT_FORM_ID = "storefront-checkout-form";
+
 type Props = {
   store: {
     id: string;
@@ -220,6 +222,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
   const [digitalDeliveryConsent, setDigitalDeliveryConsent] = useState(false);
+  const [invalidCheckoutField, setInvalidCheckoutField] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [selectedFulfillmentMethod, setSelectedFulfillmentMethod] = useState<"pickup" | "shipping">(
     fulfillmentOptions[0]?.method ?? "shipping"
@@ -534,29 +537,62 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
 
   async function checkout(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = event.currentTarget;
+    const rejectInvalidField = (fieldName: string, message: string) => {
+      setInvalidCheckoutField(fieldName);
+      setError(message);
+      const control = form.elements.namedItem(fieldName);
+      if (control instanceof HTMLElement) {
+        control.focus();
+      } else if (control instanceof RadioNodeList && control.item(0) instanceof HTMLElement) {
+        (control.item(0) as HTMLElement).focus();
+      }
+    };
     if (cartItems.length === 0) {
       setError(copy.cart.addAtLeastOneToCartError);
       return;
     }
 
+    if (!firstName.trim()) {
+      rejectInvalidField("firstName", "First name is required.");
+      return;
+    }
+    if (!lastName.trim()) {
+      rejectInvalidField("lastName", "Last name is required.");
+      return;
+    }
+    if (hasPhysicalItems && !phone.trim()) {
+      rejectInvalidField("phone", "Phone is required for physical delivery.");
+      return;
+    }
+    const emailControl = form.elements.namedItem("email");
+    if (!email.trim()) {
+      rejectInvalidField("email", "Email is required.");
+      return;
+    }
+    if (emailControl instanceof HTMLInputElement && !emailControl.validity.valid) {
+      rejectInvalidField("email", "Enter a valid email address.");
+      return;
+    }
     if (hasDigitalItems && !digitalDeliveryConsent) {
-      setError("Confirm immediate digital delivery before checkout.");
+      rejectInvalidField("digitalDeliveryConsent", "Confirm immediate digital delivery before checkout.");
       return;
     }
     if (hasPhysicalItems && selectedFulfillment.method === "pickup") {
       // When there are pickup options to choose from, a location must be selected.
       // When there are no options (locationless pickup), skip this validation.
       if ((pickupOptions ?? []).length > 0 && !selectedPickupLocationId) {
-        setError("Select a pickup location before checkout.");
+        rejectInvalidField("pickupLocation", "Select a pickup location before checkout.");
         return;
       }
       if (pickupSlots && pickupSlots.length > 0 && !selectedPickupSlot) {
-        setError("Select a pickup time before checkout.");
+        rejectInvalidField("pickupWindow", "Select a pickup time before checkout.");
         return;
       }
     }
 
     setPending(true);
+    setInvalidCheckoutField(null);
     setError(null);
 
     const checkoutIntent = {
@@ -837,18 +873,24 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
               <div className="space-y-3 border-b border-border/40 pb-4">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Input
+                    form={STOREFRONT_CHECKOUT_FORM_ID}
                     name="firstName"
                     autoComplete="given-name"
                     required
+                    aria-invalid={invalidCheckoutField === "firstName"}
+                    aria-describedby={invalidCheckoutField === "firstName" ? "checkout-form-error" : undefined}
                     placeholder="First name"
                     value={firstName}
                     onChange={(event) => setFirstName(event.target.value)}
                     className="h-10 border-border/60"
                   />
                   <Input
+                    form={STOREFRONT_CHECKOUT_FORM_ID}
                     name="lastName"
                     autoComplete="family-name"
                     required
+                    aria-invalid={invalidCheckoutField === "lastName"}
+                    aria-describedby={invalidCheckoutField === "lastName" ? "checkout-form-error" : undefined}
                     placeholder="Last name"
                     value={lastName}
                     onChange={(event) => setLastName(event.target.value)}
@@ -856,22 +898,28 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                   />
                 </div>
                 {hasPhysicalItems ? <Input
+                  form={STOREFRONT_CHECKOUT_FORM_ID}
                   name="phone"
                   type="tel"
                   autoComplete="tel"
                   inputMode="tel"
                   required
+                  aria-invalid={invalidCheckoutField === "phone"}
+                  aria-describedby={invalidCheckoutField === "phone" ? "checkout-form-error" : undefined}
                   placeholder="Phone"
                   value={phone}
                   onChange={(event) => setPhone(event.target.value)}
                   className="h-10 border-border/60"
                 /> : null}
                 <Input
+                  form={STOREFRONT_CHECKOUT_FORM_ID}
                   name="email"
                   type="email"
                   autoComplete="email"
                   inputMode="email"
                   required
+                  aria-invalid={invalidCheckoutField === "email"}
+                  aria-describedby={invalidCheckoutField === "email" ? "checkout-form-error" : undefined}
                   placeholder={copy.cart.emailPlaceholder}
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
@@ -889,6 +937,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                     >
                       <span className="flex items-center gap-2">
                         <input
+                          form={STOREFRONT_CHECKOUT_FORM_ID}
                           type="radio"
                           name="fulfillment-method"
                           checked={selectedFulfillment.method === option.method}
@@ -946,8 +995,9 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                           </span>
                           <span className="flex items-center gap-2">
                             <input
+                              form={STOREFRONT_CHECKOUT_FORM_ID}
                               type="radio"
-                              name="pickup-location"
+                              name="pickupLocation"
                               checked={selectedPickupLocationId === location.id}
                               onChange={() => setSelectedPickupLocationId(location.id)}
                             />
@@ -960,6 +1010,8 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
 
                   {pickupSlots && pickupSlots.length > 0 ? (
                     <select
+                      form={STOREFRONT_CHECKOUT_FORM_ID}
+                      name="pickupWindow"
                       className="h-10 w-full border border-border/60 bg-background px-2 text-sm"
                       value={selectedPickupSlot?.startsAt ?? ""}
                       onChange={(event) => {
@@ -1043,7 +1095,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                 </div>
               </div>
 
-              <form onSubmit={checkout} className="space-y-2">
+              <form id={STOREFRONT_CHECKOUT_FORM_ID} noValidate onSubmit={checkout} className="space-y-2">
                 <Input
                   type="text"
                   placeholder={copy.cart.promoPlaceholder}
@@ -1079,10 +1131,13 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                   <div className="flex items-start gap-2 rounded-md border border-border/60 bg-muted/20 p-3 text-sm">
                     <input
                       id="digital-delivery-consent"
+                      name="digitalDeliveryConsent"
                       type="checkbox"
                       checked={digitalDeliveryConsent}
                       onChange={(event) => setDigitalDeliveryConsent(event.target.checked)}
                       required
+                      aria-invalid={invalidCheckoutField === "digitalDeliveryConsent"}
+                      aria-describedby={invalidCheckoutField === "digitalDeliveryConsent" ? "checkout-form-error" : undefined}
                       className="mt-0.5"
                     />
                     <p>
@@ -1121,7 +1176,9 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                   store={resolvedStore}
                   profile={resolvedPrivacyProfile}
                 />
-                <AppAlert variant="error" compact message={error} />
+                <div id="checkout-form-error">
+                  <AppAlert variant="error" compact message={error} />
+                </div>
               </form>
               <Link href={buildStorefrontProductsPath(resolvedStore.slug, routeBasePath)} className={cn(STOREFRONT_TEXT_LINK_EFFECT_CLASS, "mx-auto text-sm font-medium")}>
                 {copy.cart.continueShopping}

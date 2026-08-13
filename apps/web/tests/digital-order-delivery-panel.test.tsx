@@ -48,6 +48,54 @@ describe("DigitalOrderDeliveryPanel", () => {
     expect(document.body.textContent).not.toContain("order-1");
     expect(document.body.textContent).not.toContain("Bearer");
     expect(document.body.textContent).not.toContain("storage_path");
+    expect((screen.getByRole("button", { name: "Send fresh access link" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/complete the initial delivery before sending a fresh link/i)).toBeTruthy();
+  });
+
+  test.each([
+    {
+      label: "processing delivery",
+      deliveryStatus: "processing" as const,
+      notificationStatus: "not_queued" as const,
+      accessStatus: "pending" as const,
+      reason: /complete the initial delivery/i
+    },
+    {
+      label: "unsent purchase email",
+      deliveryStatus: "succeeded" as const,
+      notificationStatus: "processing" as const,
+      accessStatus: "active" as const,
+      reason: /initial delivery email must be sent/i
+    },
+    {
+      label: "suspended access",
+      deliveryStatus: "succeeded" as const,
+      notificationStatus: "succeeded" as const,
+      accessStatus: "suspended" as const,
+      reason: /downloads are suspended/i
+    }
+  ])("disables resend for $label and explains why", ({ deliveryStatus, notificationStatus, accessStatus, reason }) => {
+    render(
+      <DigitalOrderDeliveryPanel
+        orderId="order-ineligible"
+        summary={{
+          fileCount: 1,
+          deliveryStatus,
+          notificationStatus,
+          accessStatus,
+          firstAccessedAt: null,
+          lastAccessedAt: null,
+          attempts: [],
+          notificationAttempts: [],
+          files: [{ label: "Printable", filename: "print.pdf", format: "PDF", grantsRemaining: null, status: accessStatus === "suspended" ? "suspended" : "pending" }],
+          activeLinkExpiresAt: null,
+          activeDisputeStatus: accessStatus === "suspended" ? "needs_response" : null
+        }}
+      />
+    );
+
+    expect((screen.getByRole("button", { name: "Send fresh access link" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(reason)).toBeTruthy();
   });
 
   test("reuses one idempotency key while retrying resend and rotates it after success", async () => {
