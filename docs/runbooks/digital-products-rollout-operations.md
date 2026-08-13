@@ -4,7 +4,9 @@
 
 Digital products require both `billing_plans.feature_flags_json.digitalProducts = true` and `store_feature_flags.digital_products = true`. Missing rows, missing keys, malformed values, inactive plans, and read errors resolve to disabled. The database enforces the same effective policy; route checks exist for fast, clear feedback.
 
-Disabling a store stops new or pending digital catalog, asset, preview, publish, storefront, cart, manifest, and checkout work. It does not disable completed paid-order delivery, access recovery, resend, download, refund, dispute, or reconciliation. Operators may still archive an existing digital product while disabled.
+Disabling a store stops new or pending digital catalog, asset, preview, publish, storefront, cart, manifest, checkout, and paid-order settlement work. The database locks and rechecks the pending checkout before the first paid-order row is created, including when Stripe reports payment after disablement. It does not disable completed paid-order delivery, access recovery, resend, download, refund, dispute, or reconciliation. Operators may still archive an existing digital product while disabled.
+
+If payment completed before a pending digital checkout was blocked, the checkout is marked failed with refund-support guidance. Do not bypass the rollout guard or create an order manually; arrange the appropriate customer refund through the financial workflow.
 
 Physical catalog and checkout behavior is independent of this flag.
 
@@ -26,7 +28,7 @@ For a full application rollback, first disable every enabled store, then deploy 
 
 ## Health and alerts
 
-The Digital Product Operations page is admin-only and reports identifiers plus bounded state, never customer email, filenames, object paths, token hashes, bearer tokens, or signed URLs.
+The Digital Product Operations page is admin-only and reports identifiers plus bounded state, never customer email, filenames, object paths, token hashes, bearer tokens, or signed URLs. Delivery health distinguishes the monotonic global attempt number from the current repair generation and its fresh attempt budget.
 
 Investigate these issue codes:
 
@@ -34,20 +36,20 @@ Investigate these issue codes:
 - `repeated_delivery_failures`: a delivery job has failed at least three attempts.
 - `access_state_mismatch`: entitlement/token state differs from the authoritative refund or dispute state.
 
-Privacy-safe events cover upload and preview failures, manifest failures, aged/failed jobs, email attempts, link regeneration, download signing failures, grant exhaustion, reconciliation mismatches, and refund/dispute transitions. Dimensions are allowlisted and bounded.
+Privacy-safe events cover upload and preview failures, manifest failures, aged/failed jobs, email attempts, link regeneration, download signing failures, grant exhaustion, reconciliation mismatches, and refund/dispute transitions. Each event has its own closed dimension schema: fixed keys, enum strings, and bounded small integers. Free-form names, labels, reasons, paths, URLs, emails, and oversized values are rejected in both the application and database.
 
 ## Repair actions
 
-- Requeue only retryable pending/failed delivery work. A succeeded job is not reset.
+- Requeue only retryable pending/failed delivery work. A succeeded job is not reset. Explicit requeue increments the repair generation and resets only that generation's attempt budget; the immutable attempt ledger continues with the next global attempt number.
 - Resend only after successful initial delivery. This rotates the access link without resetting download-grant usage.
 - Reconcile re-applies financial access policy and restores missing delivery work for a paid locked manifest.
 
-All controls require a platform admin, trusted origin, actor identity, and idempotency key. Database functions are service-role-only and write audit evidence. If an action returns a conflict, inspect the order state instead of bypassing eligibility.
+All controls require a platform admin, trusted origin, actor identity, and idempotency key. Database functions are service-role-only, serialize duplicate request keys before mutation, and write one set of audit evidence for the winning request. If an action returns a conflict, inspect the order state instead of bypassing eligibility.
 
 ## Incident checks
 
 1. Confirm effective plan and store flags independently.
-2. Check the safe health issue code, job status, attempt count, and age.
+2. Check the safe health issue code, job status, global attempt number, repair generation/budget count, and age.
 3. Confirm the immutable purchase manifest is locked; never rebuild delivery from the mutable catalog.
 4. Requeue once and observe the next durable attempt.
 5. Reconcile only when an access mismatch is present.

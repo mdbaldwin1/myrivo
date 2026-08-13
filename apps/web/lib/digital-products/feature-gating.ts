@@ -6,6 +6,7 @@ type DigitalProductsStoreFlagRow = {
 
 type BillingPlanFeatureRow = {
   key?: unknown;
+  active?: unknown;
   feature_flags_json?: unknown;
 };
 
@@ -68,7 +69,7 @@ export async function resolveStoreDigitalProductsAccess(
       .eq("store_id", storeId)
       .maybeSingle(),
     (client.from("store_billing_profiles") as unknown as FeatureGateQuery<StoreBillingProfileRow>)
-      .select("billing_plans(key,feature_flags_json)")
+      .select("billing_plans(key,active,feature_flags_json)")
       .eq("store_id", storeId)
       .maybeSingle(),
   ]);
@@ -80,7 +81,8 @@ export async function resolveStoreDigitalProductsAccess(
 
   const plan = normalizePlan(billingResult.data?.billing_plans);
   const planFlags = asFeatureFlags(plan?.feature_flags_json);
-  const planEligible = planFlags?.[DIGITAL_PRODUCTS_FEATURE_KEY] === true;
+  const planEligible = plan?.active === true
+    && planFlags?.[DIGITAL_PRODUCTS_FEATURE_KEY] === true;
   const storeEnabled = storeResult.data?.digital_products === true;
 
   return {

@@ -8,10 +8,12 @@ const sendOrderCreatedNotificationsMock = vi.fn();
 const persistPromotionRedemptionsMock = vi.fn();
 const lockManifestToOrderMock = vi.fn();
 const enqueueDigitalDeliveryMock = vi.fn();
+const adminRpcMock = vi.fn();
 
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: vi.fn(() => ({
-    from: (...args: unknown[]) => adminFromMock(...args)
+    from: (...args: unknown[]) => adminFromMock(...args),
+    rpc: (...args: unknown[]) => adminRpcMock(...args)
   }))
 }));
 
@@ -56,6 +58,7 @@ describe("finalizeStorefrontCheckout", () => {
     persistPromotionRedemptionsMock.mockReset();
     lockManifestToOrderMock.mockReset();
     enqueueDigitalDeliveryMock.mockReset();
+    adminRpcMock.mockReset();
 
     resolveStoreFeeProfileMock.mockResolvedValue({
       planKey: "growth",
@@ -112,6 +115,83 @@ describe("finalizeStorefrontCheckout", () => {
 
     expect(resolveCheckoutShippingAddressSnapshot("digital_only", address, address)).toBeNull();
     expect(resolveCheckoutShippingAddressSnapshot("mixed", null, address)).toEqual(address);
+  });
+
+  test("persists a safe refund-support status when rollout blocks a paid pending digital checkout", async () => {
+    const checkoutUpdateMock = vi.fn(() => ({
+      eq: vi.fn(async () => ({ error: null }))
+    }));
+    adminRpcMock.mockResolvedValue({
+      data: null,
+      error: { message: "Digital checkout settlement is unavailable for this store" }
+    });
+    adminFromMock.mockImplementation((table: string) => {
+      if (table === "storefront_checkout_sessions") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({
+                data: {
+                  id: "checkout-disabled-paid",
+                  store_id: "store-1",
+                  store_slug: "digital-shop",
+                  customer_email: "buyer@example.com",
+                  customer_first_name: "Paid",
+                  customer_last_name: "Buyer",
+                  customer_phone: null,
+                  customer_note: null,
+                  shipping_address_json: null,
+                  fulfillment_method: "digital_delivery",
+                  fulfillment_label: "Digital delivery",
+                  pickup_location_id: null,
+                  pickup_location_snapshot_json: null,
+                  pickup_window_start_at: null,
+                  pickup_window_end_at: null,
+                  pickup_timezone: null,
+                  shipping_fee_cents: 0,
+                  promo_code: null,
+                  promo_codes_json: [],
+                  applied_promotions_json: [],
+                  fee_plan_key: "standard",
+                  fee_bps: 600,
+                  fee_fixed_cents: 30,
+                  item_total_cents: 2500,
+                  platform_fee_cents: 180,
+                  digital_consent_version: "immediate-delivery-v1",
+                  digital_consent_accepted_at: "2026-08-13T20:00:00Z",
+                  digital_license_version: "personal-use-v1",
+                  digital_manifest_id: "manifest-1",
+                  checkout_composition: "digital_only",
+                  items: [{ productType: "digital", quantity: 1, unitPriceCents: 2500 }],
+                  order_id: null,
+                  status: "pending"
+                },
+                error: null
+              }))
+            }))
+          })),
+          update: checkoutUpdateMock
+        };
+      }
+      if (table === "orders") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({ maybeSingle: vi.fn(async () => ({ data: null, error: null })) }))
+          }))
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const { finalizeStorefrontCheckout } = await import("@/lib/storefront/checkout-finalization");
+    await expect(
+      finalizeStorefrontCheckout("checkout-disabled-paid", "pi_paid_disabled")
+    ).rejects.toThrow(/refund assistance/i);
+    expect(checkoutUpdateMock).toHaveBeenCalledWith({
+      status: "failed",
+      error_message: "This paid digital checkout cannot be fulfilled because digital sales are unavailable. Please contact support for refund assistance.",
+      stripe_payment_intent_id: "pi_paid_disabled"
+    });
   });
 
   test("repairs a completed digital checkout by ensuring its durable delivery job", async () => {

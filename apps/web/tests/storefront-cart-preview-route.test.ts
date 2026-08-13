@@ -3,9 +3,10 @@ import { NextRequest } from "next/server";
 
 const adminFromMock = vi.fn();
 const resolveStoreSlugFromRequestAsyncMock = vi.fn();
+const resolveStoreDigitalProductsAccessMock = vi.fn();
 
 vi.mock("@/lib/digital-products/feature-gating", () => ({
-  resolveStoreDigitalProductsAccess: vi.fn(async () => ({ enabled: true, planEligible: true, storeEnabled: true, planKey: "test" }))
+  resolveStoreDigitalProductsAccess: (...args: unknown[]) => resolveStoreDigitalProductsAccessMock(...args)
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -38,6 +39,7 @@ beforeEach(() => {
   adminFromMock.mockReset();
   resolveStoreSlugFromRequestAsyncMock.mockReset();
   resolveStoreSlugFromRequestAsyncMock.mockResolvedValue("curby");
+  resolveStoreDigitalProductsAccessMock.mockReset().mockResolvedValue({ enabled: true, planEligible: true, storeEnabled: true, planKey: "test" });
 });
 
 describe("storefront cart preview route", () => {
@@ -110,6 +112,7 @@ describe("storefront cart preview route", () => {
       })
     });
 
+    const inactivePlanRequest = new NextRequest(request.clone());
     const response = await route.POST(request);
     const payload = await response.json();
 
@@ -139,6 +142,28 @@ describe("storefront cart preview route", () => {
         }
       ],
       subtotalCents: 50700
+    });
+
+    resolveStoreDigitalProductsAccessMock.mockResolvedValue({
+      enabled: false,
+      planEligible: false,
+      storeEnabled: true,
+      planKey: "standard"
+    });
+    const inactivePlanResponse = await route.POST(inactivePlanRequest);
+    await expect(inactivePlanResponse.json()).resolves.toEqual({
+      items: [{
+        key: `${ids.physicalProduct}:${ids.physicalVariant}`,
+        productId: ids.physicalProduct,
+        variantId: ids.physicalVariant,
+        productTitle: "Frame",
+        variantLabel: "Small",
+        productType: "physical",
+        quantity: 99,
+        unitPriceCents: 500,
+        lineTotalCents: 49500
+      }],
+      subtotalCents: 49500
     });
   });
 });

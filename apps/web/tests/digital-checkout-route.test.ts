@@ -14,9 +14,10 @@ const adminRpcMock = vi.fn();
 const stripeCheckoutCreateMock = vi.fn();
 const createOrReuseCheckoutManifestMock = vi.fn();
 const enqueueDigitalDeliveryMock = vi.fn();
+const resolveStoreDigitalProductsAccessMock = vi.fn();
 
 vi.mock("@/lib/digital-products/feature-gating", () => ({
-  resolveStoreDigitalProductsAccess: vi.fn(async () => ({ enabled: true, planEligible: true, storeEnabled: true, planKey: "test" }))
+  resolveStoreDigitalProductsAccess: (...args: unknown[]) => resolveStoreDigitalProductsAccessMock(...args)
 }));
 
 const ids = {
@@ -222,6 +223,7 @@ describe("digital checkout composition", () => {
     getStripeClientMock.mockReturnValue({ checkout: { sessions: { create: stripeCheckoutCreateMock } } });
     createOrReuseCheckoutManifestMock.mockResolvedValue({ manifestId: ids.manifest, items: [] });
     enqueueDigitalDeliveryMock.mockResolvedValue({ id: "delivery-job-1", status: "pending" });
+    resolveStoreDigitalProductsAccessMock.mockResolvedValue({ enabled: true, planEligible: true, storeEnabled: true, planKey: "test" });
 
     adminRpcMock.mockImplementation(async (name: string, args: Record<string, unknown>) => {
       if (name === "get_storefront_checkout_attempt") return { data: null, error: null };
@@ -312,6 +314,23 @@ describe("digital checkout composition", () => {
     expect(stripePayload).not.toHaveProperty("billing_address_collection");
     expect(stripePayload).not.toHaveProperty("shipping_address_collection");
     expect(stripePayload).not.toHaveProperty("shipping_options");
+  });
+
+  test("rejects a new digital checkout when its billing plan is inactive", async () => {
+    resolveStoreDigitalProductsAccessMock.mockResolvedValue({
+      enabled: false,
+      planEligible: false,
+      storeEnabled: true,
+      planKey: "standard"
+    });
+    const route = await import("@/app/api/orders/checkout/route");
+    const response = await route.POST(buildRequest());
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: "Digital products are no longer available for checkout."
+    });
+    expect(stripeCheckoutCreateMock).not.toHaveBeenCalled();
   });
 
   test("repairs durable delivery when a completed Stripe checkout is resumed", async () => {

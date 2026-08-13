@@ -8,6 +8,7 @@ import {
 function buildAccessClient(input: {
   storeFlag?: boolean | null;
   planFlags?: Record<string, unknown> | null;
+  planActive?: boolean;
   profileExists?: boolean;
 }) {
   const from = vi.fn((table: string) => {
@@ -37,6 +38,7 @@ function buildAccessClient(input: {
               : {
                   billing_plans: {
                     key: "standard",
+                    active: input.planActive ?? true,
                     feature_flags_json: input.planFlags ?? null,
                   },
                 },
@@ -92,6 +94,24 @@ describe("digital product rollout feature gating", () => {
     ).resolves.toEqual({
       enabled: true,
       planEligible: true,
+      storeEnabled: true,
+      planKey: "standard",
+    });
+  });
+
+  test("keeps an inactive billing plan disabled even when both rollout flags are true", async () => {
+    await expect(
+      resolveStoreDigitalProductsAccess(
+        buildAccessClient({
+          storeFlag: true,
+          planActive: false,
+          planFlags: { digitalProducts: true },
+        }),
+        "10000000-0000-4000-8000-000000000001",
+      ),
+    ).resolves.toEqual({
+      enabled: false,
+      planEligible: false,
       storeEnabled: true,
       planKey: "standard",
     });

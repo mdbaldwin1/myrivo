@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - Finished the digital buyer and order experience with safe variant file summaries, digital/physical cart grouping, post-payment first access, signed-in refund/dispute states, merchant delivery operations, and explicit digital refund consequences.
 
 ### Fixed
+- Closed digital-product rollout races by requiring active plan eligibility in the application, rechecking pending digital settlement inside the database transaction, preserving completed paid-order repair, resetting only an audited delivery repair budget, serializing duplicate operator actions, and enforcing event-specific typed telemetry dimensions.
 - Made refund and dispute digital-access transitions atomic, deterministically source-ordered, idempotent, audited, retryable, and reconcilable, with one-winner refund execution, capability-aware durable financial notifications, cumulative full-refund revocation, and dispute-specific suspension/restoration.
 - Kept digital checkout timeout recovery available when transient status responses are empty or malformed, while separating initial purchase-email state from later merchant resend notifications in order operations.
 - Made post-payment digital preparation resilient beyond the initial polling window with a safe manual retry, preserved physical next steps for mixed-order delivery failures, restored checkout form ownership and accessible pre-submit validation, and restricted fresh-link resend to completed eligible deliveries.

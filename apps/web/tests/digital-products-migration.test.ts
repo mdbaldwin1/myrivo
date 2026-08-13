@@ -790,6 +790,29 @@ describe("digital product store rollout controls", () => {
         `select public.is_store_digital_products_enabled('${ids.manifestStore}')::text`,
       ),
     ).toBe("true");
+
+    runSql(
+      "full_chain",
+      `update public.billing_plans set active = false
+       where id = (
+         select billing_plan_id from public.store_billing_profiles
+         where store_id = '${ids.manifestStore}'
+       )`,
+    );
+    expect(
+      runSql(
+        "full_chain",
+        `select public.is_store_digital_products_enabled('${ids.manifestStore}')::text`,
+      ),
+    ).toBe("false");
+    runSql(
+      "full_chain",
+      `update public.billing_plans set active = true
+       where id = (
+         select billing_plan_id from public.store_billing_profiles
+         where store_id = '${ids.manifestStore}'
+       )`,
+    );
   });
 
   it("authoritatively blocks new digital catalog and checkout state while physical sales remain available", () => {
@@ -898,7 +921,124 @@ describe("digital product store rollout controls", () => {
          where order_id = '${orderId}'`,
       ),
     ).toMatch(/^\d+$/);
+    expect(
+      runSql(
+        "full_chain",
+        `select order_id from public.stub_checkout_create_paid_order_with_manifest(
+          'manifest-store', 'ignored@example.test', null, '[]'::jsonb,
+          'stub_pi_rollout_paid', 0, null, '${rolloutCheckoutId}', '${manifestId}'
+        )`,
+      ),
+    ).toBe(orderId);
     enableRollout();
+  });
+
+  it.each([
+    ["stub", "stub_pi_disabled_settlement", "42000000-0000-4000-8000-000000000992"],
+    ["stripe", "pi_disabled_settlement", "42000000-0000-4000-8000-000000000993"],
+  ] as const)("blocks %s finalization when a pending digital checkout is disabled after payment starts", (_mode, paymentRef, checkoutId) => {
+    enableRollout();
+    runSql(
+      "full_chain",
+      `insert into public.storefront_checkout_sessions(
+         id, store_id, store_slug, customer_email, customer_first_name,
+         customer_last_name, items, checkout_composition, fulfillment_method,
+         fulfillment_label, shipping_fee_cents, promo_codes_json,
+         applied_promotions_json, fee_plan_key, fee_bps, fee_fixed_cents,
+         item_total_cents, platform_fee_cents, checkout_mode,
+         stripe_account_id_snapshot, tax_collection_mode_snapshot, status, digital_consent_version,
+         digital_consent_accepted_at, digital_license_version
+       ) values (
+         '${checkoutId}', '${ids.manifestStore}', 'manifest-store',
+         'disabled-settlement@example.test', 'Disabled', 'Buyer', ${rolloutItemsSql},
+         'digital_only', 'digital_delivery', 'Digital delivery', 0, '[]'::jsonb,
+         '[]'::jsonb, 'standard', 600, 30, 2500, 180, '${_mode}',
+         ${_mode === "stripe" ? "'acct_disabled_settlement'" : "null"},
+         'seller_attested_no_tax', 'pending', '${DIGITAL_PRODUCT_CONFIG.consentVersion}',
+         now(), '${DIGITAL_PRODUCT_CONFIG.licenseVersion}'
+       )`,
+    );
+    const manifestId = runSql(
+      "full_chain",
+      `select result ->> 'manifestId'
+       from (
+         select public.create_or_reuse_digital_checkout_manifest(
+           '${checkoutId}', '${ids.manifestStore}', ${rolloutItemsSql},
+           '${DIGITAL_PRODUCT_CONFIG.consentVersion}',
+           (select digital_consent_accepted_at from public.storefront_checkout_sessions where id = '${checkoutId}'),
+           '${DIGITAL_PRODUCT_CONFIG.licenseVersion}'
+         ) result
+       ) manifest`,
+    );
+    const inventoryBefore = runSql(
+      "full_chain",
+      `select inventory_qty from public.product_variants where id = '${ids.manifestVariant}'`,
+    );
+    runSql(
+      "full_chain",
+      `update public.store_feature_flags set digital_products = false
+       where store_id = '${ids.manifestStore}'`,
+    );
+
+    expectRejected(
+      "full_chain",
+      `select * from public.stub_checkout_create_paid_order_with_manifest(
+        'manifest-store', 'ignored@example.test', null, '[]'::jsonb,
+        '${paymentRef}', 0, null, '${checkoutId}', '${manifestId}'
+      )`,
+    );
+    expect(
+      runSql(
+        "full_chain",
+        `select
+           (select count(*) from public.orders where storefront_checkout_session_id = '${checkoutId}')::text || ':' ||
+           (select inventory_qty from public.product_variants where id = '${ids.manifestVariant}')::text || ':' ||
+           (select status from public.digital_purchase_manifests where id = '${manifestId}') || ':' ||
+           (select status from public.storefront_checkout_sessions where id = '${checkoutId}')`,
+      ),
+    ).toBe(`0:${inventoryBefore}:draft:pending`);
+    enableRollout();
+  });
+
+  it("rejects direct telemetry inserts that bypass event-specific typed dimensions", () => {
+    expect(
+      runSql(
+        "full_chain",
+        `insert into public.digital_product_events(event_type, dimensions)
+         values ('upload_failed', '{"stage":"completion","outcome":"failed"}'::jsonb)
+         returning event_type`,
+      ),
+    ).toBe("upload_failed");
+    for (const dimensions of [
+      `'{"stage":"customer-name","outcome":"failed"}'::jsonb`,
+      `'{"stage":"upload","outcome":"failed","issueType":"token_access_mismatch"}'::jsonb`,
+      `'{"outcome":"failed","attemptNumber":10001}'::jsonb`,
+      `'{"issueType":"merchant-entered-label"}'::jsonb`,
+    ]) {
+      expectRejected(
+        "full_chain",
+        `insert into public.digital_product_events(event_type, dimensions)
+         values (
+           case
+             when ${dimensions} ? 'attemptNumber' then 'delivery_job_failed'
+             when ${dimensions} ? 'issueType' and not (${dimensions} ? 'stage') then 'reconciliation_mismatch'
+             else 'upload_failed'
+           end,
+           ${dimensions}
+         )`,
+      );
+    }
+    for (const [eventType, dimensions] of [
+      ["delivery_job_failed", `'{"outcome":"failed"}'::jsonb`],
+      ["delivery_email_attempted", `'{"outcome":"processing","attemptNumber":1}'::jsonb`],
+      ["dispute_transition", `'{}'::jsonb`],
+    ] as const) {
+      expectRejected(
+        "full_chain",
+        `insert into public.digital_product_events(event_type, dimensions)
+         values ('${eventType}', ${dimensions})`,
+      );
+    }
   });
 
   it("keeps rollout and health functions service-role-only", () => {
@@ -1716,6 +1856,160 @@ describe("durable digital delivery", () => {
         "full_chain",
         `select count(*) from public.digital_delivery_attempts
          where job_id = '${fixture.jobId}' and status = 'processing'`,
+      ),
+    ).toBe("1");
+  });
+
+  it("starts a fresh repair budget while preserving globally unique delivery attempt numbers", () => {
+    retireClaimableJobs();
+    const fixture = finalizeDeliveryCheckout("000000000270");
+    runSql(
+      "full_chain",
+      `update public.digital_delivery_jobs
+       set status = 'failed', attempt_count = 8, repair_generation = 0,
+           generation_attempt_count = 8, lease_expires_at = null,
+           lease_token = null, completed_at = now(),
+           last_safe_error = 'Delivery exhausted', updated_at = now()
+       where id = '${fixture.jobId}';
+       insert into public.digital_delivery_attempts(
+         job_id, order_id, store_id, attempt_number, status,
+         safe_error, started_at, finished_at
+       )
+       select '${fixture.jobId}', '${fixture.orderId}', '${ids.manifestStore}',
+         attempt_number, 'failed', 'Delivery exhausted',
+         now() - interval '1 minute', now()
+       from generate_series(1, 8) attempt_number`,
+    );
+
+    expect(
+      runSql(
+        "full_chain",
+        `select public.requeue_digital_delivery(
+          '${ids.manifestStore}', '${fixture.orderId}',
+          '00000000-0000-4000-8000-000000000011', 'repair-terminal-job-270'
+        )`,
+      ),
+    ).toBe("applied");
+    const claimed = claimDelivery(120, 8);
+    expect(claimed).toMatchObject({
+      id: fixture.jobId,
+      attempt_number: 9,
+    });
+    expect(
+      runSql(
+        "full_chain",
+        `select attempt_count::text || ':' || repair_generation::text || ':' ||
+           generation_attempt_count::text
+         from public.digital_delivery_jobs where id = '${fixture.jobId}'`,
+      ),
+    ).toBe("9:1:1");
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*)::text || ':' || max(attempt_number)::text
+         from public.digital_delivery_attempts where job_id = '${fixture.jobId}'`,
+      ),
+    ).toBe("9:9");
+    expect(
+      runSql(
+        "full_chain",
+        `select metadata ->> 'repairGeneration'
+         from public.audit_events
+         where action = 'digital_delivery_requeued'
+           and entity_id = '${fixture.orderId}'`,
+      ),
+    ).toBe("1");
+  });
+
+  it("serializes concurrent duplicate rollout, requeue, and reconcile operations", async () => {
+    retireClaimableJobs();
+    const fixture = finalizeDeliveryCheckout("000000000271");
+    runSql(
+      "full_chain",
+      `update public.digital_delivery_jobs
+       set status = 'failed', attempt_count = 1,
+           generation_attempt_count = 1, completed_at = now(),
+           last_safe_error = 'Delivery failed', updated_at = now()
+       where id = '${fixture.jobId}';
+       insert into public.digital_delivery_attempts(
+         job_id, order_id, store_id, attempt_number, status,
+         safe_error, started_at, finished_at
+       ) values (
+         '${fixture.jobId}', '${fixture.orderId}', '${ids.manifestStore}', 1,
+         'failed', 'Delivery failed', now() - interval '1 minute', now()
+       )`,
+    );
+
+    const race = async (name: string, statement: string) => {
+      const firstSession = `task14_fix1_${name}_winner`;
+      const first = runSqlAsync(
+        "full_chain",
+        `begin; ${statement}; select pg_sleep(0.4); commit;`,
+        firstSession,
+      );
+      await waitForPostgresSession("full_chain", firstSession);
+      const second = runSqlAsync("full_chain", statement, `task14_fix1_${name}_duplicate`);
+      await waitForPostgresLock("full_chain", `task14_fix1_${name}_duplicate`);
+      return Promise.all([first, second]);
+    };
+
+    const rolloutKey = "concurrent-rollout-request-271";
+    const rollout = `select public.set_store_digital_products_enabled(
+      '${ids.manifestStore}', false,
+      '00000000-0000-4000-8000-000000000011', '${rolloutKey}'
+    )`;
+    expect((await race("rollout", rollout)).map((value) => value.split("\n")[0])).toEqual(["f", "f"]);
+    expect(
+      runSql(
+        "full_chain",
+        `select
+           (select count(*) from public.digital_product_operator_actions
+            where store_id = '${ids.manifestStore}' and action = 'rollout_disabled'
+              and request_key_hash = encode(digest('${rolloutKey}', 'sha256'), 'hex'))::text || ':' ||
+           (select count(*) from public.audit_events
+            where store_id = '${ids.manifestStore}'
+              and action = 'digital_products_rollout_changed'
+              and metadata = '{"enabled":false}'::jsonb)::text`,
+      ),
+    ).toBe("1:1");
+    runSql(
+      "full_chain",
+      `select public.set_store_digital_products_enabled(
+        '${ids.manifestStore}', true,
+        '00000000-0000-4000-8000-000000000011', 'reenable-after-race-271'
+      )`,
+    );
+
+    const requeueKey = "concurrent-requeue-request-271";
+    const requeue = `select public.requeue_digital_delivery(
+      '${ids.manifestStore}', '${fixture.orderId}',
+      '00000000-0000-4000-8000-000000000011', '${requeueKey}'
+    )`;
+    expect((await race("requeue", requeue)).map((value) => value.split("\n")[0])).toEqual(["applied", "noop"]);
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*)::text || ':' || count(*) filter (
+           where action = 'digital_delivery_requeued'
+         )::text
+         from public.audit_events
+         where entity_id = '${fixture.orderId}'
+           and action = 'digital_delivery_requeued'`,
+      ),
+    ).toBe("1:1");
+
+    const reconcileKey = "concurrent-reconcile-request-271";
+    const reconcile = `select public.reconcile_digital_order_access(
+      '${ids.manifestStore}', '${fixture.orderId}',
+      '00000000-0000-4000-8000-000000000011', '${reconcileKey}'
+    )`;
+    expect((await race("reconcile", reconcile)).map((value) => value.split("\n")[0])).toEqual(["applied", "noop"]);
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.audit_events
+         where entity_id = '${fixture.orderId}'
+           and action = 'digital_access_reconciled'`,
       ),
     ).toBe("1");
   });

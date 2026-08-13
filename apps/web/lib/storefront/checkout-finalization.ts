@@ -422,16 +422,21 @@ export async function finalizeStorefrontCheckout(
   );
 
   if (rpcError) {
+    const safeFinalizationError = rpcError.message.includes(
+      "Digital checkout settlement is unavailable",
+    )
+      ? "This paid digital checkout cannot be fulfilled because digital sales are unavailable. Please contact support for refund assistance."
+      : rpcError.message;
     const { error: markFailedError } = await supabase
       .from("storefront_checkout_sessions")
-      .update({ status: "failed", error_message: rpcError.message, stripe_payment_intent_id: paymentIntentId })
+      .update({ status: "failed", error_message: safeFinalizationError, stripe_payment_intent_id: paymentIntentId })
       .eq("id", checkout.id);
 
     if (markFailedError) {
-      throw new Error(`${rpcError.message} | Failed to mark checkout as failed: ${markFailedError.message}`);
+      throw new Error(`${safeFinalizationError} | Failed to mark checkout as failed: ${markFailedError.message}`);
     }
 
-    throw new Error(rpcError.message);
+    throw new Error(safeFinalizationError);
   }
 
   const finalized = Array.isArray(rpcResult) ? rpcResult[0] : rpcResult;

@@ -22,6 +22,8 @@ type HealthRow = {
   job_id: string | null;
   status: string;
   attempt_count: number;
+  repair_generation: number;
+  generation_attempt_count: number;
   age_minutes: number;
 };
 
@@ -37,6 +39,8 @@ export async function GET() {
     jobId: row.job_id,
     status: row.status,
     attemptCount: row.attempt_count,
+    repairGeneration: row.repair_generation,
+    generationAttemptCount: row.generation_attempt_count,
     ageMinutes: row.age_minutes,
   }));
   await Promise.all(issues.map((issue) => recordDigitalProductEventBestEffort(
@@ -44,12 +48,16 @@ export async function GET() {
     {
       eventType: issue.issueType === "paid_delivery_pending_over_5m"
         ? "delivery_job_aged"
-        : "reconciliation_mismatch",
+        : issue.issueType === "repeated_delivery_failures"
+          ? "delivery_job_failed"
+          : "reconciliation_mismatch",
       storeId: issue.storeId,
       orderId: issue.orderId,
       dimensions: issue.issueType === "paid_delivery_pending_over_5m"
         ? { ageBucket: issue.ageMinutes >= 30 ? "30m_plus" : "5m_to_30m" }
-        : { issueType: issue.status },
+        : issue.issueType === "repeated_delivery_failures"
+          ? { outcome: "failed", attemptNumber: issue.attemptCount }
+          : { issueType: issue.status },
     },
   )));
   return NextResponse.json({ issues });

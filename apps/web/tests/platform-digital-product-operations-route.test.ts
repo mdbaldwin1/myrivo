@@ -32,10 +32,10 @@ describe("platform digital product operations route", () => {
 
   test("returns privacy-safe health issue fields", async () => {
     requirePlatformRoleMock.mockResolvedValueOnce({ context: { userId: crypto.randomUUID() }, response: null });
-    rpcMock.mockResolvedValueOnce({ data: [{ issue_type: "paid_delivery_pending_over_5m", store_id: crypto.randomUUID(), order_id: crypto.randomUUID(), job_id: null, status: "missing", attempt_count: 0, age_minutes: 8 }], error: null });
+    rpcMock.mockResolvedValueOnce({ data: [{ issue_type: "paid_delivery_pending_over_5m", store_id: crypto.randomUUID(), order_id: crypto.randomUUID(), job_id: null, status: "missing", attempt_count: 0, repair_generation: 0, generation_attempt_count: 0, age_minutes: 8 }], error: null });
     const route = await import("@/app/api/platform/digital-products/operations/route");
     const payload = await (await route.GET()).json();
-    expect(Object.keys(payload.issues[0]).sort()).toEqual(["ageMinutes", "attemptCount", "issueType", "jobId", "orderId", "status", "storeId"].sort());
+    expect(Object.keys(payload.issues[0]).sort()).toEqual(["ageMinutes", "attemptCount", "generationAttemptCount", "issueType", "jobId", "orderId", "repairGeneration", "status", "storeId"].sort());
   });
 
   test("dispatches an idempotent audited requeue RPC", async () => {

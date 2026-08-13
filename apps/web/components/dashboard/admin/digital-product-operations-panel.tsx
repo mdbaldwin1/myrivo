@@ -14,6 +14,8 @@ type HealthIssue = {
   jobId: string | null;
   status: string;
   attemptCount: number;
+  repairGeneration: number;
+  generationAttemptCount: number;
   ageMinutes: number;
 };
 
@@ -89,7 +91,7 @@ export function DigitalProductOperationsPanel() {
             <TableRow key={`${issue.issueType}:${issue.orderId}:${issue.jobId ?? "none"}`}>
               <TableCell className="font-medium">{issue.issueType.replaceAll("_", " ")}</TableCell>
               <TableCell><span className="font-mono text-xs">{issue.orderId.slice(0, 8)}</span></TableCell>
-              <TableCell><StatusChip label={`${issue.status} · ${issue.attemptCount} attempts`} tone={issue.status === "failed" ? "danger" : "warning"} /></TableCell>
+              <TableCell><StatusChip label={`${issue.status} · attempt ${issue.attemptCount} · repair ${issue.repairGeneration}/${issue.generationAttemptCount}`} tone={issue.status === "failed" ? "danger" : "warning"} /></TableCell>
               <TableCell>{issue.ageMinutes}m</TableCell>
               <TableCell><div className="flex justify-end gap-2">
                 <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void run("requeue", issue)}>Requeue</Button>
