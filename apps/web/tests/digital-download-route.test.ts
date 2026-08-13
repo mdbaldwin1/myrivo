@@ -15,8 +15,11 @@ const VERSION_ID = "70000000-0000-0000-0000-000000000001";
 const GRANT_ID = "a0000000-0000-0000-0000-000000000001";
 const PRIVATE_PATH = "store/product/asset/v1/customer-file.pdf";
 const SIGNED_URL = "https://storage.example.test/signed/customer-file.pdf";
+const INTERNAL_RESERVE_ERROR =
+  'duplicate key value violates unique constraint "digital_download_grants_reservation_key_key"';
 
 type FakeOptions = {
+  reserveError?: { message: string };
   assetLookupError?: { message: string };
   assetLookupRejection?: Error;
   signingError?: { message: string };
@@ -93,6 +96,9 @@ function buildHardenedSchemaAdmin(options: FakeOptions = {}) {
         });
         expect(args.p_reservation_key).toEqual(expect.any(String));
         expect(args.p_client_fingerprint_hash).toMatch(/^[a-f0-9]{64}$/);
+        if (options.reserveError) {
+          return { data: null, error: options.reserveError };
+        }
         return {
           data: [
             {
@@ -184,6 +190,21 @@ describe("hardened digital download route", () => {
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe(SIGNED_URL);
     expect(events).toEqual(["reserve", "lookup-version", "sign", "commit"]);
+  });
+
+  test("does not expose an internal reserve error to the public client", async () => {
+    const { admin, events } = buildHardenedSchemaAdmin({
+      reserveError: { message: INTERNAL_RESERVE_ERROR },
+    });
+    createSupabaseAdminClientMock.mockReturnValue(admin);
+
+    const response = await invokeRoute();
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body).toEqual({ error: "Download unavailable." });
+    expect(JSON.stringify(body)).not.toContain(INTERNAL_RESERVE_ERROR);
+    expect(events).toEqual(["reserve"]);
   });
 
   test("releases the reservation when storage signing fails", async () => {

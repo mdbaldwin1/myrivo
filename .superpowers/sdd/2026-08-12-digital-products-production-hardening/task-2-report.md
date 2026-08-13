@@ -309,3 +309,51 @@ The full suite retained the existing refund/dispute mock stderr and analytics ch
 - The committed flag is set only after the database reports `issued`, preventing release on success.
 - Cleanup rejection is swallowed only inside the best-effort release boundary; primary stage failures retain their generic status and body.
 - No provider error, database error, bearer token, or private storage path is returned to the client.
+
+## Fix Round 3: Generic Reserve Failure Response
+
+### Review finding and root cause
+
+The reserve failure branch returned `error.message` from the Supabase RPC directly to the public client. Unlike the route's lookup, signing, and commit branches, this exposed PostgREST or database details such as constraint names even though the route already had the generic `Download unavailable.` contract for malformed reserve results.
+
+### Implementation
+
+The reserve failure branch now always returns `{ "error": "Download unavailable." }` with its existing status 409. Reserve inputs, quota behavior, and downstream cleanup are unchanged.
+
+The route regression fake can return an internal reserve error. Its new test asserts the public status and generic body, explicitly verifies the internal constraint message is absent, and confirms processing stops after reserve.
+
+### Files
+
+- `apps/web/app/api/digital-downloads/[token]/[entitlementId]/route.ts`
+- `apps/web/tests/digital-download-route.test.ts`
+- `.superpowers/sdd/2026-08-12-digital-products-production-hardening/task-2-report.md`
+
+### TDD evidence
+
+Before the one-line route fix:
+
+```text
+npm test --workspace @myrivo/web -- digital-download-route.test.ts
+Test Files  1 failed (1)
+Tests       1 failed | 8 passed (9)
+Expected: { error: "Download unavailable." }
+Received: { error: "duplicate key value violates unique constraint ..." }
+```
+
+After the fix, the same focused route command passed 9/9 tests.
+
+### Validation
+
+- Focused route plus PostgreSQL migration contracts — 2 files, 25 tests passed.
+- `npm run typecheck --workspace @myrivo/web` — passed.
+- `npm run lint --workspace @myrivo/web` — passed with zero warnings/errors and both repository consistency checks passed.
+- `npm test --workspace @myrivo/web` — 226 files, 678 tests passed.
+- `npm run build --workspace @myrivo/web` — passed, including TypeScript and 156-page generation.
+
+The full suite retained the existing refund/dispute mock stderr and analytics chart-size warnings. The build retained the existing middleware deprecation and stale Browserslist-data warnings.
+
+### Fix-round self-review
+
+- No RPC error string is included in the reserve failure response.
+- Both an RPC error and an incomplete/malformed reserve result share the same generic public contract.
+- A reserve failure creates no releasable grant, so the route exits before lookup, signing, commit, or release.

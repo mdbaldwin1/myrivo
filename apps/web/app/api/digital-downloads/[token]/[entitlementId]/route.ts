@@ -29,7 +29,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ tok
   });
   const grant = Array.isArray(data) ? data[0] : data;
   if (error || !grant?.grant_id || !grant.asset_version_id || !grant.customer_filename) {
-    return NextResponse.json({ error: error?.message ?? "Download unavailable." }, { status: 409 });
+    return NextResponse.json({ error: "Download unavailable." }, { status: 409 });
   }
 
   const releaseReservation = async (safeError: string) => {
