@@ -1107,6 +1107,65 @@ describe("transactional digital asset lifecycle", () => {
     ).toBe(`ready:true:${overridePath}`);
   });
 
+  it("persists only the renewed preview generation after a processing lease expires", () => {
+    const stale = JSON.parse(
+      runSql(
+        "upgrade",
+        `select to_jsonb(result) from public.begin_digital_product_preview(
+          '${ids.storeA}', '${ids.productA2}', '${ids.versionA2}'
+        ) result`,
+      ),
+    ) as Record<string, unknown>;
+    const staleGeneration = String(stale.processing_generation);
+    expect(stale.processing_acquired).toBe(true);
+
+    runSql(
+      "upgrade",
+      `update public.digital_product_previews
+       set processing_lease_expires_at = now() - interval '1 second'
+       where product_id = '${ids.productA2}'`,
+    );
+    const winner = JSON.parse(
+      runSql(
+        "upgrade",
+        `select to_jsonb(result) from public.begin_digital_product_preview(
+          '${ids.storeA}', '${ids.productA2}', '${ids.versionA2}'
+        ) result`,
+      ),
+    ) as Record<string, unknown>;
+    const winningGeneration = String(winner.processing_generation);
+    const stalePath = `${ids.storeA}/${ids.productA2}/watermarked-${ids.versionA2}-${staleGeneration}.jpg`;
+    const winningPath = `${ids.storeA}/${ids.productA2}/watermarked-${ids.versionA2}-${winningGeneration}.jpg`;
+    expect(winner.processing_acquired).toBe(true);
+    expect(winningGeneration).not.toBe(staleGeneration);
+
+    expect(
+      runSql(
+        "upgrade",
+        `select public.complete_digital_product_preview(
+          '${ids.storeA}', '${ids.productA2}', '${ids.versionA2}',
+          '${winningPath}', '${winningGeneration}'
+        )::text`,
+      ),
+    ).toBe("true");
+    expect(
+      runSql(
+        "upgrade",
+        `select public.complete_digital_product_preview(
+          '${ids.storeA}', '${ids.productA2}', '${ids.versionA2}',
+          '${stalePath}', '${staleGeneration}'
+        )::text`,
+      ),
+    ).toBe("false");
+    expect(
+      runSql(
+        "upgrade",
+        `select public_preview_path from public.digital_product_previews
+         where product_id = '${ids.productA2}'`,
+      ),
+    ).toBe(winningPath);
+  });
+
   it("prevents overlapping replacements and stale older finalization from regressing current version", () => {
     const olderIntent = "d0000000-0000-4000-8000-000000000021";
     const olderVersion = "70000000-0000-4000-8000-000000000021";

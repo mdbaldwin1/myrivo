@@ -258,7 +258,7 @@ export async function processPreview(input: {
     const rendered = await renderWatermarkedPreview(response, {
       storeName: input.storeName,
     });
-    const publicPath = `${input.storeId}/${input.productId}/watermarked-${input.sourceAssetVersionId}.jpg`;
+    const publicPath = `${input.storeId}/${input.productId}/watermarked-${input.sourceAssetVersionId}-${processingGeneration}.jpg`;
     const previews = input.admin.storage.from(DIGITAL_PREVIEW_BUCKET);
     const uploaded = await previews.upload?.(publicPath, rendered.bytes, {
       contentType: "image/jpeg",

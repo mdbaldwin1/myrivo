@@ -231,8 +231,114 @@ describe("preview lifecycle", () => {
       "complete_digital_product_preview",
     ]);
     expect(previewStorage.remove).toHaveBeenCalledWith([
-      `${STORE_ID}/${PRODUCT_ID}/watermarked-${VERSION_ID}.jpg`,
+      `${STORE_ID}/${PRODUCT_ID}/watermarked-${VERSION_ID}-${generation}.jpg`,
     ]);
+  });
+
+  it("keeps the winning object when an expired worker finishes after a new generation", async () => {
+    const staleGeneration = "a0000000-0000-4000-8000-000000000020";
+    const winningGeneration = "a0000000-0000-4000-8000-000000000021";
+    const stalePath = `${STORE_ID}/${PRODUCT_ID}/watermarked-${VERSION_ID}-${staleGeneration}.jpg`;
+    const winningPath = `${STORE_ID}/${PRODUCT_ID}/watermarked-${VERSION_ID}-${winningGeneration}.jpg`;
+    const objects = new Map<string, Uint8Array>();
+    const removedPaths: string[] = [];
+    let persistedPath: string | null = null;
+    let beginCount = 0;
+    let notifyStaleFetchStarted!: () => void;
+    const staleFetchStarted = new Promise<void>((resolve) => {
+      notifyStaleFetchStarted = resolve;
+    });
+    let releaseStaleFetch!: (response: Response) => void;
+    const blockedStaleResponse = new Promise<Response>((resolve) => {
+      releaseStaleFetch = resolve;
+    });
+    const previewStorage = {
+      upload: vi.fn(async (path: string, body: Uint8Array) => {
+        objects.set(path, body);
+        return { error: null };
+      }),
+      remove: vi.fn(async (paths: string[]) => {
+        for (const path of paths) {
+          removedPaths.push(path);
+          objects.delete(path);
+        }
+        return { error: null };
+      }),
+      getPublicUrl: vi.fn((path: string) => ({
+        data: { publicUrl: `https://cdn.test/${path}` },
+      })),
+    };
+    const originalStorage = {
+      createSignedUrl: vi.fn(async () => ({
+        data: { signedUrl: "https://storage.test/source" },
+        error: null,
+      })),
+    };
+    const admin = {
+      rpc: vi.fn(async (name: string, args: Record<string, unknown>) => {
+        if (name === "begin_digital_product_preview") {
+          const generation = beginCount++ === 0 ? staleGeneration : winningGeneration;
+          return {
+            data: [
+              {
+                preview_status: "processing",
+                public_preview_path: null,
+                source_storage_path: "private/source.png",
+                source_mime_type: "image/png",
+                was_already_ready: false,
+                processing_acquired: true,
+                processing_generation: generation,
+              },
+            ],
+            error: null,
+          };
+        }
+        if (name === "complete_digital_product_preview") {
+          if (args.p_processing_generation === winningGeneration) {
+            persistedPath = String(args.p_public_preview_path);
+            return { data: true, error: null };
+          }
+          return { data: false, error: null };
+        }
+        throw new Error(`Unexpected RPC ${name}`);
+      }),
+      storage: {
+        from: vi.fn((bucket: string) =>
+          bucket === "digital-product-assets" ? originalStorage : previewStorage,
+        ),
+      },
+    };
+
+    const staleWorker = processPreview({
+      admin,
+      storeId: STORE_ID,
+      productId: PRODUCT_ID,
+      sourceAssetVersionId: VERSION_ID,
+      storeName: "Studio",
+      fetcher: vi.fn(async () => {
+        notifyStaleFetchStarted();
+        return blockedStaleResponse;
+      }),
+    });
+    await staleFetchStarted;
+
+    await expect(
+      processPreview({
+        admin,
+        storeId: STORE_ID,
+        productId: PRODUCT_ID,
+        sourceAssetVersionId: VERSION_ID,
+        storeName: "Studio",
+        fetcher: vi.fn(async () => imageResponse(300, 200)),
+      }),
+    ).resolves.toMatchObject({ status: "ready" });
+
+    releaseStaleFetch(await imageResponse(300, 200));
+    await expect(staleWorker).rejects.toMatchObject({ code: "preview_superseded" });
+
+    expect(persistedPath).toBe(winningPath);
+    expect([...objects.keys()]).toEqual([winningPath]);
+    expect(removedPaths).toEqual([stalePath]);
   });
 
   it("is idempotent when the same source preview is already ready", async () => {
