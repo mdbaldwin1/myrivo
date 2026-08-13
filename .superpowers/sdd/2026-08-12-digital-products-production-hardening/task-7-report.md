@@ -140,3 +140,42 @@ Tests 19 passed (19)
 - `git diff --check` — passed.
 
 The full suite/build retained only the previously documented refund/dispute mock stderr, zero-size chart warnings, Next.js middleware deprecation, and stale Browserslist-data notice.
+
+## Fix Round 2: Honest Terminal Delivery Status
+
+### Explicit paid-order and delivery contract
+
+- Checkout status no longer treats every returned delivery job as successful. Both the already-completed checkout branch and the paid-session finalization branch use one completed-response helper, so their delivery semantics cannot diverge.
+- Physical orders retain the established HTTP 200 `{ status: "completed", orderId }` response.
+- Digital orders with `pending`, `processing`, or `succeeded` jobs return HTTP 200 paid-order completion plus an explicit `digitalDeliveryStatus` value.
+- A terminal/dead-letter delivery job returns HTTP 409 with `status: "delivery_failed"`, the paid `orderId`, `digitalDeliveryStatus: "failed"`, and generic buyer-facing support guidance.
+- Terminal responses contain no retry header, preparing language, safe/internal worker error, credential, or download detail. Exceptions from the ensure boundary remain retryable HTTP 503 `pending` responses with `Retry-After: 2`.
+
+### Buyer support UX
+
+- The checkout consumer recognizes `delivery_failed`, stops polling immediately, and preserves the configured order-placed message so buyers know payment and order creation succeeded.
+- An existing accessible live error alert now distinguishes the delivery problem with the title `Digital delivery needs help` and the generic terminal guidance returned by the server.
+- When trusted store configuration includes a support email, the alert provides a `mailto:` support action whose subject includes the order reference through `encodeURIComponent`.
+- Without a configured support email, the alert links to the storefront policies/support-information page. Neither path leaves the buyer on finalizing language or in an infinite poll.
+
+### TDD evidence
+
+The route RED run exposed four intended failures: pending/processing/succeeded states were omitted, and a terminal job still returned HTTP 200 completed. The real checkout-component RED run remained on finalizing copy, rendered no delivery error, provided no support action, and did not stop after the terminal response. A final route audit added and proved a separate RED for the paid-session finalization path, which also discarded the terminal delivery state.
+
+GREEN focused evidence covers both route entry points, all delivery states, error-detail exclusion, retryable exception semantics, paid-order preservation, accessible error/support actions, encoded mail subjects, fallback support routing, and worker/finalizer regressions:
+
+```text
+Test Files 4 passed (4)
+Tests 25 passed (25)
+```
+
+### Validation
+
+- Native PostgreSQL migration contract — 75 tests passed.
+- `npm run lint --workspace @myrivo/web` — passed with zero warnings/errors and both consistency checks.
+- `npm run typecheck --workspace @myrivo/web` — passed.
+- `npm test --workspace @myrivo/web` — 240 files and 853 tests passed.
+- `npm run build --workspace @myrivo/web` — passed with 159 generated pages.
+- `git diff --check` — passed.
+
+The full suite/build retained only the previously documented refund/dispute mock stderr, zero-size chart warnings, Next.js middleware deprecation, and stale Browserslist-data notice.

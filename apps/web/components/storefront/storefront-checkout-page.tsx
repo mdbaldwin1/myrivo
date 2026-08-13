@@ -21,14 +21,22 @@ import { useOptionalStorefrontAnalytics } from "@/components/storefront/storefro
 import { useStorefrontPageView } from "@/components/storefront/use-storefront-analytics-events";
 import { markStorefrontCheckoutCompletedTracked } from "@/lib/analytics/storefront-instrumentation";
 import { resolveStorefrontPresentation } from "@/lib/storefront/presentation";
-import { buildStorefrontCartPath, buildStorefrontProductsPath } from "@/lib/storefront/paths";
+import {
+  buildStorefrontCartPath,
+  buildStorefrontPoliciesPath,
+  buildStorefrontProductsPath
+} from "@/lib/storefront/paths";
 import { cn } from "@/lib/utils";
 
 type CheckoutStatusResponse = {
-  status?: "pending" | "completed" | "failed";
+  status?: "pending" | "completed" | "delivery_failed" | "failed";
   orderId?: string | null;
+  digitalDeliveryStatus?: "pending" | "processing" | "succeeded" | "failed";
   error?: string;
 };
+
+const digitalDeliveryFailedFallback =
+  "Payment was received, but the digital downloads could not be prepared. Contact the store for help with this order.";
 
 type Props = {
   store: {
@@ -111,6 +119,7 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
         : copy.checkout.returnToCartPrompt
   );
   const [error, setError] = useState<string | null>(null);
+  const [deliveryFailureOrderId, setDeliveryFailureOrderId] = useState<string | null>(null);
 
   useStorefrontPageView("checkout", {
     status: status ?? "return",
@@ -129,6 +138,7 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
     async function poll() {
       setMessage(checkoutPaymentReceivedFinalizing);
       setError(null);
+      setDeliveryFailureOrderId(null);
 
       for (let attempt = 0; attempt < 8; attempt += 1) {
         const response = await fetch(
@@ -150,6 +160,25 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
             });
           }
           setMessage(formatCopyTemplate(orderPlacedTemplate, { orderId: payload.orderId }));
+          return;
+        }
+
+        if (payload.status === "delivery_failed") {
+          if (payload.orderId) {
+            if (markStorefrontCheckoutCompletedTracked(payload.orderId)) {
+              analytics?.track({
+                eventType: "checkout_completed",
+                orderId: payload.orderId,
+                value: {
+                  status: "completed",
+                  source: "checkout_status_poll"
+                }
+              });
+            }
+            setMessage(formatCopyTemplate(orderPlacedTemplate, { orderId: payload.orderId }));
+            setDeliveryFailureOrderId(payload.orderId);
+          }
+          setError(payload.error ?? digitalDeliveryFailedFallback);
           return;
         }
 
@@ -208,6 +237,24 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
   })();
 
   const previewError = studioEnabled && studioPreviewState === "failed" ? finalizationFailedMessage : error;
+  const supportEmail = resolvedSettings?.support_email?.trim();
+  const deliveryFailureSupportAction = deliveryFailureOrderId ? (
+    supportEmail ? (
+      <a
+        href={`mailto:${supportEmail}?subject=${encodeURIComponent(`Digital download help for order ${deliveryFailureOrderId}`)}`}
+        className={`font-medium ${STOREFRONT_TEXT_LINK_EFFECT_CLASS}`}
+      >
+        Contact store support
+      </a>
+    ) : (
+      <Link
+        href={buildStorefrontPoliciesPath(resolvedStore.slug, routeBasePath)}
+        className={`font-medium ${STOREFRONT_TEXT_LINK_EFFECT_CLASS}`}
+      >
+        View store support information
+      </Link>
+    )
+  ) : null;
 
   return (
     <div
@@ -316,7 +363,12 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
               />
             </div>
           ) : (
-            <AppAlert variant="error" message={previewError} />
+            <AppAlert
+              variant="error"
+              title={deliveryFailureOrderId ? "Digital delivery needs help" : undefined}
+              message={previewError}
+              action={deliveryFailureSupportAction}
+            />
           )}
           <div className="flex flex-col gap-3 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
             <Link href={buildStorefrontCartPath(resolvedStore.slug, routeBasePath)} className={`font-medium ${STOREFRONT_TEXT_LINK_EFFECT_CLASS}`}>

@@ -11,6 +11,47 @@ const querySchema = z.object({
   sessionId: z.string().min(10)
 });
 
+async function completedCheckoutResponse(
+  orderId: string | null,
+  digitalManifestId: string | null
+) {
+  if (!digitalManifestId) {
+    return NextResponse.json({ status: "completed", orderId });
+  }
+  if (!orderId) {
+    return NextResponse.json(
+      { status: "pending", error: "Digital delivery is still being prepared." },
+      { status: 503, headers: { "Retry-After": "2" } }
+    );
+  }
+
+  try {
+    const delivery = await enqueueDigitalDelivery(orderId, digitalManifestId);
+    if (delivery.status === "failed") {
+      return NextResponse.json(
+        {
+          status: "delivery_failed",
+          orderId,
+          digitalDeliveryStatus: "failed",
+          error:
+            "Payment was received, but the digital downloads could not be prepared. Contact the store for help with this order."
+        },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json({
+      status: "completed",
+      orderId,
+      digitalDeliveryStatus: delivery.status
+    });
+  } catch {
+    return NextResponse.json(
+      { status: "pending", error: "Digital delivery is still being prepared." },
+      { status: 503, headers: { "Retry-After": "2" } }
+    );
+  }
+}
+
 export async function GET(request: NextRequest) {
   const rateLimitResponse = await checkRateLimit(request, {
     key: "checkout-status",
@@ -45,23 +86,10 @@ export async function GET(request: NextRequest) {
     }
 
     if (checkout.status === "completed") {
-      if (checkout.digital_manifest_id) {
-        if (!checkout.order_id) {
-          return NextResponse.json(
-            { status: "pending", error: "Digital delivery is still being prepared." },
-            { status: 503, headers: { "Retry-After": "2" } }
-          );
-        }
-        try {
-          await enqueueDigitalDelivery(checkout.order_id, checkout.digital_manifest_id);
-        } catch {
-          return NextResponse.json(
-            { status: "pending", error: "Digital delivery is still being prepared." },
-            { status: 503, headers: { "Retry-After": "2" } }
-          );
-        }
-      }
-      return NextResponse.json({ status: "completed", orderId: checkout.order_id });
+      return completedCheckoutResponse(
+        checkout.order_id,
+        checkout.digital_manifest_id
+      );
     }
 
     if (checkout.status === "failed") {
@@ -82,7 +110,10 @@ export async function GET(request: NextRequest) {
         );
 
         if (finalized.status === "completed") {
-          return NextResponse.json({ status: "completed", orderId: finalized.orderId });
+          return completedCheckoutResponse(
+            finalized.orderId,
+            checkout.digital_manifest_id
+          );
         }
 
       }
