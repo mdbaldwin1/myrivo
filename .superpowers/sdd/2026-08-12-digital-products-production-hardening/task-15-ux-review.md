@@ -151,3 +151,62 @@ The iframe approach now distinguishes same-origin JSON failures from cross-origi
 ### Round 3 release disposition
 
 Do not approve the UX/accessibility gate. The remaining P1s are acceptance-evidence failures rather than cosmetic polish: the current browser suite still cannot detect a broken end-user workflow across the feature's most consequential states.
+
+---
+
+## Round 4 re-review — commit `14cafc6`
+
+### Verdict
+
+**FAIL** — the browser suite now performs several real UI interactions and the stalled-download state is resolved, but two P1 release-gate defects remain: the primary merchant upload fixture is not a valid PNG, and the buyer checkout test bypasses the actual Stripe checkout/payment experience. Accessibility coverage is improved incrementally but still does not verify the required dynamic workflows and announcements.
+
+### P1 — The merchant upload journey supplies spoofed PNG bytes and cannot pass the production validation path
+
+**Evidence:** `apps/web/e2e/digital-products.spec.ts:9-16`, especially line 13.
+
+The test declares `mimeType: "image/png"` and the filename `acceptance-art.png`, but the uploaded buffer is the UTF-8 bytes for `acceptance-image`, not a PNG file with a valid signature and decodable pixel data. The production asset pipeline explicitly rejects MIME/signature spoofing and performs bounded image decoding. Therefore the release-gate journey will fail before preview readiness and publish when run against the real application, or it will only pass if the configured environment bypasses the protections the release is intended to validate.
+
+**Required remediation:** Check in or generate a small, genuinely valid PNG fixture with known dimensions and safe content, upload it through the file control, await distinct upload-complete and preview-ready states, then activate and verify the product on the public storefront. Use a second valid image for replacement and assert the prior buyer's immutable filename/version after replacement.
+
+### P1 — The buyer test does not complete Stripe checkout or prove delivery/access continuity
+
+**Evidence:** `apps/web/e2e/digital-products.spec.ts:21-31`.
+
+After clicking Checkout and merely asserting that the URL contains `checkout|stripe`, the test manually navigates to the fixture's pre-seeded `checkoutReturn` URL. It does not interact with Stripe test mode, submit payment, wait for the webhook/delivery worker, observe the Resend message, or open the delivered fragment link. It also covers only one cart despite the requirement for both digital-only and mixed checkout. The final `observe` call has no asserted fields, so it does not prove the clicked download committed a grant or remained tied to the just-completed order.
+
+This can pass using an old seeded return URL even when checkout composition, payment completion, email delivery, fragment exchange, or order binding is broken.
+
+**Required remediation:** Complete both digital-only and mixed purchases in Stripe test mode (using Stripe's supported test automation), wait for exact checkout/delivery completion, retrieve the matching test-recipient message, open its access link, and download through the UI. Assert the same run/order IDs, digital-only absence of fulfillment, mixed physical fulfillment, immutable filename, and committed grant count from the bound observation. External provider credentials may block execution in this worktree, but the checked-in test must encode the real sequence rather than bypass it.
+
+### P1 — Accessibility coverage still does not establish the dynamic interaction gate
+
+**Evidence:** `apps/web/e2e/digital-products-accessibility.spec.ts:19-40`, `:55-82`, and `:84-90`.
+
+Improvements are real: 200% zoom now checks focused action bounds, recovery validation is keyboard-triggered and focus-checked, merchant file/publish controls are programmatically focusable, and reduced motion is checked while loading is active. However, substantive gaps remain:
+
+- The zoom target remains the last generic button/link rather than each surface's named primary action, and it is focused but never activated at zoom.
+- Recovery still uses four merely unique focus strings, not an expected focus order. Catalog controls are focused programmatically rather than reached/operated by keyboard; file upload, publish, replacement confirmation, cart, checkout, access, download, resend, and dialogs are not keyboard-driven.
+- Only the recovery validation announcement is asserted. Upload progress/completion/failure, preview readiness, publish result, checkout polling, delivery result, download success/failure/timeout, and resend feedback are not checked as live announcements.
+- Axe does not run after upload/preview/publish, replacement dialog, checkout/delivery, suspended/revoked access, download failure/timeout, or resend states.
+
+Because these are precisely the feature-specific dynamic states named in the Task 15 gate, initial-page axe scans plus a recovery error are insufficient for release approval.
+
+**Required remediation:** Extend the executable UI journeys with accessibility assertions at each dynamic state. Use Tab/Shift+Tab and Enter/Space to reach and operate exact controls, verify dialog trap/return focus, assert exact live-region messages, run axe after success/error/financial states, and activate named primary actions at 200% zoom on mobile and desktop.
+
+### P2 — Financial-state UI assertions remain overly broad and do not verify the intended access policy
+
+**Evidence:** `apps/web/e2e/digital-products.spec.ts:50-60`.
+
+Refund validation searches for the transition word anywhere on the customer order. Dispute validation accepts any one of `available|unavailable|suspended|revoked` for every transition, so “opened,” “won,” and “lost” can all show the wrong state and still pass. The test does not verify partial refund preserves access, full refund revokes it, open dispute suspends it, won restores it, or lost revokes it.
+
+**Remediation:** Assert exact state-specific status labels, explanatory copy, download-button availability, and merchant/customer recovery actions after each injected event. Validate exact bound observation fields as a secondary check.
+
+### Resolved from round 3
+
+- **Control endpoint scope:** privileged actions are now limited to reset, observation, and provider-state injection; merchant upload/publish, recovery, replacement, resend, cart initiation, access, and download are attempted through UI controls.
+- **Stalled download:** `digital-download-list.tsx:150-184` adds a configurable timeout, clears the pending state, announces retry guidance, removes the iframe, and blocks concurrent attempts. The component test exercises the silent-response path without claiming success.
+- **Zoom/reduced-motion basics:** focused bounds and an active-spinner computed-style assertion are now present.
+
+### Round 4 release disposition
+
+Do not approve the UX/accessibility gate. Provider fixture absence is an acceptable external execution blocker, but the repository-side acceptance test itself must first describe a valid upload and an actual Stripe/Resend checkout-to-download journey with exact state assertions.
