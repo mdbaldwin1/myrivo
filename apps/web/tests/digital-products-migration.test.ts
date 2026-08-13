@@ -41,6 +41,10 @@ const publishingReadinessSerializationMigration = join(
   repoRoot,
   "supabase/migrations/20260812230000_serialize_digital_publish_readiness.sql",
 );
+const publishingReadinessChildLockMigration = join(
+  repoRoot,
+  "supabase/migrations/20260812231000_lock_readiness_products_before_children.sql",
+);
 
 const ids = {
   storeA: "10000000-0000-0000-0000-000000000001",
@@ -298,6 +302,21 @@ async function waitForPostgresSession(database: string, applicationName: string)
   throw new Error(`PostgreSQL session ${applicationName} did not reach its race barrier`);
 }
 
+async function waitForPostgresLock(database: string, applicationName: string) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const waiting = runSql(
+      database,
+      `select count(*) from pg_stat_activity
+       where application_name = '${applicationName}'
+         and state = 'active'
+         and wait_event_type = 'Lock'`,
+    );
+    if (waiting === "1") return;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 20));
+  }
+  throw new Error(`PostgreSQL session ${applicationName} did not reach its lock barrier`);
+}
+
 function applyMigration(database: string, path: string) {
   runSql(database, readFileSync(path, "utf8"));
 }
@@ -332,6 +351,11 @@ beforeAll(() => {
   if (!existsSync(publishingReadinessSerializationMigration)) {
     throw new Error(
       `Missing publishing readiness serialization migration: ${publishingReadinessSerializationMigration}`,
+    );
+  }
+  if (!existsSync(publishingReadinessChildLockMigration)) {
+    throw new Error(
+      `Missing publishing readiness child lock migration: ${publishingReadinessChildLockMigration}`,
     );
   }
 
@@ -398,6 +422,7 @@ beforeAll(() => {
     applyMigration(database, previewCanonicalPathMigration);
     applyMigration(database, publishingReadinessMigration);
     applyMigration(database, publishingReadinessSerializationMigration);
+    applyMigration(database, publishingReadinessChildLockMigration);
   }
 
   execFileSync(createdb, ["full_chain"], {
@@ -1677,6 +1702,15 @@ describe("transactional digital product publishing", () => {
       ),
     ).toBe("false:false:true");
     expect(
+      runSql(
+        "full_chain",
+        `select
+          has_function_privilege('anon', 'public.acquire_digital_readiness_mutation_lock()', 'execute')::text || ':' ||
+          has_function_privilege('authenticated', 'public.acquire_digital_readiness_mutation_lock()', 'execute')::text || ':' ||
+          has_function_privilege('service_role', 'public.acquire_digital_readiness_mutation_lock()', 'execute')::text`,
+      ),
+    ).toBe("false:false:false");
+    expect(
       JSON.parse(
         runSql(
           "full_chain",
@@ -1753,5 +1787,105 @@ describe("transactional digital product publishing", () => {
          where p.id = '${publishingIds.product}'`,
       ),
     ).toBe("draft:processing");
+  });
+
+  it("serializes catalog variant writes with direct variant updates without deadlocking", async () => {
+    const proposedVariants = JSON.stringify([
+      {
+        id: publishingIds.variantOne,
+        title: "Catalog wins after serialization",
+        sku: "DIGITAL-BLUE",
+        sku_mode: "manual",
+        image_urls: [],
+        group_image_urls: [],
+        option_values: { Color: "Blue" },
+        price_cents: 1200,
+        inventory_qty: 0,
+        is_made_to_order: false,
+        is_default: true,
+        status: "active",
+        sort_order: 0,
+      },
+      {
+        id: publishingIds.variantTwo,
+        title: "Red",
+        sku: "DIGITAL-RED",
+        sku_mode: "manual",
+        image_urls: [],
+        group_image_urls: [],
+        option_values: { Color: "Red" },
+        price_cents: 1200,
+        inventory_qty: 0,
+        is_made_to_order: false,
+        is_default: false,
+        status: "archived",
+        sort_order: 1,
+      },
+    ]).replaceAll("'", "''");
+
+    const catalogUpdate = runSqlAsync(
+      "full_chain",
+      `begin;
+       set local deadlock_timeout = '100ms';
+       set local lock_timeout = '5s';
+       do $catalog$
+       begin
+         perform pg_advisory_xact_lock(
+           hashtextextended('myrivo:digital-product-readiness:v1', 0)
+         );
+         perform 1 from public.products
+         where id = '${publishingIds.product}'
+         for update;
+       end;
+       $catalog$;
+       select pg_sleep(1.5);
+       select public.apply_digital_product_catalog_update(
+         '${publishingIds.store}', '${publishingIds.product}', '${publishingIds.user}',
+         '{}'::jsonb, '${proposedVariants}'::jsonb, '["Color"]'::jsonb
+       )::text;
+       commit;`,
+      "digital-readiness-catalog-variant-race",
+    );
+    await waitForPostgresSession(
+      "full_chain",
+      "digital-readiness-catalog-variant-race",
+    );
+
+    const directVariantUpdate = runSqlAsync(
+      "full_chain",
+      `begin;
+       set local deadlock_timeout = '100ms';
+       set local lock_timeout = '5s';
+       update public.product_variants
+       set status = 'archived'
+       where id = '${publishingIds.variantOne}';
+       commit;`,
+      "digital-readiness-direct-variant-race",
+    );
+    await waitForPostgresLock(
+      "full_chain",
+      "digital-readiness-direct-variant-race",
+    );
+
+    const [catalogResult, directResult] = await Promise.all([
+      catalogUpdate,
+      directVariantUpdate,
+    ]);
+    expect(directResult).toBe("");
+    expect(JSON.parse(catalogResult)).toEqual({
+      applied: true,
+      code: "applied",
+      reasons: [],
+    });
+    expect(
+      runSql(
+        "full_chain",
+        `select p.status || ':' || v.status || ':' || v.title
+         from public.products p
+         join public.product_variants v on v.product_id = p.id
+         where p.id = '${publishingIds.product}'
+           and v.id = '${publishingIds.variantOne}'`,
+      ),
+    ).toBe("draft:archived:Catalog wins after serialization");
   });
 });
