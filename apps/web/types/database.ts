@@ -768,6 +768,7 @@ export type StoreDomainRecord = {
 
 export type OrderItemRecord = {
   id: string;
+  store_id: string;
   order_id: string;
   product_id: string;
   product_variant_id: string | null;
@@ -780,7 +781,12 @@ export type OrderItemRecord = {
 };
 
 export type DigitalAssetStatus = "uploading" | "processing" | "ready" | "failed";
+export type DigitalPreviewStatus = "missing" | "processing" | "ready" | "failed";
 export type DigitalEntitlementStatus = "active" | "suspended" | "revoked";
+export type DigitalPurchaseManifestStatus = "draft" | "locked";
+export type DigitalDownloadGrantStatus = "reserved" | "issued" | "released" | "failed";
+export type DigitalDeliveryJobStatus = "pending" | "processing" | "succeeded" | "failed";
+export type DigitalDeliveryAttemptStatus = Exclude<DigitalDeliveryJobStatus, "pending">;
 
 export type DigitalProductAssetRecord = {
   id: string;
@@ -797,6 +803,8 @@ export type DigitalProductAssetRecord = {
 export type DigitalProductAssetVersionRecord = {
   id: string;
   asset_id: string;
+  product_id: string;
+  store_id: string;
   version_number: number;
   storage_path: string;
   customer_filename: string;
@@ -806,7 +814,23 @@ export type DigitalProductAssetVersionRecord = {
   status: DigitalAssetStatus;
   failure_reason: string | null;
   created_at: string;
+  upload_completed_at: string | null;
+  orphan_cleanup_after: string | null;
+  orphaned_at: string | null;
   retired_at: string | null;
+};
+
+export type DigitalProductPreviewRecord = {
+  product_id: string;
+  store_id: string;
+  source_asset_id: string | null;
+  source_asset_version_id: string | null;
+  public_preview_path: string | null;
+  status: DigitalPreviewStatus;
+  is_merchant_override: boolean;
+  failure_reason: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type DigitalOrderEntitlementRecord = {
@@ -830,6 +854,114 @@ export type DigitalOrderEntitlementRecord = {
   last_accessed_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type DigitalOrderAccessTokenRecord = {
+  id: string;
+  store_id: string;
+  order_id: string;
+  token_hash: string;
+  issuance_reason: "purchase" | "customer_request" | "merchant_resend";
+  expires_at: string;
+  revoked_at: string | null;
+  created_at: string;
+};
+
+export type DigitalDownloadGrantRecord = {
+  id: string;
+  store_id: string;
+  order_id: string;
+  entitlement_id: string;
+  access_token_id: string | null;
+  reservation_key: string;
+  client_fingerprint_hash: string;
+  status: DigitalDownloadGrantStatus;
+  reserved_at: string;
+  reservation_expires_at: string;
+  issued_at: string | null;
+  grace_expires_at: string | null;
+  released_at: string | null;
+  failed_at: string | null;
+  last_safe_error: string | null;
+};
+
+export type DigitalPurchaseManifestRecord = {
+  id: string;
+  store_id: string;
+  checkout_session_id: string | null;
+  order_id: string | null;
+  consent_version: string;
+  license_version: string;
+  status: DigitalPurchaseManifestStatus;
+  locked_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DigitalPurchaseManifestItemRecord = {
+  id: string;
+  manifest_id: string;
+  store_id: string;
+  order_id: string | null;
+  order_item_id: string | null;
+  product_id: string;
+  product_variant_id: string | null;
+  asset_id: string;
+  asset_version_id: string;
+  customer_filename: string;
+  mime_type: string;
+  byte_size: number;
+  checksum_sha256: string;
+  label: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DigitalManifestRepairAuditRecord = {
+  id: string;
+  subject_type: "manifest" | "manifest_item";
+  subject_id: string;
+  operation: "update" | "delete";
+  reason: string;
+  old_record: Record<string, unknown>;
+  new_record: Record<string, unknown> | null;
+  repaired_at: string;
+};
+
+export type DigitalDeliveryJobRecord = {
+  id: string;
+  store_id: string;
+  order_id: string;
+  job_type: string;
+  status: DigitalDeliveryJobStatus;
+  attempt_count: number;
+  next_attempt_at: string;
+  lease_expires_at: string | null;
+  last_safe_error: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DigitalDeliveryAttemptRecord = {
+  id: string;
+  job_id: string;
+  order_id: string;
+  store_id: string;
+  attempt_number: number;
+  status: DigitalDeliveryAttemptStatus;
+  safe_error: string | null;
+  started_at: string;
+  finished_at: string | null;
+};
+
+export type DigitalDownloadReservationRecord = {
+  grant_id: string;
+  asset_version_id: string;
+  customer_filename: string;
+  grant_status: DigitalDownloadGrantStatus;
+  reservation_expires_at: string;
 };
 
 export type InventoryMovementReason = "sale" | "restock" | "adjustment";
