@@ -264,3 +264,55 @@ The acceptance evidence schema is stricter, but the browser suite does not asser
 ### Round 5 release disposition
 
 Do not approve the UX/accessibility gate. Real provider credentials may remain an external execution blocker, but the checked-in journey must encode email retrieval and access-link continuity, and the dynamic accessibility requirements must be represented by executable assertions before the release gate can be considered complete.
+
+---
+
+## Round 6 re-review — commit `fb5720c`
+
+### Verdict
+
+**FAIL** — Resend message retrieval, clean-context fragment exchange, checkout composition binding, and isolated financial orders are now represented. One P1 remains unchanged: the accessibility suite still does not exercise the feature's critical dynamic states. The grant/version acceptance assertions also remain incomplete and include a likely mismatch with the actual sixth-download error message.
+
+### P1 — Dynamic accessibility coverage remains below the explicit release gate
+
+**Evidence:** `apps/web/e2e/digital-products-accessibility.spec.ts:19-40`, `:55-82`, and `:84-90`.
+
+The accessibility file is substantively unchanged from rounds 4 and 5. It still scans initial pages, validates one recovery error, programmatically focuses two catalog controls, and checks one active spinner. It does not:
+
+- keyboard-operate upload, preview/publish, replacement dialog, cart, checkout return, download, customer-order access, or merchant resend;
+- assert an expected focus order, modal focus trap, Escape behavior, or return focus;
+- verify live announcements for upload progress/completion/failure, preview readiness, publish, checkout polling/delivery, download success/failure/timeout, refund/dispute access changes, or resend;
+- run axe after upload/preview/publish, replacement confirmation, delivery failure, suspended/revoked access, download failure/timeout, or resend states;
+- activate each surface's named primary action at 200% zoom (it continues to select the last generic button/link, focus it, and stop).
+
+The new functional browser flow creates deterministic dynamic states that the accessibility suite could reuse, but it currently does not. Since Task 15 explicitly requires keyboard/focus, announcements, labels, contrast, reduced motion, zoom, and dynamic merchant/buyer states, this remains release-blocking rather than optional test depth.
+
+**Required remediation:** Add mobile and desktop accessibility journeys that use Tab/Shift+Tab and Enter/Space on exact named controls; verify replacement/confirmation focus trap and restoration; assert precise live-region messages for every asynchronous critical state; run axe after each success/error/financial state; and operate the named primary action at 200% zoom while asserting it remains unobscured and functional.
+
+### P2 — Five-grant, grace, and sixth-rejection assertions are not exact and may not match the UI response
+
+**Evidence:** `apps/web/e2e/digital-products.spec.ts:50-67`.
+
+The test plausibly initiates five downloads across the clean email context and the return-page context, but the `five-grants` observation is not asserted at all. It does not inspect committed grant count, grace reuse, or remaining grants, and it never deliberately performs a same-session grace reuse. After the sixth click it expects `/limit|contact|unavailable/`; the component's observed JSON-failure feedback is “could not be downloaded. Please try again,” so a correctly rejected 409 can fail this assertion. Conversely, any matching unrelated status text could satisfy it.
+
+**Remediation:** Assert the shared observation schema's exact entitlement/grant fields after each stage: five committed grants, grace reuse without increment, and sixth rejection with zero remaining. Assert the download button/state refresh and the exact accessible error message returned for limit exhaustion.
+
+### P2 — Replacement acceptance does not prove the prior buyer version was preserved
+
+**Evidence:** `apps/web/e2e/digital-products.spec.ts:71-85`.
+
+The merchant replaces the asset and records an observation, but the observation fields are not asserted and the original buyer's clean download view is not reopened. The test therefore does not prove that the existing entitlement retains the original asset-version ID/filename while future purchases receive the replacement.
+
+**Remediation:** Capture the pre-replacement manifest asset-version ID and customer filename, replace through the UI, then reopen the prior buyer access link/session and assert the same version/filename. Create or inspect a subsequent purchase and assert it receives the new version.
+
+### Resolved from round 5
+
+- **Email continuity:** `getResendAccessMessage()` finds a message by exact recipient plus completed order ID, retrieves its body, extracts a fragment-token download URL, rejects private-path content, and the scenario opens that URL in a fresh browser context (`digital-products.spec.ts:46-55`).
+- **Fragment cleanup:** the clean context asserts the resulting URL ends at `/downloads`, proving the bearer fragment is removed before use.
+- **Order/composition binding:** each hosted checkout extracts the newly completed order ID, observes that subject, and asserts `digital_only` or `mixed` composition (`digital-products.spec.ts:66-67`).
+- **Financial isolation:** separate order fixtures are used for partial refund, full refund, dispute won, and dispute lost, avoiding destructive serial-state contamination.
+- **Stall timeout:** remains implemented and unit-covered.
+
+### Round 6 release disposition
+
+Do not approve the UX/accessibility gate until the remaining P1 is resolved. The real-provider run may still be externally blocked, but repository-side dynamic accessibility assertions must exist and compile before provider availability can be the only outstanding acceptance dependency.
