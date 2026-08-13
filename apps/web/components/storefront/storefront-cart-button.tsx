@@ -1,10 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Minus, Plus, ShoppingCart, Trash2 } from "lucide-react";
 import { useOptionalStorefrontRuntime } from "@/components/storefront/storefront-runtime-provider";
-import { readStorefrontCart, STOREFRONT_CART_UPDATED_EVENT, syncStorefrontCart, writeStorefrontCart, type StorefrontCartEntry } from "@/lib/storefront/cart";
+import {
+  normalizeStorefrontCart,
+  readStorefrontCart,
+  STOREFRONT_CART_UPDATED_EVENT,
+  syncStorefrontCart,
+  writeStorefrontCart,
+  type StorefrontCartEntry
+} from "@/lib/storefront/cart";
 import { Button } from "@/components/ui/button";
 import { buildStorefrontCartPath } from "@/lib/storefront/paths";
 import { cn } from "@/lib/utils";
@@ -24,6 +31,7 @@ type CartPreviewItem = {
   quantity: number;
   unitPriceCents: number;
   lineTotalCents: number;
+  productType?: "physical" | "digital";
 };
 
 type CartPreviewResponse = {
@@ -50,14 +58,36 @@ export function StorefrontCartButton({
   const [isUpdatingPreview, setIsUpdatingPreview] = useState(false);
   const resolvedHref = href ?? (storeSlug ? buildStorefrontCartPath(storeSlug, routeBasePath) : "/cart");
 
-  function syncCount() {
-    const nextCount = readStorefrontCart().reduce((sum, entry) => sum + entry.quantity, 0);
+  const normalizeEntries = useCallback((entries: StorefrontCartEntry[]) => {
+    if (runtime?.products) {
+      return normalizeStorefrontCart(entries, runtime.products);
+    }
+
+    return entries
+      .filter((entry) => Number.isFinite(entry.quantity) && entry.quantity > 0)
+      .map((entry) => ({
+        ...entry,
+        quantity: Math.min(99, Math.max(1, Math.trunc(entry.quantity)))
+      }));
+  }, [runtime?.products]);
+
+  const readNormalizedCart = useCallback(() => {
+    const current = readStorefrontCart();
+    const normalized = normalizeEntries(current);
+    if (JSON.stringify(normalized) !== JSON.stringify(current)) {
+      writeStorefrontCart(normalized);
+    }
+    return normalized;
+  }, [normalizeEntries]);
+
+  const syncCount = useCallback(() => {
+    const nextCount = readNormalizedCart().reduce((sum, entry) => sum + entry.quantity, 0);
     setCount(nextCount);
-  }
+  }, [readNormalizedCart]);
 
   useEffect(() => {
     queueMicrotask(syncCount);
-  }, []);
+  }, [syncCount]);
 
   useEffect(() => {
     function onStorage() {
@@ -74,10 +104,10 @@ export function StorefrontCartButton({
       window.removeEventListener("storage", onStorage);
       window.removeEventListener(STOREFRONT_CART_UPDATED_EVENT, onCartUpdated);
     };
-  }, []);
+  }, [syncCount]);
 
   async function loadPreview() {
-    const entries = readStorefrontCart();
+    const entries = readNormalizedCart();
     const nextCount = entries.reduce((sum, entry) => sum + entry.quantity, 0);
     setCount(nextCount);
 
@@ -103,17 +133,22 @@ export function StorefrontCartButton({
       return;
     }
 
-    setPreviewItems(payload.items ?? []);
+    setPreviewItems((payload.items ?? []).map((item) => {
+      const [productId, variantId] = item.key.split(":");
+      const product = runtime?.products.find((candidate) => candidate.id === productId);
+      const hasActiveVariant = product?.product_variants.some(
+        (variant) => variant.id === variantId && variant.status === "active"
+      );
+      return {
+        ...item,
+        productType: hasActiveVariant ? product?.product_type ?? "physical" : undefined
+      };
+    }));
     setPreviewSubtotalCents(payload.subtotalCents ?? 0);
   }
 
   async function updatePreviewCart(updater: (current: StorefrontCartEntry[]) => StorefrontCartEntry[]) {
-    const next = updater(readStorefrontCart())
-      .map((entry) => ({
-        ...entry,
-        quantity: Math.min(99, Math.max(1, entry.quantity))
-      }))
-      .filter((entry) => entry.quantity > 0);
+    const next = normalizeEntries(updater(readNormalizedCart()));
 
     writeStorefrontCart(next);
     setCount(next.reduce((sum, entry) => sum + entry.quantity, 0));
@@ -245,7 +280,9 @@ export function StorefrontCartButton({
                     <p className="text-xs font-medium">${(item.lineTotalCents / 100).toFixed(2)}</p>
                   </div>
                   <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-1">
+                    {item.productType === "digital" ? (
+                      <p className="text-[11px] text-muted-foreground">Instant digital delivery · Quantity 1</p>
+                    ) : <div className="flex items-center gap-1">
                       <Button
                         type="button"
                         variant="ghost"
@@ -269,7 +306,7 @@ export function StorefrontCartButton({
                         <Plus className="h-3 w-3" />
                         <span className="sr-only">Increase quantity</span>
                       </Button>
-                    </div>
+                    </div>}
                     <Button
                       type="button"
                       variant="ghost"

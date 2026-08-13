@@ -65,6 +65,10 @@ const digitalCheckoutCompositionMigration = join(
   repoRoot,
   "supabase/migrations/20260813003000_digital_checkout_composition.sql",
 );
+const digitalCheckoutPolicyMigration = join(
+  repoRoot,
+  "supabase/migrations/20260813004000_enforce_digital_checkout_policy.sql",
+);
 
 const ids = {
   storeA: "10000000-0000-0000-0000-000000000001",
@@ -109,6 +113,8 @@ const ids = {
   manifestProductWideV1: "72000000-0000-4000-8000-000000000001",
   manifestProductWideV2: "72000000-0000-4000-8000-000000000002",
   manifestVariantV1: "72000000-0000-4000-8000-000000000003",
+  policyUpgradeStore: "12000000-0000-4000-8000-000000000041",
+  policyUpgradeCheckout: "42000000-0000-4000-8000-000000000041",
 } as const;
 
 const baseSchema = `
@@ -411,6 +417,9 @@ beforeAll(() => {
   if (!existsSync(digitalCheckoutCompositionMigration)) {
     throw new Error(`Missing digital checkout composition migration: ${digitalCheckoutCompositionMigration}`);
   }
+  if (!existsSync(digitalCheckoutPolicyMigration)) {
+    throw new Error(`Missing digital checkout policy migration: ${digitalCheckoutPolicyMigration}`);
+  }
 
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-digital-migration-"));
   port = 55432 + (process.pid % 9000);
@@ -489,6 +498,34 @@ beforeAll(() => {
   for (const migration of readdirSync(migrationsDirectory)
     .filter((file) => file.endsWith(".sql"))
     .sort()) {
+    if (migration === "20260813004000_enforce_digital_checkout_policy.sql") {
+      runSql(
+        "full_chain",
+        `insert into auth.users(id, email) values
+          ('00000000-0000-4000-8000-000000000041', 'policy-upgrade@example.test');
+        insert into public.stores(id, owner_user_id, name, slug, status) values (
+          '${ids.policyUpgradeStore}', '00000000-0000-4000-8000-000000000041',
+          'Policy Upgrade Store', 'policy-upgrade-store', 'live'
+        );
+        insert into public.storefront_checkout_sessions(
+          id, store_id, store_slug, customer_email, items, checkout_composition,
+          fulfillment_method, fulfillment_label, shipping_fee_cents, checkout_mode,
+          tax_collection_mode_snapshot, applied_promotions_json, status,
+          checkout_attempt_key, checkout_request_fingerprint_sha256
+        ) values (
+          '${ids.policyUpgradeCheckout}', '${ids.policyUpgradeStore}',
+          'policy-upgrade-store', 'legacy-policy@example.test',
+          jsonb_build_array(jsonb_build_object(
+            'productId', '22000000-0000-4000-8000-000000000041',
+            'variantId', '32000000-0000-4000-8000-000000000041',
+            'quantity', 1, 'productType', 'digital', 'unitPriceCents', 100
+          )),
+          'digital_only', 'digital_delivery', 'Digital delivery', 0, 'stub',
+          'seller_attested_no_tax', '[]'::jsonb, 'pending',
+          '018f6fc1-8adc-7f43-8000-000000000641', '${"c".repeat(64)}'
+        )`,
+      );
+    }
     applyMigration("full_chain", join(migrationsDirectory, migration));
   }
 
@@ -1156,6 +1193,9 @@ describe("checkout attempt recovery", () => {
       'productType', 'digital',
       'unitPriceCents', 2500
     )),
+    'digital_consent_version', '${DIGITAL_PRODUCT_CONFIG.consentVersion}',
+    'digital_consent_accepted_at', '2026-08-13T04:00:00Z',
+    'digital_license_version', '${DIGITAL_PRODUCT_CONFIG.licenseVersion}',
     'checkout_mode', 'stub',
     'stripe_account_id_snapshot', null,
     'tax_collection_mode_snapshot', 'seller_attested_no_tax',
@@ -1404,13 +1444,14 @@ describe("checkout attempt recovery", () => {
 });
 
 describe("digital checkout composition database contract", () => {
-  function createAttempt({
+  function buildAttemptStatement({
     attemptSuffix,
     fingerprintCharacter,
     composition,
     fulfillmentMethod,
     customerPhone,
     items,
+    digitalPolicySql,
   }: {
     attemptSuffix: string;
     fingerprintCharacter: string;
@@ -1418,11 +1459,19 @@ describe("digital checkout composition database contract", () => {
     fulfillmentMethod: "digital_delivery" | "shipping";
     customerPhone: string | null;
     items: string;
+    digitalPolicySql?: string;
   }) {
-    return JSON.parse(
-      runSql(
-        "full_chain",
-        `select public.create_or_reuse_storefront_checkout_attempt(
+    const resolvedDigitalPolicySql = digitalPolicySql ?? (
+      composition === "physical_only"
+        ? ""
+        : `,
+            'digital_consent_version', '${DIGITAL_PRODUCT_CONFIG.consentVersion}',
+            'digital_consent_accepted_at', '2026-08-13T04:00:00Z',
+            'digital_license_version', '${DIGITAL_PRODUCT_CONFIG.licenseVersion}'`
+    );
+
+    return `set role service_role;
+        select public.create_or_reuse_storefront_checkout_attempt(
           '${ids.manifestStore}',
           '018f6fc1-8adc-7f43-8000-${attemptSuffix}',
           '${fingerprintCharacter.repeat(64)}',
@@ -1446,12 +1495,18 @@ describe("digital checkout composition database contract", () => {
             'items', ${items},
             'checkout_composition', '${composition}',
             'checkout_mode', 'stub',
-            'tax_collection_mode_snapshot', 'seller_attested_no_tax',
+            'tax_collection_mode_snapshot', 'seller_attested_no_tax'${resolvedDigitalPolicySql},
             'status', 'pending'
           )
-        )`,
-      ),
-    ) as { id: string; checkout_composition: string };
+        );
+        reset role`;
+  }
+
+  function createAttempt(input: Parameters<typeof buildAttemptStatement>[0]) {
+    return JSON.parse(runSql("full_chain", buildAttemptStatement(input))) as {
+      id: string;
+      checkout_composition: string;
+    };
   }
 
   const digitalItem = (quantity = 1) => `jsonb_build_object(
@@ -1472,6 +1527,123 @@ describe("digital checkout composition database contract", () => {
     'productType', 'physical',
     'unitPriceCents', 1500
   )`;
+
+  it("rejects direct digital and mixed attempts without the configured consent and license snapshots", () => {
+    expectRejected("full_chain", buildAttemptStatement({
+      attemptSuffix: "000000000616",
+      fingerprintCharacter: "6",
+      composition: "digital_only",
+      fulfillmentMethod: "digital_delivery",
+      customerPhone: null,
+      items: `jsonb_build_array(${digitalItem()})`,
+      digitalPolicySql: ""
+    }));
+    expectRejected("full_chain", buildAttemptStatement({
+      attemptSuffix: "000000000617",
+      fingerprintCharacter: "7",
+      composition: "mixed",
+      fulfillmentMethod: "shipping",
+      customerPhone: "555-0117",
+      items: `jsonb_build_array(${digitalItem()}, ${physicalItem()})`,
+      digitalPolicySql: `,
+        'digital_consent_version', '${DIGITAL_PRODUCT_CONFIG.consentVersion}',
+        'digital_consent_accepted_at', '2026-08-13T04:00:00Z',
+        'digital_license_version', 'wrong-license-v1'`
+    }));
+    expectRejected("full_chain", buildAttemptStatement({
+      attemptSuffix: "000000000620",
+      fingerprintCharacter: "a",
+      composition: "digital_only",
+      fulfillmentMethod: "digital_delivery",
+      customerPhone: null,
+      items: `jsonb_build_array(${digitalItem()})`,
+      digitalPolicySql: `,
+        'digital_consent_version', 'wrong-consent-v1',
+        'digital_consent_accepted_at', '2026-08-13T04:00:00Z',
+        'digital_license_version', '${DIGITAL_PRODUCT_CONFIG.licenseVersion}'`
+    }));
+    expectRejected("full_chain", buildAttemptStatement({
+      attemptSuffix: "000000000621",
+      fingerprintCharacter: "b",
+      composition: "mixed",
+      fulfillmentMethod: "shipping",
+      customerPhone: "555-0121",
+      items: `jsonb_build_array(${digitalItem()}, ${physicalItem()})`,
+      digitalPolicySql: `,
+        'digital_consent_version', '${DIGITAL_PRODUCT_CONFIG.consentVersion}',
+        'digital_consent_accepted_at', now() + interval '1 day',
+        'digital_license_version', '${DIGITAL_PRODUCT_CONFIG.licenseVersion}'`
+    }));
+  });
+
+  it("accepts configured digital policy snapshots while leaving physical-only attempts unaffected", () => {
+    expect(createAttempt({
+      attemptSuffix: "000000000618",
+      fingerprintCharacter: "8",
+      composition: "digital_only",
+      fulfillmentMethod: "digital_delivery",
+      customerPhone: null,
+      items: `jsonb_build_array(${digitalItem()})`
+    }).checkout_composition).toBe("digital_only");
+    expect(createAttempt({
+      attemptSuffix: "000000000619",
+      fingerprintCharacter: "9",
+      composition: "physical_only",
+      fulfillmentMethod: "shipping",
+      customerPhone: "555-0119",
+      items: `jsonb_build_array(${physicalItem()})`
+    }).checkout_composition).toBe("physical_only");
+
+    expect(runSql(
+      "full_chain",
+      `insert into public.storefront_checkout_sessions(
+         id, store_id, store_slug, customer_email, items, status
+       ) values (
+         '42000000-0000-4000-8000-000000000619', '${ids.manifestStore}',
+         'manifest-store', 'legacy-physical@example.test',
+         jsonb_build_array(${physicalItem()}), 'pending'
+       ) returning id`,
+    )).toBe("42000000-0000-4000-8000-000000000619");
+  });
+
+  it("preserves a pre-migration digital attempt and resumes it without mutable revalidation", () => {
+    const retry = JSON.parse(runSql(
+      "full_chain",
+      `set role service_role;
+       select public.create_or_reuse_storefront_checkout_attempt(
+         '${ids.policyUpgradeStore}', '018f6fc1-8adc-7f43-8000-000000000641',
+         '${"c".repeat(64)}', '{}'::jsonb
+       );
+       reset role`,
+    )) as {
+      id: string;
+      created: boolean;
+      checkout_composition: string;
+      digital_consent_version: string | null;
+    };
+
+    expect(retry).toMatchObject({
+      id: ids.policyUpgradeCheckout,
+      created: false,
+      checkout_composition: "digital_only",
+      digital_consent_version: null
+    });
+  });
+
+  it("keeps digital policy configuration private and aligned with application defaults", () => {
+    expect(runSql(
+      "full_chain",
+      `select consent_version || ':' || license_version
+       from public.digital_checkout_policy_versions where singleton = true`,
+    )).toBe(`${DIGITAL_PRODUCT_CONFIG.consentVersion}:${DIGITAL_PRODUCT_CONFIG.licenseVersion}`);
+    expect(runSql(
+      "full_chain",
+      `select
+        has_table_privilege('anon', 'public.digital_checkout_policy_versions', 'select')::text || ':' ||
+        has_table_privilege('authenticated', 'public.digital_checkout_policy_versions', 'select')::text || ':' ||
+        has_function_privilege('service_role', 'public.create_or_reuse_storefront_checkout_attempt(uuid,text,text,jsonb)', 'execute')::text`,
+    )).toBe("false:false:true");
+  });
 
   it("finalizes a zero-inventory digital-only order without inventory mutation", () => {
     runSql(

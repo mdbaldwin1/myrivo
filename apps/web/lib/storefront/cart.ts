@@ -12,29 +12,40 @@ export type StorefrontCartEntry = {
 export type StorefrontCartProduct = {
   id: string;
   product_type?: "physical" | "digital";
+  product_variants: ReadonlyArray<{
+    id: string;
+    status: "active" | "archived";
+  }>;
 };
 
 export function normalizeStorefrontCart(
   entries: readonly StorefrontCartEntry[],
   products: readonly StorefrontCartProduct[]
 ): StorefrontCartEntry[] {
-  const productTypes = new Map(
-    products.map((product) => [product.id, product.product_type ?? "physical"] as const)
-  );
+  const activeSelections = new Map<string, "physical" | "digital">();
+  for (const product of products) {
+    for (const variant of product.product_variants) {
+      if (variant.status === "active") {
+        activeSelections.set(
+          `${product.id}:${variant.id}`,
+          product.product_type ?? "physical"
+        );
+      }
+    }
+  }
   const normalized = new Map<string, StorefrontCartEntry>();
 
   for (const entry of entries) {
+    const key = `${entry.productId}:${entry.variantId}`;
     if (
-      !productTypes.has(entry.productId) ||
-      !entry.variantId ||
+      !activeSelections.has(key) ||
       !Number.isFinite(entry.quantity) ||
       entry.quantity <= 0
     ) {
       continue;
     }
 
-    const key = `${entry.productId}:${entry.variantId}`;
-    const productType = productTypes.get(entry.productId);
+    const productType = activeSelections.get(key);
     const quantity = Math.max(1, Math.min(99, Math.trunc(entry.quantity)));
     const existing = normalized.get(key);
 

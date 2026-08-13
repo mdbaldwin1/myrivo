@@ -160,11 +160,6 @@ function getSortedActiveVariants(product: StorefrontProduct) {
     });
 }
 
-function getDefaultVariant(product: StorefrontProduct) {
-  const variants = getSortedActiveVariants(product);
-  return variants.find((variant) => variant.is_default) ?? variants[0] ?? null;
-}
-
 export function StorefrontCartPage({ store, viewer, branding, settings, products, studio }: Props) {
   const runtime = useOptionalStorefrontRuntime();
   const analytics = useOptionalStorefrontAnalytics();
@@ -401,7 +396,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
       .map((entry) => {
         const product = resolvedProducts.find((item) => item.id === entry.productId);
         if (!product) return null;
-        const variant = getSortedActiveVariants(product).find((item) => item.id === entry.variantId) ?? getDefaultVariant(product);
+        const variant = getSortedActiveVariants(product).find((item) => item.id === entry.variantId);
         if (!variant) return null;
         return { ...entry, product, variant };
       })

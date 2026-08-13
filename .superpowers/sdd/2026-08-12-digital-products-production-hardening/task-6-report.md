@@ -101,3 +101,59 @@ The full suite retained only pre-existing refund/dispute mock stderr and zero-si
 
 - Docker-backed Supabase reset was unavailable locally. PostgreSQL 17 executed the real fresh, upgrade, and full repository migration chains; CI should still repeat them against the project Supabase stack.
 - The `bd` executable remains unavailable, so repository bead commands could not run.
+
+## Fix Round 1: Variant-Safe Cart Normalization and Digital Policy Enforcement
+
+### Authoritative cart normalization
+
+- The shared storefront cart normalizer now validates each exact product/variant pair against the active catalog instead of trusting only the product ID.
+- Archived, missing, and cross-product variant selections are removed. The cart page no longer silently presents the current default variant while retaining a stale variant ID.
+- Storefront quick-add uses the shared normalizer during hydration, mutation, persistence, and server sync. Digital lines remain quantity one even when an older local entry contains an arbitrary quantity.
+- Zero-inventory digital products remain quick-addable because digital delivery does not participate in physical stock availability.
+- The mini-cart normalizes from the storefront runtime catalog before count calculation, local persistence, preview requests, updates, and authenticated cart sync. Digital preview lines show instant delivery and expose no quantity controls.
+- Authenticated/local cart merge and cart-page update paths continue through the same exact active-variant normalizer.
+
+### Database consent and license boundary
+
+- Added a private singleton platform configuration row for the current digital consent and personal-use license versions.
+- A forward-only trigger now rejects every newly inserted or materially edited digital/mixed checkout snapshot unless it contains the configured consent version, configured license version, and a non-null acceptance timestamp no more than five minutes in the future.
+- Product-type inspection supplements composition inspection, so a forged or absent composition value cannot bypass the policy requirement.
+- Physical-only snapshots remain unaffected, including legacy rows whose composition is null.
+- The migration does not retroactively validate or rewrite existing attempts. A pre-migration digital attempt remains resolvable through the early immutable retry path.
+- Policy configuration is unreadable to `anon` and `authenticated`; checkout attempt creation remains executable only by `service_role`.
+
+### TDD evidence
+
+RED was observed across five intended regressions:
+
+```text
+shared normalizer retained archived, missing, and cross-product variants
+mini-cart preview sent a digital quantity of 9
+cart page rendered the current default for a stale variant ID
+storefront quick-add did not produce a normalized digital sync
+database accepted a digital attempt without policy evidence
+```
+
+The first database implementation run also revealed three older digital attempt fixtures that omitted their now-required policy snapshots; those fixtures were corrected to mirror production inputs. During self-review, a new real-PostgreSQL regression proved a null-composition physical row was incorrectly entering the policy branch because of SQL three-valued boolean logic. The trigger now explicitly treats a null composition predicate as false, and the regression passes.
+
+### Validation
+
+- Focused checkout/cart/PostgreSQL suite — 11 files and 102 tests passed.
+- Native PostgreSQL migration contract — 61 tests passed, including missing/wrong/future policy rejection, valid digital acceptance, physical-only acceptance, private configuration, full-chain replay, and pre-migration retry.
+- `npm run typecheck` — passed.
+- `npm run lint` — passed with zero warnings/errors after correcting the mini-cart hook dependency memoization; consistency checks passed.
+- `npm test` — 235 files and 807 tests passed.
+- `npm run build` — passed with production compilation, TypeScript, 158-page generation, optimization, and trace collection.
+- `git diff --check` — passed.
+
+The full suite/build retained only the previously documented refund/dispute mock stderr, zero-size chart warnings, Next.js middleware deprecation notice, and stale Browserslist-data notice.
+
+### Self-review
+
+- **Exact selection identity:** normalization accepts only an active variant belonging to the selected product and never substitutes another variant.
+- **All mutation surfaces:** home/product listing quick-add, cart hydration/update/merge, and mini-cart preview/update/persistence use the catalog-aware normalizer before emitting data.
+- **Digital quantity:** duplicate or arbitrary digital quantities converge to exactly one on each covered UI path.
+- **Compatibility:** runtime-less mini-cart embedding retains safe numeric normalization; normal storefront surfaces use their authoritative runtime catalog.
+- **Database enforcement:** the trigger defends the persisted boundary independently of route validation and inspects both composition and item snapshots.
+- **Upgrade safety:** existing checkout rows are not scanned or rewritten; an immutable pre-migration attempt retries from its stored snapshot.
+- **Least privilege:** policy values are platform-owned and private, while the existing service-role-only RPC boundary remains explicit.
