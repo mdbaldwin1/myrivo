@@ -219,6 +219,59 @@ The full suite/build retained only the previously documented refund/dispute mock
 - **Defense in depth:** even a direct database insert with forged physical item metadata cannot avoid digital consent/license enforcement.
 - **React quality:** derived product availability remains render-time state, existing callback memoization remains stable, and server reconciliation does not add fetch waterfalls or new global listeners.
 
+## Fix Round 4: Parent-First Authenticated Cart Transactions
+
+### Race-safe mutation protocol
+
+- Added `20260813007000_serialize_authenticated_cart_mutations.sql` as a forward-only hardening migration.
+- Repair, whole-cart replacement, and clear-and-abandon now acquire the owned active `customer_carts` row lock first, then lock existing `customer_cart_items` rows in stable ID order before reading or mutating the projection.
+- The authenticated cart route no longer deletes, inserts, or updates child rows directly. PUT calls one atomic replacement RPC; DELETE calls one atomic clear-and-abandon RPC.
+- Replacement revalidates every exact product/variant/store relationship inside the transaction, takes type and price from the current catalog, constrains digital quantities to one, and rolls the entire replacement back on malformed, duplicate, or unavailable input.
+- Repair returns a neutral empty projection when another customer owns the cart or when a concurrent clear abandons it before repair obtains the parent lock.
+- Direct child-table INSERT, UPDATE, and DELETE privileges are revoked from anon, authenticated, and service-role callers so application code cannot bypass the parent-first protocol.
+
+### Privilege and ownership boundary
+
+- All three cart RPCs grant execution only to `authenticated`. Anon and service role are explicitly denied because the customer cart route uses the authenticated user-scoped Supabase server client and the boundary depends on `auth.uid()`.
+- Cross-customer repair returns no rows, and cross-customer replace/clear return false without revealing cart state.
+- Existing RLS-protected reads remain available; the application mutation audit found no other production writer to `customer_cart_items`.
+
+### TDD and concurrency evidence
+
+RED was observed before implementation:
+
+```text
+PUT still deleted and inserted customer_cart_items directly
+DELETE still deleted child rows before abandoning the parent cart
+PostgreSQL lacked atomic replace and clear functions and their grants
+```
+
+Two native PostgreSQL two-connection regressions now prove both lock order outcomes:
+
+- repair obtains the parent lock first, clear waits, then clears the repaired projection and leaves `abandoned:0`;
+- clear obtains the parent lock first, repair waits, then returns an empty projection and leaves `abandoned:0`.
+
+Both races enforce a lock-wait barrier, complete without deadlock, and assert the final persisted child count rather than implementation text.
+
+### Validation
+
+- Focused route and complete native PostgreSQL migration contract: 2 files and 75 tests passed.
+- `npm run lint` — passed with zero warnings/errors and both consistency checks.
+- `npm run typecheck` — passed.
+- `npm test` — 236 files and 821 tests passed.
+- `npm run build` — passed; production compilation, TypeScript, 158-page generation, optimization, and trace collection completed.
+- `git diff --check` — passed.
+
+The full suite/build retained only the previously documented refund/dispute mock stderr, zero-size chart warnings, Next.js middleware deprecation notice, and stale Browserslist-data notice.
+
+### Self-review
+
+- **Lock order:** every application cart child mutation is parent-first, then child rows, which prevents stale repair snapshots and avoids child/parent lock inversion.
+- **Atomicity:** clear cannot leave an active or abandoned parent with resurrected rows, and replacement cannot expose a partially cleared cart.
+- **Authority:** catalog identity, type, and price are independently revalidated in PostgreSQL rather than trusting the route projection.
+- **Least privilege:** only the authenticated RPC surface can write customer cart children; anon, service-role, and direct authenticated DML are denied.
+- **Privacy:** ownership failures are neutral and do not disclose whether another customer's cart exists.
+
 ## Fix Round 3: Persisted Cart Repair and Strict Snapshot Composition
 
 ### Database checkout snapshots

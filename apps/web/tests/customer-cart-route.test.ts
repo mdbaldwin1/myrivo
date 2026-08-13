@@ -5,11 +5,6 @@ const enforceTrustedOriginMock = vi.fn();
 const authGetUserMock = vi.fn();
 const resolveStoreSlugFromRequestAsyncMock = vi.fn();
 const serverFromMock = vi.fn();
-const cartItemsInsertMock = vi.fn();
-const cartDeleteEqMock = vi.fn();
-const cartSelectStatusEqMock = vi.fn();
-const cartSelectUserEqMock = vi.fn();
-const cartSelectIdEqMock = vi.fn();
 const cartUpdateEqUserMock = vi.fn();
 const cartUpdateEqIdMock = vi.fn();
 const cartUpdateMock = vi.fn();
@@ -37,11 +32,6 @@ beforeEach(() => {
   authGetUserMock.mockReset();
   resolveStoreSlugFromRequestAsyncMock.mockReset();
   serverFromMock.mockReset();
-  cartItemsInsertMock.mockReset();
-  cartDeleteEqMock.mockReset();
-  cartSelectStatusEqMock.mockReset();
-  cartSelectUserEqMock.mockReset();
-  cartSelectIdEqMock.mockReset();
   cartUpdateEqUserMock.mockReset();
   cartUpdateEqIdMock.mockReset();
   cartUpdateMock.mockReset();
@@ -192,11 +182,12 @@ describe("customer cart route", () => {
     });
   });
 
-  test("PUT persists validated items with price snapshots", async () => {
+  test("PUT atomically replaces validated items through the authenticated cart boundary", async () => {
     const cartId = "cart-1";
     cartUpdateEqUserMock.mockResolvedValue({ error: null });
     cartUpdateEqIdMock.mockReturnValue({ eq: cartUpdateEqUserMock });
     cartUpdateMock.mockReturnValue({ eq: cartUpdateEqIdMock });
+    rpcMock.mockResolvedValue({ data: true, error: null });
 
     serverFromMock.mockImplementation((table: string) => {
       if (table === "stores") {
@@ -284,15 +275,6 @@ describe("customer cart route", () => {
         };
       }
 
-      if (table === "customer_cart_items") {
-        return {
-          delete: vi.fn(() => ({
-            eq: vi.fn(async () => ({ error: null }))
-          })),
-          insert: cartItemsInsertMock.mockResolvedValue({ error: null })
-        };
-      }
-
       throw new Error(`Unexpected table ${table}`);
     });
 
@@ -328,11 +310,14 @@ describe("customer cart route", () => {
 
     expect(response.status).toBe(200);
     expect(payload.ok).toBe(true);
-    expect(cartItemsInsertMock).toHaveBeenCalledTimes(1);
-    const inserted = cartItemsInsertMock.mock.calls[0]?.[0] as Array<{ quantity: number; unit_price_snapshot_cents: number }>;
-    expect(inserted).toHaveLength(1);
-    expect(inserted[0]?.quantity).toBe(3);
-    expect(inserted[0]?.unit_price_snapshot_cents).toBe(2500);
+    expect(rpcMock).toHaveBeenCalledWith("replace_authenticated_customer_cart_items", {
+      p_cart_id: cartId,
+      p_items: [{
+        product_id: "11111111-1111-4111-8111-111111111111",
+        product_variant_id: "22222222-2222-4222-8222-222222222222",
+        quantity: 3
+      }]
+    });
     expect(cartUpdateMock).toHaveBeenCalledWith(
       expect.objectContaining({
         analytics_session_id: "storefront-session-1",
@@ -350,6 +335,7 @@ describe("customer cart route", () => {
     cartUpdateEqUserMock.mockResolvedValue({ error: null });
     cartUpdateEqIdMock.mockReturnValue({ eq: cartUpdateEqUserMock });
     cartUpdateMock.mockReturnValue({ eq: cartUpdateEqIdMock });
+    rpcMock.mockResolvedValue({ data: true, error: null });
 
     serverFromMock.mockImplementation((table: string) => {
       if (table === "stores") {
@@ -431,12 +417,6 @@ describe("customer cart route", () => {
           }))
         };
       }
-      if (table === "customer_cart_items") {
-        return {
-          delete: vi.fn(() => ({ eq: vi.fn(async () => ({ error: null })) })),
-          insert: cartItemsInsertMock.mockResolvedValue({ error: null })
-        };
-      }
       throw new Error(`Unexpected table ${table}`);
     });
 
@@ -455,14 +435,14 @@ describe("customer cart route", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
-    expect(cartItemsInsertMock).toHaveBeenCalledWith([
-      expect.objectContaining({
+    expect(rpcMock).toHaveBeenCalledWith("replace_authenticated_customer_cart_items", {
+      p_cart_id: "cart-1",
+      p_items: [{
         product_id: validProductId,
         product_variant_id: validVariantId,
-        quantity: 1,
-        unit_price_snapshot_cents: 1200
-      })
-    ]);
+        quantity: 1
+      }]
+    });
   });
 
   test("DELETE rejects invalid cartId parameter", async () => {
@@ -480,37 +460,7 @@ describe("customer cart route", () => {
   });
 
   test("DELETE clears an active cart for the authenticated user", async () => {
-    cartSelectStatusEqMock.mockReturnValue({
-      maybeSingle: vi.fn(async () => ({ data: { id: "cart-1" }, error: null }))
-    });
-    cartSelectUserEqMock.mockReturnValue({ eq: cartSelectStatusEqMock });
-    cartSelectIdEqMock.mockReturnValue({ eq: cartSelectUserEqMock });
-    cartDeleteEqMock.mockResolvedValue({ error: null });
-    cartUpdateEqUserMock.mockResolvedValue({ error: null });
-    cartUpdateEqIdMock.mockReturnValue({ eq: cartUpdateEqUserMock });
-
-    serverFromMock.mockImplementation((table: string) => {
-      if (table === "customer_carts") {
-        return {
-          select: vi.fn(() => ({
-            eq: cartSelectIdEqMock
-          })),
-          update: vi.fn(() => ({
-            eq: cartUpdateEqIdMock
-          }))
-        };
-      }
-
-      if (table === "customer_cart_items") {
-        return {
-          delete: vi.fn(() => ({
-            eq: cartDeleteEqMock
-          }))
-        };
-      }
-
-      throw new Error(`Unexpected table ${table}`);
-    });
+    rpcMock.mockResolvedValue({ data: true, error: null });
 
     const route = await import("@/app/api/customer/cart/route");
     const request = new NextRequest("http://localhost:3000/api/customer/cart?cartId=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", {
@@ -523,8 +473,8 @@ describe("customer cart route", () => {
 
     expect(response.status).toBe(200);
     expect(payload.ok).toBe(true);
-    expect(cartDeleteEqMock).toHaveBeenCalledWith("cart_id", "cart-1");
-    expect(cartUpdateEqIdMock).toHaveBeenCalledWith("id", "cart-1");
-    expect(cartUpdateEqUserMock).toHaveBeenCalledWith("user_id", "user-1");
+    expect(rpcMock).toHaveBeenCalledWith("clear_authenticated_customer_cart", {
+      p_cart_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    });
   });
 });

@@ -77,6 +77,10 @@ const checkoutSnapshotAndCartRepairMigration = join(
   repoRoot,
   "supabase/migrations/20260813006000_enforce_checkout_snapshot_and_repair_carts.sql",
 );
+const serializedCartMutationsMigration = join(
+  repoRoot,
+  "supabase/migrations/20260813007000_serialize_authenticated_cart_mutations.sql",
+);
 
 const ids = {
   storeA: "10000000-0000-0000-0000-000000000001",
@@ -443,6 +447,9 @@ beforeAll(() => {
   }
   if (!existsSync(checkoutSnapshotAndCartRepairMigration)) {
     throw new Error(`Missing checkout snapshot and cart repair migration: ${checkoutSnapshotAndCartRepairMigration}`);
+  }
+  if (!existsSync(serializedCartMutationsMigration)) {
+    throw new Error(`Missing serialized cart mutations migration: ${serializedCartMutationsMigration}`);
   }
 
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-digital-migration-"));
@@ -2045,6 +2052,187 @@ describe("authenticated customer cart repair", () => {
     )).toBe(
       `${ids.manifestProduct}:${ids.manifestVariant}:1:2500,` +
       `${ids.cartChangedProduct}:${ids.cartChangedVariant}:1:1200`,
+    );
+  });
+
+  it("limits every cart mutation boundary to authenticated customers", () => {
+    expect(runSql(
+      "full_chain",
+      `select
+         has_function_privilege('anon', 'public.repair_authenticated_customer_cart(uuid)', 'execute')::text || ':' ||
+         has_function_privilege('authenticated', 'public.repair_authenticated_customer_cart(uuid)', 'execute')::text || ':' ||
+         has_function_privilege('service_role', 'public.repair_authenticated_customer_cart(uuid)', 'execute')::text || ':' ||
+         has_function_privilege('anon', 'public.replace_authenticated_customer_cart_items(uuid,jsonb)', 'execute')::text || ':' ||
+         has_function_privilege('authenticated', 'public.replace_authenticated_customer_cart_items(uuid,jsonb)', 'execute')::text || ':' ||
+         has_function_privilege('service_role', 'public.replace_authenticated_customer_cart_items(uuid,jsonb)', 'execute')::text || ':' ||
+         has_function_privilege('anon', 'public.clear_authenticated_customer_cart(uuid)', 'execute')::text || ':' ||
+         has_function_privilege('authenticated', 'public.clear_authenticated_customer_cart(uuid)', 'execute')::text || ':' ||
+         has_function_privilege('service_role', 'public.clear_authenticated_customer_cart(uuid)', 'execute')::text`,
+    )).toBe("false:true:false:false:true:false:false:true:false");
+    expect(runSql(
+      "full_chain",
+      `select
+         has_table_privilege('authenticated', 'public.customer_cart_items', 'insert')::text || ':' ||
+         has_table_privilege('authenticated', 'public.customer_cart_items', 'update')::text || ':' ||
+         has_table_privilege('authenticated', 'public.customer_cart_items', 'delete')::text || ':' ||
+         has_table_privilege('service_role', 'public.customer_cart_items', 'insert')::text || ':' ||
+         has_table_privilege('service_role', 'public.customer_cart_items', 'update')::text || ':' ||
+         has_table_privilege('service_role', 'public.customer_cart_items', 'delete')::text`,
+    )).toBe("false:false:false:false:false:false");
+  });
+
+  it("does not let an authenticated customer mutate another customer's cart", () => {
+    runSql(
+      "full_chain",
+      `create or replace function auth.uid() returns uuid language sql stable
+       as 'select ''00000000-0000-4000-8000-000000000099''::uuid';`,
+    );
+
+    expect(runSql(
+      "full_chain",
+      `set role authenticated;
+       select count(*)::text
+       from public.repair_authenticated_customer_cart('${ids.cartRepairCart}');
+       reset role`,
+    )).toBe("0");
+    expect(runSql(
+      "full_chain",
+      `set role authenticated;
+       select public.replace_authenticated_customer_cart_items(
+         '${ids.cartRepairCart}', '[]'::jsonb
+       )::text;
+       reset role`,
+    )).toBe("false");
+    expect(runSql(
+      "full_chain",
+      `set role authenticated;
+       select public.clear_authenticated_customer_cart('${ids.cartRepairCart}')::text;
+       reset role`,
+    )).toBe("false");
+    expectRejected(
+      "full_chain",
+      `set role authenticated;
+       delete from public.customer_cart_items
+       where cart_id = '${ids.cartRepairCart}'`,
+    );
+
+    runSql(
+      "full_chain",
+      `create or replace function auth.uid() returns uuid language sql stable
+       as 'select ''00000000-0000-4000-8000-000000000011''::uuid';`,
+    );
+  });
+
+  it("serializes repair against clear without resurrecting abandoned cart items", async () => {
+    const raceCart = "42000000-0000-4000-8000-000000000061";
+    const raceUser = "00000000-0000-4000-8000-000000000012";
+    runSql(
+      "full_chain",
+      `insert into auth.users(id, email)
+       values ('${raceUser}', 'cart-race@example.test');
+       insert into public.customer_carts(id, user_id, store_id, status)
+       values ('${raceCart}', '${raceUser}', '${ids.manifestStore}', 'active');
+       insert into public.customer_cart_items(
+         cart_id, product_id, product_variant_id, quantity, unit_price_snapshot_cents
+       ) values (
+         '${raceCart}', '${ids.manifestProduct}', '${ids.manifestVariant}', 9, 999
+       );
+       create or replace function auth.uid() returns uuid language sql stable
+       as 'select ''${raceUser}''::uuid';`,
+    );
+
+    const repair = runSqlAsync(
+      "full_chain",
+      `begin;
+       set local role authenticated;
+       select count(*) from public.repair_authenticated_customer_cart('${raceCart}');
+       select pg_sleep(1.5);
+       commit;`,
+      "customer-cart-repair-race",
+    );
+    await waitForPostgresSession("full_chain", "customer-cart-repair-race");
+
+    const clear = runSqlAsync(
+      "full_chain",
+      `set role authenticated;
+       select public.clear_authenticated_customer_cart('${raceCart}')::text;
+       reset role;`,
+      "customer-cart-clear-race",
+    );
+    await waitForPostgresLock("full_chain", "customer-cart-clear-race");
+
+    const [repairResult, clearResult] = await Promise.all([repair, clear]);
+    expect(repairResult.split("\n")[0]).toBe("1");
+    expect(clearResult).toBe("true");
+    expect(runSql(
+      "full_chain",
+      `select cart.status || ':' || count(item.id)::text
+       from public.customer_carts cart
+       left join public.customer_cart_items item on item.cart_id = cart.id
+       where cart.id = '${raceCart}'
+       group by cart.status`,
+    )).toBe("abandoned:0");
+    runSql(
+      "full_chain",
+      `create or replace function auth.uid() returns uuid language sql stable
+       as 'select ''00000000-0000-4000-8000-000000000011''::uuid';`,
+    );
+  });
+
+  it("returns an empty repair after a concurrent clear wins the parent lock", async () => {
+    const raceCart = "42000000-0000-4000-8000-000000000062";
+    const raceUser = "00000000-0000-4000-8000-000000000013";
+    runSql(
+      "full_chain",
+      `insert into auth.users(id, email)
+       values ('${raceUser}', 'cart-clear-first@example.test');
+       insert into public.customer_carts(id, user_id, store_id, status)
+       values ('${raceCart}', '${raceUser}', '${ids.manifestStore}', 'active');
+       insert into public.customer_cart_items(
+         cart_id, product_id, product_variant_id, quantity, unit_price_snapshot_cents
+       ) values (
+         '${raceCart}', '${ids.manifestProduct}', '${ids.manifestVariant}', 9, 999
+       );
+       create or replace function auth.uid() returns uuid language sql stable
+       as 'select ''${raceUser}''::uuid';`,
+    );
+
+    const clear = runSqlAsync(
+      "full_chain",
+      `begin;
+       set local role authenticated;
+       select public.clear_authenticated_customer_cart('${raceCart}')::text;
+       select pg_sleep(1.5);
+       commit;`,
+      "customer-cart-clear-first-race",
+    );
+    await waitForPostgresSession("full_chain", "customer-cart-clear-first-race");
+
+    const repair = runSqlAsync(
+      "full_chain",
+      `set role authenticated;
+       select count(*)::text
+       from public.repair_authenticated_customer_cart('${raceCart}');
+       reset role;`,
+      "customer-cart-repair-second-race",
+    );
+    await waitForPostgresLock("full_chain", "customer-cart-repair-second-race");
+
+    const [clearResult, repairResult] = await Promise.all([clear, repair]);
+    expect(clearResult.split("\n")[0]).toBe("true");
+    expect(repairResult).toBe("0");
+    expect(runSql(
+      "full_chain",
+      `select cart.status || ':' || count(item.id)::text
+       from public.customer_carts cart
+       left join public.customer_cart_items item on item.cart_id = cart.id
+       where cart.id = '${raceCart}'
+       group by cart.status`,
+    )).toBe("abandoned:0");
+    runSql(
+      "full_chain",
+      `create or replace function auth.uid() returns uuid language sql stable
+       as 'select ''00000000-0000-4000-8000-000000000011''::uuid';`,
     );
   });
 });

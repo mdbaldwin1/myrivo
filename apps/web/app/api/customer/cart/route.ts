@@ -233,8 +233,7 @@ export async function PUT(request: NextRequest) {
       productId: selectionLookup.selection.productId,
       variantId: selectionLookup.selection.variantId,
       productType: selectionLookup.selection.productType,
-      quantity: selectionLookup.selection.productType === "digital" ? 1 : item.quantity,
-      unitPriceSnapshotCents: selectionLookup.selection.unitPriceSnapshotCents
+      quantity: selectionLookup.selection.productType === "digital" ? 1 : item.quantity
     });
   }
 
@@ -243,7 +242,6 @@ export async function PUT(request: NextRequest) {
     variantId: string | null;
     productType: "physical" | "digital";
     quantity: number;
-    unitPriceSnapshotCents: number;
   }>();
   for (const selection of normalizedSelections) {
     const key = `${selection.productId ?? ""}::${selection.variantId ?? ""}`;
@@ -257,25 +255,22 @@ export async function PUT(request: NextRequest) {
     mergedSelections.set(key, { ...selection });
   }
 
-  const { error: clearError } = await supabase.from("customer_cart_items").delete().eq("cart_id", cart.id);
-  if (clearError) {
-    return NextResponse.json({ error: clearError.message }, { status: 500 });
-  }
-
-  if (mergedSelections.size > 0) {
-    const { error: insertError } = await supabase.from("customer_cart_items").insert(
-      [...mergedSelections.values()].map((item) => ({
-        cart_id: cart.id,
+  const { data: replaced, error: replaceError } = await supabase.rpc(
+    "replace_authenticated_customer_cart_items",
+    {
+      p_cart_id: cart.id,
+      p_items: [...mergedSelections.values()].map((item) => ({
         product_id: item.productId,
-        product_variant_id: item.variantId ?? null,
-        quantity: item.quantity,
-        unit_price_snapshot_cents: item.unitPriceSnapshotCents
+        product_variant_id: item.variantId,
+        quantity: item.quantity
       }))
-    );
-
-    if (insertError) {
-      return NextResponse.json({ error: insertError.message }, { status: 500 });
     }
+  ) as { data: boolean | null; error: { message: string } | null };
+  if (replaceError) {
+    return NextResponse.json({ error: replaceError.message }, { status: 500 });
+  }
+  if (!replaced) {
+    return NextResponse.json({ error: "Active cart not found." }, { status: 409 });
   }
 
   return NextResponse.json({ ok: true });
@@ -301,38 +296,15 @@ export async function DELETE(request: NextRequest) {
     return auth.response;
   }
 
-  const { data: cart, error: cartError } = await supabase
-    .from("customer_carts")
-    .select("id")
-    .eq("id", query.data.cartId)
-    .eq("user_id", auth.user.id)
-    .eq("status", "active")
-    .maybeSingle<{ id: string }>();
-
-  if (cartError) {
-    return NextResponse.json({ error: cartError.message }, { status: 500 });
-  }
-
-  if (!cart) {
-    return NextResponse.json({ error: "Active cart not found." }, { status: 404 });
-  }
-
-  const { error: clearError } = await supabase.from("customer_cart_items").delete().eq("cart_id", cart.id);
+  const { data: cleared, error: clearError } = await supabase.rpc(
+    "clear_authenticated_customer_cart",
+    { p_cart_id: query.data.cartId }
+  ) as { data: boolean | null; error: { message: string } | null };
   if (clearError) {
     return NextResponse.json({ error: clearError.message }, { status: 500 });
   }
-
-  const { error: cartUpdateError } = await supabase
-    .from("customer_carts")
-    .update({
-      status: "abandoned",
-      metadata_json: {}
-    })
-    .eq("id", cart.id)
-    .eq("user_id", auth.user.id);
-
-  if (cartUpdateError) {
-    return NextResponse.json({ error: cartUpdateError.message }, { status: 500 });
+  if (!cleared) {
+    return NextResponse.json({ error: "Active cart not found." }, { status: 404 });
   }
 
   return NextResponse.json({ ok: true });
