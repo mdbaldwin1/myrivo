@@ -654,6 +654,14 @@ beforeAll(() => {
       '${ids.manifestStore}', '00000000-0000-4000-8000-000000000011',
       'Manifest Store', 'manifest-store', 'live'
     );
+    update public.billing_plans
+    set feature_flags_json = feature_flags_json || '{"digitalProducts": true}'::jsonb
+    where id = (
+      select billing_plan_id from public.store_billing_profiles
+      where store_id = '${ids.manifestStore}'
+    );
+    insert into public.store_feature_flags(store_id, digital_products)
+    values ('${ids.manifestStore}', true);
     insert into public.products(
       id, store_id, title, description, price_cents, inventory_qty, status,
       product_type, digital_rights_affirmed_at, digital_rights_affirmed_by_user_id
@@ -723,7 +731,10 @@ beforeAll(() => {
         jsonb_build_object('productId', '${ids.manifestProduct}', 'variantId', '${ids.manifestVariant}', 'quantity', 1, 'productType', 'digital')
       ),
       'digital_only', 'pending', 'immediate-delivery-v1', '2026-08-13T04:01:00Z', 'personal-use-v1'
-    );`,
+    );
+    update public.store_feature_flags
+    set digital_products = false
+    where store_id = '${ids.manifestStore}';`,
   );
 }, 60_000);
 
@@ -734,6 +745,175 @@ afterAll(() => {
     });
     rmSync(clusterDirectory, { recursive: true, force: true });
   }
+});
+
+describe("digital product store rollout controls", () => {
+  const rolloutCheckoutId = "42000000-0000-4000-8000-000000000991";
+  const rolloutItemsSql = `jsonb_build_array(jsonb_build_object(
+    'productId', '${ids.manifestProduct}',
+    'variantId', '${ids.manifestVariant}',
+    'quantity', 1,
+    'variantLabel', 'Blue',
+    'productTitle', 'Digital set',
+    'productType', 'digital',
+    'unitPriceCents', 2500
+  ))`;
+
+  function enableRollout() {
+    runSql(
+      "full_chain",
+      `update public.billing_plans
+       set feature_flags_json = feature_flags_json || '{"digitalProducts": true}'::jsonb
+       where id = (
+         select billing_plan_id from public.store_billing_profiles
+         where store_id = '${ids.manifestStore}'
+       );
+       insert into public.store_feature_flags(store_id, digital_products)
+       values ('${ids.manifestStore}', true)
+       on conflict (store_id) do update set digital_products = excluded.digital_products`,
+    );
+  }
+
+  it("defaults off and requires both plan eligibility and a store enablement", () => {
+    expect(
+      runSql(
+        "full_chain",
+        `select public.is_store_digital_products_enabled('${ids.manifestStore}')::text`,
+      ),
+    ).toBe("false");
+
+    enableRollout();
+
+    expect(
+      runSql(
+        "full_chain",
+        `select public.is_store_digital_products_enabled('${ids.manifestStore}')::text`,
+      ),
+    ).toBe("true");
+  });
+
+  it("authoritatively blocks new digital catalog and checkout state while physical sales remain available", () => {
+    runSql(
+      "full_chain",
+      `update public.store_feature_flags
+       set digital_products = false
+       where store_id = '${ids.manifestStore}'`,
+    );
+
+    expectRejected(
+      "full_chain",
+      `insert into public.products(
+         store_id, title, description, price_cents, inventory_qty, status, product_type
+       ) values (
+         '${ids.manifestStore}', 'Disabled digital draft', '', 100, 0, 'draft', 'digital'
+       )`,
+    );
+    expectRejected(
+      "full_chain",
+      `insert into public.storefront_checkout_sessions(
+         store_id, store_slug, customer_email, items, checkout_composition, status,
+         digital_consent_version, digital_consent_accepted_at, digital_license_version
+       ) values (
+         '${ids.manifestStore}', 'manifest-store', 'new-sale@example.test',
+         ${rolloutItemsSql}, 'digital_only', 'pending',
+         'immediate-delivery-v1', now(), 'personal-use-v1'
+       )`,
+    );
+
+    expect(
+      runSql(
+        "full_chain",
+        `insert into public.storefront_checkout_sessions(
+           store_id, store_slug, customer_email, items, checkout_composition, status
+         ) values (
+           '${ids.manifestStore}', 'manifest-store', 'physical-sale@example.test',
+           jsonb_build_array(jsonb_build_object(
+             'productId', '${ids.manifestPhysicalProduct}',
+             'variantId', '${ids.manifestPhysicalVariant}',
+             'quantity', 1,
+             'productType', 'physical'
+           )), 'physical_only', 'pending'
+         ) returning checkout_composition`,
+      ),
+    ).toBe("physical_only");
+  });
+
+  it("keeps paid-order delivery and reconciliation callable after disablement", () => {
+    enableRollout();
+    runSql(
+      "full_chain",
+      `insert into public.storefront_checkout_sessions(
+         id, store_id, store_slug, customer_email, customer_first_name,
+         customer_last_name, items, checkout_composition, fulfillment_method,
+         fulfillment_label, shipping_fee_cents, promo_codes_json,
+         applied_promotions_json, fee_plan_key, fee_bps, fee_fixed_cents,
+         item_total_cents, platform_fee_cents, checkout_mode,
+         tax_collection_mode_snapshot, status, digital_consent_version,
+         digital_consent_accepted_at, digital_license_version
+       ) values (
+         '${rolloutCheckoutId}', '${ids.manifestStore}', 'manifest-store',
+         'rollout-paid@example.test', 'Rollout', 'Buyer', ${rolloutItemsSql},
+         'digital_only', 'digital_delivery', 'Digital delivery', 0, '[]'::jsonb,
+         '[]'::jsonb, 'standard', 600, 30, 2500, 180, 'stub',
+         'seller_attested_no_tax', 'pending', '${DIGITAL_PRODUCT_CONFIG.consentVersion}',
+         now(), '${DIGITAL_PRODUCT_CONFIG.licenseVersion}'
+       ) on conflict (id) do nothing`,
+    );
+    const manifestId = runSql(
+      "full_chain",
+      `select result ->> 'manifestId'
+       from (
+         select public.create_or_reuse_digital_checkout_manifest(
+           '${rolloutCheckoutId}', '${ids.manifestStore}', ${rolloutItemsSql},
+           '${DIGITAL_PRODUCT_CONFIG.consentVersion}',
+           (select digital_consent_accepted_at from public.storefront_checkout_sessions where id = '${rolloutCheckoutId}'),
+           '${DIGITAL_PRODUCT_CONFIG.licenseVersion}'
+         ) result
+       ) manifest`,
+    );
+    const orderId = runSql(
+      "full_chain",
+      `select order_id from public.stub_checkout_create_paid_order_with_manifest(
+        'manifest-store', 'ignored@example.test', null, '[]'::jsonb,
+        'stub_pi_rollout_paid', 0, null, '${rolloutCheckoutId}', '${manifestId}'
+      )`,
+    );
+    runSql(
+      "full_chain",
+      `update public.store_feature_flags
+       set digital_products = false
+       where store_id = '${ids.manifestStore}'`,
+    );
+
+    expect(
+      runSql(
+        "full_chain",
+        `select status from public.enqueue_digital_delivery('${orderId}', '${manifestId}')`,
+      ),
+    ).toBe("pending");
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.find_digital_access_reconciliation_issues(100)
+         where order_id = '${orderId}'`,
+      ),
+    ).toMatch(/^\d+$/);
+    enableRollout();
+  });
+
+  it("keeps rollout and health functions service-role-only", () => {
+    expect(
+      runSql(
+        "full_chain",
+        `select
+           has_function_privilege('anon', 'public.set_store_digital_products_enabled(uuid,boolean,uuid,text)', 'execute')::text || ':' ||
+           has_function_privilege('authenticated', 'public.set_store_digital_products_enabled(uuid,boolean,uuid,text)', 'execute')::text || ':' ||
+           has_function_privilege('service_role', 'public.set_store_digital_products_enabled(uuid,boolean,uuid,text)', 'execute')::text || ':' ||
+           has_function_privilege('anon', 'public.get_digital_delivery_health(integer)', 'execute')::text || ':' ||
+           has_function_privilege('service_role', 'public.get_digital_delivery_health(integer)', 'execute')::text`,
+      ),
+    ).toBe("false:false:true:false:true");
+  });
 });
 
 describe("digital product migration upgrade safety", () => {
@@ -5318,6 +5498,14 @@ describe("transactional digital product publishing", () => {
          ('${publishingIds.user}', 'publisher@example.test');
        insert into public.stores(id, owner_user_id, name, slug, status) values
          ('${publishingIds.store}', '${publishingIds.user}', 'Publishing Test', 'publishing-test', 'live');
+       update public.billing_plans
+       set feature_flags_json = feature_flags_json || '{"digitalProducts": true}'::jsonb
+       where id = (
+         select billing_plan_id from public.store_billing_profiles
+         where store_id = '${publishingIds.store}'
+       );
+       insert into public.store_feature_flags(store_id, digital_products)
+       values ('${publishingIds.store}', true);
        insert into public.products(
          id, store_id, title, description, slug, sku, price_cents,
          inventory_qty, status, product_type, digital_rights_affirmed_at,

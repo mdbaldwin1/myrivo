@@ -20,6 +20,8 @@ describe("email studio model", () => {
     expect(document.templates.customerConfirmation.subject).toContain("{orderShortId}");
     expect(document.templates.customerConfirmation.messageType).toBe("transactional");
     expect(document.templates.customerConfirmation.bodyHtml).toContain("{items}");
+    expect(document.templates.digitalDelivery.bodyHtml).toContain("{digitalFileCount}");
+    expect(document.templates.digitalDelivery.bodyHtml).not.toMatch(/token|storagePath|signedUrl/i);
     expect(document.templates.pickupUpdated.bodyHtml).toContain("{previousPickupDetails}");
     expect(document.templates.shippingDelay.bodyHtml).toContain("{shippingDelayReason}");
     expect(document.templates.refundIssued.bodyHtml).toContain("{refundAmount}");

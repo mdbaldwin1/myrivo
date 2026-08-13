@@ -5,6 +5,10 @@ const getUserMock = vi.fn();
 const getOwnedStoreBundleMock = vi.fn();
 const adminFromMock = vi.fn();
 
+vi.mock("@/lib/digital-products/feature-gating", () => ({
+  resolveStoreDigitalProductsAccess: vi.fn(async () => ({ enabled: true, planEligible: true, storeEnabled: true, planKey: "test" }))
+}));
+
 vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient: vi.fn(async () => ({
     auth: { getUser: (...args: unknown[]) => getUserMock(...args) },

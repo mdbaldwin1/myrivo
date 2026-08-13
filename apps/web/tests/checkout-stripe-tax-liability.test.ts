@@ -27,6 +27,10 @@ let authenticatedUserId: string | null;
 
 class TestDigitalPurchaseManifestError extends Error {}
 
+vi.mock("@/lib/digital-products/feature-gating", () => ({
+  resolveStoreDigitalProductsAccess: vi.fn(async () => ({ enabled: true, planEligible: true, storeEnabled: true, planKey: "test" }))
+}));
+
 vi.mock("@/lib/digital-products/manifest-service", () => ({
   createOrReuseCheckoutManifest: (...args: unknown[]) =>
     createOrReuseCheckoutManifestMock(...args),

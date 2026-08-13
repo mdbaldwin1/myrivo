@@ -674,7 +674,7 @@ export async function prepareDigitalDeliveryOrderConfirmationEmail(
     .join("\n");
   const rendered = renderOrderEmailTemplate(
     context,
-    "customerConfirmation",
+    "digitalDelivery",
     {
       ...buildTemplateValues(context, {
         items: orderSummary,
@@ -682,7 +682,6 @@ export async function prepareDigitalDeliveryOrderConfirmationEmail(
         hasDigitalItems: "Yes",
         digitalFileCount: String(digitalDelivery.fileCount),
         digitalAccessWindow: digitalDelivery.accessWindowCopy,
-        digitalAccessPageUrl: digitalDelivery.accessPageUrl,
       }),
       pickupDetails: buildPickupSummaryText(context),
     },

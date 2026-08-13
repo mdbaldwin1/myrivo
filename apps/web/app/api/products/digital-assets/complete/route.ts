@@ -3,10 +3,12 @@ import { z } from "zod";
 import { AssetLifecycleError } from "@/lib/digital-products/asset-service";
 import { completeOwnedAssetUpload } from "@/lib/digital-products/asset-route-service";
 import { PreviewLifecycleError } from "@/lib/digital-products/preview-service";
+import { resolveStoreDigitalProductsAccess } from "@/lib/digital-products/feature-gating";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 
@@ -24,6 +26,9 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const bundle = await getOwnedStoreBundle(user.id, "staff");
   if (!bundle) return NextResponse.json({ error: "Store unavailable." }, { status: 404 });
+  const access = await resolveStoreDigitalProductsAccess(createSupabaseAdminClient(), bundle.store.id)
+    .catch(() => ({ enabled: false }));
+  if (!access.enabled) return NextResponse.json({ error: "Digital products are not enabled for this store." }, { status: 403 });
 
   try {
     const result = await completeOwnedAssetUpload({

@@ -6,6 +6,7 @@ import {
   retryAssetUpload,
   updateAsset,
 } from "@/lib/digital-products/asset-service";
+import { resolveStoreDigitalProductsAccess } from "@/lib/digital-products/feature-gating";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
@@ -35,6 +36,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Invalid product." }, { status: 400 });
   }
   const admin = createSupabaseAdminClient();
+  const access = await resolveStoreDigitalProductsAccess(admin, bundle.store.id).catch(() => ({ enabled: false }));
+  if (!access.enabled) return NextResponse.json({ error: "Digital products are not enabled for this store." }, { status: 403 });
   const { data, error } = await admin
     .from("digital_product_assets")
     .select(
@@ -79,6 +82,8 @@ export async function PATCH(request: NextRequest) {
   const bundle = await authorize();
   if (!bundle) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const admin = createSupabaseAdminClient();
+  const access = await resolveStoreDigitalProductsAccess(admin, bundle.store.id).catch(() => ({ enabled: false }));
+  if (!access.enabled) return NextResponse.json({ error: "Digital products are not enabled for this store." }, { status: 403 });
   try {
     const result =
       parsed.data.action === "retry"
@@ -109,9 +114,12 @@ export async function DELETE(request: NextRequest) {
   if (!parsed.ok) return parsed.response;
   const bundle = await authorize();
   if (!bundle) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const admin = createSupabaseAdminClient();
+  const access = await resolveStoreDigitalProductsAccess(admin, bundle.store.id).catch(() => ({ enabled: false }));
+  if (!access.enabled) return NextResponse.json({ error: "Digital products are not enabled for this store." }, { status: 403 });
   try {
     const result = await removeAsset({
-      admin: createSupabaseAdminClient(),
+      admin,
       storeId: bundle.store.id,
       assetId: parsed.data.assetId,
     });

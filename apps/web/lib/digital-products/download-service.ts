@@ -11,6 +11,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { DIGITAL_ASSET_BUCKET } from "./assets";
 import { DIGITAL_PRODUCT_CONFIG } from "./config";
 import { hashDigitalAccessToken } from "./entitlements";
+import { recordDigitalProductEventBestEffort } from "./telemetry";
 
 const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const POSTGRES_UUID_PATTERN =
@@ -389,9 +390,19 @@ export async function reserveDownloadGrant({
       p_client_fingerprint_hash: clientFingerprintHash,
     });
   } catch {
+    await recordDigitalProductEventBestEffort(client as never, {
+      eventType: "grant_exhausted",
+      dimensions: { stage: "reservation", outcome: "denied" },
+    });
     throw new DigitalDownloadError("download_unavailable");
   }
-  if (result.error) throw new DigitalDownloadError("download_unavailable");
+  if (result.error) {
+    await recordDigitalProductEventBestEffort(client as never, {
+      eventType: "grant_exhausted",
+      dimensions: { stage: "reservation", outcome: "denied" },
+    });
+    throw new DigitalDownloadError("download_unavailable");
+  }
   const row = unwrapRpcRow(result.data);
   const parsed = reservationSchema.safeParse(row);
   if (!parsed.success) {
@@ -523,6 +534,12 @@ export async function prepareDigitalDownload({
         .eq("store_id", grant.store_id)
         .maybeSingle();
     } catch {
+      await recordDigitalProductEventBestEffort(client as never, {
+        eventType: "download_signing_failed",
+        storeId: grant.store_id,
+        productId: grant.product_id,
+        dimensions: { stage: "storage_signing", outcome: "failed" },
+      });
       throw new DigitalDownloadError("preparation_failed");
     }
     const storagePath = storagePathSchema.safeParse(versionResult.data);
@@ -552,6 +569,12 @@ export async function prepareDigitalDownload({
       !signedUrl ||
       !/^https?:\/\//i.test(signedUrl)
     ) {
+      await recordDigitalProductEventBestEffort(client as never, {
+        eventType: "download_signing_failed",
+        storeId: grant.store_id,
+        productId: grant.product_id,
+        dimensions: { stage: "storage_signing", outcome: "failed" },
+      });
       throw new DigitalDownloadError("preparation_failed");
     }
 

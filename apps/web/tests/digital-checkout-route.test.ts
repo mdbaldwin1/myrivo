@@ -15,6 +15,10 @@ const stripeCheckoutCreateMock = vi.fn();
 const createOrReuseCheckoutManifestMock = vi.fn();
 const enqueueDigitalDeliveryMock = vi.fn();
 
+vi.mock("@/lib/digital-products/feature-gating", () => ({
+  resolveStoreDigitalProductsAccess: vi.fn(async () => ({ enabled: true, planEligible: true, storeEnabled: true, planKey: "test" }))
+}));
+
 const ids = {
   store: "10000000-0000-4000-8000-000000000001",
   digitalProduct: "20000000-0000-4000-8000-000000000001",

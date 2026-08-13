@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Added store-scoped, default-off digital-product rollout controls with plan eligibility, database-authoritative catalog and checkout gates, Digital/Mixed Studio scenarios, editable safe delivery email copy, privacy-safe operational telemetry, and audited admin-only delivery health and repair actions.
 - Added native digital products with private multi-file delivery, watermarked image previews, digital-only and mixed checkout support, 48-hour secure access links, five atomic download grants per file with 60-second same-session retry grace, personal-use licensing, and refund/dispute access controls.
 - Hardened digital-product uploads with tenant-bound upload intents, streamed byte verification, immutable replacements, safe catalog removal, bounded metadata-free watermarked previews, and stable same-store preview overrides.
 - Prevented undeliverable digital products from publishing with transactional rights, preview, and per-variant file readiness checks plus safe fulfillment-type conversion rules.

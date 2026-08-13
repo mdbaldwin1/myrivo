@@ -71,6 +71,7 @@ type Props = {
   } | null;
   studio?: {
     enabled: boolean;
+    previewComposition?: "digital_only" | "mixed";
     inlineValues?: Partial<Record<"title" | "cancelled" | "orderPlacedTemplate" | "finalizationFailed", string>>;
     onInlineChange?: (field: "title" | "cancelled" | "orderPlacedTemplate" | "finalizationFailed", value: string) => void;
   };
@@ -132,7 +133,8 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
   const [deliveryFailureOrderId, setDeliveryFailureOrderId] = useState<string | null>(null);
   const [digitalDeliveryStatus, setDigitalDeliveryStatus] = useState<"pending" | "processing" | "succeeded" | "failed" | null>(null);
   const [digitalAccessUrl, setDigitalAccessUrl] = useState<string | null>(null);
-  const [checkoutComposition, setCheckoutComposition] = useState<"digital_only" | "physical_only" | "mixed" | null>(initialCheckoutComposition);
+  const [checkoutCompositionState, setCheckoutComposition] = useState<"digital_only" | "physical_only" | "mixed" | null>(initialCheckoutComposition);
+  const checkoutComposition = studio?.previewComposition ?? checkoutCompositionState;
   const checkoutCompositionRef = useRef<"digital_only" | "physical_only" | "mixed" | null>(initialCheckoutComposition);
   const [pollTimedOut, setPollTimedOut] = useState(false);
   const [pollRequest, setPollRequest] = useState(0);

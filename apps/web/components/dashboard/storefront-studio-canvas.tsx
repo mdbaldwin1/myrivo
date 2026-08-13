@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Card, CardContent } from "@/components/ui/card";
 import { StorefrontAboutPage } from "@/components/storefront/storefront-about-page";
@@ -11,6 +11,7 @@ import { StorefrontPoliciesPage } from "@/components/storefront/storefront-polic
 import { StorefrontProductDetailPage } from "@/components/storefront/storefront-product-detail-page";
 import { StorefrontRuntimeProvider } from "@/components/storefront/storefront-runtime-provider";
 import { useOptionalStorefrontStudioDocument } from "@/components/dashboard/storefront-studio-document-provider";
+import { StorefrontStudioDigitalScenarioPicker } from "@/components/dashboard/storefront-studio-digital-scenario-picker";
 import { applyStorefrontStudioDraftToRuntime } from "@/lib/storefront/draft";
 import { setEditorValueAtPath } from "@/lib/store-editor/object-path";
 import { createStorefrontRuntime, type StorefrontData, type StorefrontSettings, type StorefrontSurface } from "@/lib/storefront/runtime";
@@ -19,6 +20,8 @@ import {
   getStorefrontStudioSurfaceForHref,
   type StorefrontStudioSurfaceId
 } from "@/lib/store-editor/storefront-studio";
+import { buildStorefrontStudioDigitalScenario } from "@/lib/store-editor/storefront-studio-digital-scenarios";
+import type { StorefrontProduct } from "@/lib/storefront/runtime";
 
 type StorefrontStudioCanvasProps = {
   storeSlug: string;
@@ -207,6 +210,8 @@ export function StorefrontStudioCanvas({
 }: StorefrontStudioCanvasProps) {
   const scrollRootRef = useRef<HTMLDivElement | null>(null);
   const studioDocument = useOptionalStorefrontStudioDocument();
+  const [digitalScenarioId, setDigitalScenarioId] = useState<"digitalOnly" | "mixed">("digitalOnly");
+  const digitalScenario = buildStorefrontStudioDigitalScenario(digitalScenarioId);
   const activeDetailProductHandle = surface === "products" ? activeProductDetailHandle : null;
 
   const navigatePreviewToHref = useCallback(
@@ -257,6 +262,42 @@ export function StorefrontStudioCanvas({
     activeDetailProductHandle && initialStorefrontData
       ? (initialStorefrontData.products.find((product) => product.id === activeDetailProductHandle || product.slug === activeDetailProductHandle) ?? null)
       : null;
+  const scenarioProducts = useMemo(() => {
+    if (!initialStorefrontData) return [];
+    const fallbackProduct = (productType: "digital" | "physical", index: number): StorefrontProduct => ({
+      id: `studio-${productType}`,
+      title: productType === "digital" ? "Digital field guide" : "Printed field guide",
+      description: productType === "digital" ? "An instant downloadable guide." : "A printed companion guide.",
+      slug: `studio-${productType}`,
+      image_urls: [], image_alt_text: null, seo_title: null, seo_description: null,
+      is_featured: true, created_at: "2026-08-13T00:00:00.000Z",
+      price_cents: productType === "digital" ? 1800 : 2600,
+      inventory_qty: productType === "digital" ? 0 : 10,
+      product_type: productType,
+      digital_summary: productType === "digital"
+        ? { publicPreviewUrl: null, files: [{ variantId: `studio-variant-${index}`, label: "Field guide", format: "PDF" }] }
+        : null,
+      product_variants: [{
+        id: `studio-variant-${index}`, title: "Default", option_values: {},
+        price_cents: productType === "digital" ? 1800 : 2600,
+        inventory_qty: productType === "digital" ? 0 : 10,
+        is_made_to_order: false, is_default: true, status: "active", sort_order: 0,
+        created_at: "2026-08-13T00:00:00.000Z",
+      }],
+    });
+    const digital = initialStorefrontData.products.find((product) => product.product_type === "digital") ?? fallbackProduct("digital", 1);
+    const physical = initialStorefrontData.products.find((product) => product.product_type !== "digital") ?? fallbackProduct("physical", 2);
+    return digitalScenarioId === "mixed" ? [digital, physical] : [digital];
+  }, [digitalScenarioId, initialStorefrontData]);
+  const scenarioCartEntries = scenarioProducts.map((product) => ({
+    productId: product.id,
+    variantId: product.product_variants[0]!.id,
+    quantity: 1,
+  }));
+  const canvasRuntime = useMemo(() => {
+    if (!runtime || !["products", "cart", "orderSummary"].includes(surface)) return runtime;
+    return { ...runtime, products: scenarioProducts };
+  }, [runtime, scenarioProducts, surface]);
 
   useEffect(() => {
     if (!scrollTarget) {
@@ -443,7 +484,7 @@ export function StorefrontStudioCanvas({
   }
 
   return (
-    <StorefrontRuntimeProvider runtime={runtime}>
+    <StorefrontRuntimeProvider runtime={canvasRuntime ?? runtime}>
       <div
         ref={scrollRootRef}
         data-storefront-scroll-root="true"
@@ -452,6 +493,9 @@ export function StorefrontStudioCanvas({
         className="h-full min-h-[32rem] overflow-auto rounded-[1rem] border border-slate-300 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.14)] [scrollbar-gutter:stable]"
       >
         <AppAlert variant="error" compact message={studioDocument?.error ?? null} />
+        {(surface === "products" || surface === "cart" || surface === "orderSummary") ? (
+          <StorefrontStudioDigitalScenarioPicker value={digitalScenarioId} onChange={setDigitalScenarioId} />
+        ) : null}
         {surface === "products" ? (
           detailProduct ? (
             <StorefrontProductDetailPage
@@ -468,7 +512,7 @@ export function StorefrontStudioCanvas({
               branding={initialStorefrontData.branding}
               settings={initialStorefrontData.settings}
               contentBlocks={initialStorefrontData.contentBlocks}
-              products={initialStorefrontData.products}
+              products={scenarioProducts}
               view="products"
             />
           )
@@ -521,9 +565,10 @@ export function StorefrontStudioCanvas({
             viewer={initialStorefrontData.viewer}
             branding={initialStorefrontData.branding}
             settings={initialStorefrontData.settings}
-            products={initialStorefrontData.products}
+            products={scenarioProducts}
             studio={{
               enabled: true,
+              previewEntries: scenarioCartEntries,
               onTitleChange: (value) => studioDocument?.setSectionDraft("cartPage", (current) => setEditorValueAtPath(current, "copy.cart.title", value)),
               onSubtitleChange: (value) => studioDocument?.setSectionDraft("cartPage", (current) => setEditorValueAtPath(current, "copy.cart.subtitle", value)),
               onEmptyMessageChange: (value) => studioDocument?.setSectionDraft("cartPage", (current) => setEditorValueAtPath(current, "copy.cart.empty", value)),
@@ -544,6 +589,7 @@ export function StorefrontStudioCanvas({
             settings={initialStorefrontData.settings}
             studio={{
               enabled: true,
+              previewComposition: digitalScenario.orderSummary.composition,
               inlineValues: getCheckoutInlineValues(checkoutSection),
               onInlineChange: (field, value) =>
                 studioDocument?.setSectionDraft("orderSummaryPage", (current) => setEditorValueAtPath(current, `copy.checkout.${field}`, value))

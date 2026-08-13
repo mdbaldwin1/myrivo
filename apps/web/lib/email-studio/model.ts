@@ -3,6 +3,7 @@ import { richTextToPlainText, sanitizeRichTextHtml } from "@/lib/rich-text";
 export const emailStudioTemplateIds = [
   "welcomeDiscount",
   "customerConfirmation",
+  "digitalDelivery",
   "ownerNewOrder",
   "pickupUpdated",
   "shippingDelay",
@@ -43,7 +44,7 @@ export type EmailStudioFieldToken = {
   token: string;
   label: string;
   description: string;
-  category: "order" | "customer" | "money" | "links" | "fulfillment" | "shipping" | "refunds" | "disputes" | "marketing";
+  category: "order" | "customer" | "money" | "links" | "fulfillment" | "digital" | "shipping" | "refunds" | "disputes" | "marketing";
 };
 
 export const EMAIL_STUDIO_TOKENS: readonly EmailStudioFieldToken[] = [
@@ -61,6 +62,8 @@ export const EMAIL_STUDIO_TOKENS: readonly EmailStudioFieldToken[] = [
   { token: "{total}", label: "Total", description: "Formatted order total.", category: "money" },
   { token: "{promoCode}", label: "Promo code", description: "Applied promo code, if any.", category: "money" },
   { token: "{items}", label: "Items summary", description: "Line-item summary text.", category: "order" },
+  { token: "{digitalFileCount}", label: "Digital file count", description: "Number of purchased files ready for access.", category: "digital" },
+  { token: "{digitalAccessWindow}", label: "Digital access window", description: "Human-readable access expiration window.", category: "digital" },
   { token: "{dashboardUrl}", label: "Dashboard URL", description: "Owner or customer dashboard deep link.", category: "links" },
   { token: "{orderUrl}", label: "Order URL", description: "Customer order details URL.", category: "links" },
   { token: "{orderActionLabel}", label: "Order action label", description: "\"View order\" — button text for the order CTA.", category: "links" },
@@ -246,6 +249,27 @@ function buildDefaultTemplateMap(storeName: string): Record<EmailStudioTemplateI
       ctaLabel: "View order",
       ctaUrl: "{orderUrl}",
       footerNote: "Need help? Reply to {replyToEmail}. {orderAccountNote}"
+    },
+    digitalDelivery: {
+      id: "digitalDelivery",
+      messageType: "transactional",
+      label: "Digital delivery",
+      audience: "customer",
+      description: "Sent when purchased digital files are ready. Secure access is attached by Myrivo at send time.",
+      subject: "Your digital purchase from {storeName} is ready",
+      preheader: "Your purchased files are ready to access.",
+      headline: "Your files are ready",
+      bodyHtml: sanitizeRichTextHtml(
+        paragraphsToHtml([
+          "Your digital purchase from {storeName} is ready.",
+          "Files: {digitalFileCount}",
+          "Access window: {digitalAccessWindow}",
+          "Use the secure access button included with this message."
+        ])
+      ),
+      ctaLabel: "View order",
+      ctaUrl: "{orderUrl}",
+      footerNote: "Need help? Reply to {replyToEmail}."
     },
     ownerNewOrder: {
       id: "ownerNewOrder",

@@ -143,6 +143,7 @@ type Props = {
   products: StorefrontProduct[];
   studio?: {
     enabled: boolean;
+    previewEntries?: Array<{ productId: string; variantId: string; quantity: number }>;
     onTitleChange?: (value: string) => void;
     onSubtitleChange?: (value: string) => void;
     onEmptyMessageChange?: (value: string) => void;
@@ -216,7 +217,10 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
     return options;
   })();
 
-  const [cart, setCart] = useState<StorefrontCartEntry[]>([]);
+  const [persistedCart, setCart] = useState<StorefrontCartEntry[]>([]);
+  const cart = studioEnabled && studio?.previewEntries
+    ? normalizeStorefrontCart(studio.previewEntries, resolvedProducts)
+    : persistedCart;
   const hasHydratedCartRef = useRef(false);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -249,6 +253,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
   useStorefrontPageView("cart");
 
   useEffect(() => {
+    if (studioEnabled && studio?.previewEntries) return;
     queueMicrotask(() => {
       const loaded = readStorefrontCart();
       const filtered = normalizeStorefrontCart(loaded, resolvedProducts);
@@ -309,9 +314,10 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
         });
       })();
     });
-  }, [analytics, resolvedProducts, resolvedStore.slug]);
+  }, [analytics, resolvedProducts, resolvedStore.slug, studio?.previewEntries, studioEnabled]);
 
   useEffect(() => {
+    if (studioEnabled && studio?.previewEntries) return;
     if (!hasHydratedCartRef.current) {
       return;
     }
@@ -335,7 +341,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
     }, 250);
 
     return () => clearTimeout(timeout);
-  }, [analytics, cart, resolvedProducts, resolvedStore.slug]);
+  }, [analytics, cart, resolvedProducts, resolvedStore.slug, studio?.previewEntries, studioEnabled]);
 
   const cartHasPhysicalItems = cart.some((entry) =>
     resolvedProducts.find((product) => product.id === entry.productId)?.product_type !== "digital"

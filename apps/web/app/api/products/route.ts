@@ -10,6 +10,7 @@ import {
   type ReadinessAdminClient
 } from "@/lib/digital-products/readiness-service";
 import { enrichDigitalCatalogProducts } from "@/lib/digital-products/catalog-state";
+import { resolveStoreDigitalProductsAccess } from "@/lib/digital-products/feature-gating";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { notifyOwnersInventoryLevel } from "@/lib/notifications/owner-notifications";
 import { buildProductSlug, normalizeProductSlug } from "@/lib/products/slug";
@@ -1121,6 +1122,14 @@ export async function POST(request: NextRequest) {
     return resolved.error;
   }
 
+  if (payload.data.productType === "digital") {
+    const access = await resolveStoreDigitalProductsAccess(resolved.supabase, resolved.storeId)
+      .catch(() => ({ enabled: false }));
+    if (!access.enabled) {
+      return NextResponse.json({ error: "Digital products are not enabled for this store." }, { status: 403 });
+    }
+  }
+
   let variants: ReturnType<typeof normalizePayloadVariants>;
   let rollup: ReturnType<typeof buildProductVariantRollup>;
 
@@ -1287,6 +1296,14 @@ export async function PATCH(request: NextRequest) {
   }
 
   const nextStatus = payload.data.status ?? existingProduct.status;
+  const requestedProductType = payload.data.productType ?? existingProduct.product_type;
+  if (requestedProductType === "digital" && nextStatus !== "archived") {
+    const access = await resolveStoreDigitalProductsAccess(resolved.supabase, resolved.storeId)
+      .catch(() => ({ enabled: false }));
+    if (!access.enabled) {
+      return NextResponse.json({ error: "Digital products are not enabled for this store." }, { status: 403 });
+    }
+  }
 
   const updates: Record<string, unknown> = {};
   let previousVariantsForRestock: Array<{ id: string; inventory_qty: number; status: "active" | "archived" }> = [];

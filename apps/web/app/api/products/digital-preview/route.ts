@@ -5,6 +5,7 @@ import {
   processPreview,
   setPreviewOverride,
 } from "@/lib/digital-products/preview-service";
+import { resolveStoreDigitalProductsAccess } from "@/lib/digital-products/feature-gating";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
@@ -43,6 +44,8 @@ export async function POST(request: NextRequest) {
   const bundle = await getOwnedStoreBundle(user.id, "staff");
   if (!bundle) return NextResponse.json({ error: "Store unavailable." }, { status: 404 });
   const admin = createSupabaseAdminClient();
+  const access = await resolveStoreDigitalProductsAccess(admin, bundle.store.id).catch(() => ({ enabled: false }));
+  if (!access.enabled) return NextResponse.json({ error: "Digital products are not enabled for this store." }, { status: 403 });
   try {
     const result =
       parsed.data.mode === "asset"

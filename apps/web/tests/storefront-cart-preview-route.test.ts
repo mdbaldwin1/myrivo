@@ -4,6 +4,10 @@ import { NextRequest } from "next/server";
 const adminFromMock = vi.fn();
 const resolveStoreSlugFromRequestAsyncMock = vi.fn();
 
+vi.mock("@/lib/digital-products/feature-gating", () => ({
+  resolveStoreDigitalProductsAccess: vi.fn(async () => ({ enabled: true, planEligible: true, storeEnabled: true, planKey: "test" }))
+}));
+
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: () => ({ from: (...args: unknown[]) => adminFromMock(...args) })
 }));

@@ -14,6 +14,8 @@ import { resolveStoreSlugForServerRender, resolveStorefrontServerRenderHint } fr
 import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
 import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 import { enrichStorefrontDigitalProducts } from "@/lib/digital-products/storefront-summary";
+import { resolveStoreDigitalProductsAccess } from "@/lib/digital-products/feature-gating";
+import { filterProductsForDigitalProductsRollout } from "@/lib/digital-products/rollout-policy";
 
 function getValueAtPath(record: Record<string, unknown>, key: string): unknown {
   return key.split(".").reduce<unknown>((current, part) => {
@@ -194,10 +196,16 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
     throw new Error(resolvedProductsError.message);
   }
 
+  const digitalProductsAccess = await resolveStoreDigitalProductsAccess(admin, store.id)
+    .catch(() => ({ enabled: false }));
+  const rolloutProducts = filterProductsForDigitalProductsRollout(
+    resolvedProducts ?? [],
+    digitalProductsAccess.enabled,
+  );
   const storefrontProducts = await enrichStorefrontDigitalProducts({
     admin,
     storeId: store.id,
-    products: resolvedProducts ?? []
+    products: rolloutProducts
   });
 
   if (

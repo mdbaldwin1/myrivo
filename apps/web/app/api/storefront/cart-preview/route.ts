@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
 import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
+import { resolveStoreDigitalProductsAccess } from "@/lib/digital-products/feature-gating";
 
 const previewSchema = z.object({
   entries: z
@@ -58,6 +59,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ items: [], subtotalCents: 0 });
   }
 
+  const digitalProductsAccess = await resolveStoreDigitalProductsAccess(supabase, store.id)
+    .catch(() => ({ enabled: false }));
+
   const variantIds = [...new Set(payload.data.entries.map((entry) => entry.variantId))];
   const productIds = [...new Set(payload.data.entries.map((entry) => entry.productId))];
 
@@ -100,6 +104,7 @@ export async function POST(request: NextRequest) {
       variant.status !== "active" ||
       product.status !== "active" ||
       variant.product_id !== product.id
+      || (product.product_type === "digital" && !digitalProductsAccess.enabled)
     ) {
       continue;
     }

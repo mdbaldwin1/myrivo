@@ -32,6 +32,9 @@ import { getStoreStripePaymentsReadiness } from "@/lib/stripe/store-payments-rea
 import { getStripeClient } from "@/lib/stripe/server";
 import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { resolveStoreDigitalProductsAccess } from "@/lib/digital-products/feature-gating";
+import { canResumeCheckoutWhenDigitalProductsDisabled } from "@/lib/digital-products/rollout-policy";
+import { recordDigitalProductEventBestEffort } from "@/lib/digital-products/telemetry";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isStorePaymentsReadyForLaunch, type StoreTaxCollectionMode } from "@/lib/stores/tax-compliance";
 import { enqueueDigitalDelivery } from "@/lib/digital-products/delivery-jobs";
@@ -481,6 +484,15 @@ async function markManifestFailure(
   checkout: CheckoutAttemptRow,
   error: unknown
 ) {
+  await recordDigitalProductEventBestEffort(supabase, {
+    eventType: "manifest_failed",
+    storeId: checkout.store_id,
+    dimensions: {
+      stage: "checkout_manifest",
+      outcome: "failed",
+      composition: checkout.checkout_composition ?? resolveCheckoutComposition(checkout.items),
+    },
+  });
   await supabase
     .from("storefront_checkout_sessions")
     .update({ status: "failed", error_message: "Digital files were not ready for checkout." })
@@ -991,6 +1003,22 @@ export async function POST(request: NextRequest) {
     existingCheckout = lookup.checkout;
   }
 
+  const digitalProductsAccess = await resolveStoreDigitalProductsAccess(supabase, store.id)
+    .catch(() => ({ enabled: false }));
+  if (
+    existingCheckout
+    && !digitalProductsAccess.enabled
+    && !canResumeCheckoutWhenDigitalProductsDisabled(
+      existingCheckout.checkout_composition ?? resolveCheckoutComposition(existingCheckout.items),
+      existingCheckout.status,
+    )
+  ) {
+    return NextResponse.json(
+      { error: "Digital products are no longer available for new checkout attempts." },
+      { status: 409 },
+    );
+  }
+
   if (existingCheckout?.checkout_mode === "stub") {
     return resumeStubCheckout(supabase, existingCheckout);
   }
@@ -1049,6 +1077,12 @@ export async function POST(request: NextRequest) {
   const checkoutComposition = resolvedCatalog.composition;
   const hasDigitalItems = checkoutComposition !== "physical_only";
   const hasPhysicalItems = checkoutComposition !== "digital_only";
+  if (hasDigitalItems && !digitalProductsAccess.enabled) {
+    return NextResponse.json(
+      { error: "Digital products are no longer available for checkout." },
+      { status: 409 },
+    );
+  }
 
   const { data: checkoutSettings, error: checkoutSettingsError } = await supabase
     .from("store_settings")
