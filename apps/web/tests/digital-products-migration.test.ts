@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import {
   existsSync,
   mkdtempSync,
@@ -36,6 +36,10 @@ const previewCanonicalPathMigration = join(
 const publishingReadinessMigration = join(
   repoRoot,
   "supabase/migrations/20260812220000_digital_product_publishing_readiness.sql",
+);
+const publishingReadinessSerializationMigration = join(
+  repoRoot,
+  "supabase/migrations/20260812230000_serialize_digital_publish_readiness.sql",
 );
 
 const ids = {
@@ -253,6 +257,47 @@ function runSql(database: string, statement: string) {
   }).trim();
 }
 
+function runSqlAsync(database: string, statement: string, applicationName: string) {
+  if (!psql) {
+    return Promise.reject(
+      new Error("PostgreSQL psql is required for migration contract tests"),
+    );
+  }
+
+  return new Promise<string>((resolvePromise, rejectPromise) => {
+    execFile(
+      psql,
+      ["-X", "-qAt", "-v", "ON_ERROR_STOP=1", "-c", statement],
+      {
+        encoding: "utf8",
+        env: { ...postgresEnvironment(database), PGAPPNAME: applicationName },
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          rejectPromise(new Error(stderr.trim() || error.message));
+          return;
+        }
+        resolvePromise(stdout.trim());
+      },
+    );
+  });
+}
+
+async function waitForPostgresSession(database: string, applicationName: string) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const waiting = runSql(
+      database,
+      `select count(*) from pg_stat_activity
+       where application_name = '${applicationName}'
+         and state = 'active'
+         and query like '%pg_sleep%'`,
+    );
+    if (waiting === "1") return;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 20));
+  }
+  throw new Error(`PostgreSQL session ${applicationName} did not reach its race barrier`);
+}
+
 function applyMigration(database: string, path: string) {
   runSql(database, readFileSync(path, "utf8"));
 }
@@ -283,6 +328,11 @@ beforeAll(() => {
   }
   if (!existsSync(publishingReadinessMigration)) {
     throw new Error(`Missing publishing readiness migration: ${publishingReadinessMigration}`);
+  }
+  if (!existsSync(publishingReadinessSerializationMigration)) {
+    throw new Error(
+      `Missing publishing readiness serialization migration: ${publishingReadinessSerializationMigration}`,
+    );
   }
 
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-digital-migration-"));
@@ -347,6 +397,7 @@ beforeAll(() => {
     applyMigration(database, assetLifecycleConcurrencyMigration);
     applyMigration(database, previewCanonicalPathMigration);
     applyMigration(database, publishingReadinessMigration);
+    applyMigration(database, publishingReadinessSerializationMigration);
   }
 
   execFileSync(createdb, ["full_chain"], {
@@ -1648,5 +1699,59 @@ describe("transactional digital product publishing", () => {
         ),
       ),
     ).toEqual({ applied: false, code: "product_unavailable", reasons: [] });
+  });
+
+  it("serializes publishing against a concurrent update of the sole ready version", async () => {
+    runSql(
+      "full_chain",
+      `update public.products set status = 'draft'
+       where id = '${publishingIds.product}';
+       update public.product_variants set status = 'archived'
+       where id = '${publishingIds.variantTwo}';
+       update public.digital_product_asset_versions set status = 'ready'
+       where id = '${publishingIds.versionOne}';`,
+    );
+
+    const versionMutation = runSqlAsync(
+      "full_chain",
+      `begin;
+       update public.digital_product_asset_versions set status = 'processing'
+       where id = '${publishingIds.versionOne}';
+       set constraints enforce_active_digital_product_readiness immediate;
+       select pg_sleep(1.5);
+       commit;`,
+      "digital-readiness-version-race",
+    );
+    await waitForPostgresSession("full_chain", "digital-readiness-version-race");
+
+    const publish = runSqlAsync(
+      "full_chain",
+      `select public.apply_digital_product_catalog_update(
+        '${publishingIds.store}', '${publishingIds.product}', '${publishingIds.user}',
+        '{"status":"active"}'::jsonb, null, null
+      )::text`,
+      "digital-readiness-publish-race",
+    );
+
+    const [versionResult, publishResult] = await Promise.all([
+      versionMutation,
+      publish,
+    ]);
+    expect(versionResult).toBe("");
+    expect(JSON.parse(publishResult)).toEqual({
+      applied: false,
+      code: "digital_product_not_ready",
+      reasons: [`variant_missing_file:${publishingIds.variantOne}`],
+    });
+    expect(
+      runSql(
+        "full_chain",
+        `select p.status || ':' || v.status
+         from public.products p
+         join public.digital_product_asset_versions v
+           on v.id = '${publishingIds.versionOne}'
+         where p.id = '${publishingIds.product}'`,
+      ),
+    ).toBe("draft:processing");
   });
 });
