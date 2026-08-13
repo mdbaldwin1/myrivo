@@ -997,6 +997,42 @@ function buildCustomerRefundEmail(
   return renderOrderEmailTemplate(context, "refundIssued", templateValues);
 }
 
+export async function prepareOrderRefundNotificationEmail(
+  orderId: string,
+  refundId: string,
+  expectedStatus: string,
+): Promise<PreparedOrderEmailMessage | null> {
+  const supabase = createSupabaseAdminClient();
+  const { data: refund, error } = await supabase
+    .from("order_refunds")
+    .select("amount_cents,reason_key,customer_message,status")
+    .eq("id", refundId)
+    .eq("order_id", orderId)
+    .maybeSingle<{
+      amount_cents: number;
+      reason_key: MerchantRefundReason;
+      customer_message: string | null;
+      status: string;
+    }>();
+  if (error) throw new Error(error.message);
+  if (!refund || refund.status !== expectedStatus || expectedStatus !== "succeeded") return null;
+  const context = await loadOrderEmailContext(orderId);
+  if (!context) return null;
+  const sender = resolveSenderConfig(context);
+  if (!sender.from) throw new Error("Refund email configuration is unavailable");
+  const rendered = buildCustomerRefundEmail(context, {
+    amountCents: refund.amount_cents,
+    reasonKey: refund.reason_key,
+    customerMessage: refund.customer_message,
+  });
+  return {
+    from: sender.senderName ? `${sender.senderName} <${sender.from}>` : sender.from,
+    to: [context.customerEmail],
+    ...rendered,
+    replyTo: sender.replyTo,
+  };
+}
+
 function describeShippingDelayPath(customerPath: OrderShippingDelayCustomerPath) {
   switch (customerPath) {
     case "notify_only":
@@ -1156,6 +1192,43 @@ function buildCustomerDisputeEmail(
       : ""
   });
   return renderOrderEmailTemplate(context, isResolvedDisputeStatus(options.status) ? "disputeResolved" : "disputeOpened", templateValues);
+}
+
+export async function prepareOrderDisputeNotificationEmail(
+  orderId: string,
+  disputeId: string,
+  expectedStatus: DisputeStatus,
+): Promise<PreparedOrderEmailMessage | null> {
+  const supabase = createSupabaseAdminClient();
+  const { data: dispute, error } = await supabase
+    .from("order_disputes")
+    .select("amount_cents,reason,status,response_due_by")
+    .eq("id", disputeId)
+    .eq("order_id", orderId)
+    .maybeSingle<{
+      amount_cents: number;
+      reason: string;
+      status: DisputeStatus;
+      response_due_by: string | null;
+    }>();
+  if (error) throw new Error(error.message);
+  if (!dispute || dispute.status !== expectedStatus) return null;
+  const context = await loadOrderEmailContext(orderId);
+  if (!context) return null;
+  const sender = resolveSenderConfig(context);
+  if (!sender.from) throw new Error("Dispute email configuration is unavailable");
+  const rendered = buildCustomerDisputeEmail(context, {
+    status: dispute.status,
+    amountCents: dispute.amount_cents,
+    reason: dispute.reason,
+    responseDueBy: dispute.response_due_by,
+  });
+  return {
+    from: sender.senderName ? `${sender.senderName} <${sender.from}>` : sender.from,
+    to: [context.customerEmail],
+    ...rendered,
+    replyTo: sender.replyTo,
+  };
 }
 
 export async function sendOrderDisputeNotification(

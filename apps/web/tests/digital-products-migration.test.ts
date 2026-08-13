@@ -1037,6 +1037,7 @@ describe("transactional checkout manifests", () => {
          where checkout_session_id = '${ids.manifestCheckout}'`,
       ),
     ).toBe("1");
+
   });
 
   it("serializes concurrent retries to one identical manifest", async () => {
@@ -2605,6 +2606,302 @@ describe("durable digital delivery", () => {
     );
   }
 
+  it("atomically claims one concurrent direct refund processor", async () => {
+    const fixture = createFinancialAccessFixture("000000000185");
+    const refundId = insertRefund(fixture.orderId, "000000000185", 500);
+    const claim = `select public.claim_refund_for_processing(
+      '${refundId}', '${ids.manifestStore}',
+      '00000000-0000-4000-8000-000000000011'
+    )`;
+    const firstSession = "task13_refund_claim_winner";
+    const first = runSqlAsync(
+      "full_chain",
+      `begin; ${claim}; select pg_sleep(0.6); commit;`,
+      firstSession,
+    );
+    await waitForPostgresSession("full_chain", firstSession);
+    const second = runSqlAsync("full_chain", claim, "task13_refund_claim_loser");
+    const [firstOutput, secondOutput] = await Promise.all([first, second]);
+    const outcomes = [firstOutput.split("\n")[0]!, secondOutput]
+      .map((value) => JSON.parse(value) as { claimed: boolean })
+      .map((value) => value.claimed)
+      .sort();
+
+    expect(outcomes).toEqual([false, true]);
+    expect(
+      runSql(
+        "full_chain",
+        `select status || ':' || count(*) over ()::text
+         from public.order_refunds where id = '${refundId}'`,
+      ),
+    ).toBe("processing:1");
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.audit_events
+         where entity_id = '${fixture.orderId}' and action = 'refund_processing'`,
+      ),
+    ).toBe("1");
+  });
+
+  it.each([
+    ["higher-first", ["z", "a"]],
+    ["lower-first", ["a", "z"]],
+  ] as const)(
+    "uses the event id as an equal-timestamp refund tie-breaker (%s)",
+    (_label, eventIds) => {
+      const suffix = eventIds[0] === "z" ? "000000000186" : "000000000187";
+      const fixture = createFinancialAccessFixture(suffix);
+      const refundId = insertRefund(fixture.orderId, suffix, 500);
+      for (const eventId of eventIds) {
+        runSql(
+          "full_chain",
+          refundSyncStatement({
+            refundId,
+            stripeRefundId: `re_${suffix}`,
+            status: "processing",
+            eventId: `evt_task13_refund_${suffix}_${eventId}`,
+            eventCreatedAt: "2026-08-13T19:10:00Z",
+          }),
+        );
+      }
+      expect(
+        runSql(
+          "full_chain",
+          `select source_event_id from public.order_refunds where id = '${refundId}'`,
+        ),
+      ).toBe(`evt_task13_refund_${suffix}_z`);
+    },
+  );
+
+  it.each([
+    ["won-then-lost", ["won", "lost"], "000000000188"],
+    ["lost-then-won", ["lost", "won"], "000000000189"],
+  ] as const)(
+    "converges equal-timestamp terminal dispute events in both sequential orders (%s)",
+    (_label, statuses, suffix) => {
+      const fixture = createFinancialAccessFixture(suffix);
+      runSql(
+        "full_chain",
+        disputeSyncStatement({
+          orderId: fixture.orderId,
+          disputeSuffix: suffix,
+          status: "under_review",
+          eventId: `evt_task13_equal_open_${suffix}`,
+          eventCreatedAt: "2026-08-13T19:19:00Z",
+        }),
+      );
+      for (const status of statuses) {
+        runSql(
+          "full_chain",
+          disputeSyncStatement({
+            orderId: fixture.orderId,
+            disputeSuffix: suffix,
+            status,
+            eventId: `evt_task13_equal_${status}_${suffix}`,
+            eventCreatedAt: "2026-08-13T19:20:00Z",
+          }),
+        );
+      }
+      expect(
+        runSql(
+          "full_chain",
+          `select status from public.order_disputes where stripe_dispute_id = 'dp_${suffix}'`,
+        ),
+      ).toBe("lost");
+      expect(entitlementAccessState(fixture.orderId)).toContain("revoked:dispute_lost:");
+      expect(
+        runSql(
+          "full_chain",
+          `select string_agg(metadata ->> 'status', ',' order by metadata ->> 'status')
+           from public.audit_events
+           where entity_id = '${fixture.orderId}'
+             and metadata ? 'sourceEventId'`,
+        ),
+      ).toBe("lost,under_review,won");
+    },
+  );
+
+  it("converges a true concurrent equal-timestamp won/lost race", async () => {
+    const fixture = createFinancialAccessFixture("000000000190");
+    runSql(
+      "full_chain",
+      disputeSyncStatement({
+        orderId: fixture.orderId,
+        disputeSuffix: "000000000190",
+        status: "under_review",
+        eventId: "evt_task13_concurrent_open",
+        eventCreatedAt: "2026-08-13T19:29:00Z",
+      }),
+    );
+    const winnerSession = "task13_equal_dispute_won_first";
+    const won = runSqlAsync(
+      "full_chain",
+      `begin; ${disputeSyncStatement({
+        orderId: fixture.orderId,
+        disputeSuffix: "000000000190",
+        status: "won",
+        eventId: "evt_task13_concurrent_won",
+        eventCreatedAt: "2026-08-13T19:30:00Z",
+      })}; select pg_sleep(0.6); commit;`,
+      winnerSession,
+    );
+    await waitForPostgresSession("full_chain", winnerSession);
+    const lost = runSqlAsync(
+      "full_chain",
+      disputeSyncStatement({
+        orderId: fixture.orderId,
+        disputeSuffix: "000000000190",
+        status: "lost",
+        eventId: "evt_task13_concurrent_lost",
+        eventCreatedAt: "2026-08-13T19:30:00Z",
+      }),
+      "task13_equal_dispute_lost_waiter",
+    );
+    await Promise.all([won, lost]);
+
+    expect(
+      runSql(
+        "full_chain",
+        `select status from public.order_disputes
+         where stripe_dispute_id = 'dp_000000000190'`,
+      ),
+    ).toBe("lost");
+    expect(entitlementAccessState(fixture.orderId)).toContain("revoked:dispute_lost:");
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.audit_events
+         where entity_id = '${fixture.orderId}' and metadata ? 'sourceEventId'`,
+      ),
+    ).toBe("3");
+  });
+
+  it("never binds or restores a legacy source-null dispute suspension", () => {
+    const fixture = createFinancialAccessFixture("000000000191");
+    runSql(
+      "full_chain",
+      `update public.digital_order_entitlements
+       set status = 'suspended', status_reason = 'dispute_open',
+           status_source_dispute_id = null
+       where order_id = '${fixture.orderId}'`,
+    );
+    for (const [status, eventId, minute] of [
+      ["under_review", "evt_task13_legacy_open", "40"],
+      ["won", "evt_task13_legacy_won", "41"],
+    ] as const) {
+      runSql(
+        "full_chain",
+        disputeSyncStatement({
+          orderId: fixture.orderId,
+          disputeSuffix: "000000000191",
+          status,
+          eventId,
+          eventCreatedAt: `2026-08-13T19:${minute}:00Z`,
+        }),
+      );
+    }
+    expect(entitlementAccessState(fixture.orderId)).toBe(
+      "suspended:dispute_open:none,suspended:dispute_open:none",
+    );
+  });
+
+  it("queues one durable financial notification in the state transaction", () => {
+    const fixture = createFinancialAccessFixture("000000000192");
+    const refundId = insertRefund(
+      fixture.orderId,
+      "000000000192",
+      Number(
+        runSql(
+          "full_chain",
+          `select total_cents from public.orders where id = '${fixture.orderId}'`,
+        ),
+      ),
+    );
+    const sync = refundSyncStatement({
+      refundId,
+      stripeRefundId: "re_task13_durable_notice",
+      status: "succeeded",
+      eventId: "evt_task13_durable_notice",
+      eventCreatedAt: "2026-08-13T19:50:00Z",
+    });
+    runSql("full_chain", `${sync}; ${sync}`);
+
+    expect(
+      runSql(
+        "full_chain",
+        `select notification_type || ':' || status || ':' || count(*) over ()::text
+         from public.digital_delivery_notifications
+         where refund_id = '${refundId}'`,
+      ),
+    ).toBe("refund:pending:1");
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.audit_events
+         where entity_id = '${fixture.orderId}'
+           and action = 'financial_notification_queued'`,
+      ),
+    ).toBe("1");
+
+    const notificationId = runSql(
+      "full_chain",
+      `select id from public.digital_delivery_notifications
+       where refund_id = '${refundId}'`,
+    );
+    const firstClaim = JSON.parse(
+      runSql(
+        "full_chain",
+        `select row_to_json(claimed) from public.claim_digital_delivery_notification(
+          '${notificationId}', 120, 3
+        ) claimed`,
+      ),
+    ) as { lease_token: string; notification_type: string; access_token_id: null };
+    expect(firstClaim).toMatchObject({
+      notification_type: "refund",
+      access_token_id: null,
+    });
+    expect(
+      JSON.parse(
+        runSql(
+          "full_chain",
+          `select public.complete_digital_delivery_notification(
+            '${notificationId}', '${firstClaim.lease_token}', 'failed', 'resend',
+            'Provider temporarily unavailable', 3, 1, 30
+          )`,
+        ),
+      ),
+    ).toMatchObject({ status: "pending" });
+    runSql(
+      "full_chain",
+      `update public.digital_delivery_notifications set next_attempt_at = now()
+       where id = '${notificationId}'`,
+    );
+    const retryClaim = JSON.parse(
+      runSql(
+        "full_chain",
+        `select row_to_json(claimed) from public.claim_digital_delivery_notification(
+          '${notificationId}', 120, 3
+        ) claimed`,
+      ),
+    ) as { lease_token: string; attempt_number: number };
+    expect(retryClaim.attempt_number).toBe(2);
+    runSql(
+      "full_chain",
+      `select public.complete_digital_delivery_notification(
+        '${notificationId}', '${retryClaim.lease_token}', 'succeeded', 'resend',
+        null, 3, 1, 30
+      )`,
+    );
+    expect(
+      runSql(
+        "full_chain",
+        `select status || ':' || attempt_count::text
+         from public.digital_delivery_notifications where id = '${notificationId}'`,
+      ),
+    ).toBe("succeeded:2");
+  });
+
   it("preserves partial access until cumulative succeeded refunds reach the full order total", () => {
     const fixture = createFinancialAccessFixture("000000000171");
     const total = Number(
@@ -3022,10 +3319,12 @@ describe("durable digital delivery", () => {
         `select
           has_function_privilege('anon', 'public.sync_refund_digital_access(uuid,text,text,text,text,text,uuid,text,timestamptz)', 'execute')::text || ':' ||
           has_function_privilege('authenticated', 'public.sync_dispute_digital_access(uuid,uuid,text,text,text,integer,text,text,text,boolean,timestamptz,jsonb,text,timestamptz)', 'execute')::text || ':' ||
+          has_function_privilege('authenticated', 'public.claim_refund_for_processing(uuid,uuid,uuid)', 'execute')::text || ':' ||
           has_function_privilege('service_role', 'public.sync_refund_digital_access(uuid,text,text,text,text,text,uuid,text,timestamptz)', 'execute')::text || ':' ||
+          has_function_privilege('service_role', 'public.claim_refund_for_processing(uuid,uuid,uuid)', 'execute')::text || ':' ||
           has_function_privilege('service_role', 'public.find_digital_access_reconciliation_issues(integer)', 'execute')::text`,
       ),
-    ).toBe("false:false:true:true");
+    ).toBe("false:false:false:true:true:true");
   });
 });
 

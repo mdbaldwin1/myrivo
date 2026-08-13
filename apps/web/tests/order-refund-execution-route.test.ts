@@ -10,6 +10,7 @@ const adminFromMock = vi.fn();
 const isStripeStubModeMock = vi.fn();
 const sendOrderRefundNotificationMock = vi.fn();
 const syncStripeRefundRecordMock = vi.fn();
+const claimRefundForProcessingMock = vi.fn();
 const getStripeClientMock = vi.fn();
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -26,6 +27,7 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 
 vi.mock("@/lib/orders/refund-dispute-sync", () => ({
+  claimRefundForProcessing: (...args: unknown[]) => claimRefundForProcessingMock(...args),
   syncStripeRefundRecord: (...args: unknown[]) => syncStripeRefundRecordMock(...args)
 }));
 
@@ -65,12 +67,102 @@ describe("order refund execution route", () => {
     isStripeStubModeMock.mockReset();
     sendOrderRefundNotificationMock.mockReset();
     syncStripeRefundRecordMock.mockReset();
+    claimRefundForProcessingMock.mockReset();
     getStripeClientMock.mockReset();
 
     authGetUserMock.mockResolvedValue({ data: { user: { id: "user-1" } } });
     getOwnedStoreBundleMock.mockResolvedValue({ store: { id: "store-1", slug: "at-home-apothecary" } });
     enforceTrustedOriginMock.mockReturnValue(null);
     isStripeStubModeMock.mockReturnValue(true);
+    claimRefundForProcessingMock.mockResolvedValue({ claimed: true, record: {} });
+  });
+
+  test("allows only one concurrent request to issue the provider refund", async () => {
+    isStripeStubModeMock.mockReturnValue(false);
+    const lookup = {
+      id: "refund-race",
+      order_id: "order-race",
+      store_id: "store-1",
+      amount_cents: 3400,
+      reason_key: "customer_request",
+      status: "requested",
+      stripe_refund_id: null,
+      metadata_json: {},
+      orders: {
+        id: "order-race",
+        status: "paid",
+        stripe_payment_intent_id: "pi_race"
+      }
+    };
+    adminFromMock.mockImplementation((table: string) => {
+      if (table !== "order_refunds") throw new Error(`Unexpected table ${table}`);
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({ data: lookup, error: null }))
+            }))
+          }))
+        }))
+      };
+    });
+    let claims = 0;
+    claimRefundForProcessingMock.mockImplementation(async () => {
+      claims += 1;
+      return {
+        claimed: claims === 1,
+        record: {
+          ...lookup,
+          requested_by_user_id: "user-1",
+          processed_by_user_id: "user-1",
+          reason_note: null,
+          customer_message: null,
+          status: "processing",
+          source_event_id: null,
+          source_event_created_at: null,
+          processed_at: null,
+          created_at: "2026-08-13T19:00:00.000Z",
+          updated_at: "2026-08-13T19:00:00.000Z"
+        }
+      };
+    });
+    const providerCreate = vi.fn(async () => ({
+      id: "re_race",
+      status: "succeeded",
+      created: 1_786_647_600,
+      metadata: { refund_request_id: "refund-race" }
+    }));
+    getStripeClientMock.mockReturnValue({ refunds: { create: providerCreate } });
+    syncStripeRefundRecordMock.mockResolvedValue({
+      refund: { ...lookup, status: "succeeded" },
+      orderId: "order-race"
+    });
+
+    const route = await import("@/app/api/orders/refunds/[refundId]/route");
+    const invoke = () => route.PATCH(
+      new NextRequest("http://localhost:3000/api/orders/refunds/refund-race", {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          origin: "http://localhost:3000",
+          host: "localhost:3000"
+        },
+        body: JSON.stringify({ action: "process" })
+      }),
+      { params: Promise.resolve({ refundId: "44444444-4444-4444-8444-444444444444" }) }
+    );
+    const responses = await Promise.all([invoke(), invoke()]);
+    const payloads = await Promise.all(responses.map((response) => response.json()));
+
+    expect(providerCreate).toHaveBeenCalledTimes(1);
+    expect(providerCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ payment_intent: "pi_race", amount: 3400 }),
+      { idempotencyKey: "refund-request:refund-race" }
+    );
+    expect(payloads.map((payload) => payload.refund.status).sort()).toEqual([
+      "processing",
+      "succeeded"
+    ]);
   });
 
   test("processes a requested refund in stub mode and marks it succeeded", async () => {
@@ -153,7 +245,7 @@ describe("order refund execution route", () => {
     expect(response.status).toBe(200);
     expect(payload.refund?.status).toBe("succeeded");
     expect(payload.refund?.metadata_json).toMatchObject({ processedMode: "stub" });
-    expect(logAuditEventMock).toHaveBeenCalledTimes(1);
+    expect(logAuditEventMock).not.toHaveBeenCalled();
     expect(syncStripeRefundRecordMock).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "stub_refund_refund-1",
@@ -321,6 +413,6 @@ describe("order refund execution route", () => {
 
     expect(response.status).toBe(502);
     expect(await response.json()).toMatchObject({ error: "transaction unavailable" });
-    expect(updateStatuses).toEqual(["processing"]);
+    expect(updateStatuses).toEqual([]);
   });
 });

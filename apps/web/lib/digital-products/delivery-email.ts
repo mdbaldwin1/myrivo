@@ -4,6 +4,8 @@ import { getExternalAppUrl, getServerEnv } from "@/lib/env";
 import {
   prepareDigitalAccessRecoveryEmail,
   prepareDigitalDeliveryOrderConfirmationEmail,
+  prepareOrderDisputeNotificationEmail,
+  prepareOrderRefundNotificationEmail,
   type PreparedOrderEmailMessage,
 } from "@/lib/notifications/order-emails";
 import {
@@ -33,13 +35,16 @@ export type DigitalDeliveryNotificationClaim = {
   storeId: string;
   orderId: string;
   deliveryJobId: string | null;
-  accessTokenId: string;
-  notificationType: "purchase" | "merchant_resend" | "customer_recovery";
+  accessTokenId: string | null;
+  notificationType: "purchase" | "merchant_resend" | "customer_recovery" | "refund" | "dispute";
   leaseToken: string;
   attemptNumber: number;
-  tokenDerivationNonce: string;
-  tokenHash: string;
+  tokenDerivationNonce: string | null;
+  tokenHash: string | null;
   fileCount: number;
+  refundId: string | null;
+  disputeId: string | null;
+  financialStatus: string | null;
 };
 
 type NotificationCompletion = {
@@ -71,13 +76,16 @@ const claimSchema = z.object({
   store_id: z.string().uuid(),
   order_id: z.string().uuid(),
   delivery_job_id: z.string().uuid().nullable(),
-  access_token_id: z.string().uuid(),
-  notification_type: z.enum(["purchase", "merchant_resend", "customer_recovery"]),
+  access_token_id: z.string().uuid().nullable(),
+  notification_type: z.enum(["purchase", "merchant_resend", "customer_recovery", "refund", "dispute"]),
   lease_token: z.string().uuid(),
   attempt_number: z.number().int().positive(),
-  token_derivation_nonce: z.string().uuid(),
-  token_hash: z.string().regex(/^[a-f0-9]{64}$/),
-  file_count: z.number().int().positive(),
+  token_derivation_nonce: z.string().uuid().nullable(),
+  token_hash: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  file_count: z.number().int().nonnegative(),
+  refund_id: z.string().uuid().nullable(),
+  dispute_id: z.string().uuid().nullable(),
+  financial_status: z.string().nullable(),
 });
 
 const completionSchema = z.object({
@@ -186,7 +194,7 @@ export function resolveDigitalDeliveryNotificationAccessToken(
   secret: string,
 ) {
   if (claim.notificationType === "purchase") {
-    return claim.deliveryJobId
+    return claim.deliveryJobId && claim.tokenDerivationNonce
       ? deriveDigitalAccessToken({
           jobId: claim.deliveryJobId,
           nonce: claim.tokenDerivationNonce,
@@ -195,11 +203,15 @@ export function resolveDigitalDeliveryNotificationAccessToken(
       : null;
   }
   if (claim.notificationType === "customer_recovery") {
+    if (!claim.tokenDerivationNonce) return null;
     return deriveCustomerRecoveryAccessToken({
       notificationId: claim.id,
       nonce: claim.tokenDerivationNonce,
       secret,
     });
+  }
+  if (claim.notificationType !== "merchant_resend" || !claim.tokenDerivationNonce) {
+    return null;
   }
   return deriveDigitalResendAccessToken({
     notificationId: claim.id,
@@ -211,6 +223,26 @@ export function resolveDigitalDeliveryNotificationAccessToken(
 async function buildDefaultMessage(
   claim: DigitalDeliveryNotificationClaim,
 ): Promise<PreparedOrderEmailMessage> {
+  if (claim.notificationType === "refund") {
+    if (!claim.refundId || !claim.financialStatus) throw new Error("Refund notification context is unavailable");
+    const message = await prepareOrderRefundNotificationEmail(
+      claim.orderId,
+      claim.refundId,
+      claim.financialStatus,
+    );
+    if (!message) throw new Error("Refund notification context is unavailable");
+    return message;
+  }
+  if (claim.notificationType === "dispute") {
+    if (!claim.disputeId || !claim.financialStatus) throw new Error("Dispute notification context is unavailable");
+    const message = await prepareOrderDisputeNotificationEmail(
+      claim.orderId,
+      claim.disputeId,
+      claim.financialStatus as Parameters<typeof prepareOrderDisputeNotificationEmail>[2],
+    );
+    if (!message) throw new Error("Dispute notification context is unavailable");
+    return message;
+  }
   const secret = getServerEnv().DIGITAL_DELIVERY_TOKEN_SECRET?.trim();
   if (!secret) {
     throw new Error("Digital delivery token configuration is unavailable");
@@ -288,6 +320,9 @@ export async function claimDigitalDeliveryNotification(
     tokenDerivationNonce: parsed.data.token_derivation_nonce,
     tokenHash: parsed.data.token_hash,
     fileCount: parsed.data.file_count,
+    refundId: parsed.data.refund_id,
+    disputeId: parsed.data.dispute_id,
+    financialStatus: parsed.data.financial_status,
   };
 }
 
@@ -352,7 +387,9 @@ export async function processNextDigitalDeliveryNotification(
     const message = await dependencies.buildMessage(claim);
     const result = await dependencies.sendEmail(
       message,
-      `digital-order-delivery:${claim.id}`,
+      claim.notificationType === "refund" || claim.notificationType === "dispute"
+        ? `financial-order-notification:${claim.id}`
+        : `digital-order-delivery:${claim.id}`,
     );
     if (!result.ok) {
       throw new Error("Digital delivery email provider failed");

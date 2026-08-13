@@ -83,6 +83,11 @@ const disputeTransitionSchema = z.object({
   record: disputeRecordSchema.nullable(),
 }).strict();
 
+const refundClaimSchema = z.object({
+  claimed: z.boolean(),
+  record: refundRecordSchema,
+}).strict();
+
 function unwrapRpc<T>(result: RpcResult, schema: z.ZodType<T>, operation: string): T {
   if (result.error) {
     throw new Error(result.error.message || `${operation} failed`);
@@ -94,6 +99,29 @@ function unwrapRpc<T>(result: RpcResult, schema: z.ZodType<T>, operation: string
   }
 
   return parsed.data;
+}
+
+export async function claimRefundForProcessing({
+  refundId,
+  storeId,
+  processedByUserId,
+  client = createSupabaseAdminClient(),
+}: {
+  refundId: string;
+  storeId: string;
+  processedByUserId: string;
+  client?: DigitalAccessStateRpcClient;
+}) {
+  const result = await client.rpc("claim_refund_for_processing", {
+    p_refund_id: refundId,
+    p_store_id: storeId,
+    p_processed_by_user_id: processedByUserId,
+  });
+  const parsed = unwrapRpc(result, refundClaimSchema, "Refund processing claim");
+  return {
+    claimed: parsed.claimed,
+    record: parsed.record as OrderRefundRecord,
+  };
 }
 
 export async function syncRefundDigitalAccess({

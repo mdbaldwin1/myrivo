@@ -121,7 +121,7 @@ describe("refund/dispute sync", () => {
     sendOrderDisputeNotificationMock.mockReset();
   });
 
-  test("uses the transactional refund RPC and notifies only after it commits", async () => {
+  test("uses the transactional refund RPC whose commit durably queues notification", async () => {
     adminRpcMock.mockResolvedValue({
       data: {
         applied: true,
@@ -152,7 +152,7 @@ describe("refund/dispute sync", () => {
         p_source_event_created_at: "2026-08-13T18:00:00.000Z",
       }),
     );
-    expect(sendOrderRefundNotificationMock).toHaveBeenCalledTimes(1);
+    expect(sendOrderRefundNotificationMock).not.toHaveBeenCalled();
   });
 
   test("propagates an access RPC failure so the webhook remains retryable", async () => {
@@ -240,6 +240,6 @@ describe("refund/dispute sync", () => {
         p_source_event_id: "evt_dispute_123",
       }),
     );
-    expect(sendOrderDisputeNotificationMock).toHaveBeenCalledTimes(1);
+    expect(sendOrderDisputeNotificationMock).not.toHaveBeenCalled();
   });
 });

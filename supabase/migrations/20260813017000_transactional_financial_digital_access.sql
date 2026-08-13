@@ -8,9 +8,78 @@ alter table public.order_disputes
   add column if not exists source_event_id text,
   add column if not exists source_event_created_at timestamptz;
 
+alter table public.order_refunds
+  add constraint order_refunds_id_order_store_key unique (id, order_id, store_id);
+
+alter table public.order_disputes
+  add constraint order_disputes_id_order_store_key unique (id, order_id, store_id);
+
 create unique index if not exists order_refunds_stripe_refund_id_key
   on public.order_refunds(stripe_refund_id)
   where stripe_refund_id is not null;
+
+alter table public.digital_delivery_notifications
+  alter column access_token_id drop not null,
+  add column if not exists refund_id uuid,
+  add column if not exists dispute_id uuid,
+  add column if not exists financial_status text;
+
+alter table public.digital_delivery_notifications
+  drop constraint if exists digital_delivery_notifications_notification_type_check,
+  add constraint digital_delivery_notifications_notification_type_check
+    check (notification_type in (
+      'purchase', 'merchant_resend', 'customer_recovery', 'refund', 'dispute'
+    )),
+  drop constraint if exists digital_delivery_notifications_kind_check,
+  add constraint digital_delivery_notifications_kind_check check (
+    (
+      notification_type = 'purchase'
+      and delivery_job_id is not null and access_token_id is not null
+      and request_key_hash is null and requested_by_user_id is null
+      and refund_id is null and dispute_id is null and financial_status is null
+    ) or (
+      notification_type = 'merchant_resend'
+      and delivery_job_id is null and access_token_id is not null
+      and request_key_hash is not null and requested_by_user_id is not null
+      and refund_id is null and dispute_id is null and financial_status is null
+    ) or (
+      notification_type = 'customer_recovery'
+      and delivery_job_id is null and access_token_id is not null
+      and request_key_hash is not null and requested_by_user_id is null
+      and refund_id is null and dispute_id is null and financial_status is null
+    ) or (
+      notification_type = 'refund'
+      and delivery_job_id is null and access_token_id is null
+      and request_key_hash is null and requested_by_user_id is null
+      and refund_id is not null and dispute_id is null
+      and financial_status = 'succeeded'
+    ) or (
+      notification_type = 'dispute'
+      and delivery_job_id is null and access_token_id is null
+      and request_key_hash is null and requested_by_user_id is null
+      and refund_id is null and dispute_id is not null
+      and financial_status in (
+        'warning_needs_response', 'warning_under_review', 'warning_closed',
+        'needs_response', 'under_review', 'won', 'lost', 'prevented'
+      )
+    )
+  ),
+  add constraint digital_delivery_notifications_refund_fk
+    foreign key (refund_id, order_id, store_id)
+    references public.order_refunds(id, order_id, store_id)
+    on delete restrict,
+  add constraint digital_delivery_notifications_dispute_fk
+    foreign key (dispute_id, order_id, store_id)
+    references public.order_disputes(id, order_id, store_id)
+    on delete restrict;
+
+create unique index digital_delivery_notifications_refund_status_key
+  on public.digital_delivery_notifications(refund_id, financial_status)
+  where notification_type = 'refund';
+
+create unique index digital_delivery_notifications_dispute_status_key
+  on public.digital_delivery_notifications(dispute_id, financial_status)
+  where notification_type = 'dispute';
 
 alter table public.digital_order_entitlements
   add column if not exists status_source_dispute_id uuid;
@@ -265,6 +334,7 @@ begin
         or (
           entitlement.status = 'suspended'
           and entitlement.status_reason = 'dispute_open'
+          and entitlement.status_source_dispute_id is not null
           and not exists (
             select 1 from public.order_disputes source_dispute
             where source_dispute.id = entitlement.status_source_dispute_id
@@ -352,6 +422,12 @@ begin
            dispute.id asc
   limit 1;
   if v_open_dispute_id is not null then
+    if new.status = 'suspended'
+       and new.status_reason = 'dispute_open'
+       and new.status_source_dispute_id is null
+    then
+      return new;
+    end if;
     new.status := 'suspended';
     new.status_reason := 'dispute_open';
     new.status_source_dispute_id := v_open_dispute_id;
@@ -407,6 +483,77 @@ before insert or update of order_id, revoked_at
 on public.digital_order_access_tokens
 for each row execute function public.enforce_digital_access_token_financial_state();
 
+create or replace function public.claim_refund_for_processing(
+  p_refund_id uuid,
+  p_store_id uuid,
+  p_processed_by_user_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_refund public.order_refunds%rowtype;
+  v_previous_status text;
+begin
+  select * into v_refund
+  from public.order_refunds refund
+  where refund.id = p_refund_id and refund.store_id = p_store_id
+  for update;
+  if not found then
+    raise exception 'Refund request is unavailable';
+  end if;
+
+  perform 1 from public.orders placed_order
+  where placed_order.id = v_refund.order_id
+    and placed_order.store_id = v_refund.store_id
+    and placed_order.status = 'paid'
+  for update;
+  if not found then
+    raise exception 'Refund order is unavailable';
+  end if;
+
+  if v_refund.status not in ('requested', 'failed') then
+    return jsonb_build_object('claimed', false, 'record', to_jsonb(v_refund));
+  end if;
+
+  v_previous_status := v_refund.status;
+  update public.order_refunds refund
+  set status = 'processing',
+      processed_by_user_id = p_processed_by_user_id,
+      processed_at = null,
+      stripe_refund_id = case when v_previous_status = 'failed'
+        then null else refund.stripe_refund_id end,
+      source_event_id = case when v_previous_status = 'failed'
+        then null else refund.source_event_id end,
+      source_event_created_at = case when v_previous_status = 'failed'
+        then null else refund.source_event_created_at end,
+      metadata_json = coalesce(refund.metadata_json, '{}'::jsonb)
+        || jsonb_build_object(
+          'processingStartedAt', clock_timestamp(),
+          'processedByUserId', p_processed_by_user_id
+        ),
+      updated_at = clock_timestamp()
+  where refund.id = v_refund.id
+  returning * into v_refund;
+
+  insert into public.audit_events(
+    store_id, actor_user_id, action, entity, entity_id, metadata
+  ) values (
+    v_refund.store_id, p_processed_by_user_id, 'refund_processing',
+    'order', v_refund.order_id::text,
+    jsonb_build_object(
+      'refundId', v_refund.id,
+      'amountCents', v_refund.amount_cents,
+      'previousStatus', v_previous_status
+    )
+  );
+
+  return jsonb_build_object('claimed', true, 'record', to_jsonb(v_refund));
+end;
+$$;
+
 create or replace function public.sync_refund_digital_access(
   p_refund_request_id uuid,
   p_stripe_refund_id text,
@@ -431,6 +578,7 @@ declare
   v_state_changed boolean := false;
   v_existing_kind text;
   v_is_stale boolean := false;
+  v_notification_id uuid;
 begin
   if nullif(trim(p_stripe_refund_id), '') is null
      or p_incoming_status not in ('requested', 'processing', 'succeeded', 'failed', 'cancelled')
@@ -493,11 +641,25 @@ begin
     and (
       p_source_event_created_at < v_refund.source_event_created_at
       or (
+        p_source_event_created_at = v_refund.source_event_created_at
+        and p_source_event_id collate "C" < v_refund.source_event_id collate "C"
+      )
+      or (
         v_refund.status in ('succeeded', 'failed', 'cancelled')
         and p_incoming_status is distinct from v_refund.status
       )
     );
   if v_is_stale then
+    insert into public.audit_events(store_id, action, entity, entity_id, metadata)
+    values (
+      v_refund.store_id, 'refund_event_ignored', 'order', v_refund.order_id::text,
+      jsonb_build_object(
+        'refundId', v_refund.id,
+        'status', p_incoming_status,
+        'sourceEventId', p_source_event_id,
+        'ignoredReason', 'stale_or_terminal'
+      )
+    );
     return jsonb_build_object(
       'applied', false, 'state_changed', false, 'access_changed', false,
       'effective_access_state', case
@@ -535,6 +697,32 @@ begin
   select state.effective_access_state, state.access_changed
   into v_effective_access_state, v_access_changed
   from public.apply_digital_financial_access_state(v_refund.order_id, null) state;
+
+  if v_state_changed and v_refund.status = 'succeeded' then
+    insert into public.digital_delivery_notifications(
+      store_id, order_id, access_token_id, notification_type,
+      refund_id, financial_status, status, next_attempt_at
+    ) values (
+      v_refund.store_id, v_refund.order_id, null, 'refund',
+      v_refund.id, v_refund.status, 'pending', clock_timestamp()
+    )
+    on conflict (refund_id, financial_status) where notification_type = 'refund'
+    do nothing
+    returning id into v_notification_id;
+    if v_notification_id is not null then
+      insert into public.audit_events(store_id, action, entity, entity_id, metadata)
+      values (
+        v_refund.store_id, 'financial_notification_queued',
+        'order', v_refund.order_id::text,
+        jsonb_build_object(
+          'notificationId', v_notification_id,
+          'notificationType', 'refund',
+          'refundId', v_refund.id,
+          'status', v_refund.status
+        )
+      );
+    end if;
+  end if;
 
   if v_state_changed or v_access_changed then
     insert into public.audit_events(store_id, action, entity, entity_id, metadata)
@@ -597,6 +785,7 @@ declare
   v_state_changed boolean := false;
   v_existing_kind text;
   v_is_stale boolean := false;
+  v_notification_id uuid;
 begin
   if nullif(trim(p_stripe_dispute_id), '') is null
      or nullif(trim(p_stripe_payment_intent_id), '') is null
@@ -654,14 +843,37 @@ begin
   );
 
   v_is_stale := v_had_dispute and (
-    (v_dispute.source_event_created_at is not null
-      and p_source_event_created_at < v_dispute.source_event_created_at)
+    (v_dispute.status = 'lost' and p_incoming_status <> 'lost')
     or (
-      v_dispute.status in ('warning_closed', 'won', 'lost', 'prevented')
-      and p_incoming_status is distinct from v_dispute.status
+      v_dispute.status in ('warning_closed', 'won', 'prevented')
+      and p_incoming_status in (
+        'warning_needs_response', 'warning_under_review',
+        'needs_response', 'under_review'
+      )
+    )
+    or (
+      p_incoming_status <> 'lost'
+      and v_dispute.source_event_created_at is not null
+      and (
+        p_source_event_created_at < v_dispute.source_event_created_at
+        or (
+          p_source_event_created_at = v_dispute.source_event_created_at
+          and p_source_event_id collate "C" < v_dispute.source_event_id collate "C"
+        )
+      )
     )
   );
   if v_is_stale then
+    insert into public.audit_events(store_id, action, entity, entity_id, metadata)
+    values (
+      p_store_id, 'dispute_event_ignored', 'order', p_order_id::text,
+      jsonb_build_object(
+        'disputeId', v_dispute.id,
+        'status', p_incoming_status,
+        'sourceEventId', p_source_event_id,
+        'ignoredReason', 'stale_or_terminal'
+      )
+    );
     return jsonb_build_object(
       'applied', false, 'state_changed', false, 'access_changed', false,
       'effective_access_state', case
@@ -712,6 +924,32 @@ begin
   select state.effective_access_state, state.access_changed
   into v_effective_access_state, v_access_changed
   from public.apply_digital_financial_access_state(p_order_id, v_dispute.id) state;
+
+  if v_state_changed then
+    insert into public.digital_delivery_notifications(
+      store_id, order_id, access_token_id, notification_type,
+      dispute_id, financial_status, status, next_attempt_at
+    ) values (
+      p_store_id, p_order_id, null, 'dispute',
+      v_dispute.id, v_dispute.status, 'pending', clock_timestamp()
+    )
+    on conflict (dispute_id, financial_status) where notification_type = 'dispute'
+    do nothing
+    returning id into v_notification_id;
+    if v_notification_id is not null then
+      insert into public.audit_events(store_id, action, entity, entity_id, metadata)
+      values (
+        p_store_id, 'financial_notification_queued',
+        'order', p_order_id::text,
+        jsonb_build_object(
+          'notificationId', v_notification_id,
+          'notificationType', 'dispute',
+          'disputeId', v_dispute.id,
+          'status', v_dispute.status
+        )
+      );
+    end if;
+  end if;
 
   if v_state_changed or v_access_changed then
     insert into public.audit_events(store_id, action, entity, entity_id, metadata)
@@ -870,6 +1108,181 @@ as $$
   limit greatest(1, least(coalesce(p_limit, 100), 500));
 $$;
 
+drop function public.claim_digital_delivery_notification(uuid, integer, integer);
+
+create function public.claim_digital_delivery_notification(
+  p_notification_id uuid,
+  p_lease_seconds integer,
+  p_max_attempts integer
+)
+returns table(
+  id uuid,
+  store_id uuid,
+  order_id uuid,
+  delivery_job_id uuid,
+  access_token_id uuid,
+  notification_type text,
+  lease_token uuid,
+  attempt_number integer,
+  token_derivation_nonce uuid,
+  token_hash text,
+  file_count integer,
+  refund_id uuid,
+  dispute_id uuid,
+  financial_status text
+)
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_notification public.digital_delivery_notifications%rowtype;
+  v_token public.digital_order_access_tokens%rowtype;
+  v_now timestamptz := clock_timestamp();
+  v_lease_token uuid := gen_random_uuid();
+  v_file_count integer := 0;
+begin
+  if p_lease_seconds not between 1 and 3600
+     or p_max_attempts not between 1 and 100
+  then
+    raise exception 'Digital delivery notification claim configuration is invalid';
+  end if;
+
+  update public.digital_delivery_notification_attempts attempt
+  set status = 'failed', safe_error = 'Notification processing lease expired',
+      finished_at = v_now
+  from public.digital_delivery_notifications notification
+  where attempt.notification_id = notification.id
+    and attempt.attempt_number = notification.attempt_count
+    and attempt.status = 'processing'
+    and notification.status = 'processing'
+    and notification.lease_expires_at <= v_now;
+
+  update public.digital_delivery_notifications notification
+  set status = case when notification.attempt_count >= p_max_attempts then 'failed' else 'pending' end,
+      lease_token = null, lease_expires_at = null,
+      last_safe_error = 'Notification processing lease expired',
+      next_attempt_at = case
+        when notification.attempt_count >= p_max_attempts then notification.next_attempt_at
+        else v_now end,
+      updated_at = v_now
+  where notification.status = 'processing'
+    and notification.lease_expires_at <= v_now;
+
+  update public.digital_delivery_notifications notification
+  set status = 'failed', last_safe_error = 'Digital access is no longer eligible',
+      lease_token = null, lease_expires_at = null, updated_at = v_now
+  where notification.status = 'pending'
+    and notification.notification_type in (
+      'purchase', 'merchant_resend', 'customer_recovery'
+    )
+    and (
+      not exists (
+        select 1 from public.digital_order_access_tokens token
+        where token.id = notification.access_token_id
+          and token.order_id = notification.order_id
+          and token.store_id = notification.store_id
+          and token.revoked_at is null and token.expires_at > v_now
+      )
+      or not exists (
+        select 1 from public.digital_order_entitlements entitlement
+        where entitlement.order_id = notification.order_id
+          and entitlement.store_id = notification.store_id
+          and entitlement.status = 'active'
+      )
+    );
+
+  update public.digital_delivery_notifications notification
+  set status = 'failed', last_safe_error = 'Financial state changed before notification',
+      lease_token = null, lease_expires_at = null, updated_at = v_now
+  where notification.status = 'pending'
+    and (
+      (
+        notification.notification_type = 'refund'
+        and not exists (
+          select 1 from public.order_refunds refund
+          where refund.id = notification.refund_id
+            and refund.order_id = notification.order_id
+            and refund.store_id = notification.store_id
+            and refund.status = notification.financial_status
+        )
+      ) or (
+        notification.notification_type = 'dispute'
+        and not exists (
+          select 1 from public.order_disputes dispute
+          where dispute.id = notification.dispute_id
+            and dispute.order_id = notification.order_id
+            and dispute.store_id = notification.store_id
+            and dispute.status = notification.financial_status
+        )
+      )
+    );
+
+  select notification.* into v_notification
+  from public.digital_delivery_notifications notification
+  where notification.status = 'pending'
+    and notification.next_attempt_at <= v_now
+    and notification.attempt_count < p_max_attempts
+    and (p_notification_id is null or notification.id = p_notification_id)
+  order by notification.next_attempt_at, notification.created_at, notification.id
+  for update skip locked
+  limit 1;
+  if not found then return; end if;
+
+  if v_notification.notification_type in (
+    'purchase', 'merchant_resend', 'customer_recovery'
+  ) then
+    select * into v_token
+    from public.digital_order_access_tokens token
+    where token.id = v_notification.access_token_id
+      and token.order_id = v_notification.order_id
+      and token.store_id = v_notification.store_id
+      and token.revoked_at is null and token.expires_at > v_now
+    for share;
+    if not found or v_token.token_derivation_nonce is null then
+      raise exception 'Digital delivery notification token is unavailable';
+    end if;
+
+    select count(*)::integer into v_file_count
+    from public.digital_order_entitlements entitlement
+    where entitlement.order_id = v_notification.order_id
+      and entitlement.store_id = v_notification.store_id
+      and entitlement.status = 'active';
+    if v_file_count <= 0 then
+      raise exception 'Digital delivery notification entitlement is unavailable';
+    end if;
+  end if;
+
+  update public.digital_delivery_notifications notification
+  set status = 'processing', attempt_count = notification.attempt_count + 1,
+      lease_token = v_lease_token,
+      lease_expires_at = v_now + make_interval(secs => p_lease_seconds),
+      updated_at = v_now
+  where notification.id = v_notification.id
+  returning * into v_notification;
+
+  insert into public.digital_delivery_notification_attempts(
+    notification_id, order_id, store_id, attempt_number,
+    provider, status, started_at
+  ) values (
+    v_notification.id, v_notification.order_id, v_notification.store_id,
+    v_notification.attempt_count, 'resend', 'processing', v_now
+  );
+
+  return query select
+    v_notification.id, v_notification.store_id, v_notification.order_id,
+    v_notification.delivery_job_id, v_notification.access_token_id,
+    v_notification.notification_type, v_notification.lease_token,
+    v_notification.attempt_count,
+    case when v_notification.access_token_id is null
+      then null else v_token.token_derivation_nonce end,
+    case when v_notification.access_token_id is null
+      then null else v_token.token_hash end,
+    v_file_count, v_notification.refund_id, v_notification.dispute_id,
+    v_notification.financial_status;
+end;
+$$;
+
 revoke all on function public.apply_digital_financial_access_state(uuid,uuid)
   from public, anon, authenticated;
 revoke all on function public.sync_refund_digital_access(uuid,text,text,text,text,text,uuid,text,timestamptz)
@@ -878,10 +1291,18 @@ revoke all on function public.sync_dispute_digital_access(uuid,uuid,text,text,te
   from public, anon, authenticated;
 revoke all on function public.find_digital_access_reconciliation_issues(integer)
   from public, anon, authenticated;
+revoke all on function public.claim_refund_for_processing(uuid,uuid,uuid)
+  from public, anon, authenticated;
+revoke all on function public.claim_digital_delivery_notification(uuid,integer,integer)
+  from public, anon, authenticated;
 
 grant execute on function public.sync_refund_digital_access(uuid,text,text,text,text,text,uuid,text,timestamptz)
   to service_role;
 grant execute on function public.sync_dispute_digital_access(uuid,uuid,text,text,text,integer,text,text,text,boolean,timestamptz,jsonb,text,timestamptz)
   to service_role;
 grant execute on function public.find_digital_access_reconciliation_issues(integer)
+  to service_role;
+grant execute on function public.claim_refund_for_processing(uuid,uuid,uuid)
+  to service_role;
+grant execute on function public.claim_digital_delivery_notification(uuid,integer,integer)
   to service_role;

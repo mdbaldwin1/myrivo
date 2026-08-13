@@ -4,7 +4,7 @@ import { z } from "zod";
 import { isStripeStubMode } from "@/lib/env";
 import { logAuditEvent } from "@/lib/audit/log";
 import { mapStripeRefundStatus, STRIPE_REFUND_REASON_MAP } from "@/lib/orders/refunds";
-import { syncStripeRefundRecord } from "@/lib/orders/refund-dispute-sync";
+import { claimRefundForProcessing, syncStripeRefundRecord } from "@/lib/orders/refund-dispute-sync";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getStripeClient } from "@/lib/stripe/server";
@@ -93,37 +93,22 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Refund request not found" }, { status: 404 });
   }
 
-  if (refund.status !== "requested" && refund.status !== "failed") {
-    return NextResponse.json({ error: "Only requested or failed refund records can be processed." }, { status: 400 });
+  if (refund.status !== "requested" && refund.status !== "failed" && refund.status !== "processing") {
+    return NextResponse.json({ error: "This refund record can no longer be processed." }, { status: 400 });
   }
 
   if (refund.orders.status !== "paid") {
     return NextResponse.json({ error: "Only paid orders can be refunded." }, { status: 400 });
   }
 
-  await admin
-    .from("order_refunds")
-    .update({
-      status: "processing",
-      metadata_json: {
-        ...(refund.metadata_json ?? {}),
-        processingStartedAt: new Date().toISOString(),
-        processedByUserId: user.id
-      }
-    })
-    .eq("id", refund.id);
-
-  await logAuditEvent({
+  const claim = await claimRefundForProcessing({
+    refundId: refund.id,
     storeId: bundle.store.id,
-    actorUserId: user.id,
-    action: "refund_processing",
-    entity: "order",
-    entityId: refund.order_id,
-    metadata: {
-      refundId: refund.id,
-      amountCents: refund.amount_cents
-    }
+    processedByUserId: user.id
   });
+  if (!claim.claimed) {
+    return NextResponse.json({ refund: claim.record, duplicate: true });
+  }
 
   const shouldUseStubMode = isStripeStubMode() || isStubPaymentIntentId(refund.orders.stripe_payment_intent_id);
 
@@ -154,16 +139,19 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   let stripeRefund: Stripe.Refund;
   try {
-    stripeRefund = await getStripeClient().refunds.create({
-      payment_intent: refund.orders.stripe_payment_intent_id,
-      amount: refund.amount_cents,
-      reason: STRIPE_REFUND_REASON_MAP[refund.reason_key] ?? undefined,
-      metadata: {
-        order_id: refund.order_id,
-        refund_request_id: refund.id,
-        store_id: bundle.store.id
-      }
-    });
+    stripeRefund = await getStripeClient().refunds.create(
+      {
+        payment_intent: refund.orders.stripe_payment_intent_id,
+        amount: refund.amount_cents,
+        reason: STRIPE_REFUND_REASON_MAP[refund.reason_key] ?? undefined,
+        metadata: {
+          order_id: refund.order_id,
+          refund_request_id: refund.id,
+          store_id: bundle.store.id
+        }
+      },
+      { idempotencyKey: `refund-request:${refund.id}` }
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Stripe refund failed.";
     const nextStatus = mapStripeRefundStatus("failed");

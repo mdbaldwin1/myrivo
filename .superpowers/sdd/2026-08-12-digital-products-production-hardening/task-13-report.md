@@ -77,3 +77,31 @@ The full suite retained the existing zero-size chart stderr. The build retained 
 - Run the Task 13 independent webhook/idempotency review against the complete task commit.
 - Reconciliation is diagnostic and intentionally does not mutate state. Prefer replaying the original Stripe event through the normal webhook path, then rerun reconciliation.
 - `bd` was unavailable in the worktree (`command not found`), so task evidence is recorded in this report and the SDD progress ledger.
+
+## Fix Round 1: Concurrency, Equal-Time Ordering, Legacy Isolation, and Durable Mail
+
+### Changes
+
+- Added a service-role refund-claim RPC that locks the refund and order, permits exactly one requested/failed claimant to enter processing, and records one processing audit. The route calls Stripe only for the winner and uses `refund-request:{refund UUID}` as its stable Stripe idempotency key; concurrent callers receive the processing record.
+- Added deterministic equal-time source ordering by provider timestamp plus bytewise lexical Stripe event ID. Lost disputes remain terminal. Unique ignored/stale events are audited without mutating the authoritative financial/access state.
+- Kept legacy/manual source-null dispute suspensions isolated from provider recomputation. A provider open/close cycle neither binds nor restores those rows.
+- Extended the leased delivery-notification outbox with refund/dispute notification types. Financial state transactions enqueue one audited notification, the worker uses a stable notification-scoped provider idempotency key, failures use the existing bounded retry schedule and safe attempt log, and obsolete pending notices fail closed.
+- Removed inline best-effort refund/dispute email calls. Both webhook and direct/manual refund completion now rely on the same durable queue.
+
+### TDD Evidence
+
+- Route RED: both concurrent calls reached the old direct processing update; GREEN: one claimant makes one provider call and the other receives processing.
+- RPC RED: `claim_refund_for_processing` was absent; GREEN: forced overlapping PostgreSQL sessions produce one true claimant, one false claimant, and one processing audit.
+- Ordering/legacy/outbox tests cover both sequential equal-time orders, a true concurrent won/lost race, legacy source-null open-to-win isolation, one queue row on duplicate sync, and provider failure followed by a successful leased retry.
+- Focused application suite: 5 files, 27 tests passed.
+- Real PostgreSQL migration suite: 107 tests passed.
+
+### Validation
+
+- `npm run lint --workspace @myrivo/web` — passed with zero warnings/errors; consistency checks passed.
+- `npm run typecheck --workspace @myrivo/web` — passed.
+- `npm test` — 259 files and 1,039 tests passed.
+- `npm run build` — passed; optimized Next.js build and TypeScript validation completed.
+- `git diff --check` — passed.
+
+The full suite retained the existing zero-size chart stderr. The build retained the existing Next.js middleware deprecation and stale Browserslist-data warnings.

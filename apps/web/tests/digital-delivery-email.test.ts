@@ -24,6 +24,9 @@ const claim = {
   tokenDerivationNonce: "70000000-0000-4000-8000-000000000101",
   tokenHash: "a".repeat(64),
   fileCount: 2,
+  refundId: null,
+  disputeId: null,
+  financialStatus: null,
 };
 
 function makeDependencies(
@@ -248,6 +251,55 @@ describe("digital delivery notification processor", () => {
       nextAttemptAt: null,
     });
     expect(sends).toBe(1);
+  });
+
+  test("retries a financial notification with one provider idempotency key", async () => {
+    const financialClaim = {
+      ...claim,
+      deliveryJobId: null,
+      accessTokenId: null,
+      notificationType: "refund" as const,
+      tokenDerivationNonce: null,
+      tokenHash: null,
+      fileCount: 0,
+      refundId: "80000000-0000-4000-8000-000000000101",
+      disputeId: null,
+      financialStatus: "succeeded",
+    };
+    let attempt = 0;
+    let delivered = 0;
+    const acceptedKeys = new Set<string>();
+    const dependencies = makeDependencies({
+      claimNotification: async () =>
+        attempt < 2
+          ? ({ ...financialClaim, attemptNumber: ++attempt } as never)
+          : null,
+      sendEmail: async (_message, idempotencyKey) => {
+        if (!acceptedKeys.has(idempotencyKey)) {
+          acceptedKeys.add(idempotencyKey);
+          delivered += 1;
+        }
+        return attempt === 1
+          ? { ok: false, provider: "resend", error: "provider unavailable" }
+          : { ok: true, provider: "resend", error: null };
+      },
+      completeNotification: async ({ outcome }) => ({
+        status: outcome === "succeeded" ? "succeeded" : "pending",
+        nextAttemptAt:
+          outcome === "succeeded" ? null : "2026-08-13T20:01:00.000Z",
+      }),
+    });
+
+    await expect(processNextDigitalDeliveryNotification(dependencies)).resolves.toMatchObject({
+      status: "pending",
+    });
+    await expect(processNextDigitalDeliveryNotification(dependencies)).resolves.toMatchObject({
+      status: "succeeded",
+    });
+    expect(acceptedKeys).toEqual(
+      new Set([`financial-order-notification:${financialClaim.id}`]),
+    );
+    expect(delivered).toBe(1);
   });
 
   test("sanitizes credential, email, bearer-link, storage-path, and provider response details", () => {

@@ -1,16 +1,12 @@
 import type Stripe from "stripe";
 import {
+  claimRefundForProcessing,
   syncDisputeDigitalAccess,
   syncRefundDigitalAccess,
 } from "@/lib/digital-products/access-state";
 import {
-  sendOrderDisputeNotification,
-  sendOrderRefundNotification,
-} from "@/lib/notifications/order-emails";
-import {
   mapStripeDisputeStatus,
   mapStripeRefundStatus,
-  type MerchantRefundReason,
 } from "@/lib/orders/refunds";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { OrderRefundRecord } from "@/types/database";
@@ -24,6 +20,8 @@ type FinancialSource = {
   sourceEventId?: string;
   sourceEventCreatedAt?: string;
 };
+
+export { claimRefundForProcessing };
 
 function toIsoOrNull(value: number | null | undefined) {
   if (!value) return null;
@@ -70,15 +68,6 @@ export async function syncStripeRefundRecord(
 
   if (!transition.record) {
     return { refund: null, orderId: null };
-  }
-
-  if (transition.stateChanged && transition.record.status === "succeeded") {
-    await sendOrderRefundNotification(transition.record.order_id, {
-      refundId: transition.record.id,
-      amountCents: transition.record.amount_cents,
-      reasonKey: transition.record.reason_key as MerchantRefundReason,
-      customerMessage: transition.record.customer_message,
-    });
   }
 
   return {
@@ -134,16 +123,6 @@ export async function syncStripeDisputeRecord(
     },
     ...source,
   });
-
-  if (transition.stateChanged && transition.record) {
-    await sendOrderDisputeNotification(transition.record.order_id, {
-      disputeId: transition.record.id,
-      status: transition.record.status,
-      amountCents: transition.record.amount_cents,
-      reason: transition.record.reason,
-      responseDueBy: transition.record.response_due_by,
-    });
-  }
 
   return transition.record;
 }
