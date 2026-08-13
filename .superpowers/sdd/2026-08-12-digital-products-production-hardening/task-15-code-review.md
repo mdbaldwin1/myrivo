@@ -87,3 +87,44 @@
 - Bearers are removed from request paths and exchanged through a trusted-origin POST into a signed HttpOnly cookie; the new boundary has behavioral tests and no-store response checks.
 - The strict command now fails immediately when required files/provider variables are absent and explicitly requires Stripe test-mode keys.
 - Reduced-motion assertions and distinct customer/merchant identities make the accessibility harness materially better.
+
+---
+
+## Round 3 Re-review — commit `a26c7b1`
+
+### Verdict
+
+**FAIL** — release-blocking P1s remain. Origin and database release binding are materially improved, but the repository still does not contain a verifiable acceptance orchestrator, the checked-in CI gate is not operable as configured, and the new release-interlock migrations lack regression coverage.
+
+### P1 — The “executable” acceptance suite delegates all transitions to an unimplemented, self-attesting control endpoint
+
+**Status:** Unresolved.
+
+**Evidence:** Every state-changing scenario is a POST to a fixture-provided `controlUrl` (`apps/web/e2e/digital-products-fixture.ts:27-35`). The helper accepts success solely from the endpoint's JSON claim: matching caller-supplied `runId`, any nonempty `providerEventId`, and shallow equality for a few caller-selected state fields. The tests never query Stripe, Resend, Supabase, or a product API independently (`apps/web/e2e/digital-products.spec.ts:8-52`). No implementation, contract, deployment artifact, or test for this acceptance-control endpoint exists in the repository; repository-wide search finds `controlSecret` only in the fixture client. The pre-existing evidence file is validated before the actions run (`scripts/verify-digital-products-acceptance.mjs:31-37`) and is never compared with action results, so the actions do not generate or authenticate the evidence digest used for approval.
+
+**Impact:** A trivial endpoint that echoes `{runId, providerEventId, state}` can pass every journey without uploading, paying, emailing, granting, refunding, disputing, or retrying anything. Reviewers cannot inspect whether the controller uses real Stripe test mode, real Resend, production code paths, authoritative database reads, idempotency retries, or safe cleanup. The prior requirement to genuinely execute and state-verify workflows is therefore still unmet.
+
+**Remediation:** Commit or otherwise provide a versioned, reviewable acceptance orchestrator with a strict action schema. It must perform real provider/application operations, independently read authoritative state, return immutable IDs/versioned observations rather than caller-requested state, and emit the evidence artifact from the current run. The Playwright assertions should verify exact linked provider event/order/manifest/job/grant IDs and state sequences; the final verifier should digest that newly generated artifact and reject replay/echo controllers.
+
+### P1 — The main-promotion CI gate cannot run successfully with its declared configuration
+
+**Evidence:** The verifier permits a remote fixture only when its hostname equals `MYRIVO_DIGITAL_APPROVED_NONPROD_HOST` (`scripts/verify-digital-products-acceptance.mjs:20-25`), but the CI step does not set that variable (`.github/workflows/ci.yml:53-69`). A remote fixture therefore fails. A loopback fixture passes host validation, but the verifier forces `E2E_MANAGED_SERVER=false` (`scripts/verify-digital-products-acceptance.mjs:36-37`), so CI starts no local server and Playwright cannot connect. Additionally, CI decodes fixture/evidence from static secrets while the verifier requires evidence `releaseVersion === GITHUB_SHA` and completion within one hour (`scripts/verify-digital-products-acceptance.mjs:31-33`). On pull requests, `GITHUB_SHA` is the synthetic merge commit and changes per run; no preceding CI step generates or refreshes the evidence secret for that SHA/current hour.
+
+**Impact:** The required pre-merge main check is fail-closed but operationally impossible, so no release can legitimately pass it. Operators are likely to bypass/remove the check, which defeats the intended gate.
+
+**Remediation:** Supply the approved host explicitly and use a deployed acceptance environment, or start the loopback server and backend fixture in the workflow. Generate the run-bound evidence during the same workflow rather than loading it from a static repository secret, and bind to a clearly chosen immutable artifact/head SHA consistently across the deployment, acceptance run, approval row, and production runtime.
+
+### P1 — New security/release migrations have no migration or upgrade regression tests
+
+**Evidence:** Commit `a26c7b1` adds/changes `20260813019000_secure_digital_download_sessions.sql` and `20260813020000_digital_release_acceptance_gate.sql`, but neither filename nor any `digital_products_release_approvals`, `digital_products_release_runtime`, or `digital_products_release_approval_required` behavior appears in `apps/web/tests/digital-products-migration.test.ts` or another database test. The fix report's “122 native PostgreSQL migration tests” is unchanged from before these release controls were introduced and does not exercise approval matching, stale/revoked/future/overlong approvals, runtime digest/release mismatch, grants, privilege boundaries, or upgrading an existing database.
+
+**Impact:** A syntax, migration-order, privilege, trigger, bypass, or matching defect in the production rollout interlock can ship despite a green suite. This violates the required data-safety/operations gate for a database-authoritative release control.
+
+**Remediation:** Include both migrations in fresh/upgrade PostgreSQL fixtures and add behavioral tests for every allow/deny condition: no approval, matching approval/runtime, wrong release/digest/environment, stale/expired/revoked/future timestamps, maximum window, unauthorized reads/writes/function execution, store insert/update paths, and idempotent migration application where supported.
+
+### Previous findings disposition
+
+- **Origin binding/runtime fixture schema:** Resolved in code. `digital-products-fixture.ts:4-24` validates a strict relative-route fixture and matches `E2E_BASE_URL`; the verifier forces Playwright to the validated origin. The CI configuration gap above is distinct.
+- **Pre-merge timing:** Resolved. `.github/workflows/ci.yml:53-54` now includes pull requests targeting `main`.
+- **Database release/digest binding:** The schema design now joins approval to a singleton runtime release/digest/target (`20260813020000_digital_release_acceptance_gate.sql:30-56`) and constrains timestamps/lifetime, resolving the design-level finding. It remains unverified because of the missing migration tests.
+- **Bearer/session behavior and accessibility improvements:** Remain resolved from Round 2.
