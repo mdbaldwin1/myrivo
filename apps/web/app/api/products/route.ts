@@ -1,7 +1,15 @@
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { logAuditEvent } from "@/lib/audit/log";
 import { findRestockedVariantIds, processBackInStockAlertsForVariants } from "@/lib/back-in-stock/alerts";
+import {
+  applyDigitalProductCatalogUpdate,
+  loadDigitalProductReadiness,
+  readinessFailurePayload,
+  type DigitalCatalogVariantMutation,
+  type ReadinessAdminClient
+} from "@/lib/digital-products/readiness-service";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { notifyOwnersInventoryLevel } from "@/lib/notifications/owner-notifications";
 import { buildProductSlug, normalizeProductSlug } from "@/lib/products/slug";
@@ -1074,7 +1082,21 @@ export async function GET() {
         }))
     }));
 
-  return NextResponse.json({ products });
+  const productsWithReadiness = await Promise.all(
+    products.map(async (product) => ({
+      ...product,
+      digital_readiness:
+        product.product_type === "digital"
+          ? await loadDigitalProductReadiness({
+              admin: resolved.supabase as unknown as ReadinessAdminClient,
+              storeId: resolved.storeId,
+              productId: product.id
+            })
+          : null
+    }))
+  );
+
+  return NextResponse.json({ products: productsWithReadiness });
 }
 
 export async function POST(request: NextRequest) {
@@ -1277,6 +1299,18 @@ export async function PATCH(request: NextRequest) {
   if (payload.data.digitalRightsAffirmed === true) {
     updates.digital_rights_affirmed_at = new Date().toISOString();
     updates.digital_rights_affirmed_by_user_id = resolved.userId;
+  } else if (payload.data.digitalRightsAffirmed === false) {
+    updates.digital_rights_affirmed_at = null;
+    updates.digital_rights_affirmed_by_user_id = null;
+  }
+
+  const nextProductType = payload.data.productType ?? existingProduct.product_type;
+  if (
+    nextProductType === "physical" &&
+    (existingProduct.product_type === "digital" || payload.data.digitalRightsAffirmed !== undefined)
+  ) {
+    updates.digital_rights_affirmed_at = null;
+    updates.digital_rights_affirmed_by_user_id = null;
   }
 
   if (payload.data.slug !== undefined || payload.data.title !== undefined) {
@@ -1290,8 +1324,13 @@ export async function PATCH(request: NextRequest) {
   }
 
   let rollupFromVariants: ReturnType<typeof buildProductVariantRollup> | null = null;
+  let atomicDigitalUpdateApplied = false;
+  const usesAtomicDigitalMutation =
+    existingProduct.product_type === "digital" || nextProductType === "digital";
 
   try {
+    let normalizedVariantMutation: DigitalCatalogVariantMutation[] | null = null;
+    let normalizedVariantsForUpdate: ReturnType<typeof normalizeVariantInputs> | null = null;
     if (payload.data.variants) {
       const { data: previousVariants, error: previousVariantsError } = await resolved.supabase
         .from("product_variants")
@@ -1305,11 +1344,7 @@ export async function PATCH(request: NextRequest) {
       }
 
       previousVariantsForRestock = previousVariants ?? [];
-      const madeToOrderRequested = hasMadeToOrderEnabled(payload.data.variants);
-      rollupFromVariants = await replaceProductVariants(
-        resolved.supabase,
-        resolved.storeId,
-        payload.data.productId,
+      normalizedVariantsForUpdate = normalizeVariantInputs(
         normalizeRequestVariantInputs({
           variants: payload.data.variants,
           hasVariants: payload.data.hasVariants,
@@ -1320,8 +1355,9 @@ export async function PATCH(request: NextRequest) {
           inventoryQty: payload.data.inventoryQty
         }),
         payload.data.sku,
-        { enforceValidation: nextStatus === "active", requireMadeToOrderSupport: madeToOrderRequested }
+        { allowEmpty: true, enforceValidation: nextStatus === "active" }
       );
+      rollupFromVariants = buildProductVariantRollup(normalizedVariantsForUpdate);
 
       if (payload.data.hasVariants === false) {
         if (payload.data.priceCents !== undefined) {
@@ -1338,28 +1374,105 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-    if (payload.data.variants !== undefined || payload.data.variantTierLevels !== undefined) {
-      await rebuildProductOptionCatalog(
-        resolved.supabase,
-        resolved.storeId,
-        payload.data.productId,
-        payload.data.variantTierLevels ?? []
-      );
+    if (usesAtomicDigitalMutation && normalizedVariantsForUpdate !== null) {
+      normalizedVariantMutation = normalizedVariantsForUpdate.map((variant) => ({
+        ...variant,
+        id: variant.id ?? randomUUID()
+      }));
     }
 
-    if (nextStatus === "active") {
-      await assertProductCanBeActive(resolved.supabase, resolved.storeId, payload.data.productId);
-      const nextProductType = payload.data.productType ?? existingProduct.product_type;
-      const rightsAffirmed = payload.data.digitalRightsAffirmed === true || Boolean(existingProduct.digital_rights_affirmed_at);
-      if (nextProductType === "digital") {
-        const { count, error: assetCountError } = await resolved.supabase
-          .from("digital_product_assets")
-          .select("id", { count: "exact", head: true })
-          .eq("product_id", payload.data.productId)
-          .eq("active", true);
-        if (assetCountError) throw assetCountError;
-        if (!rightsAffirmed) throw new VariantConflictError("Confirm that you own or have permission to sell these files.", 400);
-        if (!count) throw new VariantConflictError("Add at least one ready digital file before publishing.", 400);
+    if (
+      usesAtomicDigitalMutation &&
+      normalizedVariantMutation === null &&
+      payload.data.variantTierLevels !== undefined
+    ) {
+      const currentProduct = await selectProductWithVariants(
+        resolved.supabase,
+        payload.data.productId,
+        resolved.storeId
+      );
+      normalizedVariantMutation = currentProduct.product_variants.map((variant) => ({
+        id: variant.id,
+        title: variant.title,
+        sku: variant.sku,
+        sku_mode: variant.sku_mode,
+        image_urls: variant.image_urls ?? [],
+        group_image_urls: variant.group_image_urls ?? [],
+        option_values: variant.option_values ?? {},
+        price_cents: variant.price_cents,
+        inventory_qty: variant.inventory_qty,
+        is_made_to_order: variant.is_made_to_order,
+        is_default: variant.is_default,
+        status: variant.status,
+        sort_order: variant.sort_order
+      }));
+    }
+
+    if (usesAtomicDigitalMutation) {
+      if (nextStatus === "active" && normalizedVariantMutation === null) {
+        await assertProductCanBeActive(resolved.supabase, resolved.storeId, payload.data.productId);
+      }
+      const nextRightsAffirmedAt = Object.hasOwn(updates, "digital_rights_affirmed_at")
+        ? (updates.digital_rights_affirmed_at as string | null)
+        : existingProduct.digital_rights_affirmed_at;
+      const mutationResult = await applyDigitalProductCatalogUpdate({
+        admin: resolved.supabase as unknown as ReadinessAdminClient,
+        storeId: resolved.storeId,
+        productId: payload.data.productId,
+        actorUserId: resolved.userId,
+        currentProductType: existingProduct.product_type,
+        nextProductType,
+        nextStatus,
+        nextRightsAffirmedAt,
+        productUpdates: updates,
+        variants: normalizedVariantMutation,
+        variantTierLevels:
+          normalizedVariantMutation === null ? null : payload.data.variantTierLevels ?? [],
+      });
+      if (!mutationResult.applied) {
+        return NextResponse.json(readinessFailurePayload(mutationResult), {
+          status: mutationResult.code === "product_unavailable" ? 404 : 400
+        });
+      }
+      atomicDigitalUpdateApplied = true;
+    } else {
+      if (normalizedVariantsForUpdate !== null) {
+        rollupFromVariants = await replaceProductVariants(
+          resolved.supabase,
+          resolved.storeId,
+          payload.data.productId,
+          normalizedVariantsForUpdate.map((variant) => ({
+            id: variant.id,
+            title: variant.title,
+            sku: variant.sku,
+            skuMode: variant.sku_mode,
+            imageUrls: variant.image_urls,
+            groupImageUrls: variant.group_image_urls,
+            priceCents: variant.price_cents,
+            inventoryQty: variant.inventory_qty,
+            isMadeToOrder: variant.is_made_to_order,
+            status: variant.status,
+            isDefault: variant.is_default,
+            sortOrder: variant.sort_order,
+            optionValues: variant.option_values
+          })),
+          payload.data.sku,
+          {
+            enforceValidation: nextStatus === "active",
+            requireMadeToOrderSupport: hasMadeToOrderEnabled(payload.data.variants)
+          }
+        );
+      }
+      if (payload.data.variants !== undefined || payload.data.variantTierLevels !== undefined) {
+        await rebuildProductOptionCatalog(
+          resolved.supabase,
+          resolved.storeId,
+          payload.data.productId,
+          payload.data.variantTierLevels ?? []
+        );
+      }
+      if (nextStatus === "active") {
+        await assertProductCanBeActive(resolved.supabase, resolved.storeId, payload.data.productId);
       }
     }
   } catch (error) {
@@ -1373,15 +1486,22 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 
-  if (Object.keys(updates).length === 0) {
+  if (
+    Object.keys(updates).length === 0 &&
+    payload.data.variants === undefined &&
+    payload.data.variantTierLevels === undefined
+  ) {
     return NextResponse.json({ error: "No updates provided" }, { status: 400 });
   }
 
-  const { error: productError } = await resolved.supabase
-    .from("products")
-    .update(updates)
-    .eq("id", payload.data.productId)
-    .eq("store_id", resolved.storeId);
+  const productUpdateResult = atomicDigitalUpdateApplied
+    ? { error: null }
+    : await resolved.supabase
+        .from("products")
+        .update(updates)
+        .eq("id", payload.data.productId)
+        .eq("store_id", resolved.storeId);
+  const { error: productError } = productUpdateResult;
 
   if (productError) {
     if (

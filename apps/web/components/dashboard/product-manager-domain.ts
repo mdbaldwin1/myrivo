@@ -1,4 +1,6 @@
-import { ProductRecord } from "@/types/database";
+import { digitalReadinessReasonLabel } from "@/lib/digital-products/readiness-service";
+import type { DigitalProductReadiness } from "@/lib/digital-products/types";
+import type { ProductRecord } from "@/types/database";
 
 export type ProductVariantListItem = {
   id: string;
@@ -36,6 +38,7 @@ export type ProductListItem = Pick<
   | "digital_rights_affirmed_at"
   | "created_at"
 > & {
+  digital_readiness?: DigitalProductReadiness | null;
   product_variants: ProductVariantListItem[];
   product_option_axes?: Array<{
     id: string;
@@ -73,6 +76,15 @@ export type VariantDraft = {
 
 export const statusOptions: Array<ProductRecord["status"]> = ["draft", "active", "archived"];
 export const variantStatusOptions: Array<ProductVariantListItem["status"]> = ["active", "archived"];
+
+export function buildDigitalPublishReadinessView(readiness: DigitalProductReadiness) {
+  return {
+    ready: readiness.ready,
+    applicableFileCount: readiness.applicableFileCount,
+    previewStatus: readiness.previewStatus,
+    blockers: readiness.reasons.map(digitalReadinessReasonLabel)
+  };
+}
 
 export function resolvePriceRange(variants: ProductVariantListItem[]) {
   if (variants.length === 0) {

@@ -33,6 +33,10 @@ const previewCanonicalPathMigration = join(
   repoRoot,
   "supabase/migrations/20260812210000_enforce_digital_preview_canonical_paths.sql",
 );
+const publishingReadinessMigration = join(
+  repoRoot,
+  "supabase/migrations/20260812220000_digital_product_publishing_readiness.sql",
+);
 
 const ids = {
   storeA: "10000000-0000-0000-0000-000000000001",
@@ -277,6 +281,9 @@ beforeAll(() => {
   if (!existsSync(previewCanonicalPathMigration)) {
     throw new Error(`Missing preview canonical path migration: ${previewCanonicalPathMigration}`);
   }
+  if (!existsSync(publishingReadinessMigration)) {
+    throw new Error(`Missing publishing readiness migration: ${publishingReadinessMigration}`);
+  }
 
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-digital-migration-"));
   port = 55432 + (process.pid % 9000);
@@ -339,6 +346,7 @@ beforeAll(() => {
     }
     applyMigration(database, assetLifecycleConcurrencyMigration);
     applyMigration(database, previewCanonicalPathMigration);
+    applyMigration(database, publishingReadinessMigration);
   }
 
   execFileSync(createdb, ["full_chain"], {
@@ -1264,5 +1272,381 @@ describe("transactional digital asset lifecycle", () => {
         `select count(*) from public.digital_product_asset_versions where id = '${olderVersion}'`,
       ),
     ).toBe("0");
+  });
+});
+
+describe("transactional digital product publishing", () => {
+  const publishingIds = {
+    user: "01000000-0000-4000-8000-000000000001",
+    store: "11000000-0000-4000-8000-000000000001",
+    product: "21000000-0000-4000-8000-000000000001",
+    secondProduct: "21000000-0000-4000-8000-000000000002",
+    variantOne: "31000000-0000-4000-8000-000000000001",
+    variantTwo: "31000000-0000-4000-8000-000000000002",
+    assetOne: "61000000-0000-4000-8000-000000000001",
+    assetTwo: "61000000-0000-4000-8000-000000000002",
+    versionOne: "71000000-0000-4000-8000-000000000001",
+    versionTwo: "71000000-0000-4000-8000-000000000002",
+  } as const;
+
+  beforeAll(() => {
+    runSql(
+      "full_chain",
+      `insert into auth.users(id, email) values
+         ('${publishingIds.user}', 'publisher@example.test');
+       insert into public.stores(id, owner_user_id, name, slug, status) values
+         ('${publishingIds.store}', '${publishingIds.user}', 'Publishing Test', 'publishing-test', 'live');
+       insert into public.products(
+         id, store_id, title, description, slug, sku, price_cents,
+         inventory_qty, status, product_type, digital_rights_affirmed_at,
+         digital_rights_affirmed_by_user_id
+       ) values
+         ('${publishingIds.product}', '${publishingIds.store}', 'Digital bundle', 'Files',
+          'digital-bundle', null, 1200, 0, 'draft', 'digital', now(), '${publishingIds.user}'),
+         ('${publishingIds.secondProduct}', '${publishingIds.store}', 'Physical print', 'Print',
+          'physical-print', 'PHYSICAL-PRINT', 2200, 4, 'draft', 'physical', null, null);
+       insert into public.product_variants(
+         id, store_id, product_id, title, sku, sku_mode, image_urls,
+         group_image_urls, option_values, price_cents, inventory_qty,
+         is_made_to_order, is_default, status, sort_order
+       ) values
+         ('${publishingIds.variantOne}', '${publishingIds.store}', '${publishingIds.product}',
+          'Blue', 'DIGITAL-BLUE', 'manual', '{}', '{}', '{"Color":"Blue"}', 1200, 0,
+          false, true, 'active', 0),
+         ('${publishingIds.variantTwo}', '${publishingIds.store}', '${publishingIds.product}',
+          'Red', 'DIGITAL-RED', 'manual', '{}', '{}', '{"Color":"Red"}', 1200, 0,
+          false, false, 'active', 1);
+       insert into public.digital_product_assets(
+         id, store_id, product_id, product_variant_id, label, active
+       ) values
+         ('${publishingIds.assetOne}', '${publishingIds.store}', '${publishingIds.product}',
+          '${publishingIds.variantOne}', 'Blue file', true),
+         ('${publishingIds.assetTwo}', '${publishingIds.store}', '${publishingIds.product}',
+          '${publishingIds.variantTwo}', 'Red processing file', true);
+       insert into public.digital_product_asset_versions(
+         id, asset_id, product_id, store_id, version_number, storage_path,
+         customer_filename, mime_type, byte_size, checksum_sha256, status
+       ) values
+         ('${publishingIds.versionOne}', '${publishingIds.assetOne}', '${publishingIds.product}',
+          '${publishingIds.store}', 1,
+          '${publishingIds.store}/${publishingIds.product}/${publishingIds.assetOne}/v1/blue.pdf',
+          'blue.pdf', 'application/pdf', 10, repeat('a', 64), 'ready'),
+         ('${publishingIds.versionTwo}', '${publishingIds.assetTwo}', '${publishingIds.product}',
+          '${publishingIds.store}', 1,
+          '${publishingIds.store}/${publishingIds.product}/${publishingIds.assetTwo}/v1/red.pdf',
+          'red.pdf', 'application/pdf', 10, repeat('b', 64), 'processing');
+       insert into public.digital_product_previews(
+         product_id, store_id, public_preview_path, status, is_merchant_override
+       ) values (
+         '${publishingIds.product}', '${publishingIds.store}',
+         '${publishingIds.store}/${publishingIds.product}/merchant-override-${"c".repeat(64)}.jpg',
+         'ready', true
+       );`,
+    );
+  });
+
+  it("rejects an uncovered proposed variant before changing product, variants, or option metadata", () => {
+    const proposedVariants = JSON.stringify([
+      {
+        id: publishingIds.variantOne,
+        title: "Blue changed",
+        sku: "DIGITAL-BLUE",
+        sku_mode: "manual",
+        image_urls: [],
+        group_image_urls: [],
+        option_values: { Color: "Blue" },
+        price_cents: 1200,
+        inventory_qty: 0,
+        is_made_to_order: false,
+        is_default: true,
+        status: "active",
+        sort_order: 0,
+      },
+      {
+        id: publishingIds.variantTwo,
+        title: "Red",
+        sku: "DIGITAL-RED",
+        sku_mode: "manual",
+        image_urls: [],
+        group_image_urls: [],
+        option_values: { Color: "Red" },
+        price_cents: 1200,
+        inventory_qty: 0,
+        is_made_to_order: false,
+        is_default: false,
+        status: "active",
+        sort_order: 1,
+      },
+    ]).replaceAll("'", "''");
+    const result = JSON.parse(
+      runSql(
+        "full_chain",
+        `select public.apply_digital_product_catalog_update(
+          '${publishingIds.store}', '${publishingIds.product}', '${publishingIds.user}',
+          '{"status":"active","title":"Mutated title"}'::jsonb,
+          '${proposedVariants}'::jsonb, '["Color"]'::jsonb
+        )::text`,
+      ),
+    ) as { applied: boolean; code: string; reasons: string[] };
+
+    expect(result).toEqual({
+      applied: false,
+      code: "digital_product_not_ready",
+      reasons: [`variant_missing_file:${publishingIds.variantTwo}`],
+    });
+    expect(
+      runSql(
+        "full_chain",
+        `select p.status || ':' || p.title || ':' || pv.title || ':' ||
+          (select count(*) from public.product_option_axes a where a.product_id = p.id)::text
+         from public.products p
+         join public.product_variants pv on pv.id = '${publishingIds.variantOne}'
+         where p.id = '${publishingIds.product}'`,
+      ),
+    ).toBe("draft:Digital bundle:Blue:0");
+  });
+
+  it("publishes when every active variant has an applicable ready version", () => {
+    runSql(
+      "full_chain",
+      `update public.digital_product_asset_versions
+       set status = 'ready', upload_completed_at = coalesce(upload_completed_at, now())
+       where id = '${publishingIds.versionTwo}'`,
+    );
+
+    const result = JSON.parse(
+      runSql(
+        "full_chain",
+        `select public.apply_digital_product_catalog_update(
+          '${publishingIds.store}', '${publishingIds.product}', '${publishingIds.user}',
+          '{"status":"active"}'::jsonb, null, null
+        )::text`,
+      ),
+    ) as { applied: boolean; reasons: string[] };
+
+    expect(result).toEqual({ applied: true, code: "applied", reasons: [] });
+    expect(
+      runSql(
+        "full_chain",
+        `select status from public.products where id = '${publishingIds.product}'`,
+      ),
+    ).toBe("active");
+  });
+
+  it("rejects later catalog changes that would make an active digital product undeliverable", () => {
+    expectRejected(
+      "full_chain",
+      `update public.digital_product_asset_versions
+       set status = 'processing'
+       where id = '${publishingIds.versionTwo}'`,
+    );
+    expectRejected(
+      "full_chain",
+      `update public.digital_product_assets
+       set active = false
+       where id = '${publishingIds.assetOne}'`,
+    );
+    expectRejected(
+      "full_chain",
+      `update public.digital_product_previews
+       set status = 'failed', public_preview_path = null, failure_reason = 'Preview failed'
+       where product_id = '${publishingIds.product}'`,
+    );
+    expect(
+      runSql(
+        "full_chain",
+        `select
+          (select status from public.digital_product_asset_versions where id = '${publishingIds.versionTwo}') || ':' ||
+          (select active::text from public.digital_product_assets where id = '${publishingIds.assetOne}') || ':' ||
+          (select status from public.digital_product_previews where product_id = '${publishingIds.product}')`,
+      ),
+    ).toBe("ready:true:ready");
+  });
+
+  it("rolls back earlier variant and metadata work when a later product constraint fails", () => {
+    const proposedVariants = JSON.stringify([
+      {
+        id: publishingIds.variantOne,
+        title: "Should roll back",
+        sku: "DIGITAL-BLUE",
+        sku_mode: "manual",
+        image_urls: [],
+        group_image_urls: [],
+        option_values: { Color: "Azure" },
+        price_cents: 1200,
+        inventory_qty: 0,
+        is_made_to_order: false,
+        is_default: true,
+        status: "active",
+        sort_order: 0,
+      },
+      {
+        id: publishingIds.variantTwo,
+        title: "Red",
+        sku: "DIGITAL-RED",
+        sku_mode: "manual",
+        image_urls: [],
+        group_image_urls: [],
+        option_values: { Color: "Red" },
+        price_cents: 1200,
+        inventory_qty: 0,
+        is_made_to_order: false,
+        is_default: false,
+        status: "active",
+        sort_order: 1,
+      },
+    ]).replaceAll("'", "''");
+
+    expectRejected(
+      "full_chain",
+      `select public.apply_digital_product_catalog_update(
+        '${publishingIds.store}', '${publishingIds.product}', '${publishingIds.user}',
+        '{"slug":"physical-print"}'::jsonb,
+        '${proposedVariants}'::jsonb, '["Color"]'::jsonb
+      )`,
+    );
+    expect(
+      runSql(
+        "full_chain",
+        `select title || ':' || (option_values->>'Color')
+         from public.product_variants where id = '${publishingIds.variantOne}'`,
+      ),
+    ).toBe("Blue:Blue");
+  });
+
+  it("blocks fulfillment conversion with order history and requires fresh rights after a round trip", () => {
+    runSql(
+      "full_chain",
+      `insert into public.orders(
+         id, store_id, customer_email, currency, subtotal_cents, total_cents, status
+       ) values (
+         '41000000-0000-4000-8000-000000000001', '${publishingIds.store}',
+         'buyer@example.test', 'usd', 1200, 1200, 'paid'
+       );
+       insert into public.order_items(
+         id, order_id, store_id, product_id, product_variant_id, quantity,
+         unit_price_cents, product_type
+       ) values (
+         '51000000-0000-4000-8000-000000000001',
+         '41000000-0000-4000-8000-000000000001', '${publishingIds.store}',
+         '${publishingIds.product}', '${publishingIds.variantOne}', 1, 1200, 'digital'
+       );`,
+    );
+    expectRejected(
+      "full_chain",
+      `update public.products set product_type = 'physical'
+       where id = '${publishingIds.product}'`,
+    );
+    const blocked = JSON.parse(
+      runSql(
+        "full_chain",
+        `select public.apply_digital_product_catalog_update(
+          '${publishingIds.store}', '${publishingIds.product}', '${publishingIds.user}',
+          '{"product_type":"physical"}'::jsonb, null, null
+        )::text`,
+      ),
+    ) as { applied: boolean; code: string; reasons: string[] };
+    expect(blocked).toEqual({
+      applied: false,
+      code: "product_type_has_order_history",
+      reasons: [],
+    });
+
+    const toDigitalWithoutRights = JSON.parse(
+      runSql(
+        "full_chain",
+        `select public.apply_digital_product_catalog_update(
+          '${publishingIds.store}', '${publishingIds.secondProduct}', '${publishingIds.user}',
+          '{"product_type":"digital"}'::jsonb, null, null
+        )::text`,
+      ),
+    ) as { applied: boolean; code: string; reasons: string[] };
+    expect(toDigitalWithoutRights).toEqual({
+      applied: false,
+      code: "fresh_rights_affirmation_required",
+      reasons: ["rights_missing"],
+    });
+
+    expect(
+      JSON.parse(
+        runSql(
+          "full_chain",
+          `select public.apply_digital_product_catalog_update(
+            '${publishingIds.store}', '${publishingIds.secondProduct}', '${publishingIds.user}',
+            '{"product_type":"digital","digital_rights_affirmed_at":"2026-08-12T12:00:00.000Z","digital_rights_affirmed_by_user_id":"${publishingIds.user}"}'::jsonb,
+            null, null
+          )::text`,
+        ),
+      ),
+    ).toEqual({ applied: true, code: "applied", reasons: [] });
+    expect(
+      JSON.parse(
+        runSql(
+          "full_chain",
+          `select public.apply_digital_product_catalog_update(
+            '${publishingIds.store}', '${publishingIds.secondProduct}', '${publishingIds.user}',
+            '{"product_type":"physical"}'::jsonb, null, null
+          )::text`,
+        ),
+      ),
+    ).toEqual({ applied: true, code: "applied", reasons: [] });
+    expect(
+      runSql(
+        "full_chain",
+        `select product_type || ':' || (digital_rights_affirmed_at is null)::text || ':' ||
+          (digital_rights_affirmed_by_user_id is null)::text
+         from public.products where id = '${publishingIds.secondProduct}'`,
+      ),
+    ).toBe("physical:true:true");
+
+    const secondAttemptWithoutFreshRights = JSON.parse(
+      runSql(
+        "full_chain",
+        `select public.apply_digital_product_catalog_update(
+          '${publishingIds.store}', '${publishingIds.secondProduct}', '${publishingIds.user}',
+          '{"product_type":"digital"}'::jsonb, null, null
+        )::text`,
+      ),
+    ) as { applied: boolean; code: string; reasons: string[] };
+    expect(secondAttemptWithoutFreshRights).toEqual({
+      applied: false,
+      code: "fresh_rights_affirmation_required",
+      reasons: ["rights_missing"],
+    });
+  });
+
+  it("keeps the mutation service-role-only and returns neutral cross-tenant denial", () => {
+    expect(
+      runSql(
+        "full_chain",
+        `select
+          has_function_privilege('anon', 'public.apply_digital_product_catalog_update(uuid,uuid,uuid,jsonb,jsonb,jsonb)', 'execute')::text || ':' ||
+          has_function_privilege('authenticated', 'public.apply_digital_product_catalog_update(uuid,uuid,uuid,jsonb,jsonb,jsonb)', 'execute')::text || ':' ||
+          has_function_privilege('service_role', 'public.apply_digital_product_catalog_update(uuid,uuid,uuid,jsonb,jsonb,jsonb)', 'execute')::text`,
+      ),
+    ).toBe("false:false:true");
+    expect(
+      JSON.parse(
+        runSql(
+          "full_chain",
+          `select public.apply_digital_product_catalog_update(
+            '11000000-0000-4000-8000-000000000099', '${publishingIds.product}', '${publishingIds.user}',
+            '{"title":"Forbidden"}'::jsonb, null, null
+          )::text`,
+        ),
+      ),
+    ).toEqual({ applied: false, code: "product_unavailable", reasons: [] });
+    expect(
+      JSON.parse(
+        runSql(
+          "full_chain",
+          `select public.apply_digital_product_catalog_update(
+            '${publishingIds.store}', '${publishingIds.product}',
+            '01000000-0000-4000-8000-000000000099',
+            '{"title":"Forbidden"}'::jsonb, null, null
+          )::text`,
+        ),
+      ),
+    ).toEqual({ applied: false, code: "product_unavailable", reasons: [] });
   });
 });
