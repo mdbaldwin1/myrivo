@@ -80,7 +80,26 @@ export async function GET(request: NextRequest, context: RouteContext) {
       client,
     });
     return attachDigitalDownloadSession(
-      response({ expiresAt: access.expires_at, files }, 200),
+      response({
+        expiresAt: access.expires_at,
+        context: {
+          orderReference: access.order_id.slice(0, 8),
+          store: {
+            name: access.store_name,
+            slug: access.store_slug,
+            policiesHref: `/s/${encodeURIComponent(access.store_slug)}/policies`,
+          },
+          license: {
+            version: access.license_version,
+            summary:
+              access.license_version === "personal-use-v1"
+                ? "Personal printing and gifts only; no resale, sharing, or commercial use."
+                : "The license accepted at purchase applies to these files.",
+            href: "/legal/digital-personal-use-license",
+          },
+        },
+        files,
+      }, 200),
       session,
     );
   } catch {

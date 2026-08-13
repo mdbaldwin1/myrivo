@@ -1,11 +1,16 @@
 import { describe, expect, test } from "vitest";
 import {
   buildDigitalDeliveryAccessBlock,
+  resolveDigitalDeliveryNotificationAccessToken,
   processNextDigitalDeliveryNotification,
   sanitizeDigitalDeliveryNotificationError,
   type DigitalDeliveryNotificationProcessorDependencies,
 } from "@/lib/digital-products/delivery-email";
-import { shouldSendCustomerOrderConfirmation } from "@/lib/notifications/order-emails";
+import { deriveCustomerRecoveryAccessToken } from "@/lib/digital-products/customer-access";
+import {
+  buildDigitalAccessRecoveryEmailContent,
+  shouldSendCustomerOrderConfirmation,
+} from "@/lib/notifications/order-emails";
 
 const claim = {
   id: "10000000-0000-4000-8000-000000000101",
@@ -91,9 +96,56 @@ describe("digital delivery email content", () => {
     expect(block.text).toContain("1 digital file");
     expect(block.text).not.toContain("1 digital files");
   });
+
+  test("renders a focused fresh-link email with expiry, order, license, and support guidance", () => {
+    const content = buildDigitalAccessRecoveryEmailContent({
+      storeName: "Rachel's <Prints>",
+      orderId: "30000000-0000-4000-8000-000000000101",
+      accessUrl: "https://myrivo.test/downloads/opaque-bearer-token",
+      supportEmail: "support@example.test",
+    });
+
+    expect(content.subject).toBe("Your fresh download link from Rachel's <Prints>");
+    expect(content.text).toContain("Order 30000000");
+    expect(content.text).toContain("48 hours");
+    expect(content.text).toContain("personal-use license");
+    expect(content.text).toContain("support@example.test");
+    expect(content.html).toContain("Rachel&#39;s &lt;Prints&gt;");
+    expect(content.html).not.toContain("Rachel's <Prints>");
+    expect(content.text).not.toMatch(/storage|bucket|signed url/i);
+  });
 });
 
 describe("digital delivery notification processor", () => {
+  test("reconstructs a customer recovery bearer only from its dedicated derivation domain", () => {
+    const recoveryClaim = {
+      ...claim,
+      deliveryJobId: null,
+      notificationType: "customer_recovery" as const,
+      tokenHash: "ignored-by-this-pure-contract",
+    };
+    const secret = "digital-delivery-token-secret-longer-than-thirty-two-characters";
+
+    const recovered = resolveDigitalDeliveryNotificationAccessToken(
+      recoveryClaim,
+      secret,
+    );
+
+    expect(recovered).toBe(
+      deriveCustomerRecoveryAccessToken({
+        notificationId: recoveryClaim.id,
+        nonce: recoveryClaim.tokenDerivationNonce,
+        secret,
+      }),
+    );
+    expect(recovered).not.toBe(
+      resolveDigitalDeliveryNotificationAccessToken(
+        { ...recoveryClaim, notificationType: "merchant_resend" },
+        secret,
+      ),
+    );
+  });
+
   test("records a configured provider success with a notification-scoped idempotency key", async () => {
     const sentKeys: string[] = [];
     const completions: Array<Record<string, unknown>> = [];

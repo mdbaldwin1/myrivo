@@ -18,6 +18,7 @@ import {
 } from "@/lib/notifications/owner-notifications";
 import { getDisputeStatusLabel, getRefundReasonLabel, type DisputeStatus, type MerchantRefundReason } from "@/lib/orders/refunds";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { DIGITAL_PRODUCT_CONFIG } from "@/lib/digital-products/config";
 
 type OrderEmailItem = {
   title: string;
@@ -68,6 +69,58 @@ export type PreparedOrderEmailMessage = {
   html: string;
   replyTo: string | null;
 };
+
+function escapeEmailHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+export function buildDigitalAccessRecoveryEmailContent({
+  storeName,
+  orderId,
+  accessUrl,
+  supportEmail,
+}: {
+  storeName: string;
+  orderId: string;
+  accessUrl: string;
+  supportEmail: string | null;
+}) {
+  const subject = `Your fresh download link from ${storeName}`;
+  const supportCopy = supportEmail
+    ? `Need help? Contact ${supportEmail}.`
+    : "Need help? Reply to this email and the store can assist you.";
+  const text = [
+    `Your fresh download link from ${storeName}`,
+    "",
+    `Order ${orderId.slice(0, 8)}`,
+    `This secure link expires in ${DIGITAL_PRODUCT_CONFIG.accessLinkTtlHours} hours. Your remaining download grants are unchanged.`,
+    "The platform personal-use license applies.",
+    "",
+    `Access your files: ${accessUrl}`,
+    "",
+    supportCopy,
+    "If you did not request this link, you can ignore this email.",
+  ].join("\n");
+  const html = [
+    '<!doctype html><html><body style="margin:0;background:#f8fafc;color:#0f172a;font-family:Arial,sans-serif;">',
+    '<table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center" style="padding:32px 16px;">',
+    '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;">',
+    '<tr><td style="padding:32px;">',
+    `<p style="margin:0 0 8px;color:#64748b;font-size:13px;">Order ${escapeEmailHtml(orderId.slice(0, 8))}</p>`,
+    `<h1 style="margin:0 0 16px;font-size:24px;line-height:32px;">Your fresh download link from ${escapeEmailHtml(storeName)}</h1>`,
+    `<p style="margin:0 0 12px;line-height:24px;">This secure link expires in ${DIGITAL_PRODUCT_CONFIG.accessLinkTtlHours} hours. Your remaining download grants are unchanged.</p>`,
+    '<p style="margin:0 0 20px;line-height:24px;">The platform personal-use license applies.</p>',
+    `<a href="${escapeEmailHtml(accessUrl)}" style="display:inline-block;padding:12px 18px;border-radius:10px;background:#0f172a;color:#ffffff;text-decoration:none;font-weight:600;">Access your files</a>`,
+    `<p style="margin:24px 0 0;color:#64748b;font-size:14px;line-height:22px;">${escapeEmailHtml(supportCopy)} If you did not request this link, you can ignore this email.</p>`,
+    "</td></tr></table></td></tr></table></body></html>",
+  ].join("");
+  return { subject, text, html };
+}
 
 export function shouldSendCustomerOrderConfirmation({
   alreadySent,
@@ -642,6 +695,32 @@ export async function prepareDigitalDeliveryOrderConfirmationEmail(
     subject: rendered.subject,
     text: rendered.text,
     html: rendered.html,
+    replyTo: sender.replyTo,
+  };
+}
+
+export async function prepareDigitalAccessRecoveryEmail(
+  orderId: string,
+  accessUrl: string,
+): Promise<PreparedOrderEmailMessage | null> {
+  const context = await loadOrderEmailContext(orderId);
+  if (!context?.hasDigitalItems) return null;
+  const sender = resolveSenderConfig(context);
+  if (!sender.from) {
+    throw new Error("Digital delivery email configuration is unavailable");
+  }
+  const content = buildDigitalAccessRecoveryEmailContent({
+    storeName: context.storeName,
+    orderId: context.orderId,
+    accessUrl,
+    supportEmail: context.supportEmail,
+  });
+  return {
+    from: sender.senderName
+      ? `${sender.senderName} <${sender.from}>`
+      : sender.from,
+    to: [context.customerEmail],
+    ...content,
     replyTo: sender.replyTo,
   };
 }

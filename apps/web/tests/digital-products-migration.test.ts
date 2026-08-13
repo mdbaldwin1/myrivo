@@ -101,6 +101,10 @@ const boundDigitalDownloadCleanupMigration = join(
   repoRoot,
   "supabase/migrations/20260813012000_bind_digital_download_cleanup_identity.sql",
 );
+const customerDigitalAccessMigration = join(
+  repoRoot,
+  "supabase/migrations/20260813013000_customer_digital_access.sql",
+);
 
 const ids = {
   storeA: "10000000-0000-0000-0000-000000000001",
@@ -487,6 +491,9 @@ beforeAll(() => {
   }
   if (!existsSync(boundDigitalDownloadCleanupMigration)) {
     throw new Error(`Missing bound digital download cleanup migration: ${boundDigitalDownloadCleanupMigration}`);
+  }
+  if (!existsSync(customerDigitalAccessMigration)) {
+    throw new Error(`Missing customer digital access migration: ${customerDigitalAccessMigration}`);
   }
 
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-digital-migration-"));
@@ -1374,6 +1381,18 @@ describe("durable digital delivery", () => {
     )`;
   }
 
+  function materializeUniqueStatement(
+    job: ReturnType<typeof claimDelivery>,
+    tokenHashSeed: string,
+  ) {
+    return `select public.materialize_digital_delivery_from_manifest(
+      '${job.id}', '${job.lease_token}',
+      '70000000-0000-4000-8000-000000000071',
+      encode(digest('${tokenHashSeed}', 'sha256'), 'hex'),
+      172800, ${DIGITAL_PRODUCT_CONFIG.grantsPerFile}
+    )`;
+  }
+
   it("rolls the paid order back when its durable job cannot be inserted", () => {
     retireClaimableJobs();
     const fixture = prepareDeliveryCheckout("000000000071");
@@ -1986,6 +2005,340 @@ describe("durable digital delivery", () => {
     expect(
       resend(partiallyRefunded.orderId, "000000000088", "b").status,
     ).toBe("pending");
+  });
+
+  it("atomically queues a case-normalized 48-hour customer recovery and rotates only prior recovery links", () => {
+    retireClaimableJobs();
+    const fixture = finalizeDeliveryCheckout("000000000091");
+    const job = claimDelivery();
+    runSql("full_chain", materializeUniqueStatement(job, "task10-recovery-context"));
+    const grantsBefore = runSql(
+      "full_chain",
+      `select string_agg(download_grants_used::text, ',' order by id)
+       from public.digital_order_entitlements where order_id = '${fixture.orderId}'`,
+    );
+    const queue = (suffix: string, hashCharacter: string) =>
+      JSON.parse(
+        runSql(
+          "full_chain",
+          `select row_to_json(recovery) from public.prepare_customer_digital_access_recovery(
+            '${fixture.orderId}', '  DELIVERY-000000000091@EXAMPLE.TEST  ',
+            repeat('a', 64),
+            'a1000000-0000-4000-8000-${suffix}',
+            'a2000000-0000-4000-8000-${suffix}',
+            'a3000000-0000-4000-8000-${suffix}',
+            repeat('${hashCharacter}', 64), 172800
+          ) recovery`,
+        ),
+      ) as { queued: boolean; notification_id: string | null };
+
+    const first = queue("000000000091", "2");
+    const second = queue("000000000092", "3");
+
+    expect(first.queued).toBe(true);
+    expect(second.queued).toBe(true);
+    expect(first.notification_id).not.toBe(second.notification_id);
+    expect(
+      runSql(
+        "full_chain",
+        `select issuance_reason || ':' || count(*)::text
+         from public.digital_order_access_tokens
+         where order_id = '${fixture.orderId}' and revoked_at is null
+         group by issuance_reason order by issuance_reason`,
+      ),
+    ).toBe("customer_request:1\npurchase:1");
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*)::text || ':' ||
+          bool_and(extract(epoch from token.expires_at - token.created_at)::integer = 172800)::text || ':' ||
+          bool_and(notification.status = 'pending')::text
+         from public.digital_delivery_notifications notification
+         join public.digital_order_access_tokens token
+           on token.id = notification.access_token_id
+         where notification.order_id = '${fixture.orderId}'
+           and notification.notification_type = 'customer_recovery'`,
+      ),
+    ).toBe("2:true:true");
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.audit_events
+         where entity = 'order' and entity_id = '${fixture.orderId}'
+           and action = 'digital_order_access_recovery_queued'
+           and metadata::text !~* '(email|token|downloads/|private/)'`,
+      ),
+    ).toBe("2");
+    expect(
+      runSql(
+        "full_chain",
+        `select string_agg(download_grants_used::text, ',' order by id)
+         from public.digital_order_entitlements where order_id = '${fixture.orderId}'`,
+      ),
+    ).toBe(grantsBefore);
+
+    const access = JSON.parse(
+      runSql(
+        "full_chain",
+        `select row_to_json(access) from public.authorize_digital_download_access(
+          encode(digest('task10-recovery-context', 'sha256'), 'hex')
+        ) access`,
+      ),
+    ) as Record<string, unknown>;
+    expect(access).toMatchObject({
+      order_id: fixture.orderId,
+      store_name: "Manifest Store",
+      store_slug: "manifest-store",
+      license_version: DIGITAL_PRODUCT_CONFIG.licenseVersion,
+    });
+    expect(
+      runSql(
+        "full_chain",
+        `select string_agg(label || ':' || mime_type, ',' order by label)
+         from public.list_authorized_digital_downloads(
+           (select id from public.digital_order_access_tokens
+            where order_id = '${fixture.orderId}' and issuance_reason = 'purchase')
+         )`,
+      ),
+    ).toBe("Blue printable:application/zip,Instructions:application/pdf");
+  });
+
+  it("keeps invalid, suspended, fully refunded, and disputed recovery requests indistinguishable without queueing", () => {
+    const recover = (orderId: string, email: string, suffix: string) =>
+      JSON.parse(
+        runSql(
+          "full_chain",
+          `select row_to_json(recovery) from public.prepare_customer_digital_access_recovery(
+            '${orderId}', '${email}', repeat('b', 64),
+            'b1000000-0000-4000-8000-${suffix}',
+            'b2000000-0000-4000-8000-${suffix}',
+            'b3000000-0000-4000-8000-${suffix}', repeat('4', 64), 172800
+          ) recovery`,
+        ),
+      ) as { queued: boolean; notification_id: string | null };
+    const prepare = (suffix: string, hash: string) => {
+      retireClaimableJobs();
+      const fixture = finalizeDeliveryCheckout(suffix);
+      const job = claimDelivery();
+      runSql(
+        "full_chain",
+        materializeUniqueStatement(job, `task10-eligibility-${suffix}-${hash}`),
+      );
+      return fixture;
+    };
+
+    const invalid = prepare("000000000093", "5");
+    expect(
+      recover(invalid.orderId, "wrong@example.test", "000000000093"),
+    ).toEqual({ queued: false, notification_id: null });
+
+    const suspended = prepare("000000000094", "6");
+    runSql(
+      "full_chain",
+      `update public.digital_order_entitlements set status = 'suspended', status_reason = 'dispute_open'
+       where order_id = '${suspended.orderId}'`,
+    );
+    expect(
+      recover(
+        suspended.orderId,
+        "delivery-000000000094@example.test",
+        "000000000094",
+      ).queued,
+    ).toBe(false);
+
+    const refunded = prepare("000000000095", "7");
+    runSql(
+      "full_chain",
+      `insert into public.order_refunds(
+        order_id, store_id, requested_by_user_id, amount_cents,
+        reason_key, status, processed_at
+      ) select id, store_id, '00000000-0000-4000-8000-000000000011',
+        total_cents, 'customer_request', 'succeeded', now()
+        from public.orders where id = '${refunded.orderId}'`,
+    );
+    expect(
+      recover(
+        refunded.orderId,
+        "delivery-000000000095@example.test",
+        "000000000095",
+      ).queued,
+    ).toBe(false);
+
+    const disputed = prepare("000000000096", "8");
+    runSql(
+      "full_chain",
+      `insert into public.order_disputes(
+        order_id, store_id, stripe_dispute_id, amount_cents, currency,
+        reason, status
+      ) values (
+        '${disputed.orderId}', '${ids.manifestStore}', 'dp_task10_active',
+        2500, 'usd', 'fraudulent', 'under_review'
+      )`,
+    );
+    expect(
+      recover(
+        disputed.orderId,
+        "delivery-000000000096@example.test",
+        "000000000096",
+      ).queued,
+    ).toBe(false);
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.digital_delivery_notifications
+         where notification_type = 'customer_recovery'
+           and order_id in (
+             '${invalid.orderId}', '${suspended.orderId}',
+             '${refunded.orderId}', '${disputed.orderId}'
+           )`,
+      ),
+    ).toBe("0");
+  });
+
+  it("durably records an internal recovery failure without leaving token or notification residue", () => {
+    retireClaimableJobs();
+    const fixture = finalizeDeliveryCheckout("000000000097");
+    const job = claimDelivery();
+    runSql("full_chain", materializeUniqueStatement(job, "task10-durable-failure"));
+    runSql(
+      "full_chain",
+      `create function public.test_reject_customer_recovery_token()
+       returns trigger language plpgsql as $$
+       begin
+         if new.issuance_reason = 'customer_request' then
+           raise exception 'Injected customer recovery token failure';
+         end if;
+         return new;
+       end;
+       $$;
+       create trigger test_reject_customer_recovery_token
+       before insert on public.digital_order_access_tokens
+       for each row execute function public.test_reject_customer_recovery_token()`,
+    );
+    try {
+      expect(
+        JSON.parse(
+          runSql(
+            "full_chain",
+            `select row_to_json(recovery) from public.prepare_customer_digital_access_recovery(
+              '${fixture.orderId}', 'delivery-000000000097@example.test', repeat('c', 64),
+              'c1000000-0000-4000-8000-000000000097',
+              'c2000000-0000-4000-8000-000000000097',
+              'c3000000-0000-4000-8000-000000000097', repeat('a', 64), 172800
+            ) recovery`,
+          ),
+        ),
+      ).toEqual({ queued: false, notification_id: null });
+    } finally {
+      runSql(
+        "full_chain",
+        `drop trigger if exists test_reject_customer_recovery_token on public.digital_order_access_tokens;
+         drop function if exists public.test_reject_customer_recovery_token()`,
+      );
+    }
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*)::text || ':' ||
+          bool_and(safe_error = 'Digital access recovery failed')::text || ':' ||
+          bool_and(request_pair_hash = repeat('c', 64))::text
+         from public.digital_access_recovery_failures
+         where request_pair_hash = repeat('c', 64)`,
+      ),
+    ).toBe("1:true:true");
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.digital_order_access_tokens
+         where order_id = '${fixture.orderId}' and issuance_reason = 'customer_request'`,
+      ),
+    ).toBe("0");
+  });
+
+  it("issues a short user-bound direct session without changing lifetime grants", () => {
+    retireClaimableJobs();
+    const fixture = finalizeDeliveryCheckout("000000000098");
+    const job = claimDelivery();
+    runSql("full_chain", materializeUniqueStatement(job, "task10-direct-session"));
+    const customerUser = "00000000-0000-4000-8000-000000000098";
+    const wrongUser = "00000000-0000-4000-8000-000000000099";
+    runSql(
+      "full_chain",
+      `insert into auth.users(id, email) values
+        ('${customerUser}', 'DELIVERY-000000000098@EXAMPLE.TEST'),
+        ('${wrongUser}', 'other@example.test')`,
+    );
+    const issue = (actor: string, accessId: string, hashSeed: string) =>
+      JSON.parse(
+        runSql(
+          "full_chain",
+          `select row_to_json(access) from public.issue_authenticated_customer_digital_access(
+            '${fixture.orderId}', '${actor}', 'delivery-000000000098@example.test',
+            '${accessId}', encode(digest('${hashSeed}', 'sha256'), 'hex'), 900
+          ) access`,
+        ),
+      ) as {
+        available: boolean;
+        access_token_id: string | null;
+        expires_at: string | null;
+      };
+
+    const denied = issue(
+      wrongUser,
+      "d1000000-0000-4000-8000-000000000098",
+      "task10-denied-direct-session",
+    );
+    const granted = issue(
+      customerUser,
+      "d2000000-0000-4000-8000-000000000098",
+      "task10-granted-direct-session",
+    );
+
+    expect(denied).toEqual({
+      available: false,
+      access_token_id: null,
+      expires_at: null,
+    });
+    expect(granted).toMatchObject({
+      available: true,
+      access_token_id: "d2000000-0000-4000-8000-000000000098",
+    });
+    expect(
+      runSql(
+        "full_chain",
+        `select issuance_reason || ':' || requested_by_user_id::text || ':' ||
+          extract(epoch from expires_at - created_at)::integer::text
+         from public.digital_order_access_tokens
+         where id = 'd2000000-0000-4000-8000-000000000098'`,
+      ),
+    ).toBe(`customer_session:${customerUser}:900`);
+    expect(
+      runSql(
+        "full_chain",
+        `select string_agg(download_grants_used::text, ',' order by id)
+         from public.digital_order_entitlements where order_id = '${fixture.orderId}'`,
+      ),
+    ).toBe("0,0");
+  });
+
+  it("keeps customer recovery/session mutation service-role-only and failures operations-readable", () => {
+    expect(
+      runSql(
+        "full_chain",
+        `select
+          has_function_privilege('anon', 'public.prepare_customer_digital_access_recovery(uuid,text,text,uuid,uuid,uuid,text,integer)', 'execute')::text || ':' ||
+          has_function_privilege('authenticated', 'public.issue_authenticated_customer_digital_access(uuid,uuid,text,uuid,text,integer)', 'execute')::text || ':' ||
+          has_function_privilege('service_role', 'public.prepare_customer_digital_access_recovery(uuid,text,text,uuid,uuid,uuid,text,integer)', 'execute')::text || ':' ||
+          has_function_privilege('service_role', 'public.issue_authenticated_customer_digital_access(uuid,uuid,text,uuid,text,integer)', 'execute')::text`,
+      ),
+    ).toBe("false:false:true:true");
+    expect(
+      runSql(
+        "full_chain",
+        `select relrowsecurity::text from pg_class
+         where oid = 'public.digital_access_recovery_failures'::regclass`,
+      ),
+    ).toBe("true");
   });
 
   it("keeps notification mutations service-role-only and notification failures merchant-readable", () => {

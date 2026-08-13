@@ -789,7 +789,7 @@ export type DigitalPurchaseManifestStatus = "draft" | "locked";
 export type DigitalDownloadGrantStatus = "reserved" | "issued" | "released" | "failed";
 export type DigitalDeliveryJobStatus = "pending" | "processing" | "succeeded" | "failed";
 export type DigitalDeliveryAttemptStatus = Exclude<DigitalDeliveryJobStatus, "pending">;
-export type DigitalDeliveryNotificationType = "purchase" | "merchant_resend";
+export type DigitalDeliveryNotificationType = "purchase" | "merchant_resend" | "customer_recovery";
 export type DigitalDeliveryNotificationStatus = DigitalDeliveryJobStatus;
 
 export type DigitalProductAssetRecord = {
@@ -895,7 +895,8 @@ export type DigitalOrderAccessTokenRecord = {
   delivery_job_id: string | null;
   token_derivation_nonce: string | null;
   token_hash: string;
-  issuance_reason: "purchase" | "customer_request" | "merchant_resend";
+  issuance_reason: "purchase" | "customer_request" | "merchant_resend" | "customer_session";
+  requested_by_user_id: string | null;
   expires_at: string;
   revoked_at: string | null;
   created_at: string;

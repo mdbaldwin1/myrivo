@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAuthenticatedCustomerUser } from "@/lib/customer/account";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { OrderShippingDelayRecord } from "@/types/database";
+import type { DigitalEntitlementStatus, OrderShippingDelayRecord } from "@/types/database";
 
 const paramsSchema = z.object({
   orderId: z.string().uuid()
@@ -106,9 +107,35 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: shippingDelaysError.message }, { status: 500 });
   }
 
+  // Ownership is established above before the service-role client reads any
+  // entitlement metadata. Only aggregate availability is exposed here.
+  const { data: digitalEntitlements, error: digitalEntitlementsError } = await createSupabaseAdminClient()
+    .from("digital_order_entitlements")
+    .select("id,status")
+    .eq("order_id", order.id)
+    .returns<Array<{ id: string; status: DigitalEntitlementStatus }>>();
+
+  if (digitalEntitlementsError) {
+    return NextResponse.json(
+      { error: "Unable to load digital downloads." },
+      { status: 500 },
+    );
+  }
+
+  const fileCount = digitalEntitlements?.length ?? 0;
+  const activeFileCount = digitalEntitlements?.filter(({ status }) => status === "active").length ?? 0;
+  const digitalDownloadStatus = activeFileCount === fileCount
+    ? "available"
+    : activeFileCount > 0
+      ? "partially_available"
+      : "unavailable";
+
   return NextResponse.json({
     order,
     items: items ?? [],
-    shippingDelays: shippingDelays ?? []
+    shippingDelays: shippingDelays ?? [],
+    digitalDownloads: fileCount > 0
+      ? { fileCount, activeFileCount, status: digitalDownloadStatus }
+      : null,
   });
 }

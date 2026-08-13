@@ -3,11 +3,18 @@ import { NextRequest } from "next/server";
 
 const authGetUserMock = vi.fn();
 const serverFromMock = vi.fn();
+const adminFromMock = vi.fn();
 
 vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient: vi.fn(async () => ({
     auth: { getUser: (...args: unknown[]) => authGetUserMock(...args) },
     from: (...args: unknown[]) => serverFromMock(...args)
+  }))
+}));
+
+vi.mock("@/lib/supabase/admin", () => ({
+  createSupabaseAdminClient: vi.fn(() => ({
+    from: (...args: unknown[]) => adminFromMock(...args)
   }))
 }));
 
@@ -17,6 +24,7 @@ beforeEach(() => {
   vi.resetModules();
   authGetUserMock.mockReset();
   serverFromMock.mockReset();
+  adminFromMock.mockReset();
 
   authGetUserMock.mockResolvedValue({
     data: {
@@ -30,6 +38,24 @@ beforeEach(() => {
 
 describe("customer order detail route", () => {
   test("returns active shipping delay history for the authenticated customer", async () => {
+    adminFromMock.mockImplementation((table: string) => {
+      if (table !== "digital_order_entitlements") {
+        throw new Error(`Unexpected admin table ${table}`);
+      }
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            returns: vi.fn(async () => ({
+              data: [
+                { id: "entitlement-1", status: "active" },
+                { id: "entitlement-2", status: "suspended" }
+              ],
+              error: null
+            }))
+          }))
+        }))
+      };
+    });
     serverFromMock.mockImplementation((table: string) => {
       if (table === "orders") {
         return {
@@ -143,6 +169,11 @@ describe("customer order detail route", () => {
     });
     const payload = (await response.json()) as {
       shippingDelays?: Array<{ id: string; status: string; customer_path: string }>;
+      digitalDownloads?: {
+        fileCount: number;
+        activeFileCount: number;
+        status: string;
+      };
     };
 
     expect(response.status).toBe(200);
@@ -151,6 +182,11 @@ describe("customer order detail route", () => {
       id: "delay-1",
       status: "awaiting_customer_response",
       customer_path: "request_delay_approval"
+    });
+    expect(payload.digitalDownloads).toEqual({
+      fileCount: 2,
+      activeFileCount: 1,
+      status: "partially_available"
     });
   });
 });

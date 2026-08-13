@@ -2,6 +2,7 @@ import { createHash, createHmac, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getExternalAppUrl, getServerEnv } from "@/lib/env";
 import {
+  prepareDigitalAccessRecoveryEmail,
   prepareDigitalDeliveryOrderConfirmationEmail,
   type PreparedOrderEmailMessage,
 } from "@/lib/notifications/order-emails";
@@ -11,6 +12,7 @@ import {
 } from "@/lib/notifications/email-provider";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { DIGITAL_PRODUCT_CONFIG } from "./config";
+import { deriveCustomerRecoveryAccessToken } from "./customer-access";
 import {
   deriveDigitalAccessToken,
   hashDigitalAccessToken,
@@ -32,7 +34,7 @@ export type DigitalDeliveryNotificationClaim = {
   orderId: string;
   deliveryJobId: string | null;
   accessTokenId: string;
-  notificationType: "purchase" | "merchant_resend";
+  notificationType: "purchase" | "merchant_resend" | "customer_recovery";
   leaseToken: string;
   attemptNumber: number;
   tokenDerivationNonce: string;
@@ -70,7 +72,7 @@ const claimSchema = z.object({
   order_id: z.string().uuid(),
   delivery_job_id: z.string().uuid().nullable(),
   access_token_id: z.string().uuid(),
-  notification_type: z.enum(["purchase", "merchant_resend"]),
+  notification_type: z.enum(["purchase", "merchant_resend", "customer_recovery"]),
   lease_token: z.string().uuid(),
   attempt_number: z.number().int().positive(),
   token_derivation_nonce: z.string().uuid(),
@@ -173,6 +175,39 @@ export function deriveDigitalResendAccessToken({
     .digest("base64url");
 }
 
+export function resolveDigitalDeliveryNotificationAccessToken(
+  claim: Pick<
+    DigitalDeliveryNotificationClaim,
+    | "id"
+    | "deliveryJobId"
+    | "notificationType"
+    | "tokenDerivationNonce"
+  >,
+  secret: string,
+) {
+  if (claim.notificationType === "purchase") {
+    return claim.deliveryJobId
+      ? deriveDigitalAccessToken({
+          jobId: claim.deliveryJobId,
+          nonce: claim.tokenDerivationNonce,
+          secret,
+        })
+      : null;
+  }
+  if (claim.notificationType === "customer_recovery") {
+    return deriveCustomerRecoveryAccessToken({
+      notificationId: claim.id,
+      nonce: claim.tokenDerivationNonce,
+      secret,
+    });
+  }
+  return deriveDigitalResendAccessToken({
+    notificationId: claim.id,
+    nonce: claim.tokenDerivationNonce,
+    secret,
+  });
+}
+
 async function buildDefaultMessage(
   claim: DigitalDeliveryNotificationClaim,
 ): Promise<PreparedOrderEmailMessage> {
@@ -180,24 +215,24 @@ async function buildDefaultMessage(
   if (!secret) {
     throw new Error("Digital delivery token configuration is unavailable");
   }
-  const accessToken =
-    claim.notificationType === "purchase"
-      ? claim.deliveryJobId
-        ? deriveDigitalAccessToken({
-            jobId: claim.deliveryJobId,
-            nonce: claim.tokenDerivationNonce,
-            secret,
-          })
-        : null
-      : deriveDigitalResendAccessToken({
-          notificationId: claim.id,
-          nonce: claim.tokenDerivationNonce,
-          secret,
-        });
+  const accessToken = resolveDigitalDeliveryNotificationAccessToken(
+    claim,
+    secret,
+  );
   if (!accessToken || hashDigitalAccessToken(accessToken) !== claim.tokenHash) {
     throw new Error("Digital delivery token integrity check failed");
   }
   const accessUrl = `${getExternalAppUrl().replace(/\/$/, "")}/downloads/${accessToken}`;
+  if (claim.notificationType !== "purchase") {
+    const recovery = await prepareDigitalAccessRecoveryEmail(
+      claim.orderId,
+      accessUrl,
+    );
+    if (!recovery) {
+      throw new Error("Digital delivery email context is unavailable");
+    }
+    return recovery;
+  }
   const block = buildDigitalDeliveryAccessBlock({
     fileCount: claim.fileCount,
     accessUrl,

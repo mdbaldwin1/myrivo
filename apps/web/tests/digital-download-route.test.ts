@@ -105,6 +105,9 @@ function buildAdmin(options: FakeOptions = {}) {
                     order_id: ORDER_ID,
                     store_id: STORE_ID,
                     expires_at: "2099-08-12T12:00:00.000Z",
+                    store_name: "Rachel's Prints",
+                    store_slug: "rachels-prints",
+                    license_version: "personal-use-v1",
                   },
                 ]
               : options.authorizeData
@@ -125,6 +128,7 @@ function buildAdmin(options: FakeOptions = {}) {
             [
               {
                 entitlement_id: ENTITLEMENT_ID,
+                label: "Printable wall art",
                 customer_filename: "customer-file.pdf",
                 mime_type: "application/pdf",
                 byte_size: 1024,
@@ -785,7 +789,7 @@ describe("digital download grant route", () => {
 });
 
 describe("digital download list route", () => {
-  test("returns only safe customer metadata without order, token, grant, or storage internals", async () => {
+  test("returns safe store, order, license, and immutable file context without token, grant, or storage internals", async () => {
     const state = buildAdmin();
     createSupabaseAdminClientMock.mockReturnValue(state.admin);
 
@@ -795,9 +799,23 @@ describe("digital download list route", () => {
     expect(response.status).toBe(200);
     expect(body).toEqual({
       expiresAt: "2099-08-12T12:00:00.000Z",
+      context: {
+        orderReference: "40000000",
+        store: {
+          name: "Rachel's Prints",
+          slug: "rachels-prints",
+          policiesHref: "/s/rachels-prints/policies",
+        },
+        license: {
+          version: "personal-use-v1",
+          summary: "Personal printing and gifts only; no resale, sharing, or commercial use.",
+          href: "/legal/digital-personal-use-license",
+        },
+      },
       files: [
         {
           id: ENTITLEMENT_ID,
+          label: "Printable wall art",
           customerFilename: "customer-file.pdf",
           mimeType: "application/pdf",
           byteSize: 1024,
@@ -807,7 +825,7 @@ describe("digital download list route", () => {
       ],
     });
     expect(JSON.stringify(body)).not.toMatch(
-      /orderId|accessTokenId|storage|path|grant_id|token_hash/i,
+      /orderId|accessTokenId|storage_path|grant_id|token_hash/i,
     );
     expect(state.events).toEqual(["rate-limit", "authorize", "list"]);
     const rateLimits = state.rpcArgs.filter(

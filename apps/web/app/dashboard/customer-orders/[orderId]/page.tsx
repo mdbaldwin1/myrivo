@@ -130,6 +130,6 @@ export default async function DashboardCustomerOrderPage({ params, searchParams 
       shippingDelays={shippingDelays ?? []}
       backHref={backHref}
       storefrontHref={storefrontHref}
-    />{digitalFileCount ? <div className="mx-auto max-w-5xl px-4 pb-8"><DigitalOrderDownloads orderId={order.id} email={order.customer_email} fileCount={digitalFileCount} /></div> : null}</>
+    />{digitalFileCount ? <div className="mx-auto max-w-5xl px-4 pb-8"><DigitalOrderDownloads orderId={order.id} fileCount={digitalFileCount} /></div> : null}</>
   );
 }

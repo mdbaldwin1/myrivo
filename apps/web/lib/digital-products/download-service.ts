@@ -25,10 +25,14 @@ const accessSchema = z.object({
   order_id: z.string().regex(POSTGRES_UUID_PATTERN),
   store_id: z.string().regex(POSTGRES_UUID_PATTERN),
   expires_at: z.string().datetime({ offset: true }),
+  store_name: z.string().trim().min(1).max(200),
+  store_slug: z.string().trim().min(1).max(200),
+  license_version: z.string().trim().min(1).max(100),
 });
 
 const listedDownloadSchema = z.object({
   entitlement_id: z.string().regex(POSTGRES_UUID_PATTERN),
+  label: z.string().trim().min(1).max(255),
   customer_filename: z.string().trim().min(1).max(255),
   mime_type: z.enum([
     "image/jpeg",
@@ -92,6 +96,7 @@ export type AuthorizedDigitalAccess = z.infer<typeof accessSchema>;
 
 export type ListedDigitalDownload = {
   id: string;
+  label: string;
   customerFilename: string;
   mimeType: string;
   byteSize: number;
@@ -347,6 +352,7 @@ export async function listAuthorizedDigitalDownloads({
   if (!parsed.success) throw new DigitalDownloadError("service_unavailable");
   return parsed.data.map((file) => ({
     id: file.entitlement_id,
+    label: file.label,
     customerFilename: file.customer_filename,
     mimeType: file.mime_type,
     byteSize: file.byte_size,
