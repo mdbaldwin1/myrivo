@@ -27,7 +27,7 @@ describe("checkout digital access", () => {
       jobId: "11111111-1111-4111-8111-111111111111",
       secret: "s".repeat(32),
       now: new Date("2026-08-13T00:00:00.000Z")
-    })).resolves.toBe(`/downloads/${token}`);
+    })).resolves.toBe(`/downloads#token=${token}`);
     expect(query.eq).toHaveBeenCalledWith("issuance_reason", "purchase");
     expect(query.is).toHaveBeenCalledWith("revoked_at", null);
   });

@@ -91,18 +91,29 @@ function fileIcon(mimeType: string) {
   return <FileText className={classes} aria-hidden="true" />;
 }
 
-export function DigitalDownloadList({ token }: { token: string }) {
+export function DigitalDownloadList() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadFeedback, setDownloadFeedback] = useState<string | null>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setState({ status: "loading" });
     try {
-      const response = await fetch(
-        `/api/digital-downloads/${encodeURIComponent(token)}`,
-        { cache: "no-store", credentials: "same-origin", signal },
-      );
+      const fragmentToken = new URLSearchParams(window.location.hash.slice(1)).get("token");
+      if (fragmentToken) {
+        window.history.replaceState(null, "", "/downloads");
+        const exchange = await fetch("/api/digital-downloads/session", {
+          method: "POST", credentials: "same-origin", cache: "no-store", signal,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ token: fragmentToken }),
+        });
+        if (!exchange.ok) {
+          if (exchange.status === 410) { setState({ status: "unavailable" }); return; }
+          throw new Error("We could not open this secure link. Please try again.");
+        }
+      }
+      const response = await fetch("/api/digital-downloads", { cache: "no-store", credentials: "same-origin", signal });
       if (response.status === 410 || response.status === 404) {
         setState({ status: "unavailable" });
         return;
@@ -130,7 +141,16 @@ export function DigitalDownloadList({ token }: { token: string }) {
             : "We could not load your files. Please try again.",
       });
     }
-  }, [token]);
+  }, []);
+
+  function beginDownload(fileId: string, label: string) {
+    setDownloadingId(fileId);
+    setDownloadFeedback(`Preparing ${label}.`);
+    window.setTimeout(() => {
+      setDownloadingId((current) => current === fileId ? null : current);
+      setDownloadFeedback(`${label} download started. If it did not begin, try again.`);
+    }, 2_500);
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -148,7 +168,7 @@ export function DigitalDownloadList({ token }: { token: string }) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-muted/20 px-4 py-16">
         <div role="status" className="flex items-center gap-3 rounded-xl border border-border/70 bg-card px-5 py-4 shadow-sm">
-          <RefreshCw className="h-5 w-5 animate-spin text-primary" aria-hidden="true" />
+          <RefreshCw className="h-5 w-5 animate-spin text-primary motion-reduce:animate-none" aria-hidden="true" />
           <span className="font-medium">Loading your files…</span>
         </div>
       </main>
@@ -196,6 +216,7 @@ export function DigitalDownloadList({ token }: { token: string }) {
   return (
     <main className="min-h-screen bg-muted/20 px-4 py-8 sm:px-6 sm:py-14">
       <div className="mx-auto max-w-4xl space-y-6">
+        <p className="sr-only" role="status" aria-live="polite">{downloadFeedback}</p>
         <header className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
           <div className="bg-gradient-to-br from-primary/10 via-card to-[hsl(var(--brand-secondary))]/10 p-6 sm:p-8">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
@@ -249,10 +270,10 @@ export function DigitalDownloadList({ token }: { token: string }) {
                     </div>
                     {available ? (
                       <Link
-                        href={`/api/digital-downloads/${encodeURIComponent(token)}/${file.id}`}
+                        href={`/api/digital-downloads/file/${file.id}`}
                         className={cn(buttonVariants(), "w-full shrink-0 sm:w-auto")}
                         aria-label={`Download ${file.label}`}
-                        onClick={() => setDownloadingId(file.id)}
+                        onClick={() => beginDownload(file.id, file.label)}
                       >
                         <Download className="mr-2 h-4 w-4" aria-hidden="true" />
                         {downloadingId === file.id ? "Preparing…" : "Download"}

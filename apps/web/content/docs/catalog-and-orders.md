@@ -39,6 +39,8 @@ Digital items have a quantity of one. Digital-only checkout asks for name and em
 
 After successful payment, Myrivo snapshots the purchased file versions and emails a secure access link valid for 48 hours. Each purchased file permits five successful download grants. A buyer can request a fresh 48-hour link using the order ID and order email; issuing a new link does not reset download grants.
 
+The secure credential is exchanged privately when the buyer opens the page and is removed from the address immediately. Download pages and file links therefore remain safe to revisit without placing the credential in browser history or ordinary request paths.
+
 Replacing a catalog file affects only future purchases. Existing buyers continue to receive the exact version included in their purchase. Removing a file from the current listing likewise does not remove it from a completed order.
 
 If delivery is still being prepared after payment, buyers can retry the status check from the confirmation page. For mixed orders, shipping or pickup steps continue even if digital delivery needs attention. Store operators can inspect delivery status from the order, resend a link after initial delivery succeeds, or ask a platform operator to requeue or reconcile failed work. Never copy a buyer's secure link into support notes.

@@ -21,6 +21,9 @@ function fixture(): AcceptanceFixture | null {
 }
 
 const acceptance = fixture();
+if (!acceptance && process.env.MYRIVO_DIGITAL_RELEASE_GATE === "true") {
+  throw new Error("Digital release gate requires a validated acceptance fixture.");
+}
 test.skip(!acceptance, "Set MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE to a non-production seeded acceptance fixture.");
 
 async function expectNoPrivateDeliveryMaterial(page: Page) {
@@ -79,23 +82,20 @@ test.describe("digital-products release journeys", () => {
     await expectNoPrivateDeliveryMaterial(page);
   });
 
-  test("fixture evidence covers grant, replacement, financial, and retry state transitions", async () => {
+  test("structured provider evidence is linked to every required state transition", async () => {
     const evidencePath = process.env.MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE;
     expect(evidencePath, "Set MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE to the redacted acceptance record.").toBeTruthy();
     expect(fs.existsSync(evidencePath!)).toBe(true);
-    const evidence = fs.readFileSync(evidencePath!, "utf8");
-    for (const required of [
-      "five successful grants",
-      "grace reuse",
-      "replacement preserves prior version",
-      "partial refund preserves access",
-      "full refund revokes access",
-      "dispute opened suspends access",
-      "dispute won restores access",
-      "dispute lost revokes access",
-      "delivery retry converged",
-      "merchant resend rotated link",
-    ]) expect(evidence.toLowerCase()).toContain(required);
-    expect(evidence).not.toMatch(/sk_(?:live|test)_|re_(?:live|test)_|Bearer\s+/);
+    const raw = fs.readFileSync(evidencePath!, "utf8");
+    const evidence = JSON.parse(raw) as { schemaVersion: number; scenarios: Array<{ id: string; providerEventId: string; applicationState: unknown }> };
+    expect(evidence.schemaVersion).toBe(1);
+    const required = ["five-grants", "grace-reuse", "replacement-version", "partial-refund", "full-refund", "dispute-opened", "dispute-won", "dispute-lost", "delivery-retry", "merchant-resend"];
+    const scenarioIds = new Set(evidence.scenarios.map((scenario) => scenario.id));
+    for (const id of required) expect(scenarioIds.has(id), `missing scenario ${id}`).toBe(true);
+    for (const scenario of evidence.scenarios) {
+      expect(scenario.providerEventId).toMatch(/^(evt_|email_|job_)[A-Za-z0-9_-]+$/);
+      expect(scenario.applicationState).toBeTruthy();
+    }
+    expect(raw).not.toMatch(/sk_(?:live|test)_|re_(?:live|test)_|Bearer\s+/);
   });
 });

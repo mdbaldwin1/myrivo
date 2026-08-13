@@ -106,7 +106,7 @@ export async function materializeEntitlementsFromManifest({
 
   return {
     accessToken,
-    accessUrl: `${externalAppUrl.replace(/\/$/, "")}/downloads/${accessToken}`,
+    accessUrl: `${externalAppUrl.replace(/\/$/, "")}/downloads#token=${accessToken}`,
     accessTokenId: parsed.data.access_token_id,
     entitlementCount: parsed.data.entitlement_count,
     expiresAt: parsed.data.expires_at,

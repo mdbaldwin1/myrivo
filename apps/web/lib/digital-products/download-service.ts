@@ -19,7 +19,7 @@ const POSTGRES_UUID_PATTERN =
 const SHA_256_PATTERN = /^[a-f0-9]{64}$/;
 const DOWNLOAD_SESSION_COOKIE = "myrivo_download_session";
 const DOWNLOAD_SESSION_COOKIE_PATTERN =
-  /^v1\.([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.([A-Za-z0-9_-]{43})$/i;
+  /^v2\.([0-9a-f-]{36})\.([0-9a-f-]{36})\.([A-Za-z0-9_-]{43})$/i;
 
 const accessSchema = z.object({
   access_token_id: z.string().regex(POSTGRES_UUID_PATTERN),
@@ -140,35 +140,37 @@ export function isValidDigitalEntitlementId(id: string): boolean {
   return POSTGRES_UUID_PATTERN.test(id);
 }
 
-function signDigitalDownloadSession(id: string, secret: string): string {
+function signDigitalDownloadSession(id: string, accessTokenId: string, secret: string): string {
   return createHmac("sha256", secret)
-    .update(`digital-download-session-cookie-v1\0${id}`)
+    .update(`digital-download-session-cookie-v2\0${id}\0${accessTokenId}`)
     .digest("base64url");
 }
 
 function verifiedDigitalDownloadSessionId(
   candidate: string | undefined,
   secret: string,
-): string | null {
+): { id: string; accessTokenId: string } | null {
   const match = candidate?.match(DOWNLOAD_SESSION_COOKIE_PATTERN);
   if (!match) return null;
   const id = match[1];
-  const signature = match[2];
-  if (!id || !signature) return null;
+  const accessTokenId = match[2];
+  const signature = match[3];
+  if (!id || !accessTokenId || !signature || !POSTGRES_UUID_PATTERN.test(id) || !POSTGRES_UUID_PATTERN.test(accessTokenId)) return null;
   const presented = Buffer.from(signature, "base64url");
   const expected = Buffer.from(
-    signDigitalDownloadSession(id, secret),
+    signDigitalDownloadSession(id, accessTokenId, secret),
     "base64url",
   );
   return presented.length === expected.length &&
     timingSafeEqual(presented, expected)
-    ? id
+    ? { id, accessTokenId }
     : null;
 }
 
 export function getDigitalDownloadSession(
   request: NextRequest,
   accessToken: string,
+  accessTokenId: string,
 ): {
   id: string;
   cookieValue: string;
@@ -182,10 +184,10 @@ export function getDigitalDownloadSession(
     throw new DigitalDownloadError("rate_limit_unavailable");
   }
   const candidate = request.cookies.get(DOWNLOAD_SESSION_COOKIE)?.value;
-  const existingId = verifiedDigitalDownloadSessionId(candidate, secret);
-  const isExisting = existingId !== null;
-  const id = existingId ?? randomUUID();
-  const cookieValue = `v1.${id}.${signDigitalDownloadSession(id, secret)}`;
+  const existing = verifiedDigitalDownloadSessionId(candidate, secret);
+  const isExisting = existing?.accessTokenId === accessTokenId;
+  const id = isExisting ? existing.id : randomUUID();
+  const cookieValue = `v2.${id}.${accessTokenId}.${signDigitalDownloadSession(id, accessTokenId, secret)}`;
   return {
     id,
     cookieValue,
@@ -203,6 +205,22 @@ export function getDigitalDownloadSession(
           .digest("hex")
       : null,
     isNew: !isExisting,
+  };
+}
+
+export function getEstablishedDigitalDownloadSession(request: NextRequest) {
+  const secret = getServerEnv().DIGITAL_DOWNLOAD_SESSION_SECRET?.trim();
+  if (!secret) throw new DigitalDownloadError("rate_limit_unavailable");
+  const established = verifiedDigitalDownloadSessionId(
+    request.cookies.get(DOWNLOAD_SESSION_COOKIE)?.value,
+    secret,
+  );
+  if (!established) return null;
+  return {
+    ...established,
+    fingerprintHash: createHash("sha256").update(`digital-download-session-v1\0${established.id}`).digest("hex"),
+    bearerRateLimitSubjectHash: createHash("sha256").update(`digital-download-rate-subject-v2\0access-id\0${established.accessTokenId}`).digest("hex"),
+    sessionRateLimitSubjectHash: createHash("sha256").update(`digital-download-rate-subject-v1\0session\0${established.id}`).digest("hex"),
   };
 }
 
@@ -322,6 +340,25 @@ export async function authorizeAccessToken({
     result = await client.rpc("authorize_digital_download_access", {
       p_token_hash: hashDigitalAccessToken(token),
     });
+  } catch {
+    throw new DigitalDownloadError("service_unavailable");
+  }
+  if (result.error) throw new DigitalDownloadError("service_unavailable");
+  const row = unwrapRpcRow(result.data);
+  if (!row) return null;
+  const parsed = accessSchema.safeParse(row);
+  if (!parsed.success) throw new DigitalDownloadError("service_unavailable");
+  return parsed.data;
+}
+
+export async function authorizeAccessTokenId({ accessTokenId, client = defaultClient() }: {
+  accessTokenId: string;
+  client?: DigitalDownloadClient;
+}): Promise<AuthorizedDigitalAccess | null> {
+  if (!POSTGRES_UUID_PATTERN.test(accessTokenId)) return null;
+  let result: RpcResult;
+  try {
+    result = await client.rpc("authorize_digital_download_session", { p_access_token_id: accessTokenId });
   } catch {
     throw new DigitalDownloadError("service_unavailable");
   }

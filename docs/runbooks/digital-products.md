@@ -11,7 +11,7 @@ This runbook is the production operating procedure for native digital products. 
 - A published digital product has a rights affirmation, a ready public watermarked preview, and at least one ready applicable immutable file for every active variant.
 - Checkout locks the exact asset versions the buyer saw. Replacement never changes prior buyers' files.
 - Original files stay in the private `digital-product-assets` bucket. Only bounded watermarked previews live in `digital-product-previews`.
-- Access bearers and signed storage URLs are never persisted or logged. Only keyed hashes are stored.
+- Access bearers and signed storage URLs are never persisted or logged. Emailed bearers are held in a URL fragment, exchanged once by POST for a signed HttpOnly session, and immediately removed from browser navigation; list and grant URLs contain no credential. Only keyed hashes and opaque IDs are stored.
 - Access links last 48 hours. Each entitlement allows exactly five successful grants; a 60-second same-session grace retry does not consume another grant.
 - Partial refunds preserve access. Cumulative full refunds revoke it. Open disputes suspend access, wins restore it, and losses revoke it.
 - Disabling rollout blocks new sales, not delivery or support for already-paid orders.
@@ -52,6 +52,8 @@ Alert when the scheduler has no successful invocation for five minutes, paid del
 5. Verify worker authentication, bucket policies, privacy-safe operations UI, and alerts.
 6. Enable `digitalProducts: true` on one internal test plan, then enable one internal flagged store through the idempotent admin operation.
 7. Complete the acceptance matrix below. Observe one complete retry window before enabling another cohort.
+
+Promotion runs `npm run verify:digital-products-release`. It fails closed unless the fixture, structured provider-linked evidence, Stripe test-mode credentials, Resend test recipient, and all digital Playwright journeys are present. The successful evidence digest and three review timestamps must be recorded in `digital_products_release_approvals`; the database rejects rollout enablement when no current, unrevoked approval exists. A skipped test is never approval.
 
 Rollback starts by disabling every enabled store. Roll back application code only after flags are off. Leave additive tables, immutable manifests, jobs, entitlements, grants, tokens, and audit records in place so paid buyers retain support. Do not reverse migrations that would discard order evidence. If schema rollback is unavoidable, stop checkout, back up affected tables, and obtain engineering/security approval.
 

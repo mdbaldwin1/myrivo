@@ -98,11 +98,11 @@ export function createAuthenticatedDigitalAccessHandler(
     }
     if (!issued) return response({ error: "Order not found." }, 404);
     const url = new URL(issued.accessUrl);
-    if (!/^\/downloads\/[A-Za-z0-9_-]{43}$/.test(url.pathname)) {
+    if (url.pathname !== "/downloads" || !/^#token=[A-Za-z0-9_-]{43}$/.test(url.hash)) {
       return response({ error: "Digital access is temporarily unavailable." }, 503);
     }
     return response(
-      { accessUrl: url.pathname, expiresAt: issued.expiresAt },
+      { accessUrl: `${url.pathname}${url.hash}`, expiresAt: issued.expiresAt },
       201,
     );
   };

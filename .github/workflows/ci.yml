@@ -50,3 +50,14 @@ jobs:
           else
             echo "Skipping rollout verification: missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY."
           fi
+      - name: Digital products release acceptance (promotion only)
+        if: github.ref == 'refs/heads/main'
+        env:
+          MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE: ${{ secrets.MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE }}
+          MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE: ${{ secrets.MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE }}
+          MYRIVO_DIGITAL_TEST_RECIPIENT: ${{ secrets.MYRIVO_DIGITAL_TEST_RECIPIENT }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_TEST_WEBHOOK_SECRET }}
+          STRIPE_STUB_MODE: "false"
+          RESEND_API_KEY: ${{ secrets.RESEND_TEST_API_KEY }}
+        run: npm run verify:digital-products-release

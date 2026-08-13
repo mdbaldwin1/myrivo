@@ -82,5 +82,5 @@ export async function loadCheckoutDigitalAccessUrl({
     return null;
   }
 
-  return `/downloads/${token}`;
+  return `/downloads#token=${token}`;
 }

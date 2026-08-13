@@ -259,7 +259,7 @@ async function buildDefaultMessage(
   if (!accessToken || hashDigitalAccessToken(accessToken) !== claim.tokenHash) {
     throw new Error("Digital delivery token integrity check failed");
   }
-  const accessUrl = `${getExternalAppUrl().replace(/\/$/, "")}/downloads/${accessToken}`;
+  const accessUrl = `${getExternalAppUrl().replace(/\/$/, "")}/downloads#token=${accessToken}`;
   if (claim.notificationType !== "purchase") {
     const recovery = await prepareDigitalAccessRecoveryEmail(
       claim.orderId,

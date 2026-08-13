@@ -5,6 +5,7 @@ import { login } from "./helpers";
 
 type AccessibilityFixture = {
   merchant: { email: string; password: string };
+  customer: { email: string; password: string };
   routes: {
     catalogFiles: string;
     product: string;
@@ -25,6 +26,9 @@ function fixture(): AccessibilityFixture | null {
 }
 
 const acceptance = fixture();
+if (!acceptance && process.env.MYRIVO_DIGITAL_RELEASE_GATE === "true") {
+  throw new Error("Digital release gate requires a validated accessibility fixture.");
+}
 test.skip(!acceptance, "Digital accessibility acceptance requires a non-production seeded fixture.");
 
 for (const viewport of [
@@ -46,15 +50,20 @@ for (const viewport of [
         await expectNoSeriousAccessibilityViolations(page, `${viewport.name} ${label}`);
         await page.evaluate(() => { document.documentElement.style.zoom = "2"; });
         await expect(page.locator("body")).toBeVisible();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
+        const primaryAction = page.getByRole("button").or(page.getByRole("link")).last();
+        if (await primaryAction.isVisible().catch(() => false)) await primaryAction.scrollIntoViewIfNeeded();
         await page.evaluate(() => { document.documentElement.style.zoom = "1"; });
       }
     });
 
     test("authenticated customer and merchant surfaces pass axe", async ({ page }) => {
+      await login(page, acceptance!.customer.email, acceptance!.customer.password);
+      await page.goto(acceptance!.routes.customerOrder);
+      await expectNoSeriousAccessibilityViolations(page, `${viewport.name} customerOrder`);
+      await page.request.post("/api/auth/signout");
       await login(page, acceptance!.merchant.email, acceptance!.merchant.password);
-      for (const [label, route] of Object.entries(acceptance!.routes).filter(([label]) =>
-        ["catalogFiles", "customerOrder", "merchantOrder"].includes(label),
-      )) {
+      for (const [label, route] of Object.entries(acceptance!.routes).filter(([label]) => ["catalogFiles", "merchantOrder"].includes(label))) {
         await page.goto(route);
         await expectNoSeriousAccessibilityViolations(page, `${viewport.name} ${label}`);
       }
@@ -73,6 +82,10 @@ for (const viewport of [
           const name = await control.getAttribute("aria-label") ?? await control.textContent() ?? await control.getAttribute("name");
           expect(name?.trim()).toBeTruthy();
         }
+      }
+      const animated = page.locator(".animate-spin");
+      for (let index = 0; index < await animated.count(); index += 1) {
+        expect(await animated.nth(index).evaluate((node) => getComputedStyle(node).animationName)).toBe("none");
       }
     });
   });

@@ -38,7 +38,7 @@ export function DigitalOrderDownloads({
         !response.ok ||
         !body ||
         typeof body.accessUrl !== "string" ||
-        !/^\/downloads\/[A-Za-z0-9_-]{43}$/.test(body.accessUrl)
+        !/^\/downloads#token=[A-Za-z0-9_-]{43}$/.test(body.accessUrl)
       ) {
         throw new Error(
           body && typeof body.error === "string"
@@ -90,7 +90,7 @@ export function DigitalOrderDownloads({
           </div>
           {isAvailable ? (
             <Button className="w-full shrink-0 sm:w-auto" type="button" disabled={pending} onClick={() => void openDownloads()}>
-              {pending ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="mr-2 h-4 w-4" aria-hidden="true" />}
+              {pending ? <RefreshCw className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Download className="mr-2 h-4 w-4" aria-hidden="true" />}
               {pending ? "Opening…" : buttonLabel}
             </Button>
           ) : null}

@@ -448,7 +448,7 @@ export async function issueAuthenticatedCustomerDigitalAccess({
     throw new Error("Digital customer access returned an invalid result");
   }
   return {
-    accessUrl: `${externalAppUrl.replace(/\/$/, "")}/downloads/${accessToken}`,
+    accessUrl: `${externalAppUrl.replace(/\/$/, "")}/downloads#token=${accessToken}`,
     expiresAt: parsedResult.data.expires_at,
   };
 }

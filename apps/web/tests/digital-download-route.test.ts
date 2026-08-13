@@ -90,9 +90,9 @@ function buildAdmin(options: FakeOptions = {}) {
         };
       }
 
-      if (name === "authorize_digital_download_access") {
+      if (name === "authorize_digital_download_session") {
         events.push("authorize");
-        expect(args).toEqual({ p_token_hash: ACCESS_TOKEN_HASH });
+        expect(args).toEqual({ p_access_token_id: ACCESS_ID });
         if (options.authorizeError) {
           return { data: null, error: options.authorizeError };
         }
@@ -239,7 +239,6 @@ function downloadRequest(options: {
   forwardedFor?: string;
   userAgent?: string;
 } = {}) {
-  const token = options.token ?? ACCESS_TOKEN;
   const entitlementId = options.entitlementId ?? ENTITLEMENT_ID;
   const headers = new Headers({
     "user-agent": options.userAgent ?? "Myrivo route regression test",
@@ -248,8 +247,8 @@ function downloadRequest(options: {
   const sessionId = options.sessionId ?? SESSION_ID;
   const sessionCookie =
     options.sessionCookie === undefined
-      ? `v1.${sessionId}.${createHmac("sha256", SESSION_SECRET)
-          .update(`digital-download-session-cookie-v1\0${sessionId}`)
+      ? `v2.${sessionId}.${ACCESS_ID}.${createHmac("sha256", SESSION_SECRET)
+          .update(`digital-download-session-cookie-v2\0${sessionId}\0${ACCESS_ID}`)
           .digest("base64url")}`
       : options.sessionCookie;
   if (sessionCookie !== null) {
@@ -259,7 +258,7 @@ function downloadRequest(options: {
     );
   }
   return new NextRequest(
-    `https://app.myrivo.test/api/digital-downloads/${token}/${entitlementId}`,
+    `https://app.myrivo.test/api/digital-downloads/file/${entitlementId}`,
     { headers },
   );
 }
@@ -269,21 +268,20 @@ async function invokeDownload(
   params: { token?: string; entitlementId?: string } = {},
 ) {
   const { GET } = await import(
-    "@/app/api/digital-downloads/[token]/[entitlementId]/route"
+    "@/app/api/digital-downloads/file/[entitlementId]/route"
   );
   return GET(request, {
     params: Promise.resolve({
-      token: params.token ?? ACCESS_TOKEN,
       entitlementId: params.entitlementId ?? ENTITLEMENT_ID,
     }),
   });
 }
 
-async function invokeList(token = ACCESS_TOKEN) {
-  const { GET } = await import("@/app/api/digital-downloads/[token]/route");
+async function invokeList() {
+  const { GET } = await import("@/app/api/digital-downloads/route");
   return GET(
     new NextRequest(
-      `https://app.myrivo.test/api/digital-downloads/${token}`,
+      "https://app.myrivo.test/api/digital-downloads",
       {
         headers: {
           "x-forwarded-for": "198.51.100.8",
@@ -291,7 +289,6 @@ async function invokeList(token = ACCESS_TOKEN) {
         },
       },
     ),
-    { params: Promise.resolve({ token }) },
   );
 }
 
@@ -410,7 +407,7 @@ describe("digital download grant route", () => {
     expect(buckets[0]?.[1]).not.toBe(buckets[1]?.[1]);
   });
 
-  test("creates an opaque HttpOnly session cookie when the browser has none", async () => {
+  test("rejects grant requests without a previously exchanged HttpOnly session", async () => {
     const state = buildAdmin();
     createSupabaseAdminClientMock.mockReturnValue(state.admin);
 
@@ -418,11 +415,8 @@ describe("digital download grant route", () => {
       downloadRequest({ sessionCookie: null }),
     );
 
-    expect(response.status).toBe(303);
-    expect(response.headers.get("set-cookie")).toMatch(
-      /myrivo_download_session=v1\.[0-9a-f-]{36}\.[A-Za-z0-9_-]{43}.*HttpOnly.*SameSite=Lax/i,
-    );
-    expect(response.headers.get("set-cookie")).not.toContain(ACCESS_TOKEN);
+    expect(response.status).toBe(404);
+    expect(response.headers.get("set-cookie")).toBeNull();
   });
 
   test("fails closed before database access when session signing is not configured", async () => {
@@ -439,8 +433,6 @@ describe("digital download grant route", () => {
   });
 
   test.each([
-    { token: "short", entitlementId: ENTITLEMENT_ID },
-    { token: `${"a".repeat(42)}!`, entitlementId: ENTITLEMENT_ID },
     { token: ACCESS_TOKEN, entitlementId: "not-a-uuid" },
   ])("rejects malformed path identifiers before database access", async (params) => {
     const state = buildAdmin();
@@ -553,42 +545,6 @@ describe("digital download grant route", () => {
     expect(buckets[0]).toBe(buckets[1]);
   });
 
-  test("minted signed cookies cannot escape the aggregate bearer-link limit when replayed", async () => {
-    const rateLimitState = new Map<string, number>();
-    const mintedCookies: string[] = [];
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const mint = buildAdmin({ rateLimitState, rateLimitThreshold: 2 });
-      createSupabaseAdminClientMock.mockReturnValueOnce(mint.admin);
-      const response = await invokeDownload(
-        downloadRequest({ sessionCookie: null }),
-      );
-      expect(response.status).toBe(303);
-      const cookie = response.headers
-        .get("set-cookie")
-        ?.match(/myrivo_download_session=([^;]+)/)?.[1];
-      expect(cookie).toBeTruthy();
-      mintedCookies.push(String(cookie));
-    }
-    expect(new Set(mintedCookies).size).toBe(2);
-
-    for (const cookie of mintedCookies) {
-      const replay = buildAdmin({ rateLimitState, rateLimitThreshold: 2 });
-      createSupabaseAdminClientMock.mockReturnValueOnce(replay.admin);
-      const response = await invokeDownload(
-        downloadRequest({ sessionCookie: cookie }),
-      );
-
-      expect(response.status).toBe(429);
-      expect(replay.events).toEqual(["rate-limit"]);
-      expect(
-        replay.rpcArgs.filter(
-          (entry) => entry.name === "check_api_rate_limit",
-        ),
-      ).toHaveLength(1);
-    }
-    expect([...rateLimitState.values()]).toEqual([4]);
-  });
-
   test("fails closed without exposing the shared throttle error", async () => {
     const state = buildAdmin({
       rateLimitError: { message: "relation api_rate_limits unavailable" },
@@ -600,7 +556,7 @@ describe("digital download grant route", () => {
 
     expect(response.status).toBe(503);
     expect(body).toEqual({
-      error: "Download service is temporarily unavailable.",
+      error: "Unable to prepare download.",
     });
     expect(JSON.stringify(body)).not.toContain("api_rate_limits");
     expect(state.events).toEqual(["rate-limit"]);
