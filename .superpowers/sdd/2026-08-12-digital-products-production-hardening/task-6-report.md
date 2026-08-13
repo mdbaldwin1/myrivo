@@ -218,3 +218,63 @@ The full suite/build retained only the previously documented refund/dispute mock
 - **Tenant and identity safety:** preview filtering and the policy trigger require the variant to belong to both the supplied product and selected store.
 - **Defense in depth:** even a direct database insert with forged physical item metadata cannot avoid digital consent/license enforcement.
 - **React quality:** derived product availability remains render-time state, existing callback memoization remains stable, and server reconciliation does not add fetch waterfalls or new global listeners.
+
+## Fix Round 3: Persisted Cart Repair and Strict Snapshot Composition
+
+### Database checkout snapshots
+
+- Added `20260813006000_enforce_checkout_snapshot_and_repair_carts.sql` as a forward-only hardening migration.
+- Every checkout item must now carry the same product type as its exact authoritative product/variant/store catalog relationship.
+- The trigger derives `digital_only`, `physical_only`, or `mixed` from all catalog items and rejects a non-null composition that disagrees with that derivation.
+- New rows cannot omit composition. A pre-migration null composition remains compatible only while its item snapshot is unchanged; a new insert, a transition from non-null to null, or a material item edit must carry the authoritative composition.
+- Direct PostgreSQL regressions cover forged digital-as-physical metadata with otherwise valid policy evidence, wrong digital and physical compositions, new null snapshots, and the narrow legacy-null compatibility rule.
+
+### Transactional persisted-cart hydration
+
+- Authenticated cart hydration now calls one security-definer PostgreSQL repair boundary after proving the active cart belongs to the authenticated user.
+- The function derives the response from active products and the exact active product/variant/store relationship, so archived products or variants and cross-product selections are deleted instead of being returned verbatim.
+- Current catalog product type and variant price replace stale persisted assumptions. Digital lines converge to quantity one; valid physical quantities remain capped by the existing cart constraint and duplicate aggregation rule.
+- When stale data is detected, deletion and reinsertion of the normalized projection occur in the same database transaction, and the API returns that same authoritative projection.
+- Execute permission is limited to `authenticated`; the function independently requires `auth.uid()` and an owned active cart.
+
+### Storefront product-grid UX
+
+- Digital products participate in the in-stock filter regardless of physical inventory counters and never enter the made-to-order filter.
+- A single-variant digital card now says `Instant digital delivery`, aligning the grid with product detail and cart messaging.
+- The focused UI regression proves a zero-inventory download remains visible after applying the in-stock filter.
+
+### TDD evidence
+
+RED was observed before implementation:
+
+```text
+customer cart GET queried persisted customer_cart_items instead of an authoritative repair RPC
+zero-inventory digital product disappeared from the product-grid in-stock projection and lacked delivery copy
+the strict snapshot/repair migration was absent from the complete PostgreSQL chain
+```
+
+GREEN focused evidence:
+
+```text
+Customer cart/storefront page: 2 files, 9 tests passed
+Native PostgreSQL migration contract: 65 tests passed
+```
+
+### Validation
+
+- `npm run typecheck` — passed.
+- `npm run lint` — passed with zero warnings/errors and both repository consistency checks.
+- `npm test` — 236 files and 817 tests passed.
+- `npm run build` — passed; production compilation, TypeScript, 158-page generation, optimization, and trace collection completed.
+- `git diff --check` — passed before documentation-only closeout edits.
+
+The full suite/build retained only the previously documented refund/dispute mock stderr, zero-size chart warnings, Next.js middleware deprecation notice, and stale Browserslist-data notice.
+
+### Self-review
+
+- **Authoritative composition:** neither client product type nor client composition can disagree with the catalog at the persisted checkout boundary.
+- **Legacy safety:** migration replay does not rewrite old null snapshots, while any new or materially changed snapshot must satisfy the current invariant.
+- **Hydration safety:** persisted cart data is not trusted merely because it passed validation when first written; each authenticated read repairs against current active catalog identity, type, quantity, and price.
+- **Tenant and identity safety:** the repair RPC checks the authenticated cart owner and store, and exact variant ownership is required before a line survives.
+- **Atomicity:** a required repair and its returned projection are produced by one PostgreSQL function invocation and transaction.
+- **UX consistency:** downloads remain available without stock and use the same instant-delivery mental model across listing, detail, and cart surfaces.

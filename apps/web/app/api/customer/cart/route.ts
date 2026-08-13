@@ -76,11 +76,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ items: [] });
   }
 
-  const { data: items, error: itemsError } = await supabase
-    .from("customer_cart_items")
-    .select("product_id,product_variant_id,quantity")
-    .eq("cart_id", cart.id)
-    .returns<Array<{ product_id: string | null; product_variant_id: string | null; quantity: number }>>();
+  const { data: items, error: itemsError } = await supabase.rpc(
+    "repair_authenticated_customer_cart",
+    { p_cart_id: cart.id }
+  ) as {
+    data: Array<{ product_id: string; product_variant_id: string; quantity: number }> | null;
+    error: { message: string } | null;
+  };
 
   if (itemsError) {
     return NextResponse.json({ error: itemsError.message }, { status: 500 });
@@ -88,10 +90,9 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     items: (items ?? [])
-      .filter((item) => Boolean(item.product_id))
       .map((item) => ({
-        productId: item.product_id!,
-        variantId: item.product_variant_id ?? undefined,
+        productId: item.product_id,
+        variantId: item.product_variant_id,
         quantity: item.quantity
       }))
   });

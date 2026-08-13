@@ -9,7 +9,7 @@ All notable changes to this project will be documented in this file.
 - Prevented undeliverable digital products from publishing with transactional rights, preview, and per-variant file readiness checks plus safe fulfillment-type conversion rules.
 
 ### Fixed
-- Fixed digital storefront cart handling so zero-inventory downloads remain purchasable, stale or mismatched selections are removed, and duplicate digital quantities are constrained to one across product detail, preview, authenticated persistence, and database policy enforcement.
+- Fixed digital storefront cart handling so zero-inventory downloads remain purchasable and visibly available in product grids, persisted carts are transactionally repaired from the active catalog, stale or mismatched selections are removed, duplicate digital quantities are constrained to one, and checkout type/composition snapshots are enforced against authoritative catalog data.
 - Made storefront checkout retries idempotent across double submits, reloads, legacy cart completion, mutable catalog or promotion changes, ambiguous Stripe responses, and checkout-session persistence failures; accepted Stripe session IDs are bound even without a redirect URL, paid sessions finalize from the immutable purchase snapshot regardless of later store status, and stub/free retries create one order.
 - Fixed shipping-order checkout capture so Stripe-collected shipping addresses are saved onto orders and shown in the merchant order flyout.
 - Fixed custom-domain storefront routing so verified domains keep clean paths like `/`, `/products`, `/about`, `/cart`, and `/checkout` instead of leaking back to `/s/:storeSlug/...`.

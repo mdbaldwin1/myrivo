@@ -19,6 +19,12 @@ vi.mock("next/link", () => ({
   )
 }));
 
+vi.mock("@/components/ui/select", () => ({
+  Select: ({ children, ...props }: React.SelectHTMLAttributes<HTMLSelectElement>) => (
+    <select {...props}>{children}</select>
+  )
+}));
+
 vi.mock("@/components/storefront/storefront-header", () => ({
   StorefrontHeader: () => <div>Header</div>
 }));
@@ -225,5 +231,74 @@ describe("StorefrontPage quick add", () => {
     expect(JSON.parse(window.localStorage.getItem("aha-cart:single-store") ?? "[]")).toEqual([
       { productId: "digital-product", variantId: "digital-variant", quantity: 1 }
     ]);
+  });
+
+  test("treats a zero-inventory digital product as in stock and labels its delivery", async () => {
+    const user = userEvent.setup();
+    render(
+      <StorefrontPage
+        store={{ id: "store-1", name: "Art Store", slug: "art-store" }}
+        branding={{
+          logo_path: null,
+          primary_color: null,
+          accent_color: null,
+          theme_json: { productsFiltersDefaultOpen: true }
+        }}
+        settings={{
+          support_email: "support@example.com",
+          fulfillment_message: null,
+          shipping_policy: null,
+          return_policy: null,
+          announcement: null,
+          footer_tagline: null,
+          footer_note: null,
+          instagram_url: null,
+          facebook_url: null,
+          tiktok_url: null,
+          email_capture_enabled: false,
+          email_capture_heading: null,
+          email_capture_description: null,
+          email_capture_success_message: null,
+          storefront_copy_json: null
+        }}
+        contentBlocks={[]}
+        products={[{
+          id: "digital-product",
+          title: "Printable pack",
+          description: "A printable pack.",
+          slug: "printable-pack",
+          image_urls: [],
+          image_alt_text: null,
+          seo_title: null,
+          seo_description: null,
+          is_featured: true,
+          created_at: "2026-08-13T00:00:00.000Z",
+          price_cents: 2400,
+          inventory_qty: 0,
+          product_type: "digital",
+          product_variants: [{
+            id: "digital-variant",
+            title: "PDF bundle",
+            image_urls: [],
+            group_image_urls: [],
+            option_values: {},
+            price_cents: 2400,
+            inventory_qty: 0,
+            is_made_to_order: false,
+            is_default: true,
+            status: "active",
+            sort_order: 0,
+            created_at: "2026-08-13T00:00:00.000Z"
+          }],
+          product_option_axes: []
+        }]}
+        view="products"
+      />
+    );
+
+    expect(screen.getByText("Instant digital delivery")).toBeTruthy();
+    await user.selectOptions(screen.getByLabelText("Availability"), "in-stock");
+    expect(screen.getByRole("link", { name: "Printable pack" })).toBeTruthy();
+    expect(screen.queryByText("No products match your filters.")).toBeNull();
   });
 });

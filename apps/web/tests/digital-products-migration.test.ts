@@ -73,6 +73,10 @@ const authoritativeDigitalCheckoutPolicyMigration = join(
   repoRoot,
   "supabase/migrations/20260813005000_enforce_authoritative_digital_checkout_policy.sql",
 );
+const checkoutSnapshotAndCartRepairMigration = join(
+  repoRoot,
+  "supabase/migrations/20260813006000_enforce_checkout_snapshot_and_repair_carts.sql",
+);
 
 const ids = {
   storeA: "10000000-0000-0000-0000-000000000001",
@@ -119,6 +123,16 @@ const ids = {
   manifestVariantV1: "72000000-0000-4000-8000-000000000003",
   policyUpgradeStore: "12000000-0000-4000-8000-000000000041",
   policyUpgradeCheckout: "42000000-0000-4000-8000-000000000041",
+  legacyNullCheckout: "42000000-0000-4000-8000-000000000042",
+  cartRepairCart: "42000000-0000-4000-8000-000000000051",
+  cartDigitalProduct: "22000000-0000-4000-8000-000000000051",
+  cartDigitalVariant: "32000000-0000-4000-8000-000000000051",
+  cartChangedProduct: "22000000-0000-4000-8000-000000000052",
+  cartChangedVariant: "32000000-0000-4000-8000-000000000052",
+  cartArchivedProduct: "22000000-0000-4000-8000-000000000053",
+  cartArchivedVariant: "32000000-0000-4000-8000-000000000053",
+  cartChangedAsset: "62000000-0000-4000-8000-000000000051",
+  cartChangedVersion: "72000000-0000-4000-8000-000000000051",
 } as const;
 
 const baseSchema = `
@@ -427,6 +441,9 @@ beforeAll(() => {
   if (!existsSync(authoritativeDigitalCheckoutPolicyMigration)) {
     throw new Error(`Missing authoritative digital checkout policy migration: ${authoritativeDigitalCheckoutPolicyMigration}`);
   }
+  if (!existsSync(checkoutSnapshotAndCartRepairMigration)) {
+    throw new Error(`Missing checkout snapshot and cart repair migration: ${checkoutSnapshotAndCartRepairMigration}`);
+  }
 
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-digital-migration-"));
   port = 55432 + (process.pid % 9000);
@@ -533,6 +550,33 @@ beforeAll(() => {
         )`,
       );
     }
+    if (migration === "20260813006000_enforce_checkout_snapshot_and_repair_carts.sql") {
+      runSql(
+        "full_chain",
+        `insert into public.products(
+           id, store_id, title, description, price_cents, inventory_qty, status, product_type
+         ) values (
+           '22000000-0000-4000-8000-000000000042', '${ids.policyUpgradeStore}',
+           'Legacy physical', '', 100, 1, 'active', 'physical'
+         );
+         insert into public.product_variants(
+           id, store_id, product_id, price_cents, inventory_qty, is_default, status
+         ) values (
+           '32000000-0000-4000-8000-000000000042', '${ids.policyUpgradeStore}',
+           '22000000-0000-4000-8000-000000000042', 100, 1, true, 'active'
+         );
+         insert into public.storefront_checkout_sessions(
+           id, store_id, store_slug, customer_email, items, checkout_composition, status
+         ) values (
+           '${ids.legacyNullCheckout}', '${ids.policyUpgradeStore}', 'policy-upgrade-store',
+           'legacy-null@example.test', jsonb_build_array(jsonb_build_object(
+             'productId', '22000000-0000-4000-8000-000000000042',
+             'variantId', '32000000-0000-4000-8000-000000000042',
+             'quantity', 1, 'productType', 'physical', 'unitPriceCents', 100
+           )), null, 'pending'
+         )`,
+      );
+    }
     applyMigration("full_chain", join(migrationsDirectory, migration));
   }
 
@@ -596,23 +640,23 @@ beforeAll(() => {
     );
     update public.products set status = 'active' where id = '${ids.manifestProduct}';
     insert into public.storefront_checkout_sessions(
-      id, store_id, store_slug, customer_email, items, status,
+      id, store_id, store_slug, customer_email, items, checkout_composition, status,
       digital_consent_version, digital_consent_accepted_at, digital_license_version
     ) values (
       '${ids.manifestCheckout}', '${ids.manifestStore}', 'manifest-store',
       'buyer@example.test',
       jsonb_build_array(
-        jsonb_build_object('productId', '${ids.manifestProduct}', 'variantId', '${ids.manifestVariant}', 'quantity', 1),
-        jsonb_build_object('productId', '${ids.manifestPhysicalProduct}', 'variantId', '${ids.manifestPhysicalVariant}', 'quantity', 1)
+        jsonb_build_object('productId', '${ids.manifestProduct}', 'variantId', '${ids.manifestVariant}', 'quantity', 1, 'productType', 'digital'),
+        jsonb_build_object('productId', '${ids.manifestPhysicalProduct}', 'variantId', '${ids.manifestPhysicalVariant}', 'quantity', 1, 'productType', 'physical')
       ),
-      'pending', 'immediate-delivery-v1', '2026-08-13T04:00:00Z', 'personal-use-v1'
+      'mixed', 'pending', 'immediate-delivery-v1', '2026-08-13T04:00:00Z', 'personal-use-v1'
     ), (
       '${ids.manifestConcurrentCheckout}', '${ids.manifestStore}', 'manifest-store',
       'buyer@example.test',
       jsonb_build_array(
-        jsonb_build_object('productId', '${ids.manifestProduct}', 'variantId', '${ids.manifestVariant}', 'quantity', 1)
+        jsonb_build_object('productId', '${ids.manifestProduct}', 'variantId', '${ids.manifestVariant}', 'quantity', 1, 'productType', 'digital')
       ),
-      'pending', 'immediate-delivery-v1', '2026-08-13T04:01:00Z', 'personal-use-v1'
+      'digital_only', 'pending', 'immediate-delivery-v1', '2026-08-13T04:01:00Z', 'personal-use-v1'
     );`,
   );
 }, 60_000);
@@ -786,19 +830,22 @@ describe("transactional checkout manifests", () => {
     jsonb_build_object(
       'productId', '${ids.manifestProduct}',
       'variantId', '${ids.manifestVariant}',
-      'quantity', 1
+      'quantity', 1,
+      'productType', 'digital'
     ),
     jsonb_build_object(
       'productId', '${ids.manifestPhysicalProduct}',
       'variantId', '${ids.manifestPhysicalVariant}',
-      'quantity', 1
+      'quantity', 1,
+      'productType', 'physical'
     )
   )`;
   const digitalItemsSql = `jsonb_build_array(
     jsonb_build_object(
       'productId', '${ids.manifestProduct}',
       'variantId', '${ids.manifestVariant}',
-      'quantity', 1
+      'quantity', 1,
+      'productType', 'digital'
     )
   )`;
 
@@ -966,15 +1013,16 @@ describe("transactional checkout manifests", () => {
         1000, 1, true, 'active'
       ) on conflict (id) do nothing;
       insert into public.storefront_checkout_sessions(
-        id, store_id, store_slug, customer_email, items, status,
+        id, store_id, store_slug, customer_email, items, checkout_composition, status,
         digital_consent_version, digital_consent_accepted_at, digital_license_version
       ) values (
         '${unreadyCheckout}', '${ids.manifestStore}', 'manifest-store',
         'buyer@example.test',
         jsonb_build_array(jsonb_build_object(
-          'productId', '${unreadyProduct}', 'variantId', '${unreadyVariant}', 'quantity', 1
+          'productId', '${unreadyProduct}', 'variantId', '${unreadyVariant}', 'quantity', 1,
+          'productType', 'digital'
         )),
-        'pending', 'immediate-delivery-v1', now(), 'personal-use-v1'
+        'digital_only', 'pending', 'immediate-delivery-v1', now(), 'personal-use-v1'
       ) on conflict (id) do nothing`,
     );
 
@@ -1014,11 +1062,11 @@ describe("transactional checkout manifests", () => {
     runSql(
       "full_chain",
       `insert into public.storefront_checkout_sessions(
-        id, store_id, store_slug, customer_email, items, status,
+        id, store_id, store_slug, customer_email, items, checkout_composition, status,
         digital_consent_version, digital_consent_accepted_at, digital_license_version
       ) values (
         '${checkoutId}', '${ids.manifestStore}', 'manifest-store',
-        'buyer@example.test', ${checkoutItemsSql}, 'pending',
+        'buyer@example.test', ${checkoutItemsSql}, 'digital_only', 'pending',
         'immediate-delivery-v1', '2026-08-13T04:02:00Z', 'personal-use-v1'
       )`,
     );
@@ -1608,7 +1656,7 @@ describe("digital checkout composition database contract", () => {
     expectRejected(
       "full_chain",
       `insert into public.storefront_checkout_sessions(
-         id, store_id, store_slug, customer_email, items, status
+         id, store_id, store_slug, customer_email, items, checkout_composition, status
        ) values (
          '42000000-0000-4000-8000-000000000623', '${ids.manifestStore}',
          'manifest-store', 'mismatch@example.test',
@@ -1622,6 +1670,74 @@ describe("digital checkout composition database contract", () => {
          'pending'
        )`,
     );
+  });
+
+  it("rejects catalog type and authoritative composition mismatches even with valid digital policy", () => {
+    expectRejected(
+      "full_chain",
+      `insert into public.storefront_checkout_sessions(
+         id, store_id, store_slug, customer_email, items, checkout_composition,
+         digital_consent_version, digital_consent_accepted_at,
+         digital_license_version, status
+       ) values (
+         '42000000-0000-4000-8000-000000000624', '${ids.manifestStore}',
+         'manifest-store', 'forged-policy@example.test',
+         jsonb_build_array(jsonb_build_object(
+           'productId', '${ids.manifestProduct}',
+           'variantId', '${ids.manifestVariant}',
+           'quantity', 1, 'productType', 'physical', 'unitPriceCents', 2500
+         )),
+         'physical_only', '${DIGITAL_PRODUCT_CONFIG.consentVersion}', now(),
+         '${DIGITAL_PRODUCT_CONFIG.licenseVersion}', 'pending'
+       )`,
+    );
+
+    expectRejected(
+      "full_chain",
+      `insert into public.storefront_checkout_sessions(
+         id, store_id, store_slug, customer_email, items, checkout_composition,
+         digital_consent_version, digital_consent_accepted_at,
+         digital_license_version, status
+       ) values (
+         '42000000-0000-4000-8000-000000000625', '${ids.manifestStore}',
+         'manifest-store', 'wrong-composition@example.test',
+         jsonb_build_array(${digitalItem()}),
+         'physical_only', '${DIGITAL_PRODUCT_CONFIG.consentVersion}', now(),
+         '${DIGITAL_PRODUCT_CONFIG.licenseVersion}', 'pending'
+       )`,
+    );
+
+    expectRejected(
+      "full_chain",
+      `insert into public.storefront_checkout_sessions(
+         id, store_id, store_slug, customer_email, items, checkout_composition, status
+       ) values (
+         '42000000-0000-4000-8000-000000000626', '${ids.manifestStore}',
+         'manifest-store', 'wrong-physical-composition@example.test',
+         jsonb_build_array(${physicalItem()}), 'digital_only', 'pending'
+       )`,
+    );
+  });
+
+  it("requires authoritative composition on new rows while preserving legacy null snapshots", () => {
+    expectRejected(
+      "full_chain",
+      `insert into public.storefront_checkout_sessions(
+         id, store_id, store_slug, customer_email, items, checkout_composition, status
+       ) values (
+         '42000000-0000-4000-8000-000000000627', '${ids.manifestStore}',
+         'manifest-store', 'new-null@example.test',
+         jsonb_build_array(${physicalItem()}), null, 'pending'
+       )`,
+    );
+
+    expect(runSql(
+      "full_chain",
+      `update public.storefront_checkout_sessions
+       set digital_consent_version = 'legacy-maintenance'
+       where id = '${ids.legacyNullCheckout}'
+       returning coalesce(checkout_composition, 'legacy-null')`,
+    )).toBe("legacy-null");
   });
 
   it("accepts configured digital policy snapshots while leaving physical-only attempts unaffected", () => {
@@ -1645,11 +1761,11 @@ describe("digital checkout composition database contract", () => {
     expect(runSql(
       "full_chain",
       `insert into public.storefront_checkout_sessions(
-         id, store_id, store_slug, customer_email, items, status
+         id, store_id, store_slug, customer_email, items, checkout_composition, status
        ) values (
          '42000000-0000-4000-8000-000000000619', '${ids.manifestStore}',
          'manifest-store', 'legacy-physical@example.test',
-         jsonb_build_array(${physicalItem()}), 'pending'
+         jsonb_build_array(${physicalItem()}), 'physical_only', 'pending'
        ) returning id`,
     )).toBe("42000000-0000-4000-8000-000000000619");
   });
@@ -1845,6 +1961,90 @@ describe("digital checkout composition database contract", () => {
       `update public.storefront_checkout_sessions
        set checkout_composition = 'digital_only', items = jsonb_build_array(${digitalItem()})
        where id = '${checkout.id}'`,
+    );
+  });
+});
+
+describe("authenticated customer cart repair", () => {
+  it("transactionally persists only active exact selections with current digital quantities", () => {
+    runSql(
+      "full_chain",
+      `insert into public.products(
+         id, store_id, title, description, price_cents, inventory_qty, status, product_type
+       ) values
+         ('${ids.cartChangedProduct}', '${ids.manifestStore}', 'Changed cart item', '', 1200, 5, 'active', 'physical'),
+         ('${ids.cartArchivedProduct}', '${ids.manifestStore}', 'Archived cart item', '', 1300, 5, 'active', 'physical');
+       insert into public.product_variants(
+         id, store_id, product_id, price_cents, inventory_qty, is_default, status
+       ) values
+         ('${ids.cartChangedVariant}', '${ids.manifestStore}', '${ids.cartChangedProduct}', 1200, 5, true, 'active'),
+         ('${ids.cartArchivedVariant}', '${ids.manifestStore}', '${ids.cartArchivedProduct}', 1300, 5, true, 'active');
+       insert into public.customer_carts(id, user_id, store_id, status)
+       values (
+         '${ids.cartRepairCart}', '00000000-0000-4000-8000-000000000011',
+         '${ids.manifestStore}', 'active'
+       );
+       insert into public.customer_cart_items(
+         cart_id, product_id, product_variant_id, quantity, unit_price_snapshot_cents
+       ) values
+         ('${ids.cartRepairCart}', '${ids.manifestProduct}', '${ids.manifestVariant}', 9, 999),
+         ('${ids.cartRepairCart}', '${ids.cartChangedProduct}', '${ids.cartChangedVariant}', 7, 999),
+         ('${ids.cartRepairCart}', '${ids.cartArchivedProduct}', '${ids.cartArchivedVariant}', 3, 999),
+         ('${ids.cartRepairCart}', '${ids.manifestProduct}', '${ids.cartChangedVariant}', 2, 999);
+       insert into public.digital_product_assets(
+         id, store_id, product_id, product_variant_id, label, active
+       ) values (
+         '${ids.cartChangedAsset}', '${ids.manifestStore}', '${ids.cartChangedProduct}',
+         null, 'Changed product file', true
+       );
+       insert into public.digital_product_asset_versions(
+         id, asset_id, version_number, storage_path, customer_filename,
+         mime_type, byte_size, checksum_sha256, status
+       ) values (
+         '${ids.cartChangedVersion}', '${ids.cartChangedAsset}', 1,
+         '${ids.manifestStore}/${ids.cartChangedProduct}/${ids.cartChangedAsset}/v1/changed.pdf',
+         'changed.pdf', 'application/pdf', 10, repeat('5', 64), 'ready'
+       );
+       insert into public.digital_product_previews(
+         product_id, source_asset_version_id, public_preview_path, status
+       ) values (
+         '${ids.cartChangedProduct}', '${ids.cartChangedVersion}',
+         '${ids.manifestStore}/${ids.cartChangedProduct}/preview.jpg', 'ready'
+       );
+       update public.products
+       set product_type = 'digital',
+           digital_rights_affirmed_at = now(),
+           digital_rights_affirmed_by_user_id = '00000000-0000-4000-8000-000000000011'
+       where id = '${ids.cartChangedProduct}';
+       update public.product_variants set status = 'archived'
+       where id = '${ids.cartArchivedVariant}';
+       create or replace function auth.uid() returns uuid language sql stable
+       as 'select ''00000000-0000-4000-8000-000000000011''::uuid';`,
+    );
+
+    const repaired = runSql(
+      "full_chain",
+      `set role authenticated;
+       select string_agg(
+         product_id::text || ':' || product_variant_id::text || ':' || quantity::text,
+         ',' order by product_id
+       ) from public.repair_authenticated_customer_cart('${ids.cartRepairCart}');
+       reset role`,
+    );
+
+    expect(repaired).toBe(
+      `${ids.manifestProduct}:${ids.manifestVariant}:1,` +
+      `${ids.cartChangedProduct}:${ids.cartChangedVariant}:1`,
+    );
+    expect(runSql(
+      "full_chain",
+      `select string_agg(
+         product_id::text || ':' || product_variant_id::text || ':' || quantity::text || ':' || unit_price_snapshot_cents::text,
+         ',' order by product_id
+       ) from public.customer_cart_items where cart_id = '${ids.cartRepairCart}'`,
+    )).toBe(
+      `${ids.manifestProduct}:${ids.manifestVariant}:1:2500,` +
+      `${ids.cartChangedProduct}:${ids.cartChangedVariant}:1:1200`,
     );
   });
 });

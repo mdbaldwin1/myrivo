@@ -247,12 +247,17 @@ function buildProductHref(product: StorefrontProduct, storeSlug: string, routeBa
 }
 
 function getAvailabilityLabel(
+  productType: "physical" | "digital",
   variant: StorefrontVariant | null,
   fulfillmentMessage: string | null,
   copy: ReturnType<typeof resolveStorefrontCopy>
 ) {
   if (!variant) {
     return copy.availability.unavailable;
+  }
+
+  if (productType === "digital") {
+    return "Instant digital delivery";
   }
 
   const isMadeToOrderActive = variant.is_made_to_order && variant.inventory_qty < 1;
@@ -513,9 +518,9 @@ export function StorefrontPage(props: StorefrontPageProps) {
       scoped = scoped.filter((product) => {
         const variants = getSortedActiveVariants(product);
         if (availabilityFilter === "made-to-order") {
-          return variants.some((variant) => variant.is_made_to_order);
+          return product.product_type !== "digital" && variants.some((variant) => variant.is_made_to_order);
         }
-        return variants.some((variant) => !variant.is_made_to_order && variant.inventory_qty > 0);
+        return product.product_type === "digital" || variants.some((variant) => !variant.is_made_to_order && variant.inventory_qty > 0);
       });
     }
 
@@ -1447,7 +1452,7 @@ export function StorefrontPage(props: StorefrontPageProps) {
                                 <p className="text-xs text-muted-foreground">
                                   {hasConfigurableChoices
                                     ? `${variants.length} ${copy.productDetail.optionsLabel.toLowerCase()}`
-                                    : getAvailabilityLabel(defaultVariant, null, copy)}
+                                    : getAvailabilityLabel(product.product_type ?? "physical", defaultVariant, null, copy)}
                                 </p>
                               ) : null}
                             </div>

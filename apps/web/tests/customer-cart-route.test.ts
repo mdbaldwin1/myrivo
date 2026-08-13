@@ -13,6 +13,7 @@ const cartSelectIdEqMock = vi.fn();
 const cartUpdateEqUserMock = vi.fn();
 const cartUpdateEqIdMock = vi.fn();
 const cartUpdateMock = vi.fn();
+const rpcMock = vi.fn();
 
 vi.mock("@/lib/security/request-origin", () => ({
   enforceTrustedOrigin: (...args: unknown[]) => enforceTrustedOriginMock(...args)
@@ -25,7 +26,8 @@ vi.mock("@/lib/stores/active-store", () => ({
 vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient: vi.fn(async () => ({
     auth: { getUser: (...args: unknown[]) => authGetUserMock(...args) },
-    from: (...args: unknown[]) => serverFromMock(...args)
+    from: (...args: unknown[]) => serverFromMock(...args),
+    rpc: (...args: unknown[]) => rpcMock(...args)
   }))
 }));
 
@@ -43,6 +45,7 @@ beforeEach(() => {
   cartUpdateEqUserMock.mockReset();
   cartUpdateEqIdMock.mockReset();
   cartUpdateMock.mockReset();
+  rpcMock.mockReset();
 
   enforceTrustedOriginMock.mockReturnValue(null);
   authGetUserMock.mockResolvedValue({ data: { user: { id: "user-1", email: "test@example.com" } } });
@@ -51,6 +54,14 @@ beforeEach(() => {
 
 describe("customer cart route", () => {
   test("GET reads the newest active cart without failing on duplicate active carts", async () => {
+    rpcMock.mockResolvedValue({
+      data: [{
+        product_id: "11111111-1111-4111-8111-111111111111",
+        product_variant_id: "22222222-2222-4222-8222-222222222222",
+        quantity: 2
+      }],
+      error: null
+    });
     serverFromMock.mockImplementation((table: string) => {
       if (table === "stores") {
         return {
@@ -86,25 +97,6 @@ describe("customer cart route", () => {
         };
       }
 
-      if (table === "customer_cart_items") {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              returns: vi.fn(async () => ({
-                data: [
-                  {
-                    product_id: "11111111-1111-4111-8111-111111111111",
-                    product_variant_id: "22222222-2222-4222-8222-222222222222",
-                    quantity: 2
-                  }
-                ],
-                error: null
-              }))
-            }))
-          }))
-        };
-      }
-
       throw new Error(`Unexpected table ${table}`);
     });
 
@@ -126,6 +118,78 @@ describe("customer cart route", () => {
         quantity: 2
       }
     ]);
+    expect(rpcMock).toHaveBeenCalledWith("repair_authenticated_customer_cart", {
+      p_cart_id: "cart-newest"
+    });
+  });
+
+  test("GET returns the transactionally repaired active catalog projection", async () => {
+    rpcMock.mockResolvedValue({
+      data: [
+        {
+          product_id: "11111111-1111-4111-8111-111111111111",
+          product_variant_id: "22222222-2222-4222-8222-222222222222",
+          quantity: 1
+        },
+        {
+          product_id: "33333333-3333-4333-8333-333333333333",
+          product_variant_id: "44444444-4444-4444-8444-444444444444",
+          quantity: 99
+        }
+      ],
+      error: null
+    });
+    serverFromMock.mockImplementation((table: string) => {
+      if (table === "stores") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({ data: { id: "store-1", slug: "curby", status: "live" }, error: null }))
+            }))
+          }))
+        };
+      }
+      if (table === "customer_carts") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    limit: vi.fn(() => ({
+                      maybeSingle: vi.fn(async () => ({ data: { id: "cart-repair" }, error: null }))
+                    }))
+                  }))
+                }))
+              }))
+            }))
+          }))
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const route = await import("@/app/api/customer/cart/route");
+    const response = await route.GET(new NextRequest("http://localhost:3000/api/customer/cart?store=curby"));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      items: [
+        {
+          productId: "11111111-1111-4111-8111-111111111111",
+          variantId: "22222222-2222-4222-8222-222222222222",
+          quantity: 1
+        },
+        {
+          productId: "33333333-3333-4333-8333-333333333333",
+          variantId: "44444444-4444-4444-8444-444444444444",
+          quantity: 99
+        }
+      ]
+    });
+    expect(rpcMock).toHaveBeenCalledWith("repair_authenticated_customer_cart", {
+      p_cart_id: "cart-repair"
+    });
   });
 
   test("PUT persists validated items with price snapshots", async () => {
