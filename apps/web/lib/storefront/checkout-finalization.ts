@@ -12,6 +12,7 @@ import {
 import { getStripeClient } from "@/lib/stripe/server";
 import { issueDigitalEntitlements } from "@/lib/digital-products/entitlements";
 import { lockManifestToOrder } from "@/lib/digital-products/manifest-service";
+import type { CheckoutComposition } from "@/lib/storefront/checkout-composition";
 
 type ShippingAddressSnapshot = {
   recipientName?: string;
@@ -74,7 +75,7 @@ type StorefrontCheckoutRecord = {
   customer_phone: string | null;
   customer_note: string | null;
   shipping_address_json: ShippingAddressSnapshot | null;
-  fulfillment_method: "pickup" | "shipping" | null;
+  fulfillment_method: "pickup" | "shipping" | "digital_delivery" | null;
   fulfillment_label: string | null;
   pickup_location_id: string | null;
   pickup_location_snapshot_json: Record<string, unknown> | null;
@@ -93,6 +94,7 @@ type StorefrontCheckoutRecord = {
   digital_consent_accepted_at: string | null;
   digital_license_version: string | null;
   digital_manifest_id: string | null;
+  checkout_composition: CheckoutComposition | null;
   items: Array<{ productId?: string; variantId?: string; quantity?: number; unitPriceCents?: number }> | unknown;
   order_id: string | null;
   status: "pending" | "completed" | "failed";
@@ -101,6 +103,18 @@ type StorefrontCheckoutRecord = {
 function normalizeAddressField(value: string | null | undefined) {
   const next = value?.trim();
   return next ? next : undefined;
+}
+
+export function resolveCheckoutShippingAddressSnapshot(
+  composition: CheckoutComposition | null,
+  persistedAddress: ShippingAddressSnapshot | null,
+  providerAddress: ShippingAddressSnapshot | null
+) {
+  if (composition === "digital_only") {
+    return null;
+  }
+
+  return persistedAddress ?? providerAddress;
 }
 
 export async function bindStorefrontCheckoutStripeSession({
@@ -257,7 +271,7 @@ export async function finalizeStorefrontCheckout(
   const { data: checkout, error: checkoutError } = await supabase
     .from("storefront_checkout_sessions")
     .select(
-      "id,store_id,store_slug,analytics_session_id,analytics_session_key,source_cart_id,customer_email,customer_first_name,customer_last_name,customer_phone,customer_note,shipping_address_json,fulfillment_method,fulfillment_label,pickup_location_id,pickup_location_snapshot_json,pickup_window_start_at,pickup_window_end_at,pickup_timezone,shipping_fee_cents,promo_code,promo_codes_json,fee_plan_key,fee_bps,fee_fixed_cents,item_total_cents,platform_fee_cents,digital_consent_version,digital_consent_accepted_at,digital_license_version,digital_manifest_id,items,order_id,status"
+      "id,store_id,store_slug,analytics_session_id,analytics_session_key,source_cart_id,customer_email,customer_first_name,customer_last_name,customer_phone,customer_note,shipping_address_json,fulfillment_method,fulfillment_label,pickup_location_id,pickup_location_snapshot_json,pickup_window_start_at,pickup_window_end_at,pickup_timezone,shipping_fee_cents,promo_code,promo_codes_json,fee_plan_key,fee_bps,fee_fixed_cents,item_total_cents,platform_fee_cents,digital_consent_version,digital_consent_accepted_at,digital_license_version,digital_manifest_id,checkout_composition,items,order_id,status"
     )
     .eq("id", checkoutId)
     .maybeSingle<StorefrontCheckoutRecord>();
@@ -270,7 +284,11 @@ export async function finalizeStorefrontCheckout(
     return { status: "missing" as const, orderId: null };
   }
 
-  const resolvedShippingAddressSnapshot = checkout.shipping_address_json ?? shippingAddressSnapshot;
+  const resolvedShippingAddressSnapshot = resolveCheckoutShippingAddressSnapshot(
+    checkout.checkout_composition,
+    checkout.shipping_address_json,
+    shippingAddressSnapshot
+  );
 
   if (checkout.status === "completed" && checkout.order_id) {
     if (checkout.digital_manifest_id) {

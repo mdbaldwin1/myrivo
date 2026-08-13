@@ -8,7 +8,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { buildStorefrontThemeStyle, resolveStorefrontThemeConfig } from "@/lib/theme/storefront-theme";
 import { formatVariantLabel } from "@/lib/products/variants";
-import { readStorefrontCart, syncStorefrontCart, writeStorefrontCart, type StorefrontCartEntry } from "@/lib/storefront/cart";
+import {
+  normalizeStorefrontCart,
+  readStorefrontCart,
+  syncStorefrontCart,
+  writeStorefrontCart,
+  type StorefrontCartEntry
+} from "@/lib/storefront/cart";
 import { StorefrontHeader } from "@/components/storefront/storefront-header";
 import { StorefrontCartButton } from "@/components/storefront/storefront-cart-button";
 import { StorefrontFooter } from "@/components/storefront/storefront-footer";
@@ -247,7 +253,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
   useEffect(() => {
     queueMicrotask(() => {
       const loaded = readStorefrontCart();
-      const filtered = loaded.filter((entry) => resolvedProducts.some((product) => product.id === entry.productId));
+      const filtered = normalizeStorefrontCart(loaded, resolvedProducts);
       hasHydratedCartRef.current = true;
       setCart(filtered);
 
@@ -266,13 +272,13 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
           return;
         }
 
-        const sanitized = payload.items
+        const sanitized = normalizeStorefrontCart(payload.items
           .map((item) => ({
             productId: item.productId,
             variantId: item.variantId ?? "",
             quantity: Math.max(1, Math.min(99, item.quantity))
           }))
-          .filter((item) => item.variantId.length > 0);
+          .filter((item) => item.variantId.length > 0), resolvedProducts);
 
         if (sanitized.length === 0) {
           return;
@@ -296,11 +302,12 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
             merged.push(item);
           }
 
-          void syncStorefrontCart(merged, resolvedStore.slug, {
+          const normalizedMerged = normalizeStorefrontCart(merged, resolvedProducts);
+          void syncStorefrontCart(normalizedMerged, resolvedStore.slug, {
             analyticsSessionId: analytics?.getSessionId() ?? null,
             attribution: analytics?.getAttributionSnapshot() ?? null
           });
-          return merged;
+          return normalizedMerged;
         });
       })();
     });
@@ -310,7 +317,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
     if (!hasHydratedCartRef.current) {
       return;
     }
-    const filtered = cart.filter((entry) => resolvedProducts.some((product) => product.id === entry.productId));
+    const filtered = normalizeStorefrontCart(cart, resolvedProducts);
     writeStorefrontCart(filtered);
 
     const timeout = setTimeout(() => {
@@ -332,8 +339,12 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
     return () => clearTimeout(timeout);
   }, [analytics, cart, resolvedProducts, resolvedStore.slug]);
 
+  const cartHasPhysicalItems = cart.some((entry) =>
+    resolvedProducts.find((product) => product.id === entry.productId)?.product_type !== "digital"
+  );
+
   useEffect(() => {
-    if (selectedFulfillmentMethod !== "pickup" || !resolvedSettings?.checkout_enable_local_pickup) {
+    if (!cartHasPhysicalItems || selectedFulfillmentMethod !== "pickup" || !resolvedSettings?.checkout_enable_local_pickup) {
       return;
     }
 
@@ -377,6 +388,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
   }, [
     buyerLatitude,
     buyerLongitude,
+    cartHasPhysicalItems,
     resolvedSettings?.checkout_enable_local_pickup,
     resolvedStore.slug,
     selectedFulfillmentMethod,
@@ -404,6 +416,9 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
   const hasPhysicalItems = cartItems.some((item) => item.product.product_type !== "digital");
   const selectedFulfillment =
     fulfillmentOptions.find((option) => option.method === selectedFulfillmentMethod) ?? fulfillmentOptions[0]!;
+  const displayedFulfillment = hasPhysicalItems
+    ? selectedFulfillment
+    : { method: "digital_delivery" as const, label: "Digital delivery", feeCents: 0 };
   const shippingFeeCents = hasPhysicalItems ? selectedFulfillment?.feeCents ?? 0 : 0;
   const discountedSubtotalCents = Math.max(0, subtotalCents - appliedDiscountCents);
   const effectiveShippingFeeCents = Math.max(0, shippingFeeCents - Math.min(appliedShippingDiscountCents, shippingFeeCents));
@@ -424,13 +439,13 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
           quantity: item.quantity,
           unitPriceCents: item.variant.price_cents
         })),
-        fulfillmentMethod: selectedFulfillment.method,
+        fulfillmentMethod: hasPhysicalItems ? selectedFulfillment.method : undefined,
         discountCents: appliedDiscountCents,
         shippingCents: effectiveShippingFeeCents
       })
     });
     trackedCartViewRef.current = true;
-  }, [analytics, appliedDiscountCents, cartItems, effectiveShippingFeeCents, selectedFulfillment.method]);
+  }, [analytics, appliedDiscountCents, cartItems, effectiveShippingFeeCents, hasPhysicalItems, selectedFulfillment.method]);
 
   function updateQuantity(productId: string, variantId: string, quantity: number) {
     if (quantity <= 0) {
@@ -438,11 +453,15 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
       return;
     }
 
-    setCart((current) =>
+    const isDigital = resolvedProducts.find((product) => product.id === productId)?.product_type === "digital";
+    setCart((current) => normalizeStorefrontCart(
       current.map((item) =>
-        item.productId === productId && item.variantId === variantId ? { ...item, quantity: Math.min(99, Math.max(1, quantity)) } : item
-      )
-    );
+        item.productId === productId && item.variantId === variantId
+          ? { ...item, quantity: isDigital ? 1 : Math.min(99, Math.max(1, quantity)) }
+          : item
+      ),
+      resolvedProducts
+    ));
   }
 
   async function previewPromoCodes(nextPromoCodes: string[]) {
@@ -540,11 +559,11 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
     const checkoutIntent = {
       firstName,
       lastName,
-      phone: phone.trim(),
+      ...(hasPhysicalItems ? { phone: phone.trim() } : {}),
       email,
       buyerLatitude: buyerLatitude ?? undefined,
       buyerLongitude: buyerLongitude ?? undefined,
-      fulfillmentMethod: selectedFulfillment.method,
+      ...(hasPhysicalItems ? { fulfillmentMethod: selectedFulfillment.method } : {}),
       digitalDeliveryConsent,
       pickupLocationId: selectedPickupLocationId ?? undefined,
       pickupWindowStartAt: selectedPickupSlot?.startsAt,
@@ -585,7 +604,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
             quantity: item.quantity,
             unitPriceCents: item.variant.price_cents
           })),
-          fulfillmentMethod: selectedFulfillment.method,
+          fulfillmentMethod: hasPhysicalItems ? selectedFulfillment.method : undefined,
           discountCents: appliedDiscountCents,
           shippingCents: effectiveShippingFeeCents
         })
@@ -606,7 +625,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
             quantity: item.quantity,
             unitPriceCents: item.variant.price_cents
           })),
-          fulfillmentMethod: selectedFulfillment.method,
+          fulfillmentMethod: hasPhysicalItems ? selectedFulfillment.method : undefined,
           discountCents: appliedDiscountCents,
           shippingCents: shippingFeeCents
         })
@@ -750,7 +769,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                           </button>
                         </div>
                         <div className="flex items-center justify-between gap-3">
-                          {item.product.product_type === "digital" ? <p className="text-sm text-muted-foreground">Quantity 1 · Digital download</p> : <div
+                          {item.product.product_type === "digital" ? <p className="text-sm text-muted-foreground">Instant digital delivery · Quantity 1</p> : <div
                             className={cn(
                               "inline-flex items-center overflow-hidden border border-border/60 bg-[color:var(--storefront-surface)]",
                               buttonRadiusClass
@@ -997,7 +1016,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                   </div>
                 ) : null}
                 <div className="flex items-center justify-between">
-                  <span>{selectedFulfillment.label}</span>
+                  <span>{displayedFulfillment.label}</span>
                   <span>${(effectiveShippingFeeCents / 100).toFixed(2)}</span>
                 </div>
                 <div className="flex items-center justify-between pt-1 text-base font-semibold">

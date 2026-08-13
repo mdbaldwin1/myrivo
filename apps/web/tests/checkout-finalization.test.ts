@@ -85,6 +85,21 @@ describe("finalizeStorefrontCheckout", () => {
     });
   });
 
+  test("discards address data when finalizing a digital-only checkout", async () => {
+    const { resolveCheckoutShippingAddressSnapshot } = await import("@/lib/storefront/checkout-finalization");
+    const address = {
+      recipientName: "Alice Buyer",
+      addressLine1: "123 Main Street",
+      city: "Richmond",
+      stateRegion: "VA",
+      postalCode: "23220",
+      countryCode: "US"
+    };
+
+    expect(resolveCheckoutShippingAddressSnapshot("digital_only", address, address)).toBeNull();
+    expect(resolveCheckoutShippingAddressSnapshot("mixed", null, address)).toEqual(address);
+  });
+
   test("persists the Stripe shipping address onto the order and checkout session", async () => {
     const orderUpdateMock = vi.fn(() => ({
       eq: vi.fn(async () => ({ error: null }))

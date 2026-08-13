@@ -240,4 +240,178 @@ describe("StorefrontCartPage", () => {
       "018f6fc1-8adc-7f43-8000-000000000301"
     ]);
   });
+
+  test("collapses duplicate digital lines and presents instant delivery without physical controls", async () => {
+    const promoBodies: Array<Record<string, unknown>> = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith("/api/customer/cart")) {
+        return new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (url.startsWith("/api/promotions/preview")) {
+        promoBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response(JSON.stringify({
+          promoCodes: ["WELCOME"],
+          discountCents: 0,
+          shippingDiscountCents: 0,
+          effectiveShippingFeeCents: 0
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    window.localStorage.setItem(
+      "aha-cart:single-store",
+      JSON.stringify([
+        { productId: "digital-product", variantId: "digital-variant", quantity: 7 },
+        { productId: "digital-product", variantId: "digital-variant", quantity: 1 }
+      ])
+    );
+
+    render(
+      <StorefrontCartPage
+        store={{ id: "store-1", name: "Art Store", slug: "art-store" }}
+        branding={null}
+        settings={{
+          announcement: null,
+          support_email: "support@example.com",
+          footer_tagline: null,
+          footer_note: null,
+          instagram_url: null,
+          facebook_url: null,
+          tiktok_url: null,
+          storefront_copy_json: null,
+          checkout_enable_local_pickup: true,
+          checkout_local_pickup_label: "Studio pickup",
+          checkout_local_pickup_fee_cents: 0,
+          checkout_enable_flat_rate_shipping: false,
+          checkout_flat_rate_shipping_label: "Shipping",
+          checkout_flat_rate_shipping_fee_cents: 900,
+          checkout_allow_order_note: false,
+          checkout_max_promo_codes: 1
+        }}
+        products={[{
+          id: "digital-product",
+          title: "Printable pack",
+          slug: "printable-pack",
+          product_type: "digital",
+          product_variants: [{
+            id: "digital-variant",
+            title: "PDF bundle",
+            option_values: {},
+            price_cents: 2400,
+            inventory_qty: 0,
+            is_made_to_order: false,
+            is_default: true,
+            status: "active",
+            sort_order: 0,
+            created_at: "2026-08-13T00:00:00.000Z"
+          }]
+        }]}
+      />
+    );
+
+    expect(await screen.findByText("Instant digital delivery · Quantity 1")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Remove" })).toHaveLength(1);
+    expect(screen.queryByLabelText("Quantity of Printable pack")).toBeNull();
+    expect(screen.queryByPlaceholderText("Phone")).toBeNull();
+    expect(screen.queryByRole("radio", { name: /studio pickup/i })).toBeNull();
+    expect(screen.getByText("Digital delivery")).toBeTruthy();
+
+    await waitFor(() => {
+      expect(JSON.parse(window.localStorage.getItem("aha-cart:single-store") ?? "[]")).toEqual([
+        { productId: "digital-product", variantId: "digital-variant", quantity: 1 }
+      ]);
+    });
+
+    const user = userEvent.setup();
+    await user.type(screen.getByPlaceholderText("Promo code (optional)"), "welcome");
+    await user.click(screen.getByRole("button", { name: "Apply promo" }));
+    await waitFor(() => expect(promoBodies).toHaveLength(1));
+    expect(promoBodies[0]).toMatchObject({ shippingFeeCents: 0 });
+  });
+
+  test("submits normalized digital intent without phone or physical fulfillment", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(
+      "018f6fc1-8adc-7f43-8000-000000000602"
+    );
+    let checkoutBody: Record<string, unknown> | null = null;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith("/api/customer/cart")) {
+        return new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (url.startsWith("/api/orders/checkout")) {
+        checkoutBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(JSON.stringify({
+          error: "We could not confirm checkout yet. Please try again; you will not be charged twice."
+        }), { status: 503, headers: { "Content-Type": "application/json" } });
+      }
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    window.localStorage.setItem(
+      "aha-cart:single-store",
+      JSON.stringify([{ productId: "digital-product", variantId: "digital-variant", quantity: 4 }])
+    );
+
+    render(
+      <StorefrontCartPage
+        store={{ id: "store-1", name: "Art Store", slug: "art-store" }}
+        branding={null}
+        settings={{
+          announcement: null,
+          support_email: "support@example.com",
+          footer_tagline: null,
+          footer_note: null,
+          instagram_url: null,
+          facebook_url: null,
+          tiktok_url: null,
+          storefront_copy_json: null,
+          checkout_enable_local_pickup: true,
+          checkout_enable_flat_rate_shipping: false,
+          checkout_allow_order_note: false
+        }}
+        products={[{
+          id: "digital-product",
+          title: "Printable pack",
+          slug: "printable-pack",
+          product_type: "digital",
+          product_variants: [{
+            id: "digital-variant",
+            title: "PDF bundle",
+            option_values: {},
+            price_cents: 2400,
+            inventory_qty: 0,
+            is_made_to_order: false,
+            is_default: true,
+            status: "active",
+            sort_order: 0,
+            created_at: "2026-08-13T00:00:00.000Z"
+          }]
+        }]}
+      />
+    );
+
+    await user.type(await screen.findByPlaceholderText("First name"), "Alice");
+    await user.type(screen.getByPlaceholderText("Last name"), "Buyer");
+    await user.type(screen.getByPlaceholderText("you@example.com"), "alice@example.com");
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Checkout" }));
+
+    await waitFor(() => expect(checkoutBody).not.toBeNull());
+    expect(checkoutBody).not.toHaveProperty("phone");
+    expect(checkoutBody).not.toHaveProperty("fulfillmentMethod");
+    expect(checkoutBody).toMatchObject({
+      digitalDeliveryConsent: true,
+      items: [{ productId: "digital-product", variantId: "digital-variant", quantity: 1 }]
+    });
+  });
 });

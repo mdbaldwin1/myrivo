@@ -621,7 +621,8 @@ describe("checkout Stripe tax liability", () => {
                         id: "11111111-1111-4111-8111-111111111111",
                         title: "Starter Kit",
                         status: "active",
-                        store_id: "store-1"
+                        store_id: "store-1",
+                        product_type: "physical"
                       }
                     }
                   ],

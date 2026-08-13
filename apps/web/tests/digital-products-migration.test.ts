@@ -61,6 +61,10 @@ const checkoutAttemptHardeningMigration = join(
   repoRoot,
   "supabase/migrations/20260813002000_checkout_attempt_recovery_hardening.sql",
 );
+const digitalCheckoutCompositionMigration = join(
+  repoRoot,
+  "supabase/migrations/20260813003000_digital_checkout_composition.sql",
+);
 
 const ids = {
   storeA: "10000000-0000-0000-0000-000000000001",
@@ -403,6 +407,9 @@ beforeAll(() => {
   }
   if (!existsSync(checkoutAttemptHardeningMigration)) {
     throw new Error(`Missing checkout attempt hardening migration: ${checkoutAttemptHardeningMigration}`);
+  }
+  if (!existsSync(digitalCheckoutCompositionMigration)) {
+    throw new Error(`Missing digital checkout composition migration: ${digitalCheckoutCompositionMigration}`);
   }
 
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-digital-migration-"));
@@ -1392,6 +1399,232 @@ describe("checkout attempt recovery", () => {
        update public.products
        set status = 'active'
        where id = '${ids.manifestPhysicalProduct}'`,
+    );
+  });
+});
+
+describe("digital checkout composition database contract", () => {
+  function createAttempt({
+    attemptSuffix,
+    fingerprintCharacter,
+    composition,
+    fulfillmentMethod,
+    customerPhone,
+    items,
+  }: {
+    attemptSuffix: string;
+    fingerprintCharacter: string;
+    composition: "digital_only" | "physical_only" | "mixed";
+    fulfillmentMethod: "digital_delivery" | "shipping";
+    customerPhone: string | null;
+    items: string;
+  }) {
+    return JSON.parse(
+      runSql(
+        "full_chain",
+        `select public.create_or_reuse_storefront_checkout_attempt(
+          '${ids.manifestStore}',
+          '018f6fc1-8adc-7f43-8000-${attemptSuffix}',
+          '${fingerprintCharacter.repeat(64)}',
+          jsonb_build_object(
+            'store_slug', 'manifest-store',
+            'customer_email', 'composition@example.test',
+            'customer_first_name', 'Composition',
+            'customer_last_name', 'Buyer',
+            'customer_phone', ${customerPhone === null ? "null" : `'${customerPhone}'`},
+            'fulfillment_method', '${fulfillmentMethod}',
+            'fulfillment_label', '${fulfillmentMethod === "digital_delivery" ? "Digital delivery" : "Shipping"}',
+            'shipping_fee_cents', ${fulfillmentMethod === "digital_delivery" ? 0 : 700},
+            'promo_codes_json', '[]'::jsonb,
+            'applied_promotions_json', '[]'::jsonb,
+            'fee_plan_key', 'standard',
+            'fee_bps', 500,
+            'fee_fixed_cents', 0,
+            'item_total_cents', 4000,
+            'platform_fee_cents', 200,
+            'attribution_json', '{}'::jsonb,
+            'items', ${items},
+            'checkout_composition', '${composition}',
+            'checkout_mode', 'stub',
+            'tax_collection_mode_snapshot', 'seller_attested_no_tax',
+            'status', 'pending'
+          )
+        )`,
+      ),
+    ) as { id: string; checkout_composition: string };
+  }
+
+  const digitalItem = (quantity = 1) => `jsonb_build_object(
+    'productId', '${ids.manifestProduct}',
+    'variantId', '${ids.manifestVariant}',
+    'quantity', ${quantity},
+    'variantLabel', 'Blue',
+    'productTitle', 'Digital set',
+    'productType', 'digital',
+    'unitPriceCents', 2500
+  )`;
+  const physicalItem = (quantity = 1) => `jsonb_build_object(
+    'productId', '${ids.manifestPhysicalProduct}',
+    'variantId', '${ids.manifestPhysicalVariant}',
+    'quantity', ${quantity},
+    'variantLabel', 'Oak',
+    'productTitle', 'Frame',
+    'productType', 'physical',
+    'unitPriceCents', 1500
+  )`;
+
+  it("finalizes a zero-inventory digital-only order without inventory mutation", () => {
+    runSql(
+      "full_chain",
+      `update public.product_variants set inventory_qty = 0 where id = '${ids.manifestVariant}'`,
+    );
+    const checkout = createAttempt({
+      attemptSuffix: "000000000611",
+      fingerprintCharacter: "1",
+      composition: "digital_only",
+      fulfillmentMethod: "digital_delivery",
+      customerPhone: null,
+      items: `jsonb_build_array(${digitalItem()})`,
+    });
+
+    const result = JSON.parse(
+      runSql(
+        "full_chain",
+        `select row_to_json(result) from public.stub_checkout_create_paid_order_with_manifest(
+          'manifest-store', 'ignored@example.test', null, '[]'::jsonb,
+          'stub_pi_composition_digital', 0, null, '${checkout.id}', null
+        ) result`,
+      ),
+    ) as { order_id: string };
+
+    expect(
+      runSql(
+        "full_chain",
+        `select inventory_qty::text from public.product_variants where id = '${ids.manifestVariant}'`,
+      ),
+    ).toBe("0");
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.inventory_movements where order_id = '${result.order_id}'`,
+      ),
+    ).toBe("0");
+    expect(
+      runSql(
+        "full_chain",
+        `select product_type || ':' || quantity::text from public.order_items where order_id = '${result.order_id}'`,
+      ),
+    ).toBe("digital:1");
+    expect(
+      runSql(
+        "full_chain",
+        `select fulfillment_method || ':' || coalesce(customer_phone, 'null') || ':' || shipping_fee_cents::text
+         from public.orders where id = '${result.order_id}'`,
+      ),
+    ).toBe("digital_delivery:null:0");
+  });
+
+  it("mutates inventory only for the physical line in a mixed order", () => {
+    runSql(
+      "full_chain",
+      `update public.product_variants set inventory_qty = 0 where id = '${ids.manifestVariant}';
+       update public.product_variants set inventory_qty = 10 where id = '${ids.manifestPhysicalVariant}'`,
+    );
+    const checkout = createAttempt({
+      attemptSuffix: "000000000612",
+      fingerprintCharacter: "2",
+      composition: "mixed",
+      fulfillmentMethod: "shipping",
+      customerPhone: "555-0112",
+      items: `jsonb_build_array(${digitalItem()}, ${physicalItem(2)})`,
+    });
+    const result = JSON.parse(
+      runSql(
+        "full_chain",
+        `select row_to_json(result) from public.stub_checkout_create_paid_order_with_manifest(
+          'manifest-store', 'ignored@example.test', null, '[]'::jsonb,
+          'stub_pi_composition_mixed', 0, null, '${checkout.id}', null
+        ) result`,
+      ),
+    ) as { order_id: string };
+
+    expect(
+      runSql(
+        "full_chain",
+        `select inventory_qty::text from public.product_variants where id = '${ids.manifestVariant}'`,
+      ),
+    ).toBe("0");
+    expect(
+      runSql(
+        "full_chain",
+        `select inventory_qty::text from public.product_variants where id = '${ids.manifestPhysicalVariant}'`,
+      ),
+    ).toBe("8");
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) || ':' || (array_agg(product_variant_id order by product_variant_id))[1]::text || ':' || sum(delta_qty)::text
+         from public.inventory_movements where order_id = '${result.order_id}'`,
+      ),
+    ).toBe(`1:${ids.manifestPhysicalVariant}:-2`);
+    expect(
+      runSql(
+        "full_chain",
+        `select string_agg(product_type || ':' || quantity::text, ',' order by product_type)
+         from public.order_items where order_id = '${result.order_id}'`,
+      ),
+    ).toBe("digital:1,physical:2");
+  });
+
+  it("rejects invalid digital quantities and forged product type snapshots", () => {
+    expectRejected(
+      "full_chain",
+      `select public.create_or_reuse_storefront_checkout_attempt(
+        '${ids.manifestStore}', '018f6fc1-8adc-7f43-8000-000000000613', '${"3".repeat(64)}',
+        jsonb_build_object(
+          'store_slug', 'manifest-store', 'customer_email', 'bad@example.test',
+          'items', jsonb_build_array(${digitalItem(2)}),
+          'checkout_composition', 'digital_only', 'fulfillment_method', 'digital_delivery',
+          'shipping_fee_cents', 0, 'checkout_mode', 'stub',
+          'tax_collection_mode_snapshot', 'seller_attested_no_tax',
+          'applied_promotions_json', '[]'::jsonb, 'status', 'pending'
+        )
+      )`,
+    );
+    expectRejected(
+      "full_chain",
+      `select public.create_or_reuse_storefront_checkout_attempt(
+        '${ids.manifestStore}', '018f6fc1-8adc-7f43-8000-000000000614', '${"4".repeat(64)}',
+        jsonb_build_object(
+          'store_slug', 'manifest-store', 'customer_email', 'bad@example.test',
+          'items', jsonb_build_array(jsonb_build_object(
+            'productId', '${ids.manifestProduct}', 'variantId', '${ids.manifestVariant}',
+            'quantity', 1, 'productType', 'physical', 'unitPriceCents', 2500
+          )),
+          'checkout_composition', 'physical_only', 'fulfillment_method', 'shipping',
+          'shipping_fee_cents', 0, 'checkout_mode', 'stub',
+          'tax_collection_mode_snapshot', 'seller_attested_no_tax',
+          'applied_promotions_json', '[]'::jsonb, 'status', 'pending'
+        )
+      )`,
+    );
+  });
+
+  it("keeps item types and composition immutable after attempt creation", () => {
+    const checkout = createAttempt({
+      attemptSuffix: "000000000615",
+      fingerprintCharacter: "5",
+      composition: "physical_only",
+      fulfillmentMethod: "shipping",
+      customerPhone: "555-0115",
+      items: `jsonb_build_array(${physicalItem()})`,
+    });
+
+    expectRejected(
+      "full_chain",
+      `update public.storefront_checkout_sessions
+       set checkout_composition = 'digital_only', items = jsonb_build_array(${digitalItem()})
+       where id = '${checkout.id}'`,
     );
   });
 });
