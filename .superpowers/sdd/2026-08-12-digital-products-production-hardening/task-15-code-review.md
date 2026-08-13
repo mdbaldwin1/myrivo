@@ -40,3 +40,50 @@
 - The report and runbook truthfully state that real provider acceptance has not occurred and instruct operators to keep rollout disabled.
 - Existing focused unit, integration, migration, and PostgreSQL concurrency suites provide meaningful coverage of many underlying invariants; the findings above concern the missing release-level proof, not a claim that those implementations are known broken.
 - The runbook's rollback, repair, reconciliation, redaction, and leaked-link guidance is detailed and appropriately conservative.
+
+---
+
+## Round 2 Re-review — commit `0466edb`
+
+### Verdict
+
+**FAIL** — the prior behavioral-acceptance P1 remains, and two new release-interlock P1 issues prevent the new gate from serving as a trustworthy production promotion control.
+
+### P1 — Required journeys still are not executed by Playwright
+
+**Status:** Unresolved.
+
+**Evidence:** `apps/web/e2e/digital-products.spec.ts:35-83` remains a collection of navigations to pre-seeded end-state URLs and broad text assertions. It still does not configure/publish a product, complete Stripe Checkout, observe Resend delivery, consume five grants and reject the sixth, replace a version, issue partial/full refunds, drive dispute transitions, inject/retry delivery, or invoke resend. Lines 85-100 replaced free-form phrases with JSON, but the test still trusts a hand-authored file: a scenario passes when it has a required ID, any provider-looking string, and any truthy `applicationState`. Neither the verifier (`scripts/verify-digital-products-acceptance.mjs:25-29`) nor Playwright checks provider events or authoritative application state against Stripe, Resend, or Supabase.
+
+**Impact:** Fabricated or stale JSON can satisfy every non-browser transition while the actual production workflow is broken. Task 15 Step 2 and the Definition of Done remain unproven.
+
+**Remediation:** Make the acceptance runner perform the transitions and generate evidence from observed provider/application results, or cryptographically/operationally obtain structured results from a trusted acceptance orchestrator and independently query provider and database state during verification. Validate exact expected state per scenario, unique event/order IDs, timestamps within the current run, linkage among event/order/manifest/job IDs, and the actual sixth-grant rejection—not merely field presence.
+
+### P1 — The acceptance gate can test a different host than the fixture it validates
+
+**Evidence:** `scripts/verify-digital-products-acceptance.mjs:20-24` validates `fixture.baseUrl` as non-production, but lines 32-34 never pass that URL to Playwright or compare it with `E2E_BASE_URL`. `apps/web/playwright.config.ts:3-5` independently defaults to `http://127.0.0.1:3000` and starts a local production build. Conversely, every route inside the fixture is accepted as an arbitrary string (`apps/web/e2e/digital-products.spec.ts:5-20`; `apps/web/e2e/digital-products-accessibility.spec.ts:6-25`) with no runtime schema, origin, protocol, or environment validation. Playwright `page.goto()` accepts absolute URLs, so individual fixture routes may point somewhere other than the validated `baseUrl`, including production.
+
+**Impact:** The gate can validate one safe hostname while exercising another environment, or run the app locally against provider evidence from an unrelated deployment. It does not provide the claimed non-production safety or evidence/run provenance.
+
+**Remediation:** Introduce one shared runtime schema for the entire fixture. Require all navigated URLs to resolve under the validated base origin, reject production hosts and credentials in fixture data, set `E2E_BASE_URL` from that validated origin (normally with `E2E_MANAGED_SERVER=false` for a deployed acceptance target), and bind evidence environment/run IDs to that origin and current execution.
+
+### P1 — CI and database approval controls are not bound to the release they claim to gate
+
+**Evidence:** The CI step is conditioned on `github.ref == 'refs/heads/main'` (`.github/workflows/ci.yml:53-64`). In a pull request into `main`, `github.ref` is a pull-request merge ref, so the acceptance step is skipped; it runs only on the post-merge push to `main`, after promotion has occurred. The database trigger queries only for any unrevoked, unexpired row (`supabase/migrations/20260813020000_digital_release_acceptance_gate.sql:23-34`). It never matches `release_version`, `environment`, or `evidence_sha256` to the deployed release/store operation. Review/provider timestamps can be future values, and expiry has no maximum bound (`:1-15`). Thus one generic long-lived `test`/`preview` approval authorizes every later store enablement and code release until its chosen expiry.
+
+**Impact:** Neither control proves the code being promoted or enabled is the code that passed acceptance and review. Main can be merged before the gate runs, and stale/unrelated approval evidence can unlock rollout.
+
+**Remediation:** Run a required acceptance workflow on the release-promotion PR (or a deployment promotion environment) before merge. Persist an immutable release identifier such as commit SHA/artifact digest and environment with the evidence; require the enable operation to provide/match that identifier and the intended production rollout approval. Constrain review/provider timestamps and approval lifetime, and document an audited break-glass path separately.
+
+### Prior findings disposition
+
+- **Behavioral security coverage:** Resolved for the newly introduced bearer/session boundary by `apps/web/tests/digital-download-session-route.test.ts`, combined with the existing asset, preview, recovery, download route, migration, and concurrency suites. Deleting the brittle substring suite is appropriate.
+- **Missing/skipped fixture exits zero:** Partially resolved. Required mode now throws when fixture/accessibility data is absent, but the gate remains unreliable for the host/provenance reasons above.
+- **200% zoom:** Improved with a horizontal-overflow assertion at `apps/web/e2e/digital-products-accessibility.spec.ts:51-56`; this closes the prior code-quality P2, subject to the UX reviewer’s deeper assessment.
+- **Fixture validation:** Unresolved and elevated to P1 because the new verifier's validated `baseUrl` is disconnected from actual Playwright navigation.
+
+### Positive changes
+
+- Bearers are removed from request paths and exchanged through a trusted-origin POST into a signed HttpOnly cookie; the new boundary has behavioral tests and no-store response checks.
+- The strict command now fails immediately when required files/provider variables are absent and explicitly requires Stripe test-mode keys.
+- Reduced-motion assertions and distinct customer/merchant identities make the accessibility harness materially better.
