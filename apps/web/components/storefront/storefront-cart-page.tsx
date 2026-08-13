@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AppAlert } from "@/components/ui/app-alert";
 import { Button } from "@/components/ui/button";
@@ -414,6 +414,14 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
   const displayedFulfillment = hasPhysicalItems
     ? selectedFulfillment
     : { method: "digital_delivery" as const, label: "Digital delivery", feeCents: 0 };
+  const fulfillmentSummaryLabel = hasDigitalItems && hasPhysicalItems
+    ? selectedFulfillment.method === "shipping" ? "Physical shipping" : "Physical pickup"
+    : displayedFulfillment.label;
+  const groupedCartItems = [...cartItems].sort((left, right) => {
+    const leftDigital = left.product.product_type === "digital";
+    const rightDigital = right.product.product_type === "digital";
+    return Number(rightDigital) - Number(leftDigital);
+  });
   const shippingFeeCents = hasPhysicalItems ? selectedFulfillment?.feeCents ?? 0 : 0;
   const discountedSubtotalCents = Math.max(0, subtotalCents - appliedDiscountCents);
   const effectiveShippingFeeCents = Math.max(0, shippingFeeCents - Math.min(appliedShippingDiscountCents, shippingFeeCents));
@@ -720,9 +728,25 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
           <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(21rem,0.88fr)] xl:items-start">
             <section className="space-y-4 sm:space-y-5">
               <ul className="space-y-3 sm:space-y-4">
-                {cartItems.map((item) => (
+                {groupedCartItems.map((item, index) => {
+                  const isDigital = item.product.product_type === "digital";
+                  const priorItem = groupedCartItems[index - 1];
+                  const startsGroup = !priorItem || (priorItem.product.product_type === "digital") !== isDigital;
+                  return (
+                  <Fragment key={`${item.productId}:${item.variantId}`}>
+                    {startsGroup ? (
+                      <li className="pt-1 first:pt-0">
+                        <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                          {isDigital ? "Digital delivery" : "Physical items"}
+                        </h2>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {isDigital
+                            ? "Delivered securely after payment; each digital item has a fixed quantity of one."
+                            : "Shipping or pickup applies only to these items."}
+                        </p>
+                      </li>
+                    ) : null}
                   <li
-                    key={`${item.productId}:${item.variantId}`}
                     className={cn("space-y-4 p-4 sm:p-5", radiusClass, cardClass, isIntegrated ? "border border-border/50 bg-[color:var(--storefront-surface)]/70 shadow-sm" : "")}
                   >
                     <div className="flex items-start gap-4">
@@ -803,7 +827,8 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                       </div>
                     </div>
                   </li>
-                ))}
+                  </Fragment>
+                );})}
               </ul>
             </section>
 
@@ -876,8 +901,6 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                   ))}
                 </div>
               </div> : null}
-
-              {hasDigitalItems ? <label className="flex items-start gap-2 rounded-md border border-border/60 bg-muted/20 p-3 text-sm"><input type="checkbox" checked={digitalDeliveryConsent} onChange={(event) => setDigitalDeliveryConsent(event.target.checked)} required /><span>I agree to immediate delivery of digital content and understand that downloads are generally final after access begins. Personal-use license applies.</span></label> : null}
 
               {hasPhysicalItems && selectedFulfillment.method === "pickup" ? (
                 <div className="space-y-2 border-b border-border/40 pb-4">
@@ -1011,7 +1034,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                   </div>
                 ) : null}
                 <div className="flex items-center justify-between">
-                  <span>{displayedFulfillment.label}</span>
+                  <span>{fulfillmentSummaryLabel}</span>
                   <span>${(effectiveShippingFeeCents / 100).toFixed(2)}</span>
                 </div>
                 <div className="flex items-center justify-between pt-1 text-base font-semibold">
@@ -1052,6 +1075,31 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                   </div>
                 ) : null}
                 {maxPromoCodes > 1 ? <p className="text-xs text-muted-foreground">Up to {maxPromoCodes} promo codes can be applied.</p> : null}
+                {hasDigitalItems ? (
+                  <div className="flex items-start gap-2 rounded-md border border-border/60 bg-muted/20 p-3 text-sm">
+                    <input
+                      id="digital-delivery-consent"
+                      type="checkbox"
+                      checked={digitalDeliveryConsent}
+                      onChange={(event) => setDigitalDeliveryConsent(event.target.checked)}
+                      required
+                      className="mt-0.5"
+                    />
+                    <p>
+                      <label htmlFor="digital-delivery-consent">
+                        I agree to immediate digital delivery and understand that downloads are generally final after access begins.
+                      </label>{" "}
+                      Review the{" "}
+                      <Link className="font-medium underline underline-offset-2" href="/legal/digital-personal-use-license">
+                        personal-use license
+                      </Link>{" "}
+                      and{" "}
+                      <Link className="font-medium underline underline-offset-2" href="/docs/catalog-and-orders#digital-products">
+                        digital refund policy
+                      </Link>.
+                    </p>
+                  </div>
+                ) : null}
                 <div className="relative">
                   <Button type="submit" disabled={pending || cartItems.length === 0} className={cn("h-11 w-full bg-[var(--storefront-accent)] text-[color:var(--storefront-accent-foreground)] hover:opacity-90", buttonRadiusClass)}>
                     {pending ? copy.cart.processing : copy.cart.checkout}

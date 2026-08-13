@@ -2,8 +2,9 @@ import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 import { CustomerOrderDetailView } from "@/components/customer/customer-order-detail-view";
 import { resolveCustomerStorefrontLinksBySlug } from "@/lib/customer/storefront-links";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { OrderShippingDelayRecord } from "@/types/database";
+import type { DigitalEntitlementStatus, OrderShippingDelayRecord } from "@/types/database";
 
 const paramsSchema = z.object({
   orderId: z.string().uuid()
@@ -47,7 +48,7 @@ export default async function CustomerOrderPage({ params }: OrderPageProps) {
       customer_first_name: string | null;
       customer_last_name: string | null;
       customer_note: string | null;
-      fulfillment_method: "pickup" | "shipping" | null;
+      fulfillment_method: "pickup" | "shipping" | "digital_delivery" | null;
       fulfillment_label: string | null;
       pickup_location_snapshot_json: Record<string, unknown> | null;
       pickup_window_start_at: string | null;
@@ -110,6 +111,24 @@ export default async function CustomerOrderPage({ params }: OrderPageProps) {
     throw new Error(shippingDelaysError.message);
   }
 
+  // Customer ownership is established before the service-role metadata read.
+  // Only aggregate entitlement state reaches the page.
+  const { data: digitalEntitlements, error: digitalEntitlementsError } = await createSupabaseAdminClient()
+    .from("digital_order_entitlements")
+    .select("status")
+    .eq("order_id", order.id)
+    .returns<Array<{ status: DigitalEntitlementStatus }>>();
+  if (digitalEntitlementsError) {
+    throw new Error("Unable to load digital downloads.");
+  }
+  const digitalFileCount = digitalEntitlements?.length ?? 0;
+  const activeDigitalFileCount = digitalEntitlements?.filter(({ status }) => status === "active").length ?? 0;
+  const digitalAccessStatus = activeDigitalFileCount > 0
+    ? "active" as const
+    : digitalEntitlements?.some(({ status }) => status === "suspended")
+      ? "suspended" as const
+      : "revoked" as const;
+
   const store = Array.isArray(order.stores) ? order.stores[0] : order.stores;
   const storefrontLinksBySlug = await resolveCustomerStorefrontLinksBySlug(store?.slug ? [store.slug] : []);
   const storefrontHref = store?.slug ? storefrontLinksBySlug[store.slug]?.storefrontHref ?? null : null;
@@ -121,6 +140,11 @@ export default async function CustomerOrderPage({ params }: OrderPageProps) {
       shippingDelays={shippingDelays ?? []}
       backHref={storefrontHref ?? "/"}
       storefrontHref={storefrontHref}
+      digitalDownloads={digitalFileCount > 0 ? {
+        fileCount: digitalFileCount,
+        activeFileCount: activeDigitalFileCount,
+        accessStatus: digitalAccessStatus
+      } : null}
     />
   );
 }

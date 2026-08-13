@@ -19,6 +19,13 @@ type OrderRefundRequestPanelProps = {
   orderStatus: OrderFinancialStatus;
   refunds: OrderRefundRecord[];
   hasDigitalItems?: boolean;
+  digitalAccess?: {
+    fileCount: number;
+    anyAccessed: boolean;
+    consentVersion: string | null;
+    consentAcceptedAt: string | null;
+    licenseVersion: string | null;
+  } | null;
 };
 
 function formatMoney(amountCents: number, currency: string) {
@@ -35,7 +42,15 @@ function getRefundStatusTone(status: OrderRefundRecord["status"]) {
   return "warning" as const;
 }
 
-export function OrderRefundRequestPanel({ orderId, orderTotalCents, currency, orderStatus, refunds, hasDigitalItems = false }: OrderRefundRequestPanelProps) {
+export function OrderRefundRequestPanel({
+  orderId,
+  orderTotalCents,
+  currency,
+  orderStatus,
+  refunds,
+  hasDigitalItems = false,
+  digitalAccess = null
+}: OrderRefundRequestPanelProps) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"full" | "partial">("full");
   const [amountInput, setAmountInput] = useState("");
@@ -165,13 +180,37 @@ export function OrderRefundRequestPanel({ orderId, orderTotalCents, currency, or
               >
                 <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pb-4 pr-1">
                   <AppAlert variant="error" message={error} />
-                  {hasDigitalItems ? <AppAlert variant="warning" message={mode === "full" ? "A successful full refund revokes all remaining digital access. Digital sales are generally final after the first download except for defects or other required exceptions." : "Partial refunds preserve digital access."} /> : null}
+                  {hasDigitalItems || digitalAccess ? (
+                    <div className="space-y-2">
+                      <AppAlert
+                        variant="warning"
+                        message={
+                          mode === "full"
+                            ? "A successful full refund revokes all digital access for this order."
+                            : "A partial refund preserves every digital entitlement and remaining download grant."
+                        }
+                      />
+                      {digitalAccess?.anyAccessed ? (
+                        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+                          <p className="font-medium">Digital files have been accessed.</p>
+                          <p className="mt-1">
+                            The buyer accepted {digitalAccess.consentVersion ?? "the immediate-delivery policy"}
+                            {digitalAccess.consentAcceptedAt
+                              ? ` on ${new Date(digitalAccess.consentAcceptedAt).toLocaleString()}`
+                              : ""}. Downloaded digital purchases are generally final except for defects, inaccessible or materially misrepresented files, duplicate or fraudulent purchases, and legally required refunds.
+                          </p>
+                          <p className="mt-1 font-medium">You can still override this policy and issue the refund.</p>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
 
                   <FormField label="Refund type" description="Use full when the remaining balance should be refunded entirely.">
-                    <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Refund type">
                       <button
                         type="button"
-                        aria-pressed={mode === "full"}
+                        role="radio"
+                        aria-checked={mode === "full"}
                         className={`rounded-md border px-3 py-3 text-left text-sm ${mode === "full" ? "border-primary bg-primary/5" : "border-border bg-background"}`}
                         onClick={() => setMode("full")}
                       >
@@ -180,7 +219,8 @@ export function OrderRefundRequestPanel({ orderId, orderTotalCents, currency, or
                       </button>
                       <button
                         type="button"
-                        aria-pressed={mode === "partial"}
+                        role="radio"
+                        aria-checked={mode === "partial"}
                         className={`rounded-md border px-3 py-3 text-left text-sm ${mode === "partial" ? "border-primary bg-primary/5" : "border-border bg-background"}`}
                         onClick={() => setMode("partial")}
                       >

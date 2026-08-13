@@ -44,7 +44,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       customer_first_name: string | null;
       customer_last_name: string | null;
       customer_note: string | null;
-      fulfillment_method: "pickup" | "shipping" | null;
+      fulfillment_method: "pickup" | "shipping" | "digital_delivery" | null;
       fulfillment_label: string | null;
       pickup_location_snapshot_json: Record<string, unknown> | null;
       pickup_window_start_at: string | null;
@@ -129,13 +129,18 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     : activeFileCount > 0
       ? "partially_available"
       : "unavailable";
+  const accessStatus = activeFileCount > 0
+    ? "active"
+    : digitalEntitlements?.some(({ status }) => status === "suspended")
+      ? "suspended"
+      : "revoked";
 
   return NextResponse.json({
     order,
     items: items ?? [],
     shippingDelays: shippingDelays ?? [],
     digitalDownloads: fileCount > 0
-      ? { fileCount, activeFileCount, status: digitalDownloadStatus }
+      ? { fileCount, activeFileCount, status: digitalDownloadStatus, accessStatus }
       : null,
   });
 }

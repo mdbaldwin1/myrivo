@@ -31,7 +31,9 @@ import { cn } from "@/lib/utils";
 type CheckoutStatusResponse = {
   status?: "pending" | "completed" | "delivery_failed" | "failed";
   orderId?: string | null;
+  checkoutComposition?: "digital_only" | "physical_only" | "mixed";
   digitalDeliveryStatus?: "pending" | "processing" | "succeeded" | "failed";
+  digitalAccessUrl?: string;
   error?: string;
 };
 
@@ -120,6 +122,9 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
   );
   const [error, setError] = useState<string | null>(null);
   const [deliveryFailureOrderId, setDeliveryFailureOrderId] = useState<string | null>(null);
+  const [digitalDeliveryStatus, setDigitalDeliveryStatus] = useState<"pending" | "processing" | "succeeded" | "failed" | null>(null);
+  const [digitalAccessUrl, setDigitalAccessUrl] = useState<string | null>(null);
+  const [checkoutComposition, setCheckoutComposition] = useState<"digital_only" | "physical_only" | "mixed" | null>(null);
 
   useStorefrontPageView("checkout", {
     status: status ?? "return",
@@ -133,7 +138,7 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
     }
     const safeSessionId = sessionId;
 
-    let cancelled = false;
+    const controller = new AbortController();
 
     async function poll() {
       setMessage(checkoutPaymentReceivedFinalizing);
@@ -141,12 +146,18 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
       setDeliveryFailureOrderId(null);
 
       for (let attempt = 0; attempt < 8; attempt += 1) {
-        const response = await fetch(
-          `/api/orders/checkout-status?sessionId=${encodeURIComponent(safeSessionId)}&store=${encodeURIComponent(resolvedStore.slug)}`,
-          { cache: "no-store" }
-        );
+        let response: Response;
+        try {
+          response = await fetch(
+            `/api/orders/checkout-status?sessionId=${encodeURIComponent(safeSessionId)}&store=${encodeURIComponent(resolvedStore.slug)}`,
+            { cache: "no-store", signal: controller.signal }
+          );
+        } catch (caught) {
+          if (controller.signal.aborted) return;
+          throw caught;
+        }
         const payload = (await response.json()) as CheckoutStatusResponse;
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
 
         if (response.ok && payload.status === "completed" && payload.orderId) {
           if (markStorefrontCheckoutCompletedTracked(payload.orderId)) {
@@ -160,7 +171,21 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
             });
           }
           setMessage(formatCopyTemplate(orderPlacedTemplate, { orderId: payload.orderId }));
-          return;
+          setCheckoutComposition(payload.checkoutComposition ?? null);
+          if (payload.digitalDeliveryStatus) {
+            setDigitalDeliveryStatus(payload.digitalDeliveryStatus);
+          }
+          if (
+            payload.digitalDeliveryStatus === "succeeded" &&
+            typeof payload.digitalAccessUrl === "string" &&
+            /^\/downloads\/[A-Za-z0-9_-]{43}$/.test(payload.digitalAccessUrl)
+          ) {
+            setDigitalAccessUrl(payload.digitalAccessUrl);
+            return;
+          }
+          if (!payload.digitalDeliveryStatus) {
+            return;
+          }
         }
 
         if (payload.status === "delivery_failed") {
@@ -179,6 +204,8 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
             setDeliveryFailureOrderId(payload.orderId);
           }
           setError(payload.error ?? digitalDeliveryFailedFallback);
+          setDigitalDeliveryStatus("failed");
+          setCheckoutComposition(payload.checkoutComposition ?? null);
           return;
         }
 
@@ -187,13 +214,20 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
           return;
         }
 
-        await new Promise((resolve) => setTimeout(resolve, 1200));
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(resolve, 500);
+          controller.signal.addEventListener("abort", () => {
+            clearTimeout(timeout);
+            resolve();
+          }, { once: true });
+        });
+        if (controller.signal.aborted) return;
       }
     }
 
     void poll();
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [analytics, checkoutPaymentReceivedFinalizing, finalizationFailedMessage, orderPlacedTemplate, resolvedStore.slug, sessionId, status, studioEnabled]);
 
@@ -349,6 +383,44 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
               {previewMessage}
             </p>
           )}
+          {!studioEnabled && digitalDeliveryStatus && digitalDeliveryStatus !== "failed" ? (
+            <section
+              aria-live="polite"
+              className={cn("space-y-3 border border-border/60 bg-muted/20 p-4", radiusClass)}
+            >
+              {digitalDeliveryStatus === "succeeded" && digitalAccessUrl ? (
+                <>
+                  <div>
+                    <h2 className="text-lg font-semibold">Downloads ready</h2>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                      Open your files now. A secure 48-hour access link was also emailed to you.
+                    </p>
+                  </div>
+                  <Link
+                    href={digitalAccessUrl}
+                    className={cn(
+                      "inline-flex min-h-11 items-center justify-center bg-[var(--storefront-accent)] px-5 text-sm font-semibold text-[color:var(--storefront-accent-foreground)] transition hover:opacity-90",
+                      buttonRadiusClass
+                    )}
+                  >
+                    View downloads
+                  </Link>
+                </>
+              ) : (
+                <div role="status">
+                  <h2 className="text-lg font-semibold">Preparing files</h2>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    Payment is complete. Keep this page open while secure access is finalized; retrying this page will not charge you again.
+                  </p>
+                </div>
+              )}
+              {checkoutComposition === "mixed" ? (
+                <p className="border-t border-border/60 pt-3 text-sm text-muted-foreground">
+                  Your physical items will continue through shipping or pickup separately.
+                </p>
+              ) : null}
+            </section>
+          ) : null}
           {studioEnabled && studioPreviewState === "failed" ? (
             <div className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-red-700">
               <StorefrontStudioEditableText

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { loadMerchantDigitalOrderSummary } from "@/lib/digital-products/order-summary";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -38,7 +39,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   const { data: order, error: orderError } = await supabase
     .from("orders")
     .select(
-      "id,customer_email,customer_first_name,customer_last_name,customer_phone,customer_note,shipping_address_json,subtotal_cents,total_cents,status,fulfillment_method,fulfillment_label,fulfillment_status,pickup_location_id,pickup_location_snapshot_json,pickup_window_start_at,pickup_window_end_at,pickup_timezone,fulfilled_at,shipped_at,delivered_at,discount_cents,promo_code,currency,carrier,tracking_number,tracking_url,shipment_status,last_tracking_sync_at,created_at,order_fee_breakdowns(platform_fee_cents,net_payout_cents,fee_bps,fee_fixed_cents,plan_key)"
+      "id,customer_email,customer_first_name,customer_last_name,customer_phone,customer_note,shipping_address_json,subtotal_cents,total_cents,status,fulfillment_method,fulfillment_label,fulfillment_status,pickup_location_id,pickup_location_snapshot_json,pickup_window_start_at,pickup_window_end_at,pickup_timezone,fulfilled_at,shipped_at,delivered_at,discount_cents,promo_code,currency,carrier,tracking_number,tracking_url,shipment_status,last_tracking_sync_at,digital_consent_version,digital_consent_accepted_at,digital_license_version,created_at,order_fee_breakdowns(platform_fee_cents,net_payout_cents,fee_bps,fee_fixed_cents,plan_key)"
     )
     .eq("id", params.data.orderId)
     .eq("store_id", bundle.store.id)
@@ -110,7 +111,12 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       "shipping_delay_status_updated",
       "shipping_delay_resolved",
       "shipping_delay_customer_approved",
-      "shipping_delay_customer_cancel_requested"
+      "shipping_delay_customer_cancel_requested",
+      "digital_order_access_recovery_queued",
+      "digital_order_authenticated_access_issued",
+      "digital_order_delivery_resend_queued",
+      "digital_order_delivery_sent",
+      "digital_order_delivery_failed"
     ])
     .order("created_at", { ascending: false })
     .returns<
@@ -128,12 +134,35 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: timelineError.message }, { status: 500 });
   }
 
+  const normalizedItems = (items ?? []).map((item) => ({
+    ...item,
+    products: Array.isArray(item.products) ? item.products[0] ?? null : item.products
+  }));
+  const hasDigitalItems = normalizedItems.some((item) => item.products?.product_type === "digital");
+  const activeDisputeStatus = (disputes ?? []).find(
+    (dispute) => !["won", "lost", "prevented", "warning_closed"].includes(dispute.status)
+  )?.status ?? null;
+  let digitalDelivery = null;
+
+  if (hasDigitalItems) {
+    try {
+      digitalDelivery = await loadMerchantDigitalOrderSummary({
+        orderId: order.id,
+        storeId: bundle.store.id,
+        activeDisputeStatus
+      });
+    } catch {
+      return NextResponse.json({ error: "Unable to load digital delivery details." }, { status: 500 });
+    }
+  }
+
   return NextResponse.json({
     order,
-    items: items ?? [],
+    items: normalizedItems,
     refunds: refunds ?? [],
     disputes: disputes ?? [],
     shippingDelays: shippingDelays ?? [],
     timelineEvents: timelineEvents ?? [],
+    digitalDelivery
   });
 }

@@ -13,6 +13,7 @@ import { buildMergedStorefrontThemeJson } from "@/lib/storefront/theme-overrides
 import { resolveStoreSlugForServerRender, resolveStorefrontServerRenderHint } from "@/lib/stores/active-store";
 import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
 import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
+import { enrichStorefrontDigitalProducts } from "@/lib/digital-products/storefront-summary";
 
 function getValueAtPath(record: Record<string, unknown>, key: string): unknown {
   return key.split(".").reduce<unknown>((current, part) => {
@@ -192,6 +193,12 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
   if (resolvedProductsError) {
     throw new Error(resolvedProductsError.message);
   }
+
+  const storefrontProducts = await enrichStorefrontDigitalProducts({
+    admin,
+    storeId: store.id,
+    products: resolvedProducts ?? []
+  });
 
   if (
     isMissingColumnInSchemaCache(settingsError, "seo_title") ||
@@ -407,7 +414,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
     contentBlocks:
       normalizedSectionedBlocks ??
       (contentBlocksError ? [] : (contentBlocks ?? [])),
-    products: resolvedProducts ?? [],
+    products: storefrontProducts,
     routeBasePath
   };
 }

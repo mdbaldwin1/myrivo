@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { enqueueDigitalDelivery } from "@/lib/digital-products/delivery-jobs";
-import { isStripeStubMode } from "@/lib/env";
+import { loadCheckoutDigitalAccessUrl } from "@/lib/digital-products/checkout-access";
+import { getServerEnv, isStripeStubMode } from "@/lib/env";
 import { checkRateLimit } from "@/lib/security/rate-limit";
 import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
 import { finalizeStorefrontCheckout, getStorefrontCheckoutBySessionId } from "@/lib/storefront/checkout-finalization";
 import { getStripeClient } from "@/lib/stripe/server";
+import type { CheckoutComposition } from "@/lib/storefront/checkout-composition";
 
 const querySchema = z.object({
   sessionId: z.string().min(10)
@@ -13,10 +15,15 @@ const querySchema = z.object({
 
 async function completedCheckoutResponse(
   orderId: string | null,
-  digitalManifestId: string | null
+  digitalManifestId: string | null,
+  checkoutComposition: CheckoutComposition | null
 ) {
   if (!digitalManifestId) {
-    return NextResponse.json({ status: "completed", orderId });
+    return NextResponse.json({
+      status: "completed",
+      orderId,
+      ...(checkoutComposition ? { checkoutComposition } : {})
+    });
   }
   if (!orderId) {
     return NextResponse.json(
@@ -39,10 +46,19 @@ async function completedCheckoutResponse(
         { status: 409 }
       );
     }
+    const digitalAccessUrl = delivery.status === "succeeded"
+      ? await loadCheckoutDigitalAccessUrl({
+          orderId,
+          jobId: delivery.id,
+          secret: getServerEnv().DIGITAL_DELIVERY_TOKEN_SECRET?.trim() ?? ""
+        })
+      : null;
     return NextResponse.json({
       status: "completed",
       orderId,
-      digitalDeliveryStatus: delivery.status
+      ...(checkoutComposition ? { checkoutComposition } : {}),
+      digitalDeliveryStatus: delivery.status,
+      ...(digitalAccessUrl ? { digitalAccessUrl } : {})
     });
   } catch {
     return NextResponse.json(
@@ -88,7 +104,8 @@ export async function GET(request: NextRequest) {
     if (checkout.status === "completed") {
       return completedCheckoutResponse(
         checkout.order_id,
-        checkout.digital_manifest_id
+        checkout.digital_manifest_id,
+        checkout.checkout_composition
       );
     }
 
@@ -112,7 +129,8 @@ export async function GET(request: NextRequest) {
         if (finalized.status === "completed") {
           return completedCheckoutResponse(
             finalized.orderId,
-            checkout.digital_manifest_id
+            checkout.digital_manifest_id,
+            checkout.checkout_composition
           );
         }
 

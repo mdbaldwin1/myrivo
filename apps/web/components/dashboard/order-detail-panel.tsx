@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { OrderActivityTimelinePanel } from "@/components/dashboard/order-activity-timeline-panel";
 import { OrderDisputeSummaryPanel } from "@/components/dashboard/order-dispute-summary-panel";
+import { DigitalOrderDeliveryPanel, DigitalOrderDeliverySummary } from "@/components/dashboard/digital-order-delivery-panel";
 import { OrderRefundRequestPanel } from "@/components/dashboard/order-refund-request-panel";
 import { OrderShippingDelayPanel } from "@/components/dashboard/order-shipping-delay-panel";
 import { AppAlert } from "@/components/ui/app-alert";
@@ -31,7 +32,7 @@ type OrderDetailResponse = {
     subtotal_cents: number;
     total_cents: number;
     status: OrderFinancialStatus;
-    fulfillment_method: "pickup" | "shipping" | null;
+    fulfillment_method: "pickup" | "shipping" | "digital_delivery" | null;
     fulfillment_label: string | null;
     fulfillment_status: string;
     pickup_location_id: string | null;
@@ -50,6 +51,9 @@ type OrderDetailResponse = {
     tracking_url: string | null;
     shipment_status: string | null;
     last_tracking_sync_at: string | null;
+    digital_consent_version: string | null;
+    digital_consent_accepted_at: string | null;
+    digital_license_version: string | null;
     created_at: string;
     order_fee_breakdowns:
       | {
@@ -88,6 +92,7 @@ type OrderDetailResponse = {
     created_at: string;
     metadata: Record<string, unknown>;
   }>;
+  digitalDelivery?: DigitalOrderDeliverySummary | null;
   error?: string;
 };
 
@@ -201,6 +206,9 @@ export function OrderDetailPanel({ orderId, onReschedulePickup, refreshToken = 0
   const disputes = payload?.disputes ?? [];
   const shippingDelays = payload?.shippingDelays ?? [];
   const timelineEvents = payload?.timelineEvents ?? [];
+  const digitalDelivery = payload?.digitalDelivery ?? null;
+  const hasDigitalItems = items.some((item) => item.products?.product_type === "digital");
+  const hasPhysicalItems = items.some((item) => item.products?.product_type !== "digital");
 
   async function refreshOrderDetail() {
     if (!orderId) {
@@ -234,7 +242,9 @@ export function OrderDetailPanel({ orderId, onReschedulePickup, refreshToken = 0
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-base font-semibold text-foreground">{order.id}</span>
                   <StatusChip label={order.status} tone={orderTone(order.status)} />
-                  <StatusChip label={formatFulfillmentStatus(order.fulfillment_status)} tone={orderTone(order.fulfillment_status)} />
+                  {hasPhysicalItems ? (
+                    <StatusChip label={formatFulfillmentStatus(order.fulfillment_status)} tone={orderTone(order.fulfillment_status)} />
+                  ) : null}
                 </div>
                 <p className="text-sm text-muted-foreground">
                   {[order.customer_first_name, order.customer_last_name].filter(Boolean).join(" ")}
@@ -265,18 +275,22 @@ export function OrderDetailPanel({ orderId, onReschedulePickup, refreshToken = 0
                     <dt className="text-muted-foreground">Promo code</dt>
                     <dd className="text-right font-medium">{order.promo_code ?? "None"}</dd>
                   </div>
-                  <div className="flex items-start justify-between gap-3">
-                    <dt className="text-muted-foreground">Carrier</dt>
-                    <dd className="text-right font-medium">{order.carrier ?? "-"}</dd>
-                  </div>
-                  <div className="flex items-start justify-between gap-3">
-                    <dt className="text-muted-foreground">Tracking number</dt>
-                    <dd className="text-right font-medium">{order.tracking_number ?? "-"}</dd>
-                  </div>
-                  <div className="flex items-start justify-between gap-3">
-                    <dt className="text-muted-foreground">Shipment status</dt>
-                    <dd className="text-right font-medium">{order.shipment_status ?? "-"}</dd>
-                  </div>
+                  {hasPhysicalItems ? (
+                    <>
+                      <div className="flex items-start justify-between gap-3">
+                        <dt className="text-muted-foreground">Carrier</dt>
+                        <dd className="text-right font-medium">{order.carrier ?? "-"}</dd>
+                      </div>
+                      <div className="flex items-start justify-between gap-3">
+                        <dt className="text-muted-foreground">Tracking number</dt>
+                        <dd className="text-right font-medium">{order.tracking_number ?? "-"}</dd>
+                      </div>
+                      <div className="flex items-start justify-between gap-3">
+                        <dt className="text-muted-foreground">Shipment status</dt>
+                        <dd className="text-right font-medium">{order.shipment_status ?? "-"}</dd>
+                      </div>
+                    </>
+                  ) : null}
                   {order.customer_note ? (
                     <div className="border-t border-border/60 pt-3">
                       <dt className="text-muted-foreground">Customer note</dt>
@@ -336,6 +350,10 @@ export function OrderDetailPanel({ orderId, onReschedulePickup, refreshToken = 0
             </div>
           </section>
 
+          {hasDigitalItems && digitalDelivery ? (
+            <DigitalOrderDeliveryPanel orderId={order.id} summary={digitalDelivery} onQueued={refreshOrderDetail} />
+          ) : null}
+
           {order.fulfillment_method === "pickup" ? (
             <PickupDetailsSection
               key={`${order.pickup_window_start_at}:${order.pickup_window_end_at}`}
@@ -375,7 +393,14 @@ export function OrderDetailPanel({ orderId, onReschedulePickup, refreshToken = 0
             currency={order.currency}
             orderStatus={order.status}
             refunds={refunds}
-            hasDigitalItems={items.some((item) => item.products?.product_type === "digital")}
+            hasDigitalItems={hasDigitalItems}
+            digitalAccess={digitalDelivery ? {
+              fileCount: digitalDelivery.fileCount,
+              anyAccessed: Boolean(digitalDelivery.firstAccessedAt),
+              consentVersion: order.digital_consent_version,
+              consentAcceptedAt: order.digital_consent_accepted_at,
+              licenseVersion: order.digital_license_version
+            } : null}
           />
 
           <OrderDisputeSummaryPanel disputes={disputes} currency={order.currency} />

@@ -67,6 +67,14 @@ type StorefrontProduct = {
   seo_description: string | null;
   is_featured: boolean;
   product_type?: "physical" | "digital";
+  digital_summary?: {
+    publicPreviewUrl: string | null;
+    files: Array<{
+      variantId: string | null;
+      label: string;
+      format: string;
+    }>;
+  } | null;
   created_at: string;
   product_variants: StorefrontVariant[];
   product_option_axes?: Array<{
@@ -263,6 +271,12 @@ function resolveVariantLabel(variant: StorefrontVariant) {
 }
 
 function getVariantImages(variant: StorefrontVariant | null, product: StorefrontProduct) {
+  if ((product.product_type ?? "physical") === "digital") {
+    return product.digital_summary?.publicPreviewUrl
+      ? [product.digital_summary.publicPreviewUrl]
+      : [];
+  }
+
   const ordered = [...(variant?.image_urls ?? []), ...(variant?.group_image_urls ?? []), ...(product.image_urls ?? [])].filter(
     (image): image is string => Boolean(image)
   );
@@ -349,6 +363,12 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
   const displayPrice = getProductDetailDisplayPrice(selectedVariant?.price_cents ?? 0, isDigital ? 1 : quantity);
   const selectedOptionValues = selectedVariant?.option_values ?? {};
   const images = getVariantImages(selectedVariant, resolvedProduct);
+  const selectedDigitalFiles = isDigital
+    ? (resolvedProduct.digital_summary?.files ?? []).filter(
+        (file) => file.variantId === null || file.variantId === selectedVariant?.id
+      )
+    : [];
+  const selectedDigitalFormats = [...new Set(selectedDigitalFiles.map((file) => file.format))];
   const canPurchaseSelectedVariant = isStorefrontVariantPurchasable(productType, selectedVariant ?? null);
   const studioEnabledWithDocument = studioEnabled && Boolean(studioDocument);
   const availabilityField = getAvailabilityCopyField(selectedVariant ?? null);
@@ -623,8 +643,27 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
             </div>
 
             {isDigital ? (
-              <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-sm text-muted-foreground">
-                Files are delivered by a secure email link after payment. The link is valid for 48 hours. Personal-use license included.
+              <div className="space-y-3 rounded-md border border-border/60 bg-muted/20 p-3 text-sm text-muted-foreground">
+                <div>
+                  <p className="font-medium text-foreground">
+                    {selectedDigitalFiles.length} {selectedDigitalFiles.length === 1 ? "file" : "files"} included
+                    {selectedDigitalFormats.length > 0 ? ` · ${selectedDigitalFormats.join(", ")}` : ""}
+                  </p>
+                  {selectedDigitalFiles.length > 0 ? (
+                    <ul className="mt-2 list-inside list-disc space-y-1">
+                      {selectedDigitalFiles.map((file, index) => (
+                        <li key={`${file.variantId ?? "all"}:${file.label}:${index}`}>{file.label}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+                <p>Ready immediately after payment. A secure access link is also emailed and remains valid for 48 hours.</p>
+                <Link
+                  href="/legal/digital-personal-use-license"
+                  className={cn("font-medium text-foreground", STOREFRONT_TEXT_LINK_EFFECT_CLASS)}
+                >
+                  Personal-use license
+                </Link>
               </div>
             ) : <div className="space-y-2">
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Quantity</p>

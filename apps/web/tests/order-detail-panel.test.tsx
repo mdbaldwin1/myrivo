@@ -84,4 +84,72 @@ describe("OrderDetailPanel", () => {
 
     expect(screen.getByText("Taylor Buyer • 12 Main St • Nashville, TN, 37201 • US")).toBeTruthy();
   });
+
+  test("renders digital operations separately and omits physical fulfillment status for digital-only orders", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        order: {
+          id: "order-1",
+          customer_email: "buyer@example.com",
+          customer_first_name: "Taylor",
+          customer_last_name: "Buyer",
+          customer_phone: null,
+          customer_note: null,
+          shipping_address_json: null,
+          subtotal_cents: 2800,
+          total_cents: 2800,
+          status: "paid",
+          fulfillment_method: "digital_delivery",
+          fulfillment_label: "Digital delivery",
+          fulfillment_status: "pending_fulfillment",
+          pickup_location_id: null,
+          pickup_location_snapshot_json: null,
+          pickup_window_start_at: null,
+          pickup_window_end_at: null,
+          pickup_timezone: null,
+          fulfilled_at: null,
+          shipped_at: null,
+          delivered_at: null,
+          discount_cents: 0,
+          promo_code: null,
+          currency: "usd",
+          carrier: null,
+          tracking_number: null,
+          tracking_url: null,
+          shipment_status: null,
+          last_tracking_sync_at: null,
+          created_at: "2026-08-13T12:00:00.000Z",
+          digital_consent_version: "immediate-delivery-v1",
+          digital_consent_accepted_at: "2026-08-13T12:00:00.000Z",
+          digital_license_version: "personal-use-v1",
+          order_fee_breakdowns: null
+        },
+        items: [{ id: "item-1", product_id: "product-1", product_variant_id: "variant-1", variant_label: "PDF", variant_snapshot: {}, quantity: 1, unit_price_cents: 2800, products: { title: "Printable", product_type: "digital" } }],
+        refunds: [],
+        disputes: [],
+        shippingDelays: [],
+        timelineEvents: [],
+        digitalDelivery: {
+          fileCount: 1,
+          deliveryStatus: "succeeded",
+          notificationStatus: "succeeded",
+          accessStatus: "active",
+          firstAccessedAt: null,
+          lastAccessedAt: null,
+          attempts: [],
+          notificationAttempts: [],
+          files: [{ label: "Printable", filename: "print.pdf", format: "PDF", grantsRemaining: 5, status: "active" }],
+          activeLinkExpiresAt: "2099-08-15T00:00:00.000Z",
+          activeDisputeStatus: null
+        }
+      })
+    })));
+
+    render(<OrderDetailPanel orderId="order-1" />);
+
+    expect(await screen.findByRole("heading", { name: "Digital delivery" })).toBeTruthy();
+    expect(screen.queryByText("Pending fulfillment")).toBeNull();
+    expect(screen.getByText("5 of 5 grants remaining")).toBeTruthy();
+  });
 });

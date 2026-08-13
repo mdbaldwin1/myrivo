@@ -173,6 +173,7 @@ describe("customer order detail route", () => {
         fileCount: number;
         activeFileCount: number;
         status: string;
+        accessStatus: string;
       };
     };
 
@@ -186,7 +187,8 @@ describe("customer order detail route", () => {
     expect(payload.digitalDownloads).toEqual({
       fileCount: 2,
       activeFileCount: 1,
-      status: "partially_available"
+      status: "partially_available",
+      accessStatus: "active"
     });
   });
 });

@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - Added reliable digital order-delivery notifications with enriched order confirmations, attempt-by-attempt provider auditing, durable retries, neutral 48-hour access copy, and tenant-authorized idempotent merchant resend that rotates links without resetting download grants.
 - Completed customer digital access with anti-enumeration link recovery, transactionally queued 48-hour recovery emails, short authenticated order-history sessions, polished accessible download and recovery pages, and a versioned personal-use license.
 - Rebuilt the merchant catalog for digital products with fulfillment-first browsing, publish-readiness guidance, multi-file upload and lifecycle management, variant-scoped deliverables, and an exact public-preview workspace that keeps originals private.
+- Finished the digital buyer and order experience with safe variant file summaries, digital/physical cart grouping, post-payment first access, signed-in refund/dispute states, merchant delivery operations, and explicit digital refund consequences.
 
 ### Fixed
 - Kept merchant digital-product readiness authoritative after rights, file, and preview changes; isolated async catalog work across product switches; restored failed private uploads after reload; removed physical inventory language from digital variants; and enforced zero-stock/non-made-to-order digital invariants in both API and database writes.

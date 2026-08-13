@@ -9,9 +9,13 @@ import { Button } from "@/components/ui/button";
 export function DigitalOrderDownloads({
   orderId,
   fileCount,
+  activeFileCount = fileCount,
+  accessStatus = "active",
 }: {
   orderId: string;
   fileCount: number;
+  activeFileCount?: number;
+  accessStatus?: "active" | "suspended" | "revoked";
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -57,9 +61,17 @@ export function DigitalOrderDownloads({
 
   const buttonLabel = error
     ? "Try again"
-    : fileCount === 1
+    : activeFileCount === 1
       ? "View download"
-      : `View ${fileCount} downloads`;
+      : `View ${activeFileCount} downloads`;
+  const isAvailable = accessStatus === "active" && activeFileCount > 0;
+  const description = accessStatus === "suspended"
+    ? "Downloads are temporarily unavailable while a payment dispute is reviewed. Your download grants are preserved."
+    : accessStatus === "revoked"
+      ? "Download access was removed after this order was fully refunded. Contact the store if you believe this is a mistake."
+      : activeFileCount < fileCount
+        ? `${activeFileCount} of ${fileCount} purchased files ${activeFileCount === 1 ? "is" : "are"} currently available. Opening them creates a private 15-minute access session.`
+        : `${fileCount} purchased ${fileCount === 1 ? "file" : "files"}. Opening this order creates a private 15-minute access session; each file still has five lifetime download grants.`;
 
   return (
     <section className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
@@ -72,27 +84,31 @@ export function DigitalOrderDownloads({
             <div>
               <h2 className="text-lg font-semibold">Digital downloads</h2>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                {fileCount} purchased {fileCount === 1 ? "file" : "files"}. Opening this order creates a private 15-minute access session; each file still has five lifetime download grants.
+                {description}
               </p>
             </div>
           </div>
-          <Button className="w-full shrink-0 sm:w-auto" type="button" disabled={pending} onClick={() => void openDownloads()}>
-            {pending ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="mr-2 h-4 w-4" aria-hidden="true" />}
-            {pending ? "Opening…" : buttonLabel}
-          </Button>
+          {isAvailable ? (
+            <Button className="w-full shrink-0 sm:w-auto" type="button" disabled={pending} onClick={() => void openDownloads()}>
+              {pending ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="mr-2 h-4 w-4" aria-hidden="true" />}
+              {pending ? "Opening…" : buttonLabel}
+            </Button>
+          ) : null}
         </div>
       </div>
-      <div className="border-t border-border/60 px-5 py-3 sm:px-6">
+      {isAvailable || error ? <div className="border-t border-border/60 px-5 py-3 sm:px-6">
         {error ? (
           <div ref={errorRef} role="alert" tabIndex={-1} className="mb-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive focus:outline-none">
             {error}
           </div>
         ) : null}
-        <Link className="inline-flex items-center text-sm font-medium text-primary hover:underline" href="/downloads/request">
-          <Mail className="mr-2 h-4 w-4" aria-hidden="true" />
-          Request an emailed link
-        </Link>
-      </div>
+        {isAvailable ? (
+          <Link className="inline-flex items-center text-sm font-medium text-primary hover:underline" href="/downloads/request">
+            <Mail className="mr-2 h-4 w-4" aria-hidden="true" />
+            Request an emailed link
+          </Link>
+        ) : null}
+      </div> : null}
     </section>
   );
 }

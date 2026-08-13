@@ -319,7 +319,7 @@ describe("StorefrontCartPage", () => {
     expect(screen.queryByLabelText("Quantity of Printable pack")).toBeNull();
     expect(screen.queryByPlaceholderText("Phone")).toBeNull();
     expect(screen.queryByRole("radio", { name: /studio pickup/i })).toBeNull();
-    expect(screen.getByText("Digital delivery")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Digital delivery" })).toBeTruthy();
 
     await waitFor(() => {
       expect(JSON.parse(window.localStorage.getItem("aha-cart:single-store") ?? "[]")).toEqual([

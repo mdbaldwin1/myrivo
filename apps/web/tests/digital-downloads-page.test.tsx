@@ -293,4 +293,29 @@ describe("signed-in order downloads", () => {
     );
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
   });
+
+  test("explains dispute suspension without offering an unusable access link", () => {
+    render(<DigitalOrderDownloads orderId={ORDER_ID} fileCount={2} activeFileCount={0} accessStatus="suspended" />);
+
+    expect(screen.getByText(/temporarily unavailable while a payment dispute is reviewed/i)).toBeTruthy();
+    expect(screen.getByText(/download grants are preserved/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /View/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Request an emailed link" })).toBeNull();
+  });
+
+  test("explains full-refund revocation without offering recovery", () => {
+    render(<DigitalOrderDownloads orderId={ORDER_ID} fileCount={1} activeFileCount={0} accessStatus="revoked" />);
+
+    expect(screen.getByText(/removed after this order was fully refunded/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /View/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Request an emailed link" })).toBeNull();
+  });
+
+  test("keeps available files actionable when only part of an order is available", () => {
+    render(<DigitalOrderDownloads orderId={ORDER_ID} fileCount={2} activeFileCount={1} accessStatus="active" />);
+
+    expect(screen.getByText(/1 of 2 purchased files is currently available/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "View download" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Request an emailed link" })).toBeTruthy();
+  });
 });

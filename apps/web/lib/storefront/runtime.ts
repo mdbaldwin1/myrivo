@@ -139,6 +139,14 @@ export type StorefrontProduct = {
   price_cents: number;
   inventory_qty: number;
   product_type?: "physical" | "digital";
+  digital_summary?: {
+    publicPreviewUrl: string | null;
+    files: Array<{
+      variantId: string | null;
+      label: string;
+      format: string;
+    }>;
+  } | null;
   product_variants: StorefrontVariant[];
   product_option_axes?: Array<{
     id: string;

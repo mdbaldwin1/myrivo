@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DigitalOrderDownloads } from "@/components/customer/digital-order-downloads";
 import { SectionCard } from "@/components/ui/section-card";
 import {
   getShippingDelayCustomerPathLabel,
@@ -25,7 +26,7 @@ type CustomerOrderSummary = {
   customer_first_name: string | null;
   customer_last_name: string | null;
   customer_note: string | null;
-  fulfillment_method: "pickup" | "shipping" | null;
+  fulfillment_method: "pickup" | "shipping" | "digital_delivery" | null;
   fulfillment_label: string | null;
   pickup_location_snapshot_json: Record<string, unknown> | null;
   pickup_window_start_at: string | null;
@@ -63,6 +64,11 @@ type CustomerOrderDetailViewProps = {
   shippingDelays: OrderShippingDelayRecord[];
   backHref: string;
   storefrontHref?: string | null;
+  digitalDownloads?: {
+    fileCount: number;
+    activeFileCount: number;
+    accessStatus: "active" | "suspended" | "revoked";
+  } | null;
 };
 
 function firstRelation<T>(value: T | T[] | null | undefined): T | null {
@@ -141,7 +147,8 @@ export function CustomerOrderDetailView({
   items,
   shippingDelays,
   backHref,
-  storefrontHref = null
+  storefrontHref = null,
+  digitalDownloads = null
 }: CustomerOrderDetailViewProps) {
   const store = firstRelation(order.stores);
   const [delayItems, setDelayItems] = useState(shippingDelays);
@@ -152,6 +159,7 @@ export function CustomerOrderDetailView({
   const shippedAt = formatDateTime(order.shipped_at);
   const deliveredAt = formatDateTime(order.delivered_at);
   const activeDelay = getActiveShippingDelay(delayItems);
+  const hasPhysicalFulfillment = order.fulfillment_method === "shipping" || order.fulfillment_method === "pickup";
   const pickupWindow =
     order.pickup_window_start_at && order.pickup_window_end_at
       ? `${formatDateTime(order.pickup_window_start_at, order.pickup_timezone)} - ${formatDateTime(order.pickup_window_end_at, order.pickup_timezone)}`
@@ -194,7 +202,7 @@ export function CustomerOrderDetailView({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Badge variant={statusTone(order.status)}>{order.status}</Badge>
-            <Badge variant="outline">{order.fulfillment_status.replaceAll("_", " ")}</Badge>
+            {hasPhysicalFulfillment ? <Badge variant="outline">{order.fulfillment_status.replaceAll("_", " ")}</Badge> : null}
           </div>
           <div className="flex items-center gap-2">
             {store?.slug ? (
@@ -209,8 +217,17 @@ export function CustomerOrderDetailView({
         </div>
       </SectionCard>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <SectionCard title="Timeline" description="Latest fulfillment milestones for your order.">
+      {digitalDownloads ? (
+        <DigitalOrderDownloads
+          orderId={order.id}
+          fileCount={digitalDownloads.fileCount}
+          activeFileCount={digitalDownloads.activeFileCount}
+          accessStatus={digitalDownloads.accessStatus}
+        />
+      ) : null}
+
+      <div className={`grid gap-4 ${hasPhysicalFulfillment ? "lg:grid-cols-3" : "lg:grid-cols-1"}`}>
+        {hasPhysicalFulfillment ? <SectionCard title="Timeline" description="Latest fulfillment milestones for your order.">
           <ul className="space-y-2 text-sm">
             <li className="rounded-md border border-border/60 px-3 py-2">Ordered · {orderedAt}</li>
             {order.status === "paid" ? <li className="rounded-md border border-border/60 px-3 py-2">Payment confirmed</li> : null}
@@ -224,9 +241,9 @@ export function CustomerOrderDetailView({
               <li className="rounded-md border border-border/60 px-3 py-2">Delivered · {deliveredAt}</li>
             ) : null}
           </ul>
-        </SectionCard>
+        </SectionCard> : null}
 
-        <SectionCard title="Fulfillment" description="Shipping or pickup details for this order.">
+        {hasPhysicalFulfillment ? <SectionCard title="Fulfillment" description="Shipping or pickup details for this order.">
           <div className="space-y-2 text-sm">
             <p>
               <span className="font-medium">Method:</span> {order.fulfillment_label || order.fulfillment_method || "Not specified"}
@@ -272,7 +289,7 @@ export function CustomerOrderDetailView({
               </p>
             ) : null}
           </div>
-        </SectionCard>
+        </SectionCard> : null}
 
         <SectionCard title="Total" description="Final order totals including shipping and discounts.">
           <dl className="space-y-2 text-sm">
