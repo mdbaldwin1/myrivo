@@ -4,7 +4,14 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "vitest";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const prototypeMigration = join(
@@ -18,6 +25,10 @@ const hardeningMigration = join(
 const grantMigration = join(
   repoRoot,
   "supabase/migrations/20260813010000_atomic_digital_download_grants.sql",
+);
+const grantHardeningMigration = join(
+  repoRoot,
+  "supabase/migrations/20260813011000_harden_atomic_digital_download_grants.sql",
 );
 
 const ids = {
@@ -145,25 +156,26 @@ const psql = findPostgresBinary("psql");
 let clusterDirectory = "";
 let port = 0;
 const database = "grant_contract";
+const mismatchDatabase = "grant_upgrade_mismatch";
 
-function postgresEnvironment() {
+function postgresEnvironment(databaseName = database) {
   return {
     ...process.env,
-    PGDATABASE: database,
+    PGDATABASE: databaseName,
     PGHOST: "127.0.0.1",
     PGPORT: String(port),
     PGUSER: "postgres",
   };
 }
 
-function runSql(statement: string) {
+function runSql(statement: string, databaseName = database) {
   if (!psql) throw new Error("PostgreSQL psql is required");
   return execFileSync(
     psql,
     ["-X", "-qAt", "-v", "ON_ERROR_STOP=1", "-c", statement],
     {
       encoding: "utf8",
-      env: postgresEnvironment(),
+      env: postgresEnvironment(databaseName),
       stdio: ["ignore", "pipe", "pipe"],
     },
   ).trim();
@@ -188,6 +200,38 @@ function runSqlAsync(statement: string, applicationName: string) {
       },
     );
   });
+}
+
+async function waitForPostgresSession(applicationName: string) {
+  for (let attempt = 0; attempt < 150; attempt += 1) {
+    const waiting = runSql(
+      `select count(*) from pg_stat_activity
+       where application_name = '${applicationName}'
+         and state = 'active'
+         and query like '%pg_sleep%'`,
+    );
+    if (waiting === "1") return;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 20));
+  }
+  throw new Error(
+    `PostgreSQL session ${applicationName} did not reach its race barrier`,
+  );
+}
+
+async function waitForPostgresLock(applicationName: string) {
+  for (let attempt = 0; attempt < 150; attempt += 1) {
+    const waiting = runSql(
+      `select count(*) from pg_stat_activity
+       where application_name = '${applicationName}'
+         and state = 'active'
+         and wait_event_type = 'Lock'`,
+    );
+    if (waiting === "1") return;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 20));
+  }
+  throw new Error(
+    `PostgreSQL session ${applicationName} did not reach its lock barrier`,
+  );
 }
 
 function expectRejected(statement: string) {
@@ -217,10 +261,17 @@ function commit(grantId: string, fingerprint = fingerprintA) {
 
 beforeAll(() => {
   if (!initdb || !pgCtl || !createdb || !psql) {
-    throw new Error("PostgreSQL 17 binaries are required for grant concurrency tests");
+    throw new Error(
+      "PostgreSQL 17 binaries are required for grant concurrency tests",
+    );
   }
   if (!existsSync(grantMigration)) {
     throw new Error(`Missing atomic grant migration: ${grantMigration}`);
+  }
+  if (!existsSync(grantHardeningMigration)) {
+    throw new Error(
+      `Missing hardened atomic grant migration: ${grantHardeningMigration}`,
+    );
   }
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-download-grants-"));
   port = 58_000 + (process.pid % 6_000);
@@ -234,15 +285,25 @@ beforeAll(() => {
     ["-D", clusterDirectory, "-o", `-F -p ${port} -h 127.0.0.1`, "-w", "start"],
     { stdio: "ignore" },
   );
-  execFileSync(createdb, [database], {
-    env: { ...process.env, PGHOST: "127.0.0.1", PGPORT: String(port), PGUSER: "postgres" },
-    stdio: "ignore",
-  });
-  runSql("create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;");
+  for (const databaseName of [database, mismatchDatabase]) {
+    execFileSync(createdb, [databaseName], {
+      env: {
+        ...process.env,
+        PGHOST: "127.0.0.1",
+        PGPORT: String(port),
+        PGUSER: "postgres",
+      },
+      stdio: "ignore",
+    });
+  }
+  runSql(
+    "create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;",
+  );
   runSql(baseSchema);
   runSql(readFileSync(prototypeMigration, "utf8"));
   runSql(readFileSync(hardeningMigration, "utf8"));
   runSql(readFileSync(grantMigration, "utf8"));
+  runSql(readFileSync(grantHardeningMigration, "utf8"));
   runSql(`
     insert into auth.users(id) values ('${ids.owner}');
     insert into public.stores(id, owner_user_id) values ('${ids.store}', '${ids.owner}');
@@ -272,6 +333,66 @@ beforeAll(() => {
       'printable.pdf', 'application/pdf', 1024, repeat('e', 64), 'ready'
     );
   `);
+
+  runSql(baseSchema, mismatchDatabase);
+  runSql(readFileSync(prototypeMigration, "utf8"), mismatchDatabase);
+  runSql(readFileSync(hardeningMigration, "utf8"), mismatchDatabase);
+  runSql(readFileSync(grantMigration, "utf8"), mismatchDatabase);
+  runSql(
+    `insert into auth.users(id) values ('${ids.owner}');
+     insert into public.stores(id, owner_user_id) values ('${ids.store}', '${ids.owner}');
+     insert into public.products(id, store_id, product_type) values (
+       '${ids.product}', '${ids.store}', 'digital'
+     );
+     insert into public.product_variants(id, store_id, product_id) values (
+       '${ids.variant}', '${ids.store}', '${ids.product}'
+     );
+     insert into public.orders(id, store_id, status, total_cents) values (
+       '${ids.order}', '${ids.store}', 'paid', 1000
+     );
+     insert into public.order_items(id, order_id, product_id, product_variant_id) values (
+       '${ids.item}', '${ids.order}', '${ids.product}', '${ids.variant}'
+     );
+     insert into public.digital_product_assets(
+       id, store_id, product_id, product_variant_id, label
+     ) values (
+       '${ids.asset}', '${ids.store}', '${ids.product}', '${ids.variant}', 'Printable'
+     );
+     insert into public.digital_product_asset_versions(
+       id, asset_id, version_number, storage_path, customer_filename,
+       mime_type, byte_size, checksum_sha256, status
+     ) values (
+       '${ids.version}', '${ids.asset}', 1,
+       '${ids.store}/${ids.product}/${ids.asset}/v1/printable.pdf',
+       'printable.pdf', 'application/pdf', 1024, repeat('e', 64), 'ready'
+     );
+     insert into public.digital_order_entitlements(
+       id, store_id, order_id, order_item_id, product_id, product_variant_id,
+       asset_id, asset_version_id, customer_filename, mime_type, byte_size,
+       license_version, max_download_grants, download_grants_used, status
+     ) values (
+       '${ids.entitlement}', '${ids.store}', '${ids.order}', '${ids.item}',
+       '${ids.product}', '${ids.variant}', '${ids.asset}', '${ids.version}',
+       'printable.pdf', 'application/pdf', 1024, 'personal-use-v1', 5, 4, 'active'
+     );
+     insert into public.digital_order_access_tokens(
+       id, order_id, token_hash, issuance_reason, expires_at
+     ) values (
+       '${ids.token}', '${ids.order}', '${tokenHash}', 'purchase', now() + interval '48 hours'
+     );
+     insert into public.digital_download_grants(
+       store_id, order_id, entitlement_id, access_token_id, reservation_key,
+       client_fingerprint_hash, status, reserved_at, reservation_expires_at,
+       issued_at, grace_expires_at
+     )
+     select
+       '${ids.store}', '${ids.order}', '${ids.entitlement}', '${ids.token}',
+       gen_random_uuid()::text, repeat('a', 64), 'issued',
+       now() - interval '2 hours', now() - interval '115 minutes',
+       now() - interval '119 minutes', now() - interval '118 minutes'
+     from generate_series(1, 5);`,
+    mismatchDatabase,
+  );
 }, 60_000);
 
 beforeEach(() => {
@@ -309,6 +430,26 @@ afterAll(() => {
 });
 
 describe("atomic digital download grants", () => {
+  test("rejects an upgrade with five issued grants but a used counter of four", () => {
+    expect(() =>
+      runSql(readFileSync(grantHardeningMigration, "utf8"), mismatchDatabase),
+    ).toThrow(/grant accounting/i);
+    expect(
+      runSql(
+        `select download_grants_used from public.digital_order_entitlements
+         where id = '${ids.entitlement}'`,
+        mismatchDatabase,
+      ),
+    ).toBe("4");
+    expect(
+      runSql(
+        `select count(*) from public.digital_download_grants
+         where entitlement_id = '${ids.entitlement}' and status = 'issued'`,
+        mismatchDatabase,
+      ),
+    ).toBe("5");
+  });
+
   test("reuses one issued grant for the same session during 60 seconds", () => {
     const first = reserve("grace-first");
     expect(commit(String(first.grant_id))).toBe("issued");
@@ -386,6 +527,127 @@ describe("atomic digital download grants", () => {
     ).toBe("2");
   });
 
+  test("rejects a token that expires while reserve waits for database locks", async () => {
+    runSql(
+      `update public.digital_order_access_tokens
+       set expires_at = clock_timestamp() + interval '1 second'
+       where id = '${ids.token}'`,
+    );
+    const holder = runSqlAsync(
+      `begin;
+       select id from public.digital_order_entitlements
+       where id = '${ids.entitlement}' for update;
+       select pg_sleep(2);
+       commit;`,
+      "grant-expiring-token-holder",
+    );
+    await waitForPostgresSession("grant-expiring-token-holder");
+    const reservationKey = randomUUID();
+    const reserveAttempt = runSqlAsync(
+      `select * from public.reserve_digital_download_grant(
+        '${ids.entitlement}', '${ids.token}', '${reservationKey}', '${fingerprintA}'
+      )`,
+      "grant-expiring-token-reserve",
+    );
+    await waitForPostgresLock("grant-expiring-token-reserve");
+
+    const [, outcome] = await Promise.allSettled([holder, reserveAttempt]);
+
+    expect(outcome.status).toBe("rejected");
+    expect(
+      runSql(
+        `select count(*) from public.digital_download_grants
+         where reservation_key = '${reservationKey}'`,
+      ),
+    ).toBe("0");
+  }, 10_000);
+
+  test("rejects a reservation that expires while commit waits for database locks", async () => {
+    const grant = reserve("expiring-reservation");
+    runSql(
+      `update public.digital_download_grants
+       set reservation_expires_at = clock_timestamp() + interval '1 second'
+       where id = '${String(grant.grant_id)}'`,
+    );
+    const holder = runSqlAsync(
+      `begin;
+       select id from public.digital_download_grants
+       where id = '${String(grant.grant_id)}' for update;
+       select pg_sleep(2);
+       commit;`,
+      "grant-expiring-reservation-holder",
+    );
+    await waitForPostgresSession("grant-expiring-reservation-holder");
+    const commitAttempt = runSqlAsync(
+      `select public.commit_digital_download_grant(
+        '${String(grant.grant_id)}', '${fingerprintA}'
+      )`,
+      "grant-expiring-reservation-commit",
+    );
+    await waitForPostgresLock("grant-expiring-reservation-commit");
+
+    const [, outcome] = await Promise.allSettled([holder, commitAttempt]);
+
+    expect(outcome.status).toBe("rejected");
+    expect(
+      runSql(
+        `select download_grants_used from public.digital_order_entitlements
+         where id = '${ids.entitlement}'`,
+      ),
+    ).toBe("0");
+    expect(
+      runSql(
+        `select status from public.digital_download_grants
+         where id = '${String(grant.grant_id)}'`,
+      ),
+    ).toBe("reserved");
+  }, 10_000);
+
+  test("does not reuse a grace grant that expires while reserve waits for locks", async () => {
+    const issued = reserve("expiring-grace");
+    commit(String(issued.grant_id));
+    runSql(
+      `update public.digital_download_grants
+       set grace_expires_at = clock_timestamp() + interval '1 second'
+       where id = '${String(issued.grant_id)}'`,
+    );
+    const holder = runSqlAsync(
+      `begin;
+       select id from public.digital_order_entitlements
+       where id = '${ids.entitlement}' for update;
+       select pg_sleep(2);
+       commit;`,
+      "grant-expiring-grace-holder",
+    );
+    await waitForPostgresSession("grant-expiring-grace-holder");
+    const reservationKey = randomUUID();
+    const reserveAttempt = runSqlAsync(
+      `select to_jsonb(result) from public.reserve_digital_download_grant(
+        '${ids.entitlement}', '${ids.token}', '${reservationKey}', '${fingerprintA}'
+      ) result`,
+      "grant-expiring-grace-reserve",
+    );
+    await waitForPostgresLock("grant-expiring-grace-reserve");
+
+    const [, outcome] = await Promise.allSettled([holder, reserveAttempt]);
+
+    expect(outcome.status).toBe("fulfilled");
+    const next = JSON.parse(
+      outcome.status === "fulfilled" ? outcome.value : "{}",
+    ) as Record<string, unknown>;
+    expect(next.grant_id).not.toBe(issued.grant_id);
+    expect(next.grant_status).toBe("reserved");
+    expect(
+      runSql(
+        `select (next_grant.reserved_at > issued_grant.grace_expires_at)::text
+         from public.digital_download_grants next_grant
+         cross join public.digital_download_grants issued_grant
+         where next_grant.id = '${String(next.grant_id)}'
+           and issued_grant.id = '${String(issued.grant_id)}'`,
+      ),
+    ).toBe("true");
+  }, 10_000);
+
   test("reserve and release never consume while commit consumes exactly once", () => {
     const released = reserve("released-at-signing");
     expect(
@@ -411,19 +673,105 @@ describe("atomic digital download grants", () => {
     ).toBe("1");
   });
 
-  test.each(["suspended", "revoked"])(
-    "denies a %s entitlement",
-    (status) => {
+  test("releases a malformed reserve response only by its complete request identity", () => {
+    const reservationKey = randomUUID();
+    const grant = JSON.parse(
       runSql(
-        `update public.digital_order_entitlements set status = '${status}' where id = '${ids.entitlement}'`,
-      );
-      expectRejected(
-        `select * from public.reserve_digital_download_grant(
+        `select to_jsonb(result) from public.reserve_digital_download_grant(
+          '${ids.entitlement}', '${ids.token}', '${reservationKey}', '${fingerprintA}'
+        ) result`,
+      ),
+    ) as Record<string, unknown>;
+
+    expect(
+      runSql(
+        `select public.release_digital_download_reservation(
+          '${ids.entitlement}', '${ids.token}', '${reservationKey}', '${fingerprintB}',
+          'Reservation response invalid'
+        )`,
+      ),
+    ).toBe("missing");
+    expect(
+      runSql(
+        `select status from public.digital_download_grants
+         where id = '${String(grant.grant_id)}'`,
+      ),
+    ).toBe("reserved");
+    expect(
+      runSql(
+        `select public.release_digital_download_reservation(
+          '${ids.entitlement}', '${ids.token}', '${reservationKey}', '${fingerprintA}',
+          'Reservation response invalid'
+        )`,
+      ),
+    ).toBe("released");
+    expect(
+      runSql(
+        `select status || ':' || last_safe_error
+         from public.digital_download_grants
+         where id = '${String(grant.grant_id)}'`,
+      ),
+    ).toBe("released:Reservation response invalid");
+  });
+
+  test("enforces counter agreement and rejects a sixth issued grant", () => {
+    runSql(`
+      update public.digital_order_entitlements
+      set download_grants_used = 5
+      where id = '${ids.entitlement}';
+      insert into public.digital_download_grants(
+        store_id, order_id, entitlement_id, access_token_id, reservation_key,
+        client_fingerprint_hash, status, reserved_at, reservation_expires_at,
+        issued_at, grace_expires_at
+      )
+      select
+        '${ids.store}', '${ids.order}', '${ids.entitlement}', '${ids.token}',
+        gen_random_uuid()::text, encode(digest(sequence::text, 'sha256'), 'hex'),
+        'issued', now() - interval '2 hours', now() - interval '115 minutes',
+        now() - interval '119 minutes', now() - interval '118 minutes'
+      from generate_series(1, 5) sequence;
+    `);
+
+    expectRejected(
+      `update public.digital_order_entitlements
+       set download_grants_used = 4
+       where id = '${ids.entitlement}'`,
+    );
+    expectRejected(
+      `insert into public.digital_download_grants(
+         store_id, order_id, entitlement_id, access_token_id, reservation_key,
+         client_fingerprint_hash, status, reserved_at, reservation_expires_at,
+         issued_at, grace_expires_at
+       ) values (
+         '${ids.store}', '${ids.order}', '${ids.entitlement}', '${ids.token}',
+         '${randomUUID()}', '${fingerprintA}', 'issued',
+         now() - interval '2 hours', now() - interval '115 minutes',
+         now() - interval '119 minutes', now() - interval '118 minutes'
+       )`,
+    );
+    expect(
+      runSql(
+        `select download_grants_used || ':' || (
+           select count(*) from public.digital_download_grants grant_row
+           where grant_row.entitlement_id = entitlement.id
+             and grant_row.status = 'issued'
+         )
+         from public.digital_order_entitlements entitlement
+         where entitlement.id = '${ids.entitlement}'`,
+      ),
+    ).toBe("5:5");
+  });
+
+  test.each(["suspended", "revoked"])("denies a %s entitlement", (status) => {
+    runSql(
+      `update public.digital_order_entitlements set status = '${status}' where id = '${ids.entitlement}'`,
+    );
+    expectRejected(
+      `select * from public.reserve_digital_download_grant(
           '${ids.entitlement}', '${ids.token}', '${randomUUID()}', '${fingerprintA}'
         )`,
-      );
-    },
-  );
+    );
+  });
 
   test("denies expired and revoked access tokens", () => {
     runSql(
@@ -541,6 +889,17 @@ describe("atomic digital download grants", () => {
         update public.digital_order_entitlements
         set status = 'active', download_grants_used = 4
         where id = '${ids.entitlement}';
+        insert into public.digital_download_grants(
+          store_id, order_id, entitlement_id, access_token_id, reservation_key,
+          client_fingerprint_hash, status, reserved_at, reservation_expires_at,
+          issued_at, grace_expires_at
+        )
+        select
+          '${ids.store}', '${ids.order}', '${ids.entitlement}', '${ids.token}',
+          gen_random_uuid()::text, encode(digest(sequence::text, 'sha256'), 'hex'),
+          'issued', now() - interval '2 hours', now() - interval '115 minutes',
+          now() - interval '119 minutes', now() - interval '118 minutes'
+        from generate_series(1, 4) sequence;
       `);
       const attempt = (suffix: string, fingerprint: string) =>
         runSqlAsync(
@@ -560,7 +919,9 @@ describe("atomic digital download grants", () => {
         attempt("b", fingerprintB),
       ]);
 
-      expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+      expect(
+        outcomes.filter((outcome) => outcome.status === "fulfilled"),
+      ).toHaveLength(1);
       expect(
         runSql(
           `select download_grants_used from public.digital_order_entitlements where id = '${ids.entitlement}'`,
@@ -571,7 +932,7 @@ describe("atomic digital download grants", () => {
           `select count(*) from public.digital_download_grants
            where entitlement_id = '${ids.entitlement}' and status = 'issued'`,
         ),
-      ).toBe("1");
+      ).toBe("5");
     }
   }, 30_000);
 
@@ -583,6 +944,12 @@ describe("atomic digital download grants", () => {
       expectRejected(
         `set role ${role}; select * from public.reserve_digital_download_grant(
           '${ids.entitlement}', '${ids.token}', '${randomUUID()}', '${fingerprintA}'
+        ); reset role`,
+      );
+      expectRejected(
+        `set role ${role}; select public.release_digital_download_reservation(
+          '${ids.entitlement}', '${ids.token}', '${randomUUID()}', '${fingerprintA}',
+          'Unauthorized cleanup'
         ); reset role`,
       );
     }

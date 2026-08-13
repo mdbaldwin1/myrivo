@@ -37,23 +37,33 @@ export async function GET(request: NextRequest, context: RouteContext) {
   }
 
   const client = createSupabaseAdminClient() as unknown as DigitalDownloadClient;
+  const session = getDigitalDownloadSession(request);
   try {
-    await enforceDigitalDownloadRateLimit({ request, action: "grant", client });
+    await enforceDigitalDownloadRateLimit({
+      sessionFingerprintHash: session.fingerprintHash,
+      action: "grant",
+      client,
+    });
   } catch (error) {
     if (error instanceof DigitalDownloadError && error.code === "rate_limited") {
-      return response(
-        { error: "Too many requests. Please retry shortly." },
-        429,
-        { "Retry-After": String(error.retryAfterSeconds ?? 1) },
+      return attachDigitalDownloadSession(
+        response(
+          { error: "Too many requests. Please retry shortly." },
+          429,
+          { "Retry-After": String(error.retryAfterSeconds ?? 1) },
+        ),
+        session,
       );
     }
-    return response(
-      { error: "Download service is temporarily unavailable." },
-      503,
+    return attachDigitalDownloadSession(
+      response(
+        { error: "Download service is temporarily unavailable." },
+        503,
+      ),
+      session,
     );
   }
 
-  const session = getDigitalDownloadSession(request);
   let access;
   try {
     access = await authorizeAccessToken({ token, client });

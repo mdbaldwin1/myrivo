@@ -44,6 +44,8 @@ const reservationSchema = z.object({
   reservation_expires_at: z.string().datetime({ offset: true }),
 });
 
+const grantIdentitySchema = reservationSchema.pick({ grant_id: true });
+
 const storagePathSchema = z.object({
   storage_path: z.string().trim().min(1).max(1024),
 });
@@ -172,25 +174,20 @@ export function hardenDigitalDownloadResponse<T extends Response>(response: T): 
   return response;
 }
 
-function getRequestAddress(request: NextRequest): string {
-  return (
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip")?.trim() ||
-    "unknown"
-  );
-}
-
 export async function enforceDigitalDownloadRateLimit({
-  request,
+  sessionFingerprintHash,
   action,
   client = defaultClient(),
 }: {
-  request: NextRequest;
+  sessionFingerprintHash: string;
   action: "grant" | "list";
   client?: DigitalDownloadClient;
 }) {
+  if (!SHA_256_PATTERN.test(sessionFingerprintHash)) {
+    throw new DigitalDownloadError("rate_limit_unavailable");
+  }
   const identifierHash = createHash("sha256")
-    .update(`digital-download-rate-v1\0${getRequestAddress(request)}`)
+    .update(`digital-download-rate-v2\0${action}\0${sessionFingerprintHash}`)
     .digest("hex");
   const limit =
     action === "grant"
@@ -296,20 +293,53 @@ export async function reserveDownloadGrant({
   ) {
     throw new DigitalDownloadError("download_unavailable");
   }
+  const reservationKey = randomUUID();
   let result: RpcResult;
   try {
     result = await client.rpc("reserve_digital_download_grant", {
       p_entitlement_id: entitlementId,
       p_access_token_id: accessTokenId,
-      p_reservation_key: randomUUID(),
+      p_reservation_key: reservationKey,
       p_client_fingerprint_hash: clientFingerprintHash,
     });
   } catch {
     throw new DigitalDownloadError("download_unavailable");
   }
   if (result.error) throw new DigitalDownloadError("download_unavailable");
-  const parsed = reservationSchema.safeParse(unwrapRpcRow(result.data));
-  if (!parsed.success) throw new DigitalDownloadError("download_unavailable");
+  const row = unwrapRpcRow(result.data);
+  const parsed = reservationSchema.safeParse(row);
+  if (!parsed.success) {
+    const identity = grantIdentitySchema.safeParse(row);
+    let released = false;
+    if (identity.success) {
+      try {
+        await releaseDownloadGrant({
+          grantId: identity.data.grant_id,
+          clientFingerprintHash,
+          safeError: "Reservation response invalid",
+          client,
+        });
+        released = true;
+      } catch {
+        // Fall back to the request identity if the malformed row cannot be released by id.
+      }
+    }
+    if (!released) {
+      try {
+        await releaseDownloadReservation({
+          entitlementId,
+          accessTokenId,
+          reservationKey,
+          clientFingerprintHash,
+          safeError: "Reservation response invalid",
+          client,
+        });
+      } catch {
+        // Reservation expiry remains the bounded cleanup backstop.
+      }
+    }
+    throw new DigitalDownloadError("download_unavailable");
+  }
   return parsed.data;
 }
 
@@ -356,6 +386,39 @@ export async function releaseDownloadGrant({
     p_safe_error: safeError,
   });
   if (error || (data !== "released" && data !== "issued")) {
+    throw new DigitalDownloadError("download_unavailable");
+  }
+}
+
+export async function releaseDownloadReservation({
+  entitlementId,
+  accessTokenId,
+  reservationKey,
+  clientFingerprintHash,
+  safeError,
+  client = defaultClient(),
+}: {
+  entitlementId: string;
+  accessTokenId: string;
+  reservationKey: string;
+  clientFingerprintHash: string;
+  safeError: string;
+  client?: DigitalDownloadClient;
+}) {
+  const { data, error } = await client.rpc(
+    "release_digital_download_reservation",
+    {
+      p_entitlement_id: entitlementId,
+      p_access_token_id: accessTokenId,
+      p_reservation_key: reservationKey,
+      p_client_fingerprint_hash: clientFingerprintHash,
+      p_safe_error: safeError,
+    },
+  );
+  if (
+    error ||
+    (data !== "released" && data !== "issued" && data !== "missing")
+  ) {
     throw new DigitalDownloadError("download_unavailable");
   }
 }

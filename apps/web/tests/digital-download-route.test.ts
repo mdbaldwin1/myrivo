@@ -32,6 +32,7 @@ type FakeOptions = {
   authorizeError?: { message: string };
   listData?: Array<Record<string, unknown>>;
   listError?: { message: string };
+  reserveData?: Record<string, unknown>;
   reserveError?: { message: string };
   assetLookupError?: { message: string };
   assetLookupRejection?: Error;
@@ -116,7 +117,7 @@ function buildAdmin(options: FakeOptions = {}) {
         }
         return {
           data: [
-            {
+            options.reserveData ?? {
               grant_id: GRANT_ID,
               store_id: STORE_ID,
               product_id: PRODUCT_ID,
@@ -129,6 +130,12 @@ function buildAdmin(options: FakeOptions = {}) {
           ],
           error: null,
         };
+      }
+
+      if (name === "release_digital_download_reservation") {
+        events.push("cleanup-reservation");
+        releaseReasons.push(String(args.p_safe_error));
+        return { data: "released", error: null };
       }
 
       if (name === "commit_digital_download_grant") {
@@ -407,6 +414,24 @@ describe("digital download grant route", () => {
     expectHardenedHeaders(response);
   });
 
+  test("forwarding-header spoofing cannot change the rate-limit bucket for one download session", async () => {
+    const first = buildAdmin();
+    createSupabaseAdminClientMock.mockReturnValueOnce(first.admin);
+    await invokeDownload(
+      downloadRequest({ forwardedFor: "198.51.100.8", userAgent: "Browser A" }),
+    );
+    const second = buildAdmin();
+    createSupabaseAdminClientMock.mockReturnValueOnce(second.admin);
+    await invokeDownload(
+      downloadRequest({ forwardedFor: "203.0.113.99", userAgent: "Browser B" }),
+    );
+
+    const buckets = [first, second].map(
+      (state) => state.rpcArgs.find((entry) => entry.name === "check_api_rate_limit")?.args.p_bucket_key,
+    );
+    expect(buckets[0]).toBe(buckets[1]);
+  });
+
   test("fails closed without exposing the shared throttle error", async () => {
     const state = buildAdmin({
       rateLimitError: { message: "relation api_rate_limits unavailable" },
@@ -448,6 +473,67 @@ describe("digital download grant route", () => {
     expect(body).toEqual({ error: "Download unavailable." });
     expect(JSON.stringify(body)).not.toContain(INTERNAL_ERROR);
     expect(state.events).toEqual(["rate-limit", "authorize", "reserve"]);
+  });
+
+  test("releases a created reservation when the successful RPC payload has a valid grant id but malformed metadata", async () => {
+    const state = buildAdmin({
+      reserveData: {
+        grant_id: GRANT_ID,
+        store_id: "malformed-store",
+        product_id: PRODUCT_ID,
+        asset_id: ASSET_ID,
+        asset_version_id: VERSION_ID,
+        customer_filename: "customer-file.pdf",
+        grant_status: "reserved",
+        reservation_expires_at: "2099-08-12T12:05:00.000Z",
+      },
+    });
+    createSupabaseAdminClientMock.mockReturnValue(state.admin);
+
+    const response = await invokeDownload();
+
+    expect(response.status).toBe(409);
+    expect(state.events).toEqual([
+      "rate-limit",
+      "authorize",
+      "reserve",
+      "release",
+    ]);
+    expect(state.releaseReasons).toEqual(["Reservation response invalid"]);
+  });
+
+  test("cleans up by request identity when a successful reserve payload has no usable grant id", async () => {
+    const state = buildAdmin({
+      reserveData: {
+        grant_id: "malformed-grant",
+        store_id: STORE_ID,
+        product_id: PRODUCT_ID,
+        asset_id: ASSET_ID,
+        asset_version_id: VERSION_ID,
+        customer_filename: "customer-file.pdf",
+        grant_status: "reserved",
+        reservation_expires_at: "2099-08-12T12:05:00.000Z",
+      },
+    });
+    createSupabaseAdminClientMock.mockReturnValue(state.admin);
+
+    const response = await invokeDownload();
+
+    expect(response.status).toBe(409);
+    expect(state.events).toEqual([
+      "rate-limit",
+      "authorize",
+      "reserve",
+      "cleanup-reservation",
+    ]);
+    const reserve = state.rpcArgs.find((entry) => entry.name === "reserve_digital_download_grant");
+    const cleanup = state.rpcArgs.find((entry) => entry.name === "release_digital_download_reservation");
+    expect(cleanup?.args).toMatchObject({
+      p_entitlement_id: ENTITLEMENT_ID,
+      p_access_token_id: ACCESS_ID,
+      p_reservation_key: reserve?.args.p_reservation_key,
+    });
+    expect(state.releaseReasons).toEqual(["Reservation response invalid"]);
   });
 
   test.each([

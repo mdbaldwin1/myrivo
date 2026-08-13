@@ -93,6 +93,10 @@ const atomicDigitalDownloadGrantsMigration = join(
   repoRoot,
   "supabase/migrations/20260813010000_atomic_digital_download_grants.sql",
 );
+const hardenedAtomicDigitalDownloadGrantsMigration = join(
+  repoRoot,
+  "supabase/migrations/20260813011000_harden_atomic_digital_download_grants.sql",
+);
 
 const ids = {
   storeA: "10000000-0000-0000-0000-000000000001",
@@ -473,6 +477,9 @@ beforeAll(() => {
   }
   if (!existsSync(atomicDigitalDownloadGrantsMigration)) {
     throw new Error(`Missing atomic digital download grants migration: ${atomicDigitalDownloadGrantsMigration}`);
+  }
+  if (!existsSync(hardenedAtomicDigitalDownloadGrantsMigration)) {
+    throw new Error(`Missing hardened atomic digital download grants migration: ${hardenedAtomicDigitalDownloadGrantsMigration}`);
   }
 
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-digital-migration-"));
@@ -1783,7 +1790,24 @@ describe("durable digital delivery", () => {
     runSql(
       "full_chain",
       `update public.digital_order_entitlements
-       set download_grants_used = 2 where order_id = '${fixture.orderId}'`,
+       set download_grants_used = 2 where order_id = '${fixture.orderId}';
+       insert into public.digital_download_grants(
+         store_id, order_id, entitlement_id, access_token_id, reservation_key,
+         client_fingerprint_hash, status, reserved_at, reservation_expires_at,
+         issued_at, grace_expires_at
+       )
+       select
+         entitlement.store_id, entitlement.order_id, entitlement.id, token.id,
+         gen_random_uuid()::text,
+         encode(digest(entitlement.id::text || sequence::text, 'sha256'), 'hex'),
+         'issued', now() - interval '2 hours', now() - interval '115 minutes',
+         now() - interval '119 minutes', now() - interval '118 minutes'
+       from public.digital_order_entitlements entitlement
+       join public.digital_order_access_tokens token
+         on token.order_id = entitlement.order_id
+        and token.revoked_at is null
+       cross join generate_series(1, 2) sequence
+       where entitlement.order_id = '${fixture.orderId}'`,
     );
     const statement = (suffix: string, tokenHash: string) =>
       `select row_to_json(notification) from public.prepare_merchant_digital_delivery_resend(
