@@ -10,6 +10,7 @@ const PRODUCT_ID = "10000000-0000-4000-8000-000000000001";
 const VARIANT_ID = "20000000-0000-4000-8000-000000000001";
 const ASSET_ONE = "30000000-0000-4000-8000-000000000001";
 const ASSET_TWO = "30000000-0000-4000-8000-000000000002";
+const PRODUCT_B_ID = "10000000-0000-4000-8000-000000000002";
 
 const notificationMocks = vi.hoisted(() => ({
   success: vi.fn(),
@@ -303,5 +304,103 @@ describe("DigitalProductFiles", () => {
     await waitFor(() => expect(directAttempts).toBe(2));
     await waitFor(() => expect(screen.queryByRole("button", { name: "Retry upload" })).toBeNull());
     expect(notificationMocks.success).toHaveBeenCalledWith("Customer file is ready.");
+  });
+
+  test("restores a failed upload after reload and retries it through the asset lifecycle", async () => {
+    let completed = false;
+    const failedIntentId = "50000000-0000-4000-8000-000000000009";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith(`/api/products/digital-assets?productId=${PRODUCT_ID}`)) {
+        return json({
+          assets: completed ? readyAssets().slice(0, 1) : [],
+          failedUploads: completed ? [] : [{
+            id: failedIntentId,
+            asset_id: ASSET_ONE,
+            operation: "create",
+            label: "Printable artwork",
+            expected_filename: "artwork.pdf",
+            expected_mime_type: "application/pdf",
+            expected_byte_size: 9,
+            product_variant_id: null,
+            last_safe_error: "Upload verification was interrupted.",
+            version_number: 1,
+            updated_at: "2026-08-13T12:00:00.000Z",
+          }],
+        });
+      }
+      if (url === "/api/products/digital-assets" && init?.method === "PATCH") {
+        expect(JSON.parse(String(init.body))).toEqual({ action: "retry", intentId: failedIntentId });
+        return json({ intentId: failedIntentId, assetId: ASSET_ONE, uploadUrl: "https://uploads.example/persisted-retry.pdf" });
+      }
+      if (url === "https://uploads.example/persisted-retry.pdf") return new Response(null, { status: 200 });
+      if (url === "/api/products/digital-assets/complete") {
+        completed = true;
+        return json({ assetId: ASSET_ONE, versionNumber: 1 }, 201);
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<DigitalProductFiles productId={PRODUCT_ID} />);
+
+    const failed = await screen.findByRole("status", { name: "Failed upload for artwork.pdf" });
+    expect(failed.textContent).toContain("Upload verification was interrupted.");
+    expect(failed.textContent).toContain("Reselect the original file to retry securely");
+    await user.upload(
+      within(failed).getByLabelText("Select artwork.pdf to retry"),
+      new File(["123456789"], "artwork.pdf", { type: "application/pdf" }),
+    );
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/products/digital-assets",
+      expect.objectContaining({ method: "PATCH" }),
+    ));
+    await waitFor(() => expect(screen.queryByRole("status", { name: "Failed upload for artwork.pdf" })).toBeNull());
+    expect(notificationMocks.success).toHaveBeenCalledWith("Customer file is ready.");
+  });
+
+  test("does not let an upload for product A mutate product B after a product switch", async () => {
+    let releaseUpload!: () => void;
+    const uploadReleased = new Promise<void>((resolve) => { releaseUpload = resolve; });
+    const onCatalogChange = vi.fn();
+    const completedIntents: string[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith("/api/products/digital-assets?productId=")) return json({ assets: [], failedUploads: [] });
+      if (url === "/api/products/digital-assets/upload-url") {
+        return json({
+          intentId: "50000000-0000-4000-8000-000000000010",
+          assetId: ASSET_ONE,
+          uploadUrl: "https://uploads.example/product-a.pdf",
+        }, 201);
+      }
+      if (url === "https://uploads.example/product-a.pdf") {
+        await uploadReleased;
+        return new Response(null, { status: 200 });
+      }
+      if (url === "/api/products/digital-assets/complete") {
+        completedIntents.push(String(init?.body));
+        return json({ assetId: ASSET_ONE, versionNumber: 1 }, 201);
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    const { rerender } = render(<DigitalProductFiles productId={PRODUCT_ID} onCatalogChange={onCatalogChange} />);
+    await screen.findByText("No customer files yet");
+
+    await user.upload(
+      screen.getByLabelText("Add customer download files"),
+      new File(["product-a"], "product-a.pdf", { type: "application/pdf" }),
+    );
+    expect(await screen.findByRole("status", { name: "Upload progress for product-a.pdf" })).toBeTruthy();
+    rerender(<DigitalProductFiles productId={PRODUCT_B_ID} onCatalogChange={onCatalogChange} />);
+    expect(await screen.findByText("No customer files yet")).toBeTruthy();
+    releaseUpload();
+
+    await waitFor(() => expect(screen.queryByRole("status", { name: "Upload progress for product-a.pdf" })).toBeNull());
+    expect(completedIntents).toEqual([]);
+    expect(onCatalogChange).not.toHaveBeenCalled();
   });
 });

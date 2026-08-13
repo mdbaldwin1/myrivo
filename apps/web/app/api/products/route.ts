@@ -504,6 +504,18 @@ function normalizePayloadVariants(payload: {
   });
 }
 
+function normalizeFulfillmentInventory(
+  productType: "physical" | "digital",
+  variants: ReturnType<typeof normalizeVariantInputs>,
+) {
+  if (productType === "physical") return variants;
+  return variants.map((variant) => ({
+    ...variant,
+    inventory_qty: 0,
+    is_made_to_order: false,
+  }));
+}
+
 async function selectProductWithVariants(supabase: QueryClient, productId: string, storeId: string) {
   let { data, error } = await supabase
     .from("products")
@@ -1122,6 +1134,7 @@ export async function POST(request: NextRequest) {
       priceCents: payload.data.priceCents,
       inventoryQty: payload.data.inventoryQty
     }, { enforceValidation: false });
+    variants = normalizeFulfillmentInventory(payload.data.productType, variants);
     rollup = buildProductVariantRollup(variants);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to process product variants.";
@@ -1136,7 +1149,9 @@ export async function POST(request: NextRequest) {
   const { supabase } = resolved;
   const productSlug = await ensureUniqueProductSlug(supabase, resolved.storeId, payload.data.title, payload.data.slug);
   const priceFromVariants = variants.length > 0 ? rollup.minPriceCents : payload.data.priceCents ?? 0;
-  const inventoryFromVariants = variants.length > 0 ? rollup.totalInventoryQty : payload.data.inventoryQty ?? 0;
+  const inventoryFromVariants = payload.data.productType === "digital"
+    ? 0
+    : variants.length > 0 ? rollup.totalInventoryQty : payload.data.inventoryQty ?? 0;
   const productInsert = {
     store_id: resolved.storeId,
     title: payload.data.title,
@@ -1181,7 +1196,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (variants.length > 0) {
-    const madeToOrderRequested = hasMadeToOrderEnabled(payload.data.variants);
+    const madeToOrderRequested = payload.data.productType === "physical" && hasMadeToOrderEnabled(payload.data.variants);
     let { error: variantsError } = await supabase.from("product_variants").insert(
       variants.map((variant) => toVariantInsertRow(resolved.storeId, createdProduct.id, variant))
     );
@@ -1297,6 +1312,12 @@ export async function PATCH(request: NextRequest) {
   }
 
   const nextProductType = payload.data.productType ?? existingProduct.product_type;
+  const hasRequestedCatalogMutation = [
+    "productType", "digitalRightsAffirmed", "title", "description", "slug", "sku",
+    "imageUrls", "imageAltText", "seoTitle", "seoDescription", "isFeatured",
+    "priceCents", "inventoryQty", "status", "variants", "variantTierLevels",
+  ].some((key) => Object.hasOwn(payload.data, key));
+  if (nextProductType === "digital" && hasRequestedCatalogMutation) updates.inventory_qty = 0;
   if (
     nextProductType === "physical" &&
     (existingProduct.product_type === "digital" || payload.data.digitalRightsAffirmed !== undefined)
@@ -1349,6 +1370,7 @@ export async function PATCH(request: NextRequest) {
         payload.data.sku,
         { allowEmpty: true, enforceValidation: nextStatus === "active" }
       );
+      normalizedVariantsForUpdate = normalizeFulfillmentInventory(nextProductType, normalizedVariantsForUpdate);
       rollupFromVariants = buildProductVariantRollup(normalizedVariantsForUpdate);
 
       if (payload.data.hasVariants === false) {
@@ -1356,7 +1378,7 @@ export async function PATCH(request: NextRequest) {
           updates.price_cents = payload.data.priceCents;
         }
         if (payload.data.inventoryQty !== undefined) {
-          updates.inventory_qty = payload.data.inventoryQty;
+          updates.inventory_qty = nextProductType === "digital" ? 0 : payload.data.inventoryQty;
         }
         updates.sku = payload.data.sku ?? null;
       } else {
@@ -1398,6 +1420,10 @@ export async function PATCH(request: NextRequest) {
         status: variant.status,
         sort_order: variant.sort_order
       }));
+      normalizedVariantMutation = normalizeFulfillmentInventory(
+        nextProductType,
+        normalizedVariantMutation,
+      ).map((variant) => ({ ...variant, id: variant.id ?? randomUUID() }));
     }
 
     if (usesAtomicDigitalMutation) {

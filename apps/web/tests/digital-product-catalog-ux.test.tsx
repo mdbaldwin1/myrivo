@@ -7,6 +7,10 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { DigitalPreviewManager } from "@/components/dashboard/digital-preview-manager";
 import { DigitalProductOverview } from "@/components/dashboard/digital-product-overview";
 import { ProductManager, type ProductListItem } from "@/components/dashboard/product-manager";
+import {
+  variantOptionInstruction,
+  variantOptionSummary,
+} from "@/components/dashboard/product-manager-domain";
 import { enrichDigitalCatalogProducts } from "@/lib/digital-products/catalog-state";
 
 const PRODUCT_ID = "10000000-0000-4000-8000-000000000001";
@@ -204,6 +208,64 @@ describe("digital catalog overview and media", () => {
     }));
     expect(await screen.findByAltText("Public preview buyers see for Sunrise printable")).toBeTruthy();
   });
+
+  test("ignores a preview response that completes after the selected product changes", async () => {
+    let releasePreview!: () => void;
+    const previewReleased = new Promise<void>((resolve) => { releasePreview = resolve; });
+    const onChange = vi.fn();
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      await previewReleased;
+      return new Response(JSON.stringify({ publicUrl: "https://cdn.example/product-a-preview.jpg" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }));
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <DigitalPreviewManager
+        productId={PRODUCT_ID}
+        productTitle="Product A"
+        storefrontImages={["https://cdn.example/product-a.jpg"]}
+        preview={null}
+        onChange={onChange}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Use as buyer preview" }));
+    rerender(
+      <DigitalPreviewManager
+        productId="10000000-0000-4000-8000-000000000099"
+        productTitle="Product B"
+        storefrontImages={[]}
+        preview={null}
+        onChange={onChange}
+      />,
+    );
+    releasePreview();
+
+    expect(await screen.findByText("No public preview is ready")).toBeTruthy();
+    expect(screen.queryByAltText("Public preview buyers see for Product B")).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("fulfillment-aware variant copy", () => {
+  test("never describes stock for digital two-tier create and edit summaries", () => {
+    expect(variantOptionInstruction("digital")).toBe(
+      "Add options for this variant, then configure price, SKU, and images for each option.",
+    );
+    expect(variantOptionSummary("digital", {
+      priceDollars: "12.00",
+      inventoryQty: "0",
+      status: "active",
+    })).toBe("$12.00 · active");
+    expect(variantOptionInstruction("physical")).toContain("inventory");
+    expect(variantOptionSummary("physical", {
+      priceDollars: "12.00",
+      inventoryQty: "4",
+      status: "active",
+    })).toBe("$12.00 · Inv 4 · active");
+  });
 });
 
 describe("digital catalog server state", () => {
@@ -332,5 +394,116 @@ describe("ProductManager digital catalog integration", () => {
     expect(screen.getByRole("checkbox", { name: /I own or control the rights/i }).getAttribute("aria-checked")).toBe("false");
     await user.click(screen.getByRole("button", { name: "Save product" }));
     expect(putBodies[0]?.digitalRightsAffirmed).toBe(false);
+  });
+
+  test("refreshes authoritative readiness after rights are saved and uses it before publishing", async () => {
+    const starting = product({
+      digital_readiness: {
+        ready: false,
+        reasons: ["rights_missing"],
+        applicableFileCount: 1,
+        previewStatus: "ready",
+      },
+      digital_preview: {
+        status: "ready",
+        sourceAssetVersionId: null,
+        publicUrl: "https://cdn.example/preview.jpg",
+        isMerchantOverride: true,
+        failureReason: null,
+      },
+    });
+    const ready = product({
+      digital_rights_affirmed_at: "2026-08-13T12:00:00.000Z",
+      digital_readiness: {
+        ready: true,
+        reasons: [],
+        applicableFileCount: 1,
+        previewStatus: "ready",
+      },
+      digital_preview: starting.digital_preview,
+    });
+    let catalogReads = 0;
+    const patchBodies: Array<Record<string, unknown>> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/products" && init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        patchBodies.push(body);
+        return new Response(JSON.stringify({
+          product: {
+            ...starting,
+            digital_rights_affirmed_at: ready.digital_rights_affirmed_at,
+            status: body.status ?? starting.status,
+          },
+        }), { status: 200 });
+      }
+      catalogReads += 1;
+      return new Response(JSON.stringify({ products: [ready] }), { status: 200 });
+    }));
+    const user = userEvent.setup();
+    render(<ProductManager initialProducts={[starting]} />);
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("checkbox", { name: /I own or control the rights/i }));
+    await user.click(screen.getByRole("button", { name: "Save product" }));
+
+    const readiness = await screen.findByRole("region", { name: "Publishing readiness" });
+    expect(await within(readiness).findByText("Ready for your storefront")).toBeTruthy();
+    await user.click(within(readiness).getByRole("button", { name: "Publish product" }));
+    expect(catalogReads).toBeGreaterThanOrEqual(2);
+    expect(patchBodies.some((body) => body.status === "active")).toBe(true);
+  });
+
+  test("refreshes readiness after a media mutation and refuses publish when the fresh catalog is blocked", async () => {
+    const initiallyReady = product({
+      digital_rights_affirmed_at: "2026-08-13T12:00:00.000Z",
+      digital_readiness: { ready: true, reasons: [], applicableFileCount: 1, previewStatus: "ready" },
+      digital_preview: {
+        status: "ready",
+        sourceAssetVersionId: null,
+        publicUrl: "https://cdn.example/old-preview.jpg",
+        isMerchantOverride: true,
+        failureReason: null,
+      },
+    });
+    const freshBlocked = product({
+      digital_rights_affirmed_at: initiallyReady.digital_rights_affirmed_at,
+      digital_readiness: {
+        ready: false,
+        reasons: [`variant_missing_file:${VARIANT_ID}`],
+        applicableFileCount: 0,
+        previewStatus: "ready",
+      },
+      digital_preview: {
+        status: "ready",
+        sourceAssetVersionId: null,
+        publicUrl: "https://cdn.example/new-preview.jpg",
+        isMerchantOverride: true,
+        failureReason: null,
+      },
+    });
+    const patchBodies: Array<Record<string, unknown>> = [];
+    let reads = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/products/digital-preview") {
+        return new Response(JSON.stringify({ publicUrl: "https://cdn.example/new-preview.jpg" }), { status: 200 });
+      }
+      if (String(input) === "/api/products" && init?.method === "PATCH") {
+        patchBodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return new Response(JSON.stringify({ product: initiallyReady }), { status: 200 });
+      }
+      reads += 1;
+      return new Response(JSON.stringify({ products: [freshBlocked] }), { status: 200 });
+    }));
+    const user = userEvent.setup();
+    render(<ProductManager initialProducts={[initiallyReady]} />);
+
+    await user.click(screen.getByRole("tab", { name: "Media" }));
+    await user.click(screen.getByRole("button", { name: "Use as buyer preview" }));
+    await user.click(screen.getByRole("tab", { name: "Overview" }));
+    const readiness = await screen.findByRole("region", { name: "Publishing readiness" });
+    expect(await within(readiness).findByText("1 step remaining")).toBeTruthy();
+    expect(within(readiness).getByRole("button", { name: "Publish product" }).hasAttribute("disabled")).toBe(true);
+    expect(reads).toBeGreaterThanOrEqual(1);
+    expect(patchBodies.some((body) => body.status === "active")).toBe(false);
   });
 });

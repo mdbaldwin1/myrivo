@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { DigitalProductPreview } from "@/components/dashboard/product-manager-domain";
@@ -15,6 +15,14 @@ type DigitalPreviewManagerProps = {
   onChange?: (preview: DigitalProductPreview) => void | Promise<void>;
 };
 
+const EMPTY_PREVIEW: DigitalProductPreview = {
+  status: "missing",
+  sourceAssetVersionId: null,
+  publicUrl: null,
+  isMerchantOverride: false,
+  failureReason: null,
+};
+
 export function DigitalPreviewManager({
   productId,
   productTitle,
@@ -22,18 +30,33 @@ export function DigitalPreviewManager({
   preview,
   onChange,
 }: DigitalPreviewManagerProps) {
-  const [current, setCurrent] = useState<DigitalProductPreview>(preview ?? {
-    status: "missing",
-    sourceAssetVersionId: null,
-    publicUrl: null,
-    isMerchantOverride: false,
-    failureReason: null,
-  });
+  const [current, setCurrent] = useState<DigitalProductPreview>(preview ?? EMPTY_PREVIEW);
   const [busyUrl, setBusyUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const errorRef = useRef<HTMLDivElement | null>(null);
+  const currentProductIdRef = useRef(productId);
+  const operationControllersRef = useRef<Set<AbortController>>(new Set());
+  currentProductIdRef.current = productId;
+
+  useEffect(() => {
+    const operationControllers = operationControllersRef.current;
+    for (const controller of operationControllers) controller.abort();
+    operationControllers.clear();
+    currentProductIdRef.current = productId;
+    setCurrent(preview ?? EMPTY_PREVIEW);
+    setBusyUrl(null);
+    setError(null);
+    return () => {
+      for (const controller of operationControllers) controller.abort();
+      operationControllers.clear();
+      if (currentProductIdRef.current === productId) currentProductIdRef.current = "";
+    };
+  }, [productId, preview]);
 
   async function setOverride(sourceUrl: string) {
+    const operationProductId = productId;
+    const controller = new AbortController();
+    operationControllersRef.current.add(controller);
     setBusyUrl(sourceUrl);
     setError(null);
     try {
@@ -41,8 +64,10 @@ export function DigitalPreviewManager({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode: "override", productId, sourceUrl }),
+        signal: controller.signal,
       });
       const payload = (await response.json().catch(() => null)) as { publicUrl?: string; error?: string } | null;
+      if (currentProductIdRef.current !== operationProductId) return;
       if (!response.ok || !payload?.publicUrl) throw new Error(payload?.error ?? "Unable to update the buyer preview.");
       const next: DigitalProductPreview = {
         status: "ready",
@@ -53,17 +78,23 @@ export function DigitalPreviewManager({
       };
       setCurrent(next);
       await onChange?.(next);
+      if (currentProductIdRef.current !== operationProductId) return;
       notify.success("Buyer preview updated.");
     } catch (updateError) {
+      if (controller.signal.aborted || currentProductIdRef.current !== operationProductId) return;
       setError(updateError instanceof Error ? updateError.message : "Unable to update the buyer preview.");
       window.requestAnimationFrame(() => errorRef.current?.focus());
     } finally {
-      setBusyUrl(null);
+      operationControllersRef.current.delete(controller);
+      if (currentProductIdRef.current === operationProductId) setBusyUrl(null);
     }
   }
 
   async function retryAutomaticPreview() {
     if (!current.sourceAssetVersionId) return;
+    const operationProductId = productId;
+    const controller = new AbortController();
+    operationControllersRef.current.add(controller);
     setBusyUrl("automatic");
     setError(null);
     try {
@@ -71,8 +102,10 @@ export function DigitalPreviewManager({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode: "asset", productId, sourceAssetVersionId: current.sourceAssetVersionId }),
+        signal: controller.signal,
       });
       const payload = (await response.json().catch(() => null)) as { publicUrl?: string | null; error?: string } | null;
+      if (currentProductIdRef.current !== operationProductId) return;
       if (!response.ok) throw new Error(payload?.error ?? "Unable to retry the buyer preview.");
       const next: DigitalProductPreview = {
         ...current,
@@ -83,12 +116,15 @@ export function DigitalPreviewManager({
       };
       setCurrent(next);
       await onChange?.(next);
+      if (currentProductIdRef.current !== operationProductId) return;
       notify.success(payload?.publicUrl ? "Buyer preview is ready." : "Buyer preview processing restarted.");
     } catch (retryError) {
+      if (controller.signal.aborted || currentProductIdRef.current !== operationProductId) return;
       setError(retryError instanceof Error ? retryError.message : "Unable to retry the buyer preview.");
       window.requestAnimationFrame(() => errorRef.current?.focus());
     } finally {
-      setBusyUrl(null);
+      operationControllersRef.current.delete(controller);
+      if (currentProductIdRef.current === operationProductId) setBusyUrl(null);
     }
   }
 

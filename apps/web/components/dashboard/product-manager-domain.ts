@@ -212,3 +212,19 @@ export function createBlankVariant(isDefault = false): VariantDraft {
     isDefault
   };
 }
+
+export function variantOptionInstruction(productType: ProductListItem["product_type"]) {
+  return productType === "digital"
+    ? "Add options for this variant, then configure price, SKU, and images for each option."
+    : "Add options for this variant, then configure price, SKU, inventory, and images for each option.";
+}
+
+export function variantOptionSummary(
+  productType: ProductListItem["product_type"],
+  option: Pick<VariantDraft, "priceDollars" | "inventoryQty" | "status">,
+) {
+  const priceAndStatus = `$${option.priceDollars || "0.00"} · ${option.status}`;
+  return productType === "digital"
+    ? priceAndStatus
+    : `$${option.priceDollars || "0.00"} · Inv ${option.inventoryQty || "0"} · ${option.status}`;
+}

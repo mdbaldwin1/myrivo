@@ -82,3 +82,38 @@ The full suite retained pre-existing refund/dispute mock stderr and zero-size ch
 
 - Browser verification remains the parent task's integrated end-to-end checkpoint; component tests cover the full merchant interaction contract and accessibility semantics.
 - Preview and asset mutations use only the established Task 3 lifecycle APIs. Catalog enrichment is read-only and deliberately exposes public preview URLs instead of storage paths.
+
+## Fix 1: Authoritative Readiness, Async Isolation, and Inventory Invariants
+
+### Reviewed corrections
+
+- Centralized catalog re-enrichment in one generation-safe refresh path. Successful digital rights, file, and preview mutations now reload the authoritative `/api/products` readiness/preview projection; publishing performs its own fresh read and fails closed instead of trusting a stale enabled button.
+- Keyed Files and Media by product identity and added explicit reset, abort, unmount, and stale-completion guards. Product changes clear assets, persisted failures, upload jobs, busy state, errors, confirmations, scope, preview state, and pending requests; a completion originating from product A cannot mutate product B or invoke B's catalog callback.
+- Extended the safe Files GET contract with failed lifecycle intents, excluding storage paths. Reloaded failures explain their safe error, distinguish private-file upload retry from buyer-preview processing, require the merchant to reselect the exact declared filename/MIME/size, and resume through the existing retry-intent, signed PUT, and completion lifecycle. Failed previews continue through the separate preview retry endpoint.
+- Made two-tier create/edit instructions and option summaries fulfillment-aware. Digital products no longer mention inventory or render `Inv 0`; physical copy and inventory behavior remain unchanged.
+- Normalized digital inventory at both boundaries: POST/PATCH route payloads force product/variant quantity to zero and made-to-order off, while forward migration `20260813015000_enforce_digital_inventory_invariants.sql` backfills existing rows and adds product/variant trigger defenses. The database normalizes direct writes, existing digital RPC writes, and physical-to-digital conversion even if a stale or hostile client submits stock values.
+
+### Fix 1 TDD evidence
+
+RED evidence reproduced all five review findings:
+
+- Focused application tests failed in nine intended places: stale rights/media readiness, stale publish authorization, preview and upload completion after product switch, missing persisted failed-intent recovery, physical copy in digital two-tier variants, and unnormalized POST/PATCH inventory fields.
+- The native PostgreSQL regression failed before the forward migration could normalize hostile catalog-RPC and direct database writes.
+
+GREEN evidence after the corrections:
+
+```text
+Focused catalog/files/routes: 4 files, 21 tests passed
+Native PostgreSQL migration suite: 87 tests passed
+Full repository suite: 249 files, 982 tests passed
+```
+
+Fresh Fix 1 gates:
+
+- `npm run lint --workspace @myrivo/web` — passed with zero warnings/errors; feedback and dashboard-route consistency checks passed.
+- `npm run typecheck --workspace @myrivo/web` — passed.
+- `npm test` — 249 files and 982 tests passed.
+- `npm run build` — passed; production compilation, TypeScript, all 161 static pages, optimization, and trace collection completed.
+- `git diff --check` — passed.
+
+The full suite retained the pre-existing refund/dispute mock stderr and zero-size chart warnings. The build retained the existing middleware deprecation and stale Browserslist-data warnings.

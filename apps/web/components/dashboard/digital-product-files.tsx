@@ -29,6 +29,20 @@ export type DigitalProductAsset = {
   digital_product_asset_versions: DigitalAssetVersion[];
 };
 
+export type PersistedFailedUpload = {
+  id: string;
+  asset_id: string;
+  operation: "create" | "replace";
+  label: string;
+  expected_filename: string;
+  expected_mime_type: string;
+  expected_byte_size: number;
+  product_variant_id: string | null;
+  last_safe_error: string;
+  version_number: number;
+  updated_at: string;
+};
+
 export type DigitalProductFileVariant = {
   id: string;
   label: string;
@@ -100,29 +114,29 @@ function sortAssets(assets: DigitalProductAsset[]) {
 
 export function DigitalProductFiles({ productId, variants = [], focusTarget, onCatalogChange }: DigitalProductFilesProps) {
   const [assets, setAssets] = useState<DigitalProductAsset[]>([]);
+  const [failedUploads, setFailedUploads] = useState<PersistedFailedUpload[]>([]);
   const [uploads, setUploads] = useState<UploadJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyAssetIds, setBusyAssetIds] = useState<Set<string>>(new Set());
+  const [busyFailedIntentIds, setBusyFailedIntentIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation>(null);
   const [uploadScope, setUploadScope] = useState<string>("all");
   const errorRef = useRef<HTMLDivElement | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    if (!focusTarget) return;
-    if (variants.some((variant) => variant.id === focusTarget)) setUploadScope(focusTarget);
-    window.requestAnimationFrame(() => uploadInputRef.current?.focus());
-  }, [focusTarget, variants]);
+  const currentProductIdRef = useRef(productId);
+  currentProductIdRef.current = productId;
 
   const showError = useCallback((message: string) => {
     setError(message);
     window.requestAnimationFrame(() => errorRef.current?.focus());
   }, []);
 
-  const loadAssets = useCallback(async () => {
-    const response = await fetch(`/api/products/digital-assets?productId=${encodeURIComponent(productId)}`);
+  const loadAssets = useCallback(async (signal?: AbortSignal) => {
+    const requestedProductId = productId;
+    const response = await fetch(`/api/products/digital-assets?productId=${encodeURIComponent(productId)}`, { signal });
     const payload = await responseJson(response);
+    if (currentProductIdRef.current !== requestedProductId) return null;
     if (!response.ok) {
       throw new Error(parseError(payload, "Unable to load customer files."));
     }
@@ -131,50 +145,77 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
         ? ((payload as { assets: DigitalProductAsset[] }).assets ?? [])
         : [],
     );
+    const nextFailedUploads =
+      payload && typeof payload === "object" && Array.isArray((payload as { failedUploads?: unknown }).failedUploads)
+        ? ((payload as { failedUploads: PersistedFailedUpload[] }).failedUploads ?? [])
+        : [];
     setAssets(next);
-    return next;
+    setFailedUploads(nextFailedUploads);
+    return { assets: next, failedUploads: nextFailedUploads };
   }, [productId]);
 
   useEffect(() => {
+    const controller = new AbortController();
     let active = true;
+    currentProductIdRef.current = productId;
+    setAssets([]);
+    setFailedUploads([]);
+    setUploads([]);
+    setBusyAssetIds(new Set());
+    setBusyFailedIntentIds(new Set());
+    setPendingConfirmation(null);
+    setUploadScope("all");
+    setError(null);
     setLoading(true);
-    void loadAssets()
+    void loadAssets(controller.signal)
       .catch((loadError) => {
-        if (active) showError(loadError instanceof Error ? loadError.message : "Unable to load customer files.");
+        if (active && !controller.signal.aborted) showError(loadError instanceof Error ? loadError.message : "Unable to load customer files.");
       })
       .finally(() => {
         if (active) setLoading(false);
       });
     return () => {
       active = false;
+      controller.abort();
+      if (currentProductIdRef.current === productId) currentProductIdRef.current = "";
     };
-  }, [loadAssets, showError]);
+  }, [loadAssets, productId, showError]);
 
-  function updateJob(jobId: string, updates: Partial<UploadJob>) {
+  useEffect(() => {
+    if (!focusTarget) return;
+    if (variants.some((variant) => variant.id === focusTarget)) setUploadScope(focusTarget);
+    window.requestAnimationFrame(() => uploadInputRef.current?.focus());
+  }, [focusTarget, variants]);
+
+  function updateJob(jobId: string, updates: Partial<UploadJob>, expectedProductId = productId) {
+    if (currentProductIdRef.current !== expectedProductId) return;
     setUploads((current) => current.map((job) => (job.id === jobId ? { ...job, ...updates } : job)));
   }
 
-  async function uploadIntentFile(job: UploadJob, intent: UploadIntent) {
+  async function uploadIntentFile(job: UploadJob, intent: UploadIntent, expectedProductId = productId) {
+    if (currentProductIdRef.current !== expectedProductId) return null;
     updateJob(job.id, {
       phase: "uploading",
       progress: 45,
       message: "Uploading securely…",
       intentId: intent.intentId,
-    });
+    }, expectedProductId);
     const direct = await fetch(intent.uploadUrl, {
       method: "PUT",
       headers: { "Content-Type": job.file.type },
       body: job.file,
     });
+    if (currentProductIdRef.current !== expectedProductId) return null;
     if (!direct.ok) throw new Error("The file could not be uploaded. Try again.");
 
-    updateJob(job.id, { phase: "verifying", progress: 85, message: "Verifying and preparing…" });
+    updateJob(job.id, { phase: "verifying", progress: 85, message: "Verifying and preparing…" }, expectedProductId);
     const completeResponse = await fetch("/api/products/digital-assets/complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ intentId: intent.intentId }),
     });
     const completePayload = await responseJson(completeResponse);
+    if (currentProductIdRef.current !== expectedProductId) return null;
     if (!completeResponse.ok) {
       return {
         ok: false as const,
@@ -186,7 +227,8 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
   }
 
   async function beginUpload(job: UploadJob) {
-    updateJob(job.id, { phase: "preparing", progress: 10, message: "Preparing secure upload…" });
+    const expectedProductId = productId;
+    updateJob(job.id, { phase: "preparing", progress: 10, message: "Preparing secure upload…" }, expectedProductId);
     const response = await fetch("/api/products/digital-assets/upload-url", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -200,13 +242,15 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
       }),
     });
     const payload = await responseJson(response);
+    if (currentProductIdRef.current !== expectedProductId) return null;
     if (!response.ok || !payload || typeof payload !== "object") {
       throw new Error(parseError(payload, "Unable to prepare upload."));
     }
-    return uploadIntentFile(job, payload as UploadIntent);
+    return uploadIntentFile(job, payload as UploadIntent, expectedProductId);
   }
 
   async function uploadSelectedFiles(files: File[]) {
+    const expectedProductId = productId;
     setError(null);
     const availableSlots = DIGITAL_PRODUCT_CONFIG.maxFilesPerProduct - assets.length - uploads.filter((job) => job.phase !== "failed").length;
     if (files.length > availableSlots) {
@@ -243,10 +287,12 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
         }
       }),
     );
+    if (currentProductIdRef.current !== expectedProductId) return;
 
     let refreshed: DigitalProductAsset[] = [];
     try {
-      refreshed = await loadAssets();
+      refreshed = (await loadAssets())?.assets ?? [];
+      if (currentProductIdRef.current !== expectedProductId) return;
       await onCatalogChange?.();
     } catch (loadError) {
       showError(loadError instanceof Error ? loadError.message : "Unable to refresh customer files.");
@@ -255,7 +301,7 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
     let successCount = 0;
     results.forEach((result, index) => {
       const job = jobs[index];
-      if (!job) return;
+      if (!job || !result) return;
       const committedDespiteResponse = result.assetId ? completedAssetIds.has(result.assetId) : false;
       if (result.ok || committedDespiteResponse) {
         successCount += 1;
@@ -273,6 +319,7 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
   }
 
   async function retryUpload(job: UploadJob) {
+    const expectedProductId = productId;
     setError(null);
     try {
       let result;
@@ -287,11 +334,14 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
         if (!response.ok || !payload || typeof payload !== "object") {
           throw new Error(parseError(payload, "Unable to retry upload."));
         }
-        result = await uploadIntentFile(job, payload as UploadIntent);
+        if (currentProductIdRef.current !== expectedProductId) return;
+        result = await uploadIntentFile(job, payload as UploadIntent, expectedProductId);
       } else {
         result = await beginUpload(job);
       }
-      const refreshed = await loadAssets();
+      if (!result || currentProductIdRef.current !== expectedProductId) return;
+      const refreshed = (await loadAssets())?.assets ?? [];
+      if (currentProductIdRef.current !== expectedProductId) return;
       if (result.ok || (result.assetId && refreshed.some((asset) => asset.id === result.assetId))) {
         setUploads((current) => current.filter((candidate) => candidate.id !== job.id));
         notify.success("Customer file is ready.");
@@ -308,7 +358,75 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
     }
   }
 
+  async function retryPersistedUpload(intent: PersistedFailedUpload, file: File) {
+    const expectedProductId = productId;
+    const declarationError = validateFile(file);
+    if (declarationError) {
+      showError(`${file.name}: ${declarationError}`);
+      return;
+    }
+    if (
+      file.name !== intent.expected_filename ||
+      file.type !== intent.expected_mime_type ||
+      file.size !== intent.expected_byte_size
+    ) {
+      showError(`Choose the original ${intent.expected_filename} file (${intent.expected_byte_size.toLocaleString()} bytes) to retry securely.`);
+      return;
+    }
+
+    setBusyFailedIntentIds((current) => new Set(current).add(intent.id));
+    setError(null);
+    try {
+      const retryResponse = await fetch("/api/products/digital-assets", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "retry", intentId: intent.id }),
+      });
+      const retryPayload = await responseJson(retryResponse);
+      if (currentProductIdRef.current !== expectedProductId) return;
+      if (!retryResponse.ok || !retryPayload || typeof retryPayload !== "object") {
+        throw new Error(parseError(retryPayload, "Unable to retry upload."));
+      }
+      const uploadIntent = retryPayload as UploadIntent;
+      const uploadResponse = await fetch(uploadIntent.uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      if (currentProductIdRef.current !== expectedProductId) return;
+      if (!uploadResponse.ok) throw new Error("The file could not be uploaded. Try again.");
+
+      const completeResponse = await fetch("/api/products/digital-assets/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intentId: intent.id }),
+      });
+      const completePayload = await responseJson(completeResponse);
+      if (currentProductIdRef.current !== expectedProductId) return;
+      if (!completeResponse.ok) {
+        throw new Error(parseError(completePayload, "The uploaded file could not be verified."));
+      }
+      await loadAssets();
+      if (currentProductIdRef.current !== expectedProductId) return;
+      await onCatalogChange?.();
+      if (currentProductIdRef.current !== expectedProductId) return;
+      notify.success("Customer file is ready.");
+    } catch (retryError) {
+      if (currentProductIdRef.current !== expectedProductId) return;
+      showError(retryError instanceof Error ? retryError.message : "Unable to retry upload.");
+    } finally {
+      if (currentProductIdRef.current === expectedProductId) {
+        setBusyFailedIntentIds((current) => {
+          const next = new Set(current);
+          next.delete(intent.id);
+          return next;
+        });
+      }
+    }
+  }
+
   async function updateAsset(assetId: string, updates: { label?: string; productVariantId?: string | null }) {
+    const expectedProductId = productId;
     setBusyAssetIds((current) => new Set(current).add(assetId));
     setError(null);
     try {
@@ -318,22 +436,29 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
         body: JSON.stringify({ action: "update", assetId, ...updates }),
       });
       const payload = await responseJson(response);
+      if (currentProductIdRef.current !== expectedProductId) return;
       if (!response.ok) throw new Error(parseError(payload, "Unable to update this file."));
       await loadAssets();
+      if (currentProductIdRef.current !== expectedProductId) return;
       await onCatalogChange?.();
+      if (currentProductIdRef.current !== expectedProductId) return;
       notify.success(updates.label ? "File label updated." : "File availability updated.");
     } catch (updateError) {
+      if (currentProductIdRef.current !== expectedProductId) return;
       showError(updateError instanceof Error ? updateError.message : "Unable to update this file.");
     } finally {
-      setBusyAssetIds((current) => {
-        const next = new Set(current);
-        next.delete(assetId);
-        return next;
-      });
+      if (currentProductIdRef.current === expectedProductId) {
+        setBusyAssetIds((current) => {
+          const next = new Set(current);
+          next.delete(assetId);
+          return next;
+        });
+      }
     }
   }
 
   async function moveAsset(assetId: string, direction: -1 | 1) {
+    const expectedProductId = productId;
     const currentIndex = assets.findIndex((asset) => asset.id === assetId);
     const targetIndex = currentIndex + direction;
     if (currentIndex < 0 || targetIndex < 0 || targetIndex >= assets.length) return;
@@ -352,9 +477,11 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
         body: JSON.stringify({ productId, assetIds: next.map((asset) => asset.id) }),
       });
       const payload = await responseJson(response);
+      if (currentProductIdRef.current !== expectedProductId) return;
       if (!response.ok) throw new Error(parseError(payload, "Files could not be reordered."));
       notify.success("File order updated.");
     } catch (reorderError) {
+      if (currentProductIdRef.current !== expectedProductId) return;
       setAssets(previous);
       showError(
         reorderError instanceof Error
@@ -362,15 +489,18 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
           : "Files could not be reordered. Try again.",
       );
     } finally {
-      setBusyAssetIds((current) => {
-        const nextBusy = new Set(current);
-        nextBusy.delete(assetId);
-        return nextBusy;
-      });
+      if (currentProductIdRef.current === expectedProductId) {
+        setBusyAssetIds((current) => {
+          const nextBusy = new Set(current);
+          nextBusy.delete(assetId);
+          return nextBusy;
+        });
+      }
     }
   }
 
   async function replaceAsset(asset: DigitalProductAsset, file: File) {
+    const expectedProductId = productId;
     const validationError = validateFile(file);
     if (validationError) {
       showError(`${file.name}: ${validationError}`);
@@ -385,6 +515,7 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
         body: JSON.stringify({ fileName: file.name, mimeType: file.type, sizeBytes: file.size }),
       });
       const intentPayload = await responseJson(intentResponse);
+      if (currentProductIdRef.current !== expectedProductId) return;
       if (!intentResponse.ok || !intentPayload || typeof intentPayload !== "object") {
         throw new Error(parseError(intentPayload, "Unable to prepare replacement."));
       }
@@ -394,6 +525,7 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
         headers: { "Content-Type": file.type },
         body: file,
       });
+      if (currentProductIdRef.current !== expectedProductId) return;
       if (!direct.ok) throw new Error("The replacement could not be uploaded.");
       const completeResponse = await fetch("/api/products/digital-assets/complete", {
         method: "POST",
@@ -401,8 +533,10 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
         body: JSON.stringify({ intentId: intent.intentId }),
       });
       const completePayload = await responseJson(completeResponse);
+      if (currentProductIdRef.current !== expectedProductId) return;
       if (!completeResponse.ok) {
-        const refreshed = await loadAssets();
+        const refreshed = (await loadAssets())?.assets ?? [];
+        if (currentProductIdRef.current !== expectedProductId) return;
         const refreshedVersions = refreshed.find((item) => item.id === asset.id)?.digital_product_asset_versions ?? [];
         const currentVersion = [...refreshedVersions].sort((left, right) => right.version_number - left.version_number)[0];
         if (!currentVersion || currentVersion.customer_filename !== file.name) {
@@ -411,21 +545,27 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
         notify.info(parseError(completePayload, "Add a storefront preview before publishing."));
       } else {
         await loadAssets();
+        if (currentProductIdRef.current !== expectedProductId) return;
       }
       await onCatalogChange?.();
+      if (currentProductIdRef.current !== expectedProductId) return;
       notify.success("Customer file replaced. Existing purchases still use their original version.");
     } catch (replaceError) {
+      if (currentProductIdRef.current !== expectedProductId) return;
       showError(replaceError instanceof Error ? replaceError.message : "Unable to replace this file.");
     } finally {
-      setBusyAssetIds((current) => {
-        const next = new Set(current);
-        next.delete(asset.id);
-        return next;
-      });
+      if (currentProductIdRef.current === expectedProductId) {
+        setBusyAssetIds((current) => {
+          const next = new Set(current);
+          next.delete(asset.id);
+          return next;
+        });
+      }
     }
   }
 
   async function removeAsset(asset: DigitalProductAsset) {
+    const expectedProductId = productId;
     setBusyAssetIds((current) => new Set(current).add(asset.id));
     setError(null);
     try {
@@ -435,18 +575,23 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
         body: JSON.stringify({ assetId: asset.id }),
       });
       const payload = await responseJson(response);
+      if (currentProductIdRef.current !== expectedProductId) return;
       if (!response.ok) throw new Error(parseError(payload, "Unable to remove this file."));
       setAssets((current) => current.filter((candidate) => candidate.id !== asset.id));
       await onCatalogChange?.();
+      if (currentProductIdRef.current !== expectedProductId) return;
       notify.success("Customer file removed. Existing purchases are preserved.");
     } catch (removeError) {
+      if (currentProductIdRef.current !== expectedProductId) return;
       showError(removeError instanceof Error ? removeError.message : "Unable to remove this file.");
     } finally {
-      setBusyAssetIds((current) => {
-        const next = new Set(current);
-        next.delete(asset.id);
-        return next;
-      });
+      if (currentProductIdRef.current === expectedProductId) {
+        setBusyAssetIds((current) => {
+          const next = new Set(current);
+          next.delete(asset.id);
+          return next;
+        });
+      }
     }
   }
 
@@ -535,8 +680,48 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
         </div>
       ) : null}
 
+      {failedUploads.length > 0 ? (
+        <div className="space-y-2" aria-label="Uploads needing attention">
+          {failedUploads.map((intent) => {
+            const busy = busyFailedIntentIds.has(intent.id);
+            return (
+              <div
+                key={intent.id}
+                role="status"
+                aria-label={`Failed upload for ${intent.expected_filename}`}
+                className="rounded-lg border border-amber-300 bg-amber-50/60 p-3"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{intent.label}</p>
+                    <p className="text-xs text-muted-foreground">{intent.expected_filename} · version {intent.version_number}</p>
+                    <p className="mt-1 text-xs text-amber-900">{intent.last_safe_error}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Reselect the original file to retry securely. This retries the private customer file upload, not buyer preview processing.</p>
+                  </div>
+                  <label className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-muted focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2">
+                    {busy ? "Retrying…" : "Reselect and retry"}
+                    <input
+                      type="file"
+                      disabled={busy}
+                      accept={Object.keys(DIGITAL_PRODUCT_CONFIG.acceptedFiles).join(",")}
+                      className="sr-only"
+                      aria-label={`Select ${intent.expected_filename} to retry`}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (file) void retryPersistedUpload(intent, file);
+                        event.target.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
       {loading ? <p role="status" className="text-sm text-muted-foreground">Loading customer files…</p> : null}
-      {!loading && assets.length === 0 && uploads.length === 0 ? (
+      {!loading && assets.length === 0 && uploads.length === 0 && failedUploads.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-6 text-center">
           <p className="text-sm font-medium">No customer files yet</p>
           <p className="mt-1 text-xs text-muted-foreground">Add at least one ready file before publishing this digital product.</p>

@@ -4293,6 +4293,81 @@ describe("transactional digital product publishing", () => {
     );
   }
 
+  it("normalizes digital inventory invariants through the catalog RPC and direct database writes", () => {
+    const proposedVariants = JSON.stringify([
+      {
+        id: publishingIds.variantOne,
+        title: "Blue",
+        sku: "DIGITAL-BLUE",
+        sku_mode: "manual",
+        image_urls: [],
+        group_image_urls: [],
+        option_values: { Color: "Blue" },
+        price_cents: 1200,
+        inventory_qty: 99,
+        is_made_to_order: true,
+        is_default: true,
+        status: "active",
+        sort_order: 0,
+      },
+      {
+        id: publishingIds.variantTwo,
+        title: "Red",
+        sku: "DIGITAL-RED",
+        sku_mode: "manual",
+        image_urls: [],
+        group_image_urls: [],
+        option_values: { Color: "Red" },
+        price_cents: 1200,
+        inventory_qty: 88,
+        is_made_to_order: true,
+        is_default: false,
+        status: "active",
+        sort_order: 1,
+      },
+    ]).replaceAll("'", "''");
+    expect(JSON.parse(runSql(
+      "full_chain",
+      `select public.apply_digital_product_catalog_update(
+        '${publishingIds.store}', '${publishingIds.product}', '${publishingIds.user}',
+        '{"inventory_qty":77}'::jsonb, '${proposedVariants}'::jsonb, '["Color"]'::jsonb
+      )::text`,
+    ))).toEqual({ applied: true, code: "applied", reasons: [] });
+    expect(runSql(
+      "full_chain",
+      `select p.inventory_qty::text || ':' || string_agg(
+         pv.inventory_qty::text || ':' || pv.is_made_to_order::text, ',' order by pv.sort_order
+       )
+       from public.products p
+       join public.product_variants pv on pv.product_id = p.id
+       where p.id = '${publishingIds.product}'
+       group by p.inventory_qty`,
+    )).toBe("0:0:false,0:false");
+
+    runSql(
+      "full_chain",
+      `update public.products set inventory_qty = 55 where id = '${publishingIds.product}';
+       update public.product_variants set inventory_qty = 44, is_made_to_order = true
+       where id = '${publishingIds.variantOne}';`,
+    );
+    expect(runSql(
+      "full_chain",
+      `select p.inventory_qty::text || ':' || pv.inventory_qty::text || ':' || pv.is_made_to_order::text
+       from public.products p
+       join public.product_variants pv on pv.id = '${publishingIds.variantOne}'
+       where p.id = '${publishingIds.product}'`,
+    )).toBe("0:0:false");
+    runSql(
+      "full_chain",
+      `delete from public.product_variant_option_values mapping
+       using public.product_variants variant
+       where mapping.variant_id = variant.id
+         and variant.product_id = '${publishingIds.product}';
+       delete from public.product_option_values where product_id = '${publishingIds.product}';
+       delete from public.product_option_axes where product_id = '${publishingIds.product}';`,
+    );
+  });
+
   it("rejects an uncovered proposed variant before changing product, variants, or option metadata", () => {
     const proposedVariants = JSON.stringify([
       {

@@ -28,6 +28,8 @@ import {
   resolveTierNamesForProduct,
   sortVariants,
   statusOptions,
+  variantOptionInstruction,
+  variantOptionSummary,
   type OptionPairDraft,
   type CatalogInspectorTab,
   type ProductListItem,
@@ -603,6 +605,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   const [deleteConfirmDescription, setDeleteConfirmDescription] = useState("Are you sure you want to continue?");
   const [deleteConfirmLabel, setDeleteConfirmLabel] = useState("Delete");
   const [catalogError, setCatalogError] = useState<string | null>(null);
+  const catalogRefreshGenerationRef = useRef(0);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(searchParams.get("productId") ?? initialProducts[0]?.id ?? null);
   const [catalogInspectorTab, setCatalogInspectorTab] = useState<CatalogInspectorTab>("overview");
   const [digitalInspectorTarget, setDigitalInspectorTarget] = useState<string | null>(null);
@@ -1062,6 +1065,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       return { ok: false, error: message };
     }
 
+    const previousProduct = products.find((product) => product.id === productId);
     setProducts((current) =>
       current.map((product) => {
         if (product.id !== productId) return product;
@@ -1069,7 +1073,45 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       })
     );
 
+    if (previousProduct?.product_type === "digital" || payload.product.product_type === "digital") {
+      await refreshCatalogProducts();
+    }
+
     return { ok: true };
+  }
+
+  async function refreshCatalogProducts(options: { surfaceError?: boolean } = {}) {
+    const generation = catalogRefreshGenerationRef.current + 1;
+    catalogRefreshGenerationRef.current = generation;
+    try {
+      const response = await fetch("/api/products");
+      const payload = (await response.json().catch(() => null)) as ProductResponse | null;
+      if (catalogRefreshGenerationRef.current !== generation) return null;
+      if (!response.ok || !payload?.products) {
+        if (options.surfaceError) setCatalogError(payload?.error ?? "Unable to refresh publishing readiness.");
+        return null;
+      }
+      setProducts(payload.products);
+      return payload.products;
+    } catch {
+      if (catalogRefreshGenerationRef.current === generation && options.surfaceError) {
+        setCatalogError("Unable to refresh publishing readiness. Try again before publishing.");
+      }
+      return null;
+    }
+  }
+
+  async function publishDigitalProduct(productId: string) {
+    setCatalogError(null);
+    const authoritativeProducts = await refreshCatalogProducts({ surfaceError: true });
+    const authoritativeProduct = authoritativeProducts?.find((product) => product.id === productId);
+    if (!authoritativeProduct?.digital_readiness?.ready) {
+      if (authoritativeProducts) {
+        setCatalogError("Complete the publishing readiness steps before publishing this digital product.");
+      }
+      return;
+    }
+    await updateProduct(productId, { status: "active" });
   }
 
   async function validateVariantRemovals(productId: string, variantIds: string[]) {
@@ -2385,7 +2427,11 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
         className="flex w-[300%] transition-transform duration-300 ease-out"
         style={{ transform: `translateX(-${editStepIndex * 33.3333}%)` }}
       >
-        <span className="w-1/3">Update product content, image, and variant pricing/inventory.</span>
+        <span className="w-1/3">
+          {editProductType === "digital"
+            ? "Update product content, images, and variant pricing."
+            : "Update product content, images, and variant pricing/inventory."}
+        </span>
         <span className="w-1/3">Configure this variant group and its sellable options.</span>
         <span className="w-1/3">Configure one sellable option under this variant.</span>
       </span>
@@ -2699,7 +2745,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                       openEditFlyout(selectedProduct);
                       window.requestAnimationFrame(() => document.getElementById("edit-digital-rights")?.focus());
                     }}
-                    onPublish={async () => { await updateProduct(selectedProduct.id, { status: "active" }); }}
+                    onPublish={async () => { await publishDigitalProduct(selectedProduct.id); }}
                   />
                 </div>
               ) : null}
@@ -2729,6 +2775,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
               {catalogInspectorTab === "files" && selectedProduct.product_type === "digital" ? (
                 <div role="tabpanel" id="catalog-panel-files">
                   <DigitalProductFiles
+                    key={selectedProduct.id}
                     productId={selectedProduct.id}
                     variants={sortVariants(selectedProduct.product_variants ?? []).map((variant) => ({
                       id: variant.id,
@@ -2736,11 +2783,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                       status: variant.status,
                     }))}
                     focusTarget={digitalInspectorTarget}
-                    onCatalogChange={async () => {
-                      const response = await fetch("/api/products");
-                      const payload = (await response.json().catch(() => null)) as ProductResponse | null;
-                      if (response.ok && payload?.products) setProducts(payload.products);
-                    }}
+                    onCatalogChange={async () => { await refreshCatalogProducts(); }}
                   />
                 </div>
               ) : null}
@@ -2955,11 +2998,12 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
               {catalogInspectorTab === "media" && selectedProduct.product_type === "digital" ? (
                 <div role="tabpanel" id="catalog-panel-media">
                   <DigitalPreviewManager
+                    key={selectedProduct.id}
                     productId={selectedProduct.id}
                     productTitle={selectedProduct.title}
                     storefrontImages={selectedProduct.image_urls ?? []}
                     preview={selectedProduct.digital_preview}
-                    onChange={(preview) => setProducts((current) => current.map((product) => product.id === selectedProduct.id ? { ...product, digital_preview: preview } : product))}
+                    onChange={async () => { await refreshCatalogProducts(); }}
                   />
                 </div>
               ) : null}
@@ -3636,7 +3680,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                     ) : (
                       <div className="space-y-3 rounded-md border border-border bg-white p-3">
                         <p className="text-sm font-medium">Options</p>
-                        <p className="text-sm text-muted-foreground">Add options for this variant, then configure price, SKU, inventory, and images for each option.</p>
+                        <p className="text-sm text-muted-foreground">{variantOptionInstruction(productType)}</p>
                         <div className="space-y-2">
                           {activeCreateSubOptionIndexes.length === 0 ? (
                             <p className="text-xs text-muted-foreground">No options yet.</p>
@@ -3652,7 +3696,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                                 <div>
                                   <p className="text-sm font-medium">{getOptionValue(option, activeCreateLevelTwoName) || `${activeCreateLevelTwoName} option`}</p>
                                   <p className="text-xs text-muted-foreground">
-                                    ${option.priceDollars || "0.00"} · Inv {option.inventoryQty || "0"} · {option.status}
+                                    {variantOptionSummary(productType, option)}
                                   </p>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -4578,7 +4622,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                     ) : (
                       <div className="space-y-3 rounded-md border border-border bg-white p-3">
                         <p className="text-sm font-medium">Options</p>
-                        <p className="text-sm text-muted-foreground">Add options for this variant, then configure price, SKU, inventory, and images for each option.</p>
+                        <p className="text-sm text-muted-foreground">{variantOptionInstruction(editProductType)}</p>
                         <div className="space-y-2">
                           {activeEditSubOptionIndexes.length === 0 ? (
                             <p className="text-xs text-muted-foreground">No options yet.</p>
@@ -4594,7 +4638,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                                 <div>
                                   <p className="text-sm font-medium">{getOptionValue(option, activeEditLevelTwoName) || `${activeEditLevelTwoName} option`}</p>
                                   <p className="text-xs text-muted-foreground">
-                                    ${option.priceDollars || "0.00"} · Inv {option.inventoryQty || "0"} · {option.status}
+                                    {variantOptionSummary(editProductType, option)}
                                   </p>
                                 </div>
                                 <div className="flex items-center gap-2">

@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - Rebuilt the merchant catalog for digital products with fulfillment-first browsing, publish-readiness guidance, multi-file upload and lifecycle management, variant-scoped deliverables, and an exact public-preview workspace that keeps originals private.
 
 ### Fixed
+- Kept merchant digital-product readiness authoritative after rights, file, and preview changes; isolated async catalog work across product switches; restored failed private uploads after reload; removed physical inventory language from digital variants; and enforced zero-stock/non-made-to-order digital invariants in both API and database writes.
 - Hardened digital-link recovery with platform-trusted keyed IP throttling that survives cookie resets, bounded quantized response envelopes plus audit-free database decoy work, and removal of UUID-derived order references from bearer responses.
 - Bound malformed digital-download reservation cleanup to caller-known request identity and authenticated opaque browser sessions so swapped responses and client-controlled cookies cannot release or bypass limits for another request.
 - Fixed digital storefront cart handling so zero-inventory downloads remain purchasable and visibly available in product grids, persisted carts are transactionally repaired from the active catalog, stale or mismatched selections are removed, duplicate digital quantities are constrained to one, and checkout type/composition snapshots are enforced against authoritative catalog data.

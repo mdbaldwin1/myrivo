@@ -45,7 +45,17 @@ export async function GET(request: NextRequest) {
     .eq("active", true)
     .order("sort_order");
   if (error) return NextResponse.json({ error: "Unable to load files." }, { status: 500 });
-  return NextResponse.json({ assets: data ?? [] });
+  const { data: failedUploads, error: failedUploadsError } = await admin
+    .from("digital_asset_upload_intents")
+    .select(
+      "id,asset_id,operation,label,expected_filename,expected_mime_type,expected_byte_size,product_variant_id,last_safe_error,version_number,updated_at",
+    )
+    .eq("store_id", bundle.store.id)
+    .eq("product_id", productId!)
+    .eq("status", "failed")
+    .order("updated_at", { ascending: false });
+  if (failedUploadsError) return NextResponse.json({ error: "Unable to load failed uploads." }, { status: 500 });
+  return NextResponse.json({ assets: data ?? [], failedUploads: failedUploads ?? [] });
 }
 
 const updateSchema = z.discriminatedUnion("action", [
