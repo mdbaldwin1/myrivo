@@ -109,6 +109,10 @@ const normalizedCustomerRecoveryMigration = join(
   repoRoot,
   "supabase/migrations/20260813014000_normalize_customer_recovery_security.sql",
 );
+const transactionalFinancialAccessMigration = join(
+  repoRoot,
+  "supabase/migrations/20260813017000_transactional_financial_digital_access.sql",
+);
 
 const ids = {
   storeA: "10000000-0000-0000-0000-000000000001",
@@ -501,6 +505,9 @@ beforeAll(() => {
   }
   if (!existsSync(normalizedCustomerRecoveryMigration)) {
     throw new Error(`Missing normalized customer recovery migration: ${normalizedCustomerRecoveryMigration}`);
+  }
+  if (!existsSync(transactionalFinancialAccessMigration)) {
+    throw new Error(`Missing transactional financial access migration: ${transactionalFinancialAccessMigration}`);
   }
 
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-digital-migration-"));
@@ -2518,6 +2525,486 @@ describe("durable digital delivery", () => {
     ).toBe("2");
   });
 
+  function createFinancialAccessFixture(suffix: string) {
+    retireClaimableJobs();
+    const fixture = finalizeDeliveryCheckout(suffix);
+    const job = claimDelivery();
+    completeInitialDelivery(job, `task13-financial-access-${suffix}`);
+    return fixture;
+  }
+
+  function insertRefund(orderId: string, suffix: string, amountCents: number) {
+    return runSql(
+      "full_chain",
+      `insert into public.order_refunds(
+         id, order_id, store_id, requested_by_user_id, amount_cents,
+         reason_key, status
+       ) values (
+         'f1000000-0000-4000-8000-${suffix}', '${orderId}', '${ids.manifestStore}',
+         '00000000-0000-4000-8000-000000000011', ${amountCents},
+         'customer_request', 'requested'
+       ) returning id`,
+    );
+  }
+
+  function refundSyncStatement({
+    refundId,
+    stripeRefundId,
+    status,
+    eventId,
+    eventCreatedAt,
+  }: {
+    refundId: string;
+    stripeRefundId: string;
+    status: "processing" | "succeeded" | "failed" | "cancelled";
+    eventId: string;
+    eventCreatedAt: string;
+  }) {
+    return `select public.sync_refund_digital_access(
+      '${refundId}', '${stripeRefundId}', '${status}', '${status}', null, null, null,
+      '${eventId}', '${eventCreatedAt}'::timestamptz
+    )`;
+  }
+
+  function disputeSyncStatement({
+    orderId,
+    disputeSuffix,
+    status,
+    eventId,
+    eventCreatedAt,
+  }: {
+    orderId: string;
+    disputeSuffix: string;
+    status:
+      | "warning_needs_response"
+      | "warning_under_review"
+      | "warning_closed"
+      | "needs_response"
+      | "under_review"
+      | "won"
+      | "lost"
+      | "prevented";
+    eventId: string;
+    eventCreatedAt: string;
+  }) {
+    return `select public.sync_dispute_digital_access(
+      '${orderId}', '${ids.manifestStore}', 'dp_${disputeSuffix}', 'ch_${disputeSuffix}',
+      (select stripe_payment_intent_id from public.orders where id = '${orderId}'),
+      2500, 'usd', 'fraudulent', '${status}', true, null, '{}'::jsonb,
+      '${eventId}', '${eventCreatedAt}'::timestamptz
+    )`;
+  }
+
+  function entitlementAccessState(orderId: string) {
+    return runSql(
+      "full_chain",
+      `select string_agg(
+         status || ':' || coalesce(status_reason, 'none') || ':' ||
+           coalesce(status_source_dispute_id::text, 'none'), ',' order by id
+       ) from public.digital_order_entitlements where order_id = '${orderId}'`,
+    );
+  }
+
+  it("preserves partial access until cumulative succeeded refunds reach the full order total", () => {
+    const fixture = createFinancialAccessFixture("000000000171");
+    const total = Number(
+      runSql(
+        "full_chain",
+        `select total_cents from public.orders where id = '${fixture.orderId}'`,
+      ),
+    );
+    const firstRefund = insertRefund(fixture.orderId, "000000000171", 500);
+    runSql(
+      "full_chain",
+      refundSyncStatement({
+        refundId: firstRefund,
+        stripeRefundId: "re_task13_partial",
+        status: "succeeded",
+        eventId: "evt_task13_partial",
+        eventCreatedAt: "2026-08-13T17:01:00Z",
+      }),
+    );
+    expect(entitlementAccessState(fixture.orderId)).toBe("active:none:none,active:none:none");
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.digital_order_access_tokens
+         where order_id = '${fixture.orderId}' and revoked_at is null`,
+      ),
+    ).toBe("1");
+
+    const secondRefund = insertRefund(
+      fixture.orderId,
+      "000000000172",
+      total - 500,
+    );
+    runSql(
+      "full_chain",
+      refundSyncStatement({
+        refundId: secondRefund,
+        stripeRefundId: "re_task13_full",
+        status: "succeeded",
+        eventId: "evt_task13_full",
+        eventCreatedAt: "2026-08-13T17:02:00Z",
+      }),
+    );
+    expect(entitlementAccessState(fixture.orderId)).toBe(
+      "revoked:full_refund:none,revoked:full_refund:none",
+    );
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.digital_order_access_tokens
+         where order_id = '${fixture.orderId}' and revoked_at is null`,
+      ),
+    ).toBe("0");
+  });
+
+  it("makes repeated and stale refund events no-ops with one exact audit", () => {
+    const fixture = createFinancialAccessFixture("000000000173");
+    const refundId = insertRefund(fixture.orderId, "000000000173", 500);
+    const succeeded = refundSyncStatement({
+      refundId,
+      stripeRefundId: "re_task13_repeat",
+      status: "succeeded",
+      eventId: "evt_task13_repeat",
+      eventCreatedAt: "2026-08-13T17:05:00Z",
+    });
+    runSql("full_chain", `${succeeded}; ${succeeded}`);
+    runSql(
+      "full_chain",
+      refundSyncStatement({
+        refundId,
+        stripeRefundId: "re_task13_repeat",
+        status: "processing",
+        eventId: "evt_task13_stale",
+        eventCreatedAt: "2026-08-13T17:04:00Z",
+      }),
+    );
+
+    expect(
+      runSql(
+        "full_chain",
+        `select status || ':' || source_event_id from public.order_refunds
+         where id = '${refundId}'`,
+      ),
+    ).toBe("succeeded:evt_task13_repeat");
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.audit_events
+         where entity_id = '${fixture.orderId}'
+           and metadata ->> 'sourceEventId' = 'evt_task13_repeat'`,
+      ),
+    ).toBe("1");
+  });
+
+  it.each([
+    ["warning_needs_response", "warning_closed", "000000000181"],
+    ["warning_under_review", "warning_closed", "000000000182"],
+    ["needs_response", "won", "000000000183"],
+    ["under_review", "prevented", "000000000184"],
+  ] as const)(
+    "suspends %s and restores only that dispute when it becomes %s",
+    (openStatus, closedStatus, suffix) => {
+      const fixture = createFinancialAccessFixture(suffix);
+      runSql(
+        "full_chain",
+        disputeSyncStatement({
+          orderId: fixture.orderId,
+          disputeSuffix: suffix,
+          status: openStatus,
+          eventId: `evt_task13_open_${openStatus}`,
+          eventCreatedAt: "2026-08-13T17:10:00Z",
+        }),
+      );
+      const disputeId = runSql(
+        "full_chain",
+        `select id from public.order_disputes where stripe_dispute_id = 'dp_${suffix}'`,
+      );
+      expect(entitlementAccessState(fixture.orderId)).toBe(
+        `suspended:dispute_open:${disputeId},suspended:dispute_open:${disputeId}`,
+      );
+      runSql(
+        "full_chain",
+        disputeSyncStatement({
+          orderId: fixture.orderId,
+          disputeSuffix: suffix,
+          status: closedStatus,
+          eventId: `evt_task13_closed_${openStatus}`,
+          eventCreatedAt: "2026-08-13T17:11:00Z",
+        }),
+      );
+      expect(entitlementAccessState(fixture.orderId)).toBe("active:none:none,active:none:none");
+    },
+  );
+
+  it("never restores a full-refund or lost-dispute terminal revocation", () => {
+    const refunded = createFinancialAccessFixture("000000000174");
+    runSql(
+      "full_chain",
+      disputeSyncStatement({
+        orderId: refunded.orderId,
+        disputeSuffix: "task13_refunded",
+        status: "needs_response",
+        eventId: "evt_task13_refunded_open",
+        eventCreatedAt: "2026-08-13T17:20:00Z",
+      }),
+    );
+    const refundId = insertRefund(
+      refunded.orderId,
+      "000000000174",
+      Number(
+        runSql(
+          "full_chain",
+          `select total_cents from public.orders where id = '${refunded.orderId}'`,
+        ),
+      ),
+    );
+    runSql(
+      "full_chain",
+      refundSyncStatement({
+        refundId,
+        stripeRefundId: "re_task13_refunded",
+        status: "succeeded",
+        eventId: "evt_task13_refunded",
+        eventCreatedAt: "2026-08-13T17:21:00Z",
+      }),
+    );
+    runSql(
+      "full_chain",
+      disputeSyncStatement({
+        orderId: refunded.orderId,
+        disputeSuffix: "task13_refunded",
+        status: "won",
+        eventId: "evt_task13_refunded_won",
+        eventCreatedAt: "2026-08-13T17:22:00Z",
+      }),
+    );
+    expect(entitlementAccessState(refunded.orderId)).toBe(
+      "revoked:full_refund:none,revoked:full_refund:none",
+    );
+
+    const lost = createFinancialAccessFixture("000000000175");
+    runSql(
+      "full_chain",
+      disputeSyncStatement({
+        orderId: lost.orderId,
+        disputeSuffix: "task13_lost",
+        status: "under_review",
+        eventId: "evt_task13_lost_open",
+        eventCreatedAt: "2026-08-13T17:22:30Z",
+      }),
+    );
+    expect(entitlementAccessState(lost.orderId)).toContain("suspended:dispute_open:");
+    runSql(
+      "full_chain",
+      disputeSyncStatement({
+        orderId: lost.orderId,
+        disputeSuffix: "task13_lost",
+        status: "lost",
+        eventId: "evt_task13_lost",
+        eventCreatedAt: "2026-08-13T17:23:00Z",
+      }),
+    );
+    const lostDisputeId = runSql(
+      "full_chain",
+      "select id from public.order_disputes where stripe_dispute_id = 'dp_task13_lost'",
+    );
+    runSql(
+      "full_chain",
+      disputeSyncStatement({
+        orderId: lost.orderId,
+        disputeSuffix: "task13_lost",
+        status: "won",
+        eventId: "evt_task13_lost_stale_win",
+        eventCreatedAt: "2026-08-13T17:24:00Z",
+      }),
+    );
+    expect(entitlementAccessState(lost.orderId)).toBe(
+      `revoked:dispute_lost:${lostDisputeId},revoked:dispute_lost:${lostDisputeId}`,
+    );
+  });
+
+  it("does not let one dispute restore rows suspended by another open dispute", () => {
+    const fixture = createFinancialAccessFixture("000000000176");
+    for (const [suffix, minute] of [
+      ["task13_first", "30"],
+      ["task13_second", "31"],
+    ] as const) {
+      runSql(
+        "full_chain",
+        disputeSyncStatement({
+          orderId: fixture.orderId,
+          disputeSuffix: suffix,
+          status: "needs_response",
+          eventId: `evt_${suffix}_open`,
+          eventCreatedAt: `2026-08-13T17:${minute}:00Z`,
+        }),
+      );
+    }
+    const firstId = runSql(
+      "full_chain",
+      "select id from public.order_disputes where stripe_dispute_id = 'dp_task13_first'",
+    );
+    runSql(
+      "full_chain",
+      disputeSyncStatement({
+        orderId: fixture.orderId,
+        disputeSuffix: "task13_second",
+        status: "won",
+        eventId: "evt_task13_second_won",
+        eventCreatedAt: "2026-08-13T17:32:00Z",
+      }),
+    );
+    expect(entitlementAccessState(fixture.orderId)).toBe(
+      `suspended:dispute_open:${firstId},suspended:dispute_open:${firstId}`,
+    );
+  });
+
+  it("rolls the financial record, entitlements, tokens, and audit back on injected failure", () => {
+    const fixture = createFinancialAccessFixture("000000000177");
+    const total = Number(
+      runSql(
+        "full_chain",
+        `select total_cents from public.orders where id = '${fixture.orderId}'`,
+      ),
+    );
+    const refundId = insertRefund(fixture.orderId, "000000000177", total);
+    runSql(
+      "full_chain",
+      `create function public.test_reject_task13_audit()
+       returns trigger language plpgsql as $$
+       begin
+         if new.metadata ->> 'sourceEventId' = 'evt_task13_fault' then
+           raise exception 'Injected Task 13 audit failure';
+         end if;
+         return new;
+       end;
+       $$;
+       create trigger test_reject_task13_audit before insert on public.audit_events
+       for each row execute function public.test_reject_task13_audit()`,
+    );
+    try {
+      expectRejected(
+        "full_chain",
+        refundSyncStatement({
+          refundId,
+          stripeRefundId: "re_task13_fault",
+          status: "succeeded",
+          eventId: "evt_task13_fault",
+          eventCreatedAt: "2026-08-13T17:40:00Z",
+        }),
+      );
+      expect(
+        runSql(
+          "full_chain",
+          `select status || ':' || (source_event_id is null)::text
+           from public.order_refunds where id = '${refundId}'`,
+        ),
+      ).toBe("requested:true");
+      expect(entitlementAccessState(fixture.orderId)).toBe("active:none:none,active:none:none");
+      expect(
+        runSql(
+          "full_chain",
+          `select count(*) from public.digital_order_access_tokens
+           where order_id = '${fixture.orderId}' and revoked_at is null`,
+        ),
+      ).toBe("1");
+      expect(
+        runSql(
+          "full_chain",
+          "select count(*) from public.financial_access_event_idempotency where source_event_id = 'evt_task13_fault'",
+        ),
+      ).toBe("0");
+    } finally {
+      runSql(
+        "full_chain",
+        `drop trigger if exists test_reject_task13_audit on public.audit_events;
+         drop function if exists public.test_reject_task13_audit()`,
+      );
+    }
+  });
+
+  it("serializes concurrent out-of-order dispute events without stale rollback", async () => {
+    const fixture = createFinancialAccessFixture("000000000178");
+    const newer = `begin;
+      select id from public.orders where id = '${fixture.orderId}' for update;
+      select pg_sleep(0.35);
+      ${disputeSyncStatement({
+        orderId: fixture.orderId,
+        disputeSuffix: "task13_race",
+        status: "lost",
+        eventId: "evt_task13_race_new",
+        eventCreatedAt: "2026-08-13T17:51:00Z",
+      })}; commit;`;
+    const newerPromise = runSqlAsync("full_chain", newer, "task13-newer-event");
+    await waitForPostgresSession("full_chain", "task13-newer-event");
+    const olderPromise = runSqlAsync(
+      "full_chain",
+      disputeSyncStatement({
+        orderId: fixture.orderId,
+        disputeSuffix: "task13_race",
+        status: "needs_response",
+        eventId: "evt_task13_race_old",
+        eventCreatedAt: "2026-08-13T17:50:00Z",
+      }),
+      "task13-older-event",
+    );
+    await Promise.all([newerPromise, olderPromise]);
+
+    expect(
+      runSql(
+        "full_chain",
+        "select status || ':' || source_event_id from public.order_disputes where stripe_dispute_id = 'dp_task13_race'",
+      ),
+    ).toBe("lost:evt_task13_race_new");
+    expect(entitlementAccessState(fixture.orderId)).toMatch(
+      /^revoked:dispute_lost:/,
+    );
+  });
+
+  it("reports safe reconciliation issue codes without PII, hashes, or storage paths", () => {
+    const missing = createFinancialAccessFixture("000000000179");
+    runSql(
+      "full_chain",
+      `delete from public.digital_delivery_notification_attempts where notification_id in (
+         select id from public.digital_delivery_notifications where order_id = '${missing.orderId}'
+       );
+       delete from public.digital_delivery_notifications where order_id = '${missing.orderId}';
+       delete from public.digital_delivery_attempts where job_id in (
+         select id from public.digital_delivery_jobs where order_id = '${missing.orderId}'
+       );
+       delete from public.digital_order_access_tokens where order_id = '${missing.orderId}';
+       delete from public.digital_order_entitlements where order_id = '${missing.orderId}';
+       delete from public.digital_delivery_jobs where order_id = '${missing.orderId}'`,
+    );
+    const refunded = createFinancialAccessFixture("000000000180");
+    const total = Number(
+      runSql(
+        "full_chain",
+        `select total_cents from public.orders where id = '${refunded.orderId}'`,
+      ),
+    );
+    runSql(
+      "full_chain",
+      `insert into public.order_refunds(order_id, store_id, amount_cents, reason_key, status)
+       values ('${refunded.orderId}', '${ids.manifestStore}', ${total}, 'customer_request', 'succeeded')`,
+    );
+
+    const output = runSql(
+      "full_chain",
+      `select jsonb_agg(to_jsonb(issue) order by issue.issue_type)
+       from public.find_digital_access_reconciliation_issues(500) issue
+       where issue.order_id in ('${missing.orderId}', '${refunded.orderId}')`,
+    );
+    expect(output).toContain("paid_order_missing_delivery_job");
+    expect(output).toContain("paid_order_missing_entitlements");
+    expect(output).toContain("full_refund_active_access");
+    expect(output).toContain("token_access_mismatch");
+    expect(output).not.toMatch(/email|token_hash|storage_path|customer_filename/i);
+  });
+
   it("keeps every delivery mutation service-role-only while merchants can read failures", () => {
     expect(
       runSql(
@@ -2527,6 +3014,16 @@ describe("durable digital delivery", () => {
           has_function_privilege('authenticated', 'public.materialize_digital_delivery_from_manifest(uuid,uuid,uuid,text,integer,integer)', 'execute')::text || ':' ||
           has_function_privilege('service_role', 'public.enqueue_digital_delivery(uuid,uuid)', 'execute')::text || ':' ||
           has_function_privilege('service_role', 'public.complete_digital_delivery_job(uuid,uuid,text,text,integer,integer,integer)', 'execute')::text`,
+      ),
+    ).toBe("false:false:true:true");
+    expect(
+      runSql(
+        "full_chain",
+        `select
+          has_function_privilege('anon', 'public.sync_refund_digital_access(uuid,text,text,text,text,text,uuid,text,timestamptz)', 'execute')::text || ':' ||
+          has_function_privilege('authenticated', 'public.sync_dispute_digital_access(uuid,uuid,text,text,text,integer,text,text,text,boolean,timestamptz,jsonb,text,timestamptz)', 'execute')::text || ':' ||
+          has_function_privilege('service_role', 'public.sync_refund_digital_access(uuid,text,text,text,text,text,uuid,text,timestamptz)', 'execute')::text || ':' ||
+          has_function_privilege('service_role', 'public.find_digital_access_reconciliation_issues(integer)', 'execute')::text`,
       ),
     ).toBe("false:false:true:true");
   });

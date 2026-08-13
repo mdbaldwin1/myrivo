@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import type Stripe from "stripe";
 import { z } from "zod";
 import { isStripeStubMode } from "@/lib/env";
 import { logAuditEvent } from "@/lib/audit/log";
-import { sendOrderRefundNotification } from "@/lib/notifications/order-emails";
-import { mapStripeRefundStatus, STRIPE_REFUND_REASON_MAP, type MerchantRefundReason } from "@/lib/orders/refunds";
+import { mapStripeRefundStatus, STRIPE_REFUND_REASON_MAP } from "@/lib/orders/refunds";
 import { syncStripeRefundRecord } from "@/lib/orders/refund-dispute-sync";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
@@ -128,50 +128,33 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   const shouldUseStubMode = isStripeStubMode() || isStubPaymentIntentId(refund.orders.stripe_payment_intent_id);
 
   if (shouldUseStubMode || !refund.orders.stripe_payment_intent_id) {
-    const { data: stubbedRefund, error: stubError } = await admin
-      .from("order_refunds")
-      .update({
-        status: "succeeded",
-        processed_by_user_id: user.id,
-        processed_at: new Date().toISOString(),
-        metadata_json: {
-          ...(refund.metadata_json ?? {}),
-          processedMode: "stub"
-        }
-      })
-      .eq("id", refund.id)
-      .select("id,order_id,store_id,requested_by_user_id,processed_by_user_id,amount_cents,reason_key,reason_note,customer_message,status,stripe_refund_id,metadata_json,processed_at,created_at,updated_at")
-      .single<OrderRefundRecord>();
+    const sourceEventCreatedAt = new Date().toISOString();
+    const stubRefund = {
+      id: `stub_refund_${refund.id}`,
+      status: "succeeded",
+      created: Math.floor(Date.parse(sourceEventCreatedAt) / 1000),
+      metadata: { refund_request_id: refund.id },
+      failure_reason: null,
+      pending_reason: null
+    } as unknown as Stripe.Refund;
 
-    if (stubError) {
-      return NextResponse.json({ error: stubError.message }, { status: 500 });
-    }
-
-    await logAuditEvent({
-      storeId: bundle.store.id,
-      actorUserId: user.id,
-      action: "refund_succeeded",
-      entity: "order",
-      entityId: refund.order_id,
-      metadata: {
-        refundId: refund.id,
-        amountCents: refund.amount_cents,
-        processedMode: "stub"
-      }
-    });
-
-      await sendOrderRefundNotification(refund.order_id, {
-        refundId: stubbedRefund.id,
-        amountCents: stubbedRefund.amount_cents,
-        reasonKey: stubbedRefund.reason_key as MerchantRefundReason,
-        customerMessage: stubbedRefund.customer_message
+    try {
+      const synced = await syncStripeRefundRecord(stubRefund, {
+        refundRequestId: refund.id,
+        processedByUserId: user.id,
+        sourceEventId: `stub_refund:${refund.id}:succeeded`,
+        sourceEventCreatedAt
       });
-
-    return NextResponse.json({ refund: stubbedRefund });
+      return NextResponse.json({ refund: synced.refund });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Refund access synchronization failed.";
+      return NextResponse.json({ error: message, refund: null }, { status: 502 });
+    }
   }
 
+  let stripeRefund: Stripe.Refund;
   try {
-    const stripeRefund = await getStripeClient().refunds.create({
+    stripeRefund = await getStripeClient().refunds.create({
       payment_intent: refund.orders.stripe_payment_intent_id,
       amount: refund.amount_cents,
       reason: STRIPE_REFUND_REASON_MAP[refund.reason_key] ?? undefined,
@@ -181,10 +164,6 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         store_id: bundle.store.id
       }
     });
-
-    const synced = await syncStripeRefundRecord(stripeRefund, { refundRequestId: refund.id, processedByUserId: user.id });
-
-    return NextResponse.json({ refund: synced.refund });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Stripe refund failed.";
     const nextStatus = mapStripeRefundStatus("failed");
@@ -219,5 +198,16 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
 
     return NextResponse.json({ error: message, refund: failedRefund ?? null }, { status: 502 });
+  }
+
+  try {
+    const synced = await syncStripeRefundRecord(stripeRefund, {
+      refundRequestId: refund.id,
+      processedByUserId: user.id
+    });
+    return NextResponse.json({ refund: synced.refund });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Refund access synchronization failed.";
+    return NextResponse.json({ error: message, refund: null }, { status: 502 });
   }
 }

@@ -508,6 +508,8 @@ export type OrderRefundRecord = {
   stripe_refund_id: string | null;
   metadata_json: Record<string, unknown>;
   processed_at: string | null;
+  source_event_id: string | null;
+  source_event_created_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -537,6 +539,8 @@ export type OrderDisputeRecord = {
   response_due_by: string | null;
   metadata_json: Record<string, unknown>;
   closed_at: string | null;
+  source_event_id: string | null;
+  source_event_created_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -882,6 +886,7 @@ export type DigitalOrderEntitlementRecord = {
   download_grants_used: number;
   status: DigitalEntitlementStatus;
   status_reason: string | null;
+  status_source_dispute_id: string | null;
   first_accessed_at: string | null;
   last_accessed_at: string | null;
   created_at: string;

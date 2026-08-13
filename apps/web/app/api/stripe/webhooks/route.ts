@@ -88,7 +88,10 @@ export async function POST(request: Request) {
 
     if (event.type === "refund.created" || event.type === "refund.updated" || event.type === "charge.refund.updated") {
       const refund = event.data.object as Stripe.Refund;
-      await syncStripeRefundRecord(refund);
+      await syncStripeRefundRecord(refund, {
+        sourceEventId: event.id,
+        sourceEventCreatedAt: new Date(event.created * 1000).toISOString()
+      });
       await markStripeWebhookEventProcessed(event.id);
       return NextResponse.json({ received: true, type: event.type });
     }
@@ -109,7 +112,10 @@ export async function POST(request: Request) {
         dispute.payment_intent = charge.payment_intent;
       }
 
-      await syncStripeDisputeRecord(dispute);
+      await syncStripeDisputeRecord(dispute, {
+        sourceEventId: event.id,
+        sourceEventCreatedAt: new Date(event.created * 1000).toISOString()
+      });
       await markStripeWebhookEventProcessed(event.id);
       return NextResponse.json({ received: true, type: event.type });
     }

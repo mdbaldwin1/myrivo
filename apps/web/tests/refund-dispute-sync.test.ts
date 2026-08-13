@@ -1,405 +1,245 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const adminFromMock = vi.fn();
-const logAuditEventMock = vi.fn();
+const adminRpcMock = vi.fn();
 const sendOrderRefundNotificationMock = vi.fn();
 const sendOrderDisputeNotificationMock = vi.fn();
 
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: vi.fn(() => ({
-    from: (...args: unknown[]) => adminFromMock(...args)
-  }))
-}));
-
-vi.mock("@/lib/audit/log", () => ({
-  logAuditEvent: (...args: unknown[]) => logAuditEventMock(...args)
+    from: (...args: unknown[]) => adminFromMock(...args),
+    rpc: (...args: unknown[]) => adminRpcMock(...args),
+  })),
 }));
 
 vi.mock("@/lib/notifications/order-emails", () => ({
-  sendOrderRefundNotification: (...args: unknown[]) => sendOrderRefundNotificationMock(...args),
-  sendOrderDisputeNotification: (...args: unknown[]) => sendOrderDisputeNotificationMock(...args)
+  sendOrderRefundNotification: (...args: unknown[]) =>
+    sendOrderRefundNotificationMock(...args),
+  sendOrderDisputeNotification: (...args: unknown[]) =>
+    sendOrderDisputeNotificationMock(...args),
 }));
+
+const ids = {
+  refund: "a1000000-0000-4000-8000-000000000001",
+  dispute: "a2000000-0000-4000-8000-000000000001",
+  order: "a3000000-0000-4000-8000-000000000001",
+  store: "a4000000-0000-4000-8000-000000000001",
+} as const;
+
+function refundRecord(status = "succeeded") {
+  return {
+    id: ids.refund,
+    order_id: ids.order,
+    store_id: ids.store,
+    requested_by_user_id: null,
+    processed_by_user_id: null,
+    amount_cents: 1200,
+    reason_key: "customer_request",
+    reason_note: null,
+    customer_message: null,
+    status,
+    stripe_refund_id: "re_123",
+    metadata_json: {},
+    processed_at: "2026-08-13T18:00:00.000Z",
+    source_event_id: "evt_refund_123",
+    source_event_created_at: "2026-08-13T18:00:00.000Z",
+    created_at: "2026-08-13T17:00:00.000Z",
+    updated_at: "2026-08-13T18:00:00.000Z",
+  };
+}
+
+function disputeRecord(status = "needs_response") {
+  return {
+    id: ids.dispute,
+    order_id: ids.order,
+    store_id: ids.store,
+    stripe_dispute_id: "dp_123",
+    stripe_charge_id: "ch_123",
+    stripe_payment_intent_id: "pi_123",
+    amount_cents: 1200,
+    currency: "usd",
+    reason: "fraudulent",
+    status,
+    is_charge_refundable: true,
+    response_due_by: "2026-08-20T18:00:00.000Z",
+    metadata_json: {},
+    closed_at: null,
+    source_event_id: "evt_dispute_123",
+    source_event_created_at: "2026-08-13T18:00:00.000Z",
+    created_at: "2026-08-13T17:00:00.000Z",
+    updated_at: "2026-08-13T18:00:00.000Z",
+  };
+}
+
+function stripeRefund(status = "succeeded") {
+  return {
+    id: "re_123",
+    object: "refund",
+    amount: 1200,
+    balance_transaction: null,
+    charge: "ch_123",
+    created: 1_765_649_600,
+    currency: "usd",
+    metadata: { refund_request_id: ids.refund },
+    payment_intent: "pi_123",
+    reason: "requested_by_customer",
+    receipt_number: null,
+    source_transfer_reversal: null,
+    status,
+    transfer_reversal: null,
+  } as never;
+}
+
+function stripeDispute(status = "needs_response") {
+  return {
+    id: "dp_123",
+    object: "dispute",
+    amount: 1200,
+    charge: "ch_123",
+    created: 1_765_649_600,
+    currency: "usd",
+    evidence: {},
+    evidence_details: {
+      due_by: 1_766_254_400,
+      has_evidence: false,
+      past_due: false,
+      submission_count: 0,
+    },
+    is_charge_refundable: true,
+    payment_intent: "pi_123",
+    reason: "fraudulent",
+    status,
+  } as never;
+}
 
 describe("refund/dispute sync", () => {
   beforeEach(() => {
     vi.resetModules();
     adminFromMock.mockReset();
-    logAuditEventMock.mockReset();
+    adminRpcMock.mockReset();
     sendOrderRefundNotificationMock.mockReset();
     sendOrderDisputeNotificationMock.mockReset();
   });
 
-  test("syncStripeRefundRecord updates the local refund record and logs a success transition", async () => {
-    adminFromMock.mockImplementation((table: string) => {
-      if (table === "order_refunds") {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn((column: string, value: string) => {
-              if (column === "id" && value === "refund-request-1") {
-                return {
-                  maybeSingle: vi.fn(async () => ({
-                    data: {
-                      id: "refund-request-1",
-                      order_id: "order-1",
-                      store_id: "store-1",
-                      status: "processing",
-                      metadata_json: {}
-                    },
-                    error: null
-                  }))
-                };
-              }
-
-              return {
-                maybeSingle: vi.fn(async () => ({
-                  data: null,
-                  error: null
-                }))
-              };
-            })
-          })),
-          update: vi.fn((payload: Record<string, unknown>) => ({
-            eq: vi.fn(() => ({
-              select: vi.fn(() => ({
-                single: vi.fn(async () => ({
-                  data: {
-                    id: "refund-request-1",
-                    order_id: "order-1",
-                    store_id: "store-1",
-                    requested_by_user_id: "user-1",
-                    processed_by_user_id: "user-2",
-                    amount_cents: 1200,
-                    reason_key: "customer_request",
-                    reason_note: null,
-                    customer_message: null,
-                    status: payload.status,
-                    stripe_refund_id: "re_123",
-                    metadata_json: payload.metadata_json,
-                    processed_at: payload.processed_at,
-                    created_at: "2026-03-13T13:00:00.000Z",
-                    updated_at: "2026-03-13T14:00:00.000Z"
-                  },
-                  error: null
-                }))
-              }))
-            }))
-          }))
-        };
-      }
-
-      throw new Error(`Unexpected table ${table}`);
+  test("uses the transactional refund RPC and notifies only after it commits", async () => {
+    adminRpcMock.mockResolvedValue({
+      data: {
+        applied: true,
+        state_changed: true,
+        access_changed: true,
+        effective_access_state: "revoked",
+        record: refundRecord(),
+      },
+      error: null,
     });
 
-    const { syncStripeRefundRecord } = await import("@/lib/orders/refund-dispute-sync");
-    const result = await syncStripeRefundRecord(
-      {
-        id: "re_123",
-        object: "refund",
-        amount: 1200,
-        balance_transaction: null,
-        charge: "ch_123",
-        created: 1_741_878_400,
-        currency: "usd",
-        metadata: { refund_request_id: "refund-request-1" },
-        payment_intent: "pi_123",
-        reason: "requested_by_customer",
-        receipt_number: null,
-        source_transfer_reversal: null,
-        status: "succeeded",
-        transfer_reversal: null
-      } as never,
-      { processedByUserId: "user-2" }
+    const { syncStripeRefundRecord } = await import(
+      "@/lib/orders/refund-dispute-sync"
     );
+    const result = await syncStripeRefundRecord(stripeRefund(), {
+      sourceEventId: "evt_refund_123",
+      sourceEventCreatedAt: "2026-08-13T18:00:00.000Z",
+    });
 
     expect(result.refund?.status).toBe("succeeded");
-    expect(result.orderId).toBe("order-1");
-    expect(logAuditEventMock).toHaveBeenCalledWith(
+    expect(adminRpcMock).toHaveBeenCalledWith(
+      "sync_refund_digital_access",
       expect.objectContaining({
-        action: "refund_succeeded",
-        entityId: "order-1"
-      })
+        p_refund_request_id: ids.refund,
+        p_stripe_refund_id: "re_123",
+        p_incoming_status: "succeeded",
+        p_source_event_id: "evt_refund_123",
+        p_source_event_created_at: "2026-08-13T18:00:00.000Z",
+      }),
     );
-    expect(sendOrderRefundNotificationMock).toHaveBeenCalledWith(
-      "order-1",
-      expect.objectContaining({
-        refundId: "refund-request-1",
-        amountCents: 1200
-      })
-    );
+    expect(sendOrderRefundNotificationMock).toHaveBeenCalledTimes(1);
   });
 
-  test("syncStripeDisputeRecord upserts the dispute and logs when a dispute opens", async () => {
-    adminFromMock.mockImplementation((table: string) => {
-      if (table === "orders") {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              maybeSingle: vi.fn(async () => ({
-                data: { id: "order-1", store_id: "store-1" },
-                error: null
-              }))
-            }))
-          }))
-        };
-      }
-
-      if (table === "order_disputes") {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              maybeSingle: vi.fn(async () => ({
-                data: null,
-                error: null
-              }))
-            }))
-          })),
-          upsert: vi.fn(() => ({
-            select: vi.fn(() => ({
-              single: vi.fn(async () => ({
-                data: {
-                  id: "dispute-1",
-                  order_id: "order-1",
-                  store_id: "store-1",
-                  stripe_dispute_id: "dp_123",
-                  stripe_charge_id: "ch_123",
-                  stripe_payment_intent_id: "pi_123",
-                  amount_cents: 1200,
-                  currency: "usd",
-                  reason: "fraudulent",
-                  status: "needs_response",
-                  is_charge_refundable: true,
-                  response_due_by: "2026-03-20T12:00:00.000Z",
-                  metadata_json: {
-                    networkReasonCode: null,
-                    evidenceSubmissionCount: 0,
-                    hasEvidence: false,
-                    pastDue: false
-                  },
-                  closed_at: null,
-                  created_at: "2026-03-13T14:00:00.000Z",
-                  updated_at: "2026-03-13T14:00:00.000Z"
-                },
-                error: null
-              }))
-            }))
-          }))
-        };
-      }
-
-      throw new Error(`Unexpected table ${table}`);
+  test("propagates an access RPC failure so the webhook remains retryable", async () => {
+    adminRpcMock.mockResolvedValue({
+      data: null,
+      error: { message: "Injected access audit failure" },
     });
 
-    const { syncStripeDisputeRecord } = await import("@/lib/orders/refund-dispute-sync");
-    const result = await syncStripeDisputeRecord(
-      {
-        id: "dp_123",
-        object: "dispute",
-        amount: 1200,
-        charge: "ch_123",
-        created: 1_741_878_400,
-        currency: "usd",
-        evidence: {},
-        evidence_details: {
-          due_by: 1_742_483_200,
-          has_evidence: false,
-          past_due: false,
-          submission_count: 0
-        },
-        is_charge_refundable: true,
-        payment_intent: "pi_123",
-        reason: "fraudulent",
-        status: "needs_response"
-      } as never
+    const { syncStripeRefundRecord } = await import(
+      "@/lib/orders/refund-dispute-sync"
     );
-
-    expect(result?.status).toBe("needs_response");
-    expect(logAuditEventMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: "dispute_opened",
-        entityId: "order-1"
-      })
-    );
-    expect(sendOrderDisputeNotificationMock).toHaveBeenCalledWith(
-      "order-1",
-      expect.objectContaining({
-        disputeId: "dispute-1",
-        status: "needs_response"
-      })
-    );
-  });
-
-  test("syncStripeRefundRecord preserves terminal refund state and staff attribution on out-of-order updates", async () => {
-    adminFromMock.mockImplementation((table: string) => {
-      if (table === "order_refunds") {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn((column: string, value: string) => {
-              if (column === "id" && value === "refund-request-2") {
-                return {
-                  maybeSingle: vi.fn(async () => ({
-                    data: {
-                      id: "refund-request-2",
-                      order_id: "order-2",
-                      store_id: "store-1",
-                      status: "succeeded",
-                      metadata_json: {},
-                      processed_by_user_id: "staff-1",
-                      processed_at: "2026-03-14T12:00:00.000Z"
-                    },
-                    error: null
-                  }))
-                };
-              }
-
-              return {
-                maybeSingle: vi.fn(async () => ({
-                  data: null,
-                  error: null
-                }))
-              };
-            })
-          })),
-          update: vi.fn((payload: Record<string, unknown>) => ({
-            eq: vi.fn(() => ({
-              select: vi.fn(() => ({
-                single: vi.fn(async () => ({
-                  data: {
-                    id: "refund-request-2",
-                    order_id: "order-2",
-                    store_id: "store-1",
-                    requested_by_user_id: "user-1",
-                    processed_by_user_id: payload.processed_by_user_id,
-                    amount_cents: 1200,
-                    reason_key: "customer_request",
-                    reason_note: null,
-                    customer_message: null,
-                    status: payload.status,
-                    stripe_refund_id: "re_456",
-                    metadata_json: payload.metadata_json,
-                    processed_at: payload.processed_at,
-                    created_at: "2026-03-13T13:00:00.000Z",
-                    updated_at: "2026-03-14T12:30:00.000Z"
-                  },
-                  error: null
-                }))
-              }))
-            }))
-          }))
-        };
-      }
-
-      throw new Error(`Unexpected table ${table}`);
-    });
-
-    const { syncStripeRefundRecord } = await import("@/lib/orders/refund-dispute-sync");
-    const result = await syncStripeRefundRecord({
-      id: "re_456",
-      object: "refund",
-      amount: 1200,
-      balance_transaction: null,
-      charge: "ch_456",
-      created: 1_741_878_400,
-      currency: "usd",
-      metadata: { refund_request_id: "refund-request-2" },
-      payment_intent: "pi_456",
-      reason: "requested_by_customer",
-      receipt_number: null,
-      source_transfer_reversal: null,
-      status: "pending",
-      transfer_reversal: null
-    } as never);
-
-    expect(result.refund?.status).toBe("succeeded");
-    expect(result.refund?.processed_by_user_id).toBe("staff-1");
-    expect(result.refund?.processed_at).toBe("2026-03-14T12:00:00.000Z");
-    expect(logAuditEventMock).not.toHaveBeenCalled();
+    await expect(
+      syncStripeRefundRecord(stripeRefund(), {
+        sourceEventId: "evt_refund_failure",
+        sourceEventCreatedAt: "2026-08-13T18:00:00.000Z",
+      }),
+    ).rejects.toThrow("Injected access audit failure");
     expect(sendOrderRefundNotificationMock).not.toHaveBeenCalled();
   });
 
-  test("syncStripeDisputeRecord does not reopen a closed dispute on stale updates", async () => {
-    adminFromMock.mockImplementation((table: string) => {
-      if (table === "orders") {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              maybeSingle: vi.fn(async () => ({
-                data: { id: "order-3", store_id: "store-1" },
-                error: null
-              }))
-            }))
-          }))
-        };
-      }
-
-      if (table === "order_disputes") {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              maybeSingle: vi.fn(async () => ({
-                data: {
-                  id: "dispute-2",
-                  status: "won",
-                  closed_at: "2026-03-15T10:00:00.000Z"
-                },
-                error: null
-              }))
-            }))
-          })),
-          upsert: vi.fn((payload: Record<string, unknown>) => ({
-            select: vi.fn(() => ({
-              single: vi.fn(async () => ({
-                data: {
-                  id: "dispute-2",
-                  order_id: "order-3",
-                  store_id: "store-1",
-                  stripe_dispute_id: "dp_456",
-                  stripe_charge_id: "ch_456",
-                  stripe_payment_intent_id: "pi_456",
-                  amount_cents: 2200,
-                  currency: "usd",
-                  reason: "fraudulent",
-                  status: payload.status,
-                  is_charge_refundable: true,
-                  response_due_by: "2026-03-20T12:00:00.000Z",
-                  metadata_json: payload.metadata_json,
-                  closed_at: payload.closed_at,
-                  created_at: "2026-03-13T14:00:00.000Z",
-                  updated_at: "2026-03-15T10:30:00.000Z"
-                },
-                error: null
-              }))
-            }))
-          }))
-        };
-      }
-
-      throw new Error(`Unexpected table ${table}`);
+  test("does not repeat notifications for duplicate or stale refund events", async () => {
+    adminRpcMock.mockResolvedValue({
+      data: {
+        applied: false,
+        state_changed: false,
+        access_changed: false,
+        effective_access_state: "revoked",
+        record: refundRecord(),
+      },
+      error: null,
     });
 
-    const { syncStripeDisputeRecord } = await import("@/lib/orders/refund-dispute-sync");
-    const result = await syncStripeDisputeRecord({
-      id: "dp_456",
-      object: "dispute",
-      amount: 2200,
-      charge: "ch_456",
-      created: 1_741_878_400,
-      currency: "usd",
-      evidence: {},
-      evidence_details: {
-        due_by: 1_742_483_200,
-        has_evidence: true,
-        past_due: false,
-        submission_count: 1
-      },
-      is_charge_refundable: true,
-      payment_intent: "pi_456",
-      reason: "fraudulent",
-      status: "under_review"
-    } as never);
+    const { syncStripeRefundRecord } = await import(
+      "@/lib/orders/refund-dispute-sync"
+    );
+    const result = await syncStripeRefundRecord(stripeRefund("pending"), {
+      sourceEventId: "evt_refund_stale",
+      sourceEventCreatedAt: "2026-08-13T17:00:00.000Z",
+    });
 
-    expect(result?.status).toBe("won");
-    expect(result?.closed_at).toBe("2026-03-15T10:00:00.000Z");
-    expect(logAuditEventMock).not.toHaveBeenCalled();
-    expect(sendOrderDisputeNotificationMock).not.toHaveBeenCalled();
+    expect(result.refund?.status).toBe("succeeded");
+    expect(sendOrderRefundNotificationMock).not.toHaveBeenCalled();
+  });
+
+  test("uses the transactional dispute RPC and preserves source ordering metadata", async () => {
+    adminFromMock.mockImplementation((table: string) => {
+      if (table !== "orders") throw new Error(`Unexpected table ${table}`);
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            maybeSingle: vi.fn(async () => ({
+              data: { id: ids.order, store_id: ids.store },
+              error: null,
+            })),
+          })),
+        })),
+      };
+    });
+    adminRpcMock.mockResolvedValue({
+      data: {
+        applied: true,
+        state_changed: true,
+        access_changed: true,
+        effective_access_state: "suspended",
+        record: disputeRecord(),
+      },
+      error: null,
+    });
+
+    const { syncStripeDisputeRecord } = await import(
+      "@/lib/orders/refund-dispute-sync"
+    );
+    const result = await syncStripeDisputeRecord(stripeDispute(), {
+      sourceEventId: "evt_dispute_123",
+      sourceEventCreatedAt: "2026-08-13T18:00:00.000Z",
+    });
+
+    expect(result?.status).toBe("needs_response");
+    expect(adminRpcMock).toHaveBeenCalledWith(
+      "sync_dispute_digital_access",
+      expect.objectContaining({
+        p_order_id: ids.order,
+        p_stripe_dispute_id: "dp_123",
+        p_incoming_status: "needs_response",
+        p_source_event_id: "evt_dispute_123",
+      }),
+    );
+    expect(sendOrderDisputeNotificationMock).toHaveBeenCalledTimes(1);
   });
 });

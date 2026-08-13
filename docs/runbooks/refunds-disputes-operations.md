@@ -1,6 +1,6 @@
 # Refunds and Disputes Operations
 
-This runbook defines the operational contract for refunds and disputes before the full workflow is wired into the dashboard.
+This runbook defines the operational and digital-access contract for refunds and disputes.
 
 ## Ownership model
 
@@ -31,10 +31,38 @@ This runbook defines the operational contract for refunds and disputes before th
 
 - `warning_needs_response`
 - `warning_under_review`
+- `warning_closed`
 - `needs_response`
 - `under_review`
 - `won`
 - `lost`
+- `prevented`
+
+## Digital access policy
+
+The database is authoritative for financial state and digital access. A service-role-only transition RPC records the refund or dispute, changes entitlements, revokes tokens when required, and writes the financial audit event in one transaction.
+
+- Cumulative successful refunds below the order total preserve access.
+- A cumulative successful full refund revokes every entitlement with `full_refund` and revokes every active access token.
+- `warning_needs_response`, `warning_under_review`, `needs_response`, and `under_review` suspend entitlements with the source dispute ID.
+- `warning_closed`, `won`, and `prevented` restore only entitlements suspended by that same dispute. They never restore full-refund or lost-dispute revocations.
+- `lost` revokes entitlements with the source dispute ID and revokes active tokens. This is terminal, including if a later provider event reports a win.
+- Precedence is full refund, then any lost dispute, then any open dispute, then active access.
+
+Webhook event IDs and provider-created timestamps are passed to the transition RPC. Duplicate and older events are safe no-ops. If the RPC fails, the webhook ledger is marked failed and Stripe receives a retryable error; operators must not mark that webhook processed manually.
+
+## Reconciliation
+
+Use `listDigitalAccessReconciliationIssues()` from `apps/web/lib/digital-products/access-state.ts` in a service-role operations job. The underlying `find_digital_access_reconciliation_issues(limit)` RPC returns only issue type, order/store IDs, and aggregate entitlement/token counts. It intentionally excludes customer data, filenames, storage paths, bearer tokens, and token hashes.
+
+The query detects:
+
+- paid digital orders with no durable delivery job or no entitlements;
+- fully refunded orders whose entitlements or active tokens do not reflect revocation;
+- open disputes whose entitlements are not suspended by a currently open source dispute;
+- lost disputes whose entitlements or active tokens do not reflect terminal revocation.
+
+Treat results as repair candidates, not instructions for blind mutation. Confirm the Stripe refund/dispute state, replay the original provider event through the normal webhook path where possible, and rerun reconciliation. Escalate persistent mismatches with the order ID, store ID, issue type, and counts only.
 
 ## Merchant UX contract
 
@@ -86,10 +114,9 @@ Use stable reasons so reporting and support can interpret the action consistentl
 - service issue
 - other
 
-## Sequencing for implementation
+## Failure handling
 
-1. Define the contract and shared statuses.
-2. Add merchant refund actions in order detail.
-3. Wire Stripe refund execution and dispute visibility.
-4. Add customer messaging and policy-aware copy.
-5. Add reporting, runbooks, and regression coverage.
+- Never apply entitlement or token corrections through application-side best-effort updates.
+- Never suppress transition RPC failures. A failed transaction leaves the financial row, entitlement state, token state, idempotency row, and audit row unchanged.
+- A Stripe refund created successfully but not yet synchronized remains `processing`; its webhook is the authoritative retry path. Do not rewrite it to `failed`, because that would misrepresent provider state.
+- Preserve the original provider event ID and timestamp in incident notes so ordering decisions can be verified without including payloads that may contain customer data.

@@ -183,4 +183,46 @@ describe("Stripe webhooks route", () => {
     );
     expect(markStripeWebhookEventProcessedMock).toHaveBeenCalledWith("evt_789");
   });
+
+  test("passes immutable source ordering to refund sync and leaves an RPC failure retryable", async () => {
+    constructEventMock.mockReturnValue({
+      id: "evt_refund_failure",
+      type: "refund.updated",
+      created: 1_786_640_400,
+      data: {
+        object: {
+          id: "re_failure",
+          object: "refund",
+          created: 1_786_639_000,
+          status: "succeeded",
+        },
+      },
+    });
+    beginStripeWebhookEventProcessingMock.mockResolvedValue({ shouldProcess: true });
+    syncStripeRefundRecordMock.mockRejectedValue(
+      new Error("Injected digital access RPC failure"),
+    );
+
+    const route = await import("@/app/api/stripe/webhooks/route");
+    const response = await route.POST(
+      new Request("http://localhost:3000/api/stripe/webhooks", {
+        method: "POST",
+        body: JSON.stringify({ id: "evt_refund_failure" }),
+      }),
+    );
+
+    expect(syncStripeRefundRecordMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "re_failure" }),
+      {
+        sourceEventId: "evt_refund_failure",
+        sourceEventCreatedAt: "2026-08-13T17:00:00.000Z",
+      },
+    );
+    expect(response.status).toBe(500);
+    expect(markStripeWebhookEventProcessedMock).not.toHaveBeenCalled();
+    expect(markStripeWebhookEventFailedMock).toHaveBeenCalledWith(
+      "evt_refund_failure",
+      "Injected digital access RPC failure",
+    );
+  });
 });
