@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Added production-readiness validation for digital products with release security contracts, gated end-to-end and responsive axe journeys, a complete operations/incident runbook, and explicit real Stripe/Resend acceptance evidence requirements.
 - Added store-scoped, default-off digital-product rollout controls with plan eligibility, database-authoritative catalog and checkout gates, Digital/Mixed Studio scenarios, editable safe delivery email copy, privacy-safe operational telemetry, and audited admin-only delivery health and repair actions.
 - Added native digital products with private multi-file delivery, watermarked image previews, digital-only and mixed checkout support, 48-hour secure access links, five atomic download grants per file with 60-second same-session retry grace, personal-use licensing, and refund/dispute access controls.
 - Hardened digital-product uploads with tenant-bound upload intents, streamed byte verification, immutable replacements, safe catalog removal, bounded metadata-free watermarked previews, and stable same-store preview overrides.
