@@ -686,11 +686,18 @@ export async function POST(request: NextRequest) {
       .returns<Array<{ id: string; status: "active" | "ordered" }>>();
 
     const resolvedCarts = carts ?? [];
-    const candidateCount = count ?? resolvedCarts.length;
+    const hasExactCandidateCount =
+      typeof count === "number" &&
+      Number.isFinite(count) &&
+      Number.isSafeInteger(count) &&
+      count >= 0;
     return {
       carts: resolvedCarts,
       error,
-      exhaustive: candidateCount === resolvedCarts.length && candidateCount <= candidateLimit
+      exhaustive:
+        hasExactCandidateCount &&
+        count === resolvedCarts.length &&
+        count <= candidateLimit
     };
   };
   const checkoutIntent = {

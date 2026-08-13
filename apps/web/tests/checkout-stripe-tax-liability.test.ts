@@ -852,6 +852,7 @@ describe("checkout Stripe tax liability", () => {
             data: carts
               .filter((cart) => cart.status === requestedStatus)
               .slice(0, requestedLimit),
+            count: carts.filter((cart) => cart.status === requestedStatus).length,
             error: null
           }))
         };
@@ -958,6 +959,7 @@ describe("checkout Stripe tax liability", () => {
             data: carts
               .filter((cart) => cart.status === requestedStatus)
               .slice(0, requestedLimit),
+            count: carts.filter((cart) => cart.status === requestedStatus).length,
             error: null
           }))
         };
@@ -997,6 +999,75 @@ describe("checkout Stripe tax liability", () => {
       error: expect.stringContaining("safely identify")
     });
     expect(stripeCheckoutCreateMock).not.toHaveBeenCalled();
+  });
+
+  test("fails closed when a capped legacy cart response has no exact count", async () => {
+    authenticatedUserId = "20000000-0000-4000-8000-000000000001";
+    const orderedCarts = Array.from({ length: 100 }, (_, index) => ({
+      id: `30000000-0000-4000-8000-${String(index + 100).padStart(12, "0")}`,
+      status: "ordered" as const
+    }));
+    serverFromMock.mockImplementation(() => ({
+      select: vi.fn(() => {
+        let requestedStatus: string | null = null;
+        let requestedLimit = Number.POSITIVE_INFINITY;
+        const query = {
+          eq: vi.fn((column: string, value: string) => {
+            if (column === "status") requestedStatus = value;
+            return query;
+          }),
+          order: vi.fn(() => query),
+          limit: vi.fn((value: number) => {
+            requestedLimit = value;
+            return query;
+          }),
+          returns: vi.fn(async () => ({
+            data: orderedCarts
+              .filter((cart) => cart.status === requestedStatus)
+              .slice(0, requestedLimit),
+            count: requestedStatus === "ordered" ? null : 0,
+            error: null
+          }))
+        };
+        return query;
+      })
+    }));
+    let checkoutLookupCount = 0;
+    adminRpcMock.mockImplementation(async (name: string) => {
+      if (name !== "get_storefront_checkout_attempt") {
+        throw new Error(`Unexpected mutation RPC ${name}`);
+      }
+      checkoutLookupCount += 1;
+      return {
+        data: checkoutLookupCount === 1
+          ? {
+              id: "40000000-0000-4000-8000-000000000001",
+              checkout_mode: "stripe",
+              status: "completed",
+              order_id: "50000000-0000-4000-8000-000000000001"
+            }
+          : null,
+        error: null
+      };
+    });
+    const route = await import("@/app/api/orders/checkout/route");
+
+    const response = await route.POST(buildRequest({
+      firstName: "Legacy",
+      lastName: "Buyer",
+      phone: "555-0100",
+      email: "legacy@example.com",
+      items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
+    }));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: "We could not safely identify which checkout to resume. Please refresh your cart and try again."
+    });
+    expect(adminRpcMock).not.toHaveBeenCalled();
+    expect(stripeCheckoutCreateMock).not.toHaveBeenCalled();
+    expect(sendOrderCreatedNotificationsMock).not.toHaveBeenCalled();
+    expect(issueDigitalEntitlementsMock).not.toHaveBeenCalled();
   });
 
   test("returns an already-bound Stripe session without creating another", async () => {
