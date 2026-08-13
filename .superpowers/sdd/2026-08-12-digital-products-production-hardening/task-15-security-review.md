@@ -1,49 +1,66 @@
-# Task 15 Independent Security Re-review — Round 3
+# Task 15 Independent Security Re-review — Round 4
 
 ## Verdict
 
-**FAIL — one P1 release blocker remains.** The prior bearer/API, CSRF, approval-binding, and pre-merge-gate findings are materially resolved in application code. However, the two security migrations use duplicate Supabase migration versions, so the actual deployment mechanism cannot reliably install the session authorization and release interlock. No P0 issue was identified.
+**FAIL — two P1 release blockers remain in the acceptance-control boundary.** Migration versions, release-approval behavior/privileges, bearer handling, POST/origin protection, and evidence binding are now materially improved. Docker and real provider availability remain external rollout blockers rather than code defects, but the repository-side acceptance control is not yet production-safe or executable.
 
-## Finding
+## Findings
 
-### P1 — Security migrations reuse existing Supabase versions and therefore are not deployable as written
+### P1 — The acceptance mutation RPC is referenced but does not exist
 
 Evidence:
 
-- `supabase/migrations/20260813019000_secure_digital_download_sessions.sql` has version prefix `20260813019000`, but `supabase/migrations/20260813019000_digital_product_rollout_fix1.sql` already uses that version.
-- `supabase/migrations/20260813020000_digital_release_acceptance_gate.sql` has version prefix `20260813020000`, but `supabase/migrations/20260813020000_digital_product_rollout_fix2.sql` already uses that version.
-- Supabase migration history identifies migrations by the timestamp/version prefix. Two files with the same version cannot both be represented reliably in `supabase_migrations.schema_migrations`; normal CLI push/reset/repair behavior will reject, conflate, or skip one of each pair.
-- The repository's native PostgreSQL test harness masks this because `apps/web/tests/digital-products-migration.test.ts:587-646` enumerates and executes every filename directly rather than reproducing Supabase migration-history semantics.
-- These duplicated files contain the service-role-only `authorize_digital_download_session` RPC and the database-authoritative `digital_products_release_approvals`/runtime trigger. Missing either migration leaves the application broken or removes the rollout defense in depth.
+- `apps/web/lib/digital-products/acceptance-control.ts:17-22` invokes service-role RPC `acceptance_control_digital_products` for reset, delivery-failure, refund, and dispute mutations.
+- Repository-wide search finds no SQL definition, migration, generated database type, or test implementation of `public.acceptance_control_digital_products`—the only reference is the caller.
+- `apps/web/tests/digital-acceptance-control-route.test.ts` mocks `executeDigitalAcceptanceControl`, so it cannot catch the missing RPC.
+- The browser suite depends on these mutations to create deterministic acceptance state and provider transitions. Every non-observe action will fail at runtime, causing the strict gate to fail even with valid Stripe/Resend credentials.
 
 Impact:
 
-A real preview/production deployment cannot be trusted to install both security changes. Depending on which duplicate is recorded/applied, established download sessions may fail or the database rollout approval interlock may be absent. This fails the data-safety and operations release gates and must block release.
+The required real-provider acceptance path cannot execute, so release approval can never be generated honestly from the checked-in system. This is fail-closed, but it is a release blocker rather than an external credential limitation.
 
 Required remediation:
 
-Rename the two new, undeployed migration files to unique monotonically increasing versions after every existing migration (for example `20260813021000_...` and `20260813022000_...`; choose versions after checking shared migration history). Add a migration-contract test that rejects duplicate filename version prefixes. Run the official Supabase migration/reset/list workflow against a fresh non-production project and an upgraded project, and record that both versions appear exactly once before re-review.
+Add a uniquely versioned migration defining a narrowly scoped, service-role-only acceptance RPC, or replace it with explicit test-provider operations implemented in the server service. It must reject production and non-acceptance stores at the database boundary, bind every subject to the supplied run ID/internal fixture store, strictly validate action/transition combinations, preserve immutable audit evidence, and expose no arbitrary mutation primitive. Revoke execution from `public`, `anon`, and `authenticated`; add native PostgreSQL privilege, cross-store/run tampering, invalid-transition, idempotency, and production-mode tests. Run the strict browser suite against it before approval.
+
+### P1 — Acceptance control can be enabled in a non-Vercel production runtime
+
+Evidence:
+
+- `apps/web/app/api/internal/digital-products/acceptance/route.ts:9-13` returns 404 only when `VERCEL_ENV === "production"` or `MYRIVO_DIGITAL_ACCEPTANCE_ENVIRONMENT` is not `test|preview`.
+- It does not reject `NODE_ENV === "production"`, an application deployment environment identifier, or a production hostname/origin.
+- On any self-hosted/container production runtime where `VERCEL_ENV` is absent, setting or leaking `MYRIVO_DIGITAL_ACCEPTANCE_ENVIRONMENT=test` enables a bearer-authenticated endpoint backed by the unrestricted Supabase service role (`apps/web/lib/digital-products/acceptance-control.ts:15-27`).
+- The route tests cover Vercel production and missing acceptance configuration, but not `NODE_ENV=production` without `VERCEL_ENV`, production hostnames, or production Supabase targets.
+
+Impact:
+
+A configuration error could expose an endpoint capable of resetting/injecting delivery, refund, and dispute state in production. Its separate 32-character bearer is valuable defense, but it is not an acceptable sole barrier for a service-role-backed destructive test control.
+
+Required remediation:
+
+Fail closed when `NODE_ENV === "production"`, when any deployment/environment marker is production, or when the resolved external app/Supabase target is not an explicit allowlisted non-production target. Require all guards simultaneously: dedicated acceptance build flag, explicit approved non-production host/project ID, control secret, and run-scoped fixture identity. Enforce the non-production/store/run invariant again inside the database RPC so route configuration cannot bypass it. Add tests for self-hosted production, production host/project, missing/malformed environment markers, and a valid preview fixture.
 
 ## P2 observations
 
-### P2 — Approval enforcement is tested indirectly, not with explicit mismatch/expiry cases
+### P2 — Evidence authentication shares the acceptance-control bearer
 
-The SQL now joins runtime to approval on exact `release_version`, `evidence_sha256`, and `target_environment` (`20260813020000_digital_release_acceptance_gate.sql:40-56`), bounds approval age/expiry at lines 15-21, and requires current non-revoked approval. Those rules are sound on inspection. However, no focused migration tests explicitly prove that wrong release, wrong digest/environment, stale/revoked approval, future review timestamps, and missing reviewer timestamps are rejected while an exact approval succeeds. Add those tests after assigning unique migration versions.
+`apps/web/e2e/digital-products-fixture.ts:34-39` signs evidence with `fixture.controlSecret`, and the same secret authorizes the mutation/observation endpoint. Compromise of one credential permits both state manipulation and evidence signing. Use a distinct CI-held evidence-signing key or asymmetric signing, and never deliver that signing credential to the deployed acceptance application/fixture.
 
-### P2 — The pre-merge gate depends on pre-created evidence for GitHub's ephemeral SHA
+### P2 — Evidence completeness checks are count-based
 
-`.github/workflows/ci.yml:53-69` now runs the strict gate on pull requests targeting `main` and safely materializes base64 secrets into temporary files. `scripts/verify-digital-products-acceptance.mjs:31-39` requires evidence whose `releaseVersion` exactly equals `GITHUB_SHA` and is less than one hour old before running Playwright. This fails closed, but maintaining a pre-created secret for an ephemeral PR merge SHA is operationally fragile. Prefer generating/signing evidence from the live acceptance run, then persisting its digest/approval, rather than requiring mutable global evidence secrets to predict the workflow SHA.
+`scripts/verify-digital-products-acceptance.mjs:40` requires only five observations, while the suite and approved matrix contain many named transitions. Although Playwright assertions provide some coverage, the final signed artifact should require the exact scenario/action set, unique ordered actions, provider IDs, subject/run binding, test-mode provider state, and reviewer outputs before its digest can populate a production approval.
 
 ## Verified resolutions
 
-- **No bearer in public API/path/log surfaces:** checkout status and authenticated-customer access now set the signed HttpOnly session and return only `/downloads` (`apps/web/app/api/orders/checkout-status/route.ts:52-68`; `apps/web/lib/digital-products/authenticated-customer-access-handler.ts:90-104`). Email/recovery bootstrap URLs use fragments, and no production download route accepts a token path.
-- **Safe fragment retry:** `apps/web/components/customer/digital-download-list.tsx:98-118` removes the fragment immediately, retains the credential only in a React ref across transient failures, and clears it after successful exchange. It is not reinserted into history, DOM, storage, or API URLs.
-- **POST plus origin protection:** grant issuance is now `POST`; `apps/web/app/api/digital-downloads/file/[entitlementId]/route.ts:13-26` enforces trusted origin before session/database work. Behavioral tests verify hostile origin rejection.
-- **Exact rollout binding:** the approval/runtime join compares exact release, evidence digest, and target environment; approval timestamps are recent and expiry is at most seven days. Service-facing roles have no table access, and the trigger remains database-authoritative once deployed.
-- **Pre-merge strict CI:** the promotion step runs on main-target pull requests and main pushes, fails for absent provider/fixture/evidence values, restricts the target to loopback or an explicit HTTPS non-production host, validates same-origin routes, and forces Playwright release mode.
-- **Behavioral security coverage:** focused route tests execute hostile-origin, malformed credential, no-bearer serialization, session authorization, rate-limit failure, storage binding, grant release/commit, and safe-response behavior. Five focused suites passed: 68 tests.
-- **External acceptance remains honestly blocked:** no real Stripe/Resend run is claimed. The missing fixture remains a rollout blocker and the strict script fails closed.
+- Migration versions `20260813021000` and `20260813022000` are unique and monotonically follow the existing chain; the new repository contract rejects duplicate version prefixes.
+- Native PostgreSQL coverage now verifies secure-session RPC existence/privileges and exact approval/runtime matching, mismatched release/digest, revocation, expiry/window, review timestamps, and application-role denial.
+- `authorize_digital_download_session` is service-role-only and rechecks token expiry, revocation, and payment eligibility.
+- Release approval is bound to exact runtime release version, evidence digest, and production target environment; it remains current, unrevoked, and bounded to seven days.
+- Main-target pull requests run the strict gate before merge. Fixture targets are constrained to loopback or an explicit HTTPS non-production host; current-run evidence is SHA/run/origin-bound and HMAC-verified.
+- Prior bearer leaks remain fixed: APIs return `/downloads`, fragment bootstrap is memory-only, and grants use trusted-origin POST.
+- Focused/full tests reported by the fix passed, including 130 native migration tests. Official Supabase fresh/upgrade validation is still externally blocked by unavailable Docker and remains mandatory before rollout.
+- Real Stripe/Resend acceptance is not claimed and must continue to block approval.
 
 ## Review scope
 
-Reviewed fix report and diff `bdb8612..a26c7b1`, checkout/auth/email fragment and session flows, POST download route and UI, release fixture/actions, strict verifier, CI promotion condition, approval/runtime SQL, migration harness, and focused behavioral tests. No implementation file was changed.
+Reviewed diff `10a59ba..14cafc6`, migration filenames and contracts, secure-session/release-approval SQL and native tests, acceptance route/service/schema/tests, Playwright fixture/actions, evidence verifier, CI materialization/host constraints, runbook, and prior credential/session fixes. No implementation file was changed.
