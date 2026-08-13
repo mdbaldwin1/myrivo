@@ -1085,12 +1085,16 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     catalogRefreshGenerationRef.current = generation;
     try {
       const response = await fetch("/api/products", { signal: options.signal });
+      options.signal?.throwIfAborted();
       const payload = (await response.json().catch(() => null)) as ProductResponse | null;
+      options.signal?.throwIfAborted();
       if (catalogRefreshGenerationRef.current !== generation) return null;
       if (!response.ok || !payload?.products) {
+        options.signal?.throwIfAborted();
         if (options.surfaceError) setCatalogError(payload?.error ?? "Unable to refresh publishing readiness.");
         return null;
       }
+      options.signal?.throwIfAborted();
       setProducts(payload.products);
       return payload.products;
     } catch (error) {
@@ -3004,7 +3008,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                     productTitle={selectedProduct.title}
                     storefrontImages={selectedProduct.image_urls ?? []}
                     preview={selectedProduct.digital_preview}
-                    onChange={async () => { await refreshCatalogProducts(); }}
+                    onChange={async (_preview, signal) => { await refreshCatalogProducts({ signal }); }}
                   />
                 </div>
               ) : null}

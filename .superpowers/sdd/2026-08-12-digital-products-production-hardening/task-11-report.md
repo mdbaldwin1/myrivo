@@ -138,3 +138,27 @@ Fresh Fix 2 gates:
 - `git diff --check` — passed.
 
 The full suite retained the pre-existing refund/dispute mock stderr and zero-size chart warnings. The build retained the existing middleware deprecation and stale Browserslist-data warnings.
+
+## Fix 3: Post-response Catalog Cancellation
+
+- Hardened the authoritative catalog refresh across every asynchronous boundary. It now checks the caller's abort signal immediately after fetch resolution, after JSON body parsing, and immediately before error or product-state commits, while retaining the latest-generation guard for competing live refreshes.
+- Extended Media's existing operation signal through its catalog-refresh callback. A preview mutation and its authoritative readiness reload now share one cancellation lifetime, matching Files; switching products or unmounting aborts both stages.
+- Audited the other Task 11 JSON pipelines. Files and Media already combine tracked controller cleanup with product-identity checks after body parsing and before local state/callback work. The only callback gap was Media's previously unscoped parent refresh, corrected here.
+
+### Fix 3 TDD evidence
+
+Two deterministic deferred-body regressions were added at the ProductManager boundary:
+
+- Files: fetch resolves for product A while `response.json()` remains pending; switching to B aborts the Files signal, then resolving A's body must not replace B with stale catalog data or show an error. Before the fix, the test failed with `Stale product A` committed to the catalog.
+- Media: the preview mutation starts a parent catalog refresh whose body remains pending; switching to B aborts Media's controller, then resolving A's body must not commit stale data or show an error. Before the fix, the test failed because the catalog refresh received no signal.
+
+Fresh Fix 3 gates:
+
+- Focused Files/Catalog UX: 2 files and 18 tests passed.
+- `npm run lint --workspace @myrivo/web` — passed with zero warnings/errors and both consistency checks passed.
+- `npm run typecheck --workspace @myrivo/web` — passed.
+- `npm test` — 249 files and 984 tests passed.
+- `npm run build` — passed; all 161 static pages generated.
+- `git diff --check` — passed.
+
+The full suite retained the pre-existing refund/dispute mock stderr and zero-size chart warnings. The build retained the existing middleware deprecation and stale Browserslist-data warnings.

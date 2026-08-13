@@ -12,7 +12,7 @@ type DigitalPreviewManagerProps = {
   productTitle: string;
   storefrontImages: string[];
   preview: DigitalProductPreview | null | undefined;
-  onChange?: (preview: DigitalProductPreview) => void | Promise<void>;
+  onChange?: (preview: DigitalProductPreview, signal?: AbortSignal) => void | Promise<void>;
 };
 
 const EMPTY_PREVIEW: DigitalProductPreview = {
@@ -77,7 +77,7 @@ export function DigitalPreviewManager({
         failureReason: null,
       };
       setCurrent(next);
-      await onChange?.(next);
+      await onChange?.(next, controller.signal);
       if (currentProductIdRef.current !== operationProductId) return;
       notify.success("Buyer preview updated.");
     } catch (updateError) {
@@ -115,7 +115,7 @@ export function DigitalPreviewManager({
         failureReason: null,
       };
       setCurrent(next);
-      await onChange?.(next);
+      await onChange?.(next, controller.signal);
       if (currentProductIdRef.current !== operationProductId) return;
       notify.success(payload?.publicUrl ? "Buyer preview is ready." : "Buyer preview processing restarted.");
     } catch (retryError) {

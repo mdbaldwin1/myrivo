@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import React from "react";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { DigitalPreviewManager } from "@/components/dashboard/digital-preview-manager";
@@ -15,6 +15,11 @@ import { enrichDigitalCatalogProducts } from "@/lib/digital-products/catalog-sta
 
 const PRODUCT_ID = "10000000-0000-4000-8000-000000000001";
 const VARIANT_ID = "20000000-0000-4000-8000-000000000001";
+
+const filesMockState = vi.hoisted(() => ({
+  signals: [] as AbortSignal[],
+  refreshes: [] as Promise<void>[],
+}));
 
 vi.mock("next/image", () => ({
   default: ({ alt, src, fill, unoptimized, ...props }: React.ImgHTMLAttributes<HTMLImageElement> & { fill?: boolean; unoptimized?: boolean }) => {
@@ -40,7 +45,35 @@ vi.mock("@/components/ui/rich-text-editor", () => ({
 }));
 
 vi.mock("@/components/dashboard/digital-product-files", () => ({
-  DigitalProductFiles: () => <div>Files manager</div>,
+  DigitalProductFiles: ({
+    productId,
+    onCatalogChange,
+  }: {
+    productId: string;
+    onCatalogChange?: (signal?: AbortSignal) => void | Promise<void>;
+  }) => {
+    const controllerRef = React.useRef<AbortController | null>(null);
+    if (!controllerRef.current) controllerRef.current = new AbortController();
+    React.useEffect(() => {
+      const controller = controllerRef.current;
+      return () => controller?.abort();
+    }, []);
+    return (
+      <div>
+        Files manager
+        <button
+          type="button"
+          onClick={() => {
+            const signal = controllerRef.current?.signal;
+            if (signal) filesMockState.signals.push(signal);
+            filesMockState.refreshes.push(Promise.resolve(onCatalogChange?.(signal)).then(() => undefined));
+          }}
+        >
+          Refresh files catalog for {productId}
+        </button>
+      </div>
+    );
+  },
 }));
 
 vi.mock("@/lib/feedback/toast", () => ({
@@ -311,6 +344,8 @@ describe("digital catalog server state", () => {
 
 describe("ProductManager digital catalog integration", () => {
   beforeEach(() => {
+    filesMockState.signals.length = 0;
+    filesMockState.refreshes.length = 0;
     Element.prototype.hasPointerCapture = vi.fn(() => false);
     Element.prototype.setPointerCapture = vi.fn();
     Element.prototype.releasePointerCapture = vi.fn();
@@ -505,5 +540,90 @@ describe("ProductManager digital catalog integration", () => {
     expect(within(readiness).getByRole("button", { name: "Publish product" }).hasAttribute("disabled")).toBe(true);
     expect(reads).toBeGreaterThanOrEqual(1);
     expect(patchBodies.some((body) => body.status === "active")).toBe(false);
+  });
+
+  test("does not apply a Files catalog refresh whose JSON body resolves after switching products", async () => {
+    const productB = product({
+      id: "10000000-0000-4000-8000-000000000099",
+      title: "Product B",
+      slug: "product-b",
+      sku: "PRODUCT-B",
+    });
+    let resolveCatalogBody!: (value: { products: ProductListItem[] }) => void;
+    const catalogBody = new Promise<{ products: ProductListItem[] }>((resolve) => {
+      resolveCatalogBody = resolve;
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      json: () => catalogBody,
+    }) as Response));
+    const user = userEvent.setup();
+    render(<ProductManager initialProducts={[product(), productB]} />);
+
+    await user.click(screen.getByRole("tab", { name: "Files" }));
+    await user.click(screen.getByRole("button", { name: `Refresh files catalog for ${PRODUCT_ID}` }));
+    await waitFor(() => expect(filesMockState.signals).toHaveLength(1));
+    expect(filesMockState.signals[0]?.aborted).toBe(false);
+
+    await user.click(screen.getByText("Product B"));
+    await waitFor(() => expect(filesMockState.signals[0]?.aborted).toBe(true));
+
+    await act(async () => {
+      resolveCatalogBody({ products: [product({ title: "Stale product A" })] });
+      await filesMockState.refreshes[0];
+    });
+
+    expect(screen.getByRole("heading", { level: 3, name: "Product B" })).toBeTruthy();
+    expect(screen.queryByText("Stale product A")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  test("aborts a Media catalog refresh before a deferred JSON body can overwrite another product", async () => {
+    const productB = product({
+      id: "10000000-0000-4000-8000-000000000099",
+      title: "Product B",
+      slug: "product-b",
+      sku: "PRODUCT-B",
+    });
+    let resolveCatalogBody!: (value: { products: ProductListItem[] }) => void;
+    let resolveCatalogBodyRead!: () => void;
+    const catalogBodyRead = new Promise<void>((resolve) => {
+      resolveCatalogBodyRead = resolve;
+    });
+    const catalogBody = new Promise<{ products: ProductListItem[] }>((resolve) => {
+      resolveCatalogBody = resolve;
+    });
+    let catalogSignal: AbortSignal | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/products/digital-preview") {
+        return new Response(JSON.stringify({ publicUrl: "https://cdn.example/new-preview.jpg" }), { status: 200 });
+      }
+      catalogSignal = init?.signal ?? undefined;
+      return {
+        ok: true,
+        json: async () => {
+          const payload = await catalogBody;
+          resolveCatalogBodyRead();
+          return payload;
+        },
+      } as Response;
+    }));
+    const user = userEvent.setup();
+    render(<ProductManager initialProducts={[product(), productB]} />);
+
+    await user.click(screen.getByRole("tab", { name: "Media" }));
+    await user.click(screen.getByRole("button", { name: "Use as buyer preview" }));
+    await waitFor(() => expect(catalogSignal).toBeDefined());
+
+    await user.click(screen.getByText("Product B"));
+    await act(async () => {
+      resolveCatalogBody({ products: [product({ title: "Stale product A" })] });
+      await catalogBodyRead;
+    });
+
+    expect(catalogSignal?.aborted).toBe(true);
+    expect(screen.getByRole("heading", { level: 3, name: "Product B" })).toBeTruthy();
+    expect(screen.queryByText("Stale product A")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });
