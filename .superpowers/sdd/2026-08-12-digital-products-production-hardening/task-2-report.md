@@ -243,3 +243,69 @@ Existing full-suite refund/dispute mock stderr, analytics chart-size warnings, b
 - Signing failures release reservations and leave entitlement usage unchanged by the schema contract.
 - Commit failure does not redirect to the already-generated signed URL; it attempts release and returns an error.
 - No migration history or schema behavior was relaxed for compatibility.
+
+## Fix Round 2: Exception-Safe Reservation Cleanup
+
+### Review finding
+
+The Round 1 route released a reservation only when Supabase returned an `{ error }` result. If the asset lookup, storage signer, or commit promise rejected, control escaped before release and left quota capacity reserved until the five-minute expiry. The release call itself was also awaited without protection, so a cleanup rejection could replace the intended generic failure response.
+
+### Root cause and implementation
+
+The post-reserve workflow had branch-local cleanup but no exception boundary. It now uses one stage-aware `try/catch/finally` around all post-reserve operations:
+
+- the current failure stage identifies the safe server-side release reason and the generic client response;
+- a committed flag changes only after commit returns `issued`;
+- the `finally` block performs exactly one release attempt whenever the reservation has not committed, covering both returned failures and rejected promises;
+- release remains best effort and its own rejection is contained, so it cannot mask the primary failure response;
+- asset lookup and signing failures return the generic preparation error with status 500;
+- returned and rejected commit failures return the generic finalization error with status 409;
+- successful commit and redirect do not attempt release.
+
+No schema or RPC contract changed.
+
+### Files
+
+- `apps/web/app/api/digital-downloads/[token]/[entitlementId]/route.ts`
+- `apps/web/tests/digital-download-route.test.ts`
+- `.superpowers/sdd/2026-08-12-digital-products-production-hardening/task-2-report.md`
+
+### TDD evidence
+
+Before the route fix, the expanded regression suite produced the intended RED:
+
+```text
+npm test --workspace @myrivo/web -- digital-download-route.test.ts
+Test Files  1 failed (1)
+Tests       5 failed | 3 passed (8)
+```
+
+Rejected asset lookup, signing, and commit operations escaped with their dependency errors. The returned commit-error case exposed `Database unavailable` instead of the generic finalization response, and the cleanup-rejection case failed with the original unhandled signing rejection before it could establish best-effort behavior.
+
+After the minimal exception-safe control-flow change:
+
+```text
+npm test --workspace @myrivo/web -- digital-download-route.test.ts
+Test Files  1 passed (1)
+Tests       8 passed (8)
+```
+
+Coverage now exercises the successful reserve/lookup/sign/commit sequence; returned and rejected asset lookup failures; returned and rejected storage signing failures; returned and rejected commit failures; and a release rejection that must not mask the primary response. Every non-committed failure asserts one release attempt with the matching safe reason and operation order.
+
+### Validation
+
+- Focused route plus PostgreSQL migration contracts — 2 files, 24 tests passed.
+- `npm run typecheck --workspace @myrivo/web` — passed.
+- `npm run lint --workspace @myrivo/web` — passed with zero warnings/errors and both repository consistency checks passed.
+- `npm test --workspace @myrivo/web` — 226 files, 677 tests passed.
+- `npm run build --workspace @myrivo/web` — passed, including TypeScript and 156-page generation.
+
+The full suite retained the existing refund/dispute mock stderr and analytics chart-size warnings. The build retained the existing middleware deprecation and stale Browserslist-data warnings.
+
+### Fix-round self-review
+
+- Every path after a successful reserve reaches the single `finally` cleanup decision.
+- Returned failures and thrown/rejected dependencies release exactly once while the committed flag remains false.
+- The committed flag is set only after the database reports `issued`, preventing release on success.
+- Cleanup rejection is swallowed only inside the best-effort release boundary; primary stage failures retain their generic status and body.
+- No provider error, database error, bearer token, or private storage path is returned to the client.

@@ -17,11 +17,18 @@ const PRIVATE_PATH = "store/product/asset/v1/customer-file.pdf";
 const SIGNED_URL = "https://storage.example.test/signed/customer-file.pdf";
 
 type FakeOptions = {
+  assetLookupError?: { message: string };
+  assetLookupRejection?: Error;
   signingError?: { message: string };
+  signingRejection?: Error;
+  commitError?: { message: string };
+  commitRejection?: Error;
+  releaseRejection?: Error;
 };
 
 function buildHardenedSchemaAdmin(options: FakeOptions = {}) {
   const events: string[] = [];
+  const releaseReasons: string[] = [];
 
   const admin = {
     from: vi.fn((table: string) => {
@@ -62,6 +69,12 @@ function buildHardenedSchemaAdmin(options: FakeOptions = {}) {
             eq: vi.fn(() => ({
               maybeSingle: vi.fn(async () => {
                 events.push("lookup-version");
+                if (options.assetLookupRejection) {
+                  throw options.assetLookupRejection;
+                }
+                if (options.assetLookupError) {
+                  return { data: null, error: options.assetLookupError };
+                }
                 return { data: { storage_path: PRIVATE_PATH }, error: null };
               }),
             })),
@@ -98,16 +111,23 @@ function buildHardenedSchemaAdmin(options: FakeOptions = {}) {
         events.push("commit");
         expect(args).toMatchObject({ p_grant_id: GRANT_ID });
         expect(args.p_client_fingerprint_hash).toMatch(/^[a-f0-9]{64}$/);
+        if (options.commitRejection) {
+          throw options.commitRejection;
+        }
+        if (options.commitError) {
+          return { data: null, error: options.commitError };
+        }
         return { data: "issued", error: null };
       }
 
       if (functionName === "release_digital_download_grant") {
         events.push("release");
-        expect(args).toMatchObject({
-          p_grant_id: GRANT_ID,
-          p_safe_error: "Storage signing failed",
-        });
+        expect(args).toMatchObject({ p_grant_id: GRANT_ID });
         expect(args.p_client_fingerprint_hash).toMatch(/^[a-f0-9]{64}$/);
+        releaseReasons.push(String(args.p_safe_error));
+        if (options.releaseRejection) {
+          throw options.releaseRejection;
+        }
         return { data: "released", error: null };
       }
 
@@ -117,6 +137,9 @@ function buildHardenedSchemaAdmin(options: FakeOptions = {}) {
       from: vi.fn(() => ({
         createSignedUrl: vi.fn(async () => {
           events.push("sign");
+          if (options.signingRejection) {
+            throw options.signingRejection;
+          }
           if (options.signingError) {
             return { data: null, error: options.signingError };
           }
@@ -126,7 +149,26 @@ function buildHardenedSchemaAdmin(options: FakeOptions = {}) {
     },
   };
 
-  return { admin, events };
+  return { admin, events, releaseReasons };
+}
+
+async function invokeRoute() {
+  const route = await import(
+    "@/app/api/digital-downloads/[token]/[entitlementId]/route"
+  );
+
+  return route.GET(
+    new NextRequest(
+      `http://localhost:3000/api/digital-downloads/access-token/${ENTITLEMENT_ID}`,
+      { headers: { "user-agent": "Myrivo route regression test" } },
+    ),
+    {
+      params: Promise.resolve({
+        token: "access-token",
+        entitlementId: ENTITLEMENT_ID,
+      }),
+    },
+  );
 }
 
 beforeEach(() => {
@@ -137,22 +179,7 @@ describe("hardened digital download route", () => {
   test("reserves, signs server-side, commits, and redirects", async () => {
     const { admin, events } = buildHardenedSchemaAdmin();
     createSupabaseAdminClientMock.mockReturnValue(admin);
-    const route = await import(
-      "@/app/api/digital-downloads/[token]/[entitlementId]/route"
-    );
-
-    const response = await route.GET(
-      new NextRequest(
-        `http://localhost:3000/api/digital-downloads/access-token/${ENTITLEMENT_ID}`,
-        { headers: { "user-agent": "Myrivo route regression test" } },
-      ),
-      {
-        params: Promise.resolve({
-          token: "access-token",
-          entitlementId: ENTITLEMENT_ID,
-        }),
-      },
-    );
+    const response = await invokeRoute();
 
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe(SIGNED_URL);
@@ -160,31 +187,102 @@ describe("hardened digital download route", () => {
   });
 
   test("releases the reservation when storage signing fails", async () => {
-    const { admin, events } = buildHardenedSchemaAdmin({
+    const { admin, events, releaseReasons } = buildHardenedSchemaAdmin({
       signingError: { message: "Provider unavailable" },
     });
     createSupabaseAdminClientMock.mockReturnValue(admin);
-    const route = await import(
-      "@/app/api/digital-downloads/[token]/[entitlementId]/route"
-    );
-
-    const response = await route.GET(
-      new NextRequest(
-        `http://localhost:3000/api/digital-downloads/access-token/${ENTITLEMENT_ID}`,
-        { headers: { "user-agent": "Myrivo route regression test" } },
-      ),
-      {
-        params: Promise.resolve({
-          token: "access-token",
-          entitlementId: ENTITLEMENT_ID,
-        }),
-      },
-    );
+    const response = await invokeRoute();
 
     expect(response.status).toBe(500);
     await expect(response.json()).resolves.toEqual({
       error: "Unable to prepare download.",
     });
     expect(events).toEqual(["reserve", "lookup-version", "sign", "release"]);
+    expect(releaseReasons).toEqual(["Storage signing failed"]);
+  });
+
+  test.each([
+    {
+      name: "returns an error",
+      options: { assetLookupError: { message: "Database unavailable" } },
+    },
+    {
+      name: "rejects",
+      options: { assetLookupRejection: new Error("Database unavailable") },
+    },
+  ])("releases the reservation when asset lookup $name", async ({ options }) => {
+    const { admin, events, releaseReasons } = buildHardenedSchemaAdmin(options);
+    createSupabaseAdminClientMock.mockReturnValue(admin);
+
+    const response = await invokeRoute();
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      error: "Unable to prepare download.",
+    });
+    expect(events).toEqual(["reserve", "lookup-version", "release"]);
+    expect(releaseReasons).toEqual(["Asset lookup failed"]);
+  });
+
+  test("releases the reservation when storage signing rejects", async () => {
+    const { admin, events, releaseReasons } = buildHardenedSchemaAdmin({
+      signingRejection: new Error("Provider unavailable"),
+    });
+    createSupabaseAdminClientMock.mockReturnValue(admin);
+
+    const response = await invokeRoute();
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      error: "Unable to prepare download.",
+    });
+    expect(events).toEqual(["reserve", "lookup-version", "sign", "release"]);
+    expect(releaseReasons).toEqual(["Storage signing failed"]);
+  });
+
+  test.each([
+    {
+      name: "returns an error",
+      options: { commitError: { message: "Database unavailable" } },
+    },
+    {
+      name: "rejects",
+      options: { commitRejection: new Error("Database unavailable") },
+    },
+  ])("releases the reservation when grant commit $name", async ({ options }) => {
+    const { admin, events, releaseReasons } = buildHardenedSchemaAdmin(options);
+    createSupabaseAdminClientMock.mockReturnValue(admin);
+
+    const response = await invokeRoute();
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: "Unable to finalize download.",
+    });
+    expect(events).toEqual([
+      "reserve",
+      "lookup-version",
+      "sign",
+      "commit",
+      "release",
+    ]);
+    expect(releaseReasons).toEqual(["Grant commit failed"]);
+  });
+
+  test("does not let best-effort release rejection mask the signing failure", async () => {
+    const { admin, events, releaseReasons } = buildHardenedSchemaAdmin({
+      signingRejection: new Error("Provider unavailable"),
+      releaseRejection: new Error("Release unavailable"),
+    });
+    createSupabaseAdminClientMock.mockReturnValue(admin);
+
+    const response = await invokeRoute();
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      error: "Unable to prepare download.",
+    });
+    expect(events).toEqual(["reserve", "lookup-version", "sign", "release"]);
+    expect(releaseReasons).toEqual(["Storage signing failed"]);
   });
 });

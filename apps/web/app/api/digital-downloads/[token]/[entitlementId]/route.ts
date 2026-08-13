@@ -39,30 +39,48 @@ export async function GET(request: NextRequest, context: { params: Promise<{ tok
       p_safe_error: safeError,
     });
   };
-  const { data: assetVersion, error: assetVersionError } = await admin
-    .from("digital_product_asset_versions")
-    .select("storage_path")
-    .eq("id", grant.asset_version_id)
-    .maybeSingle();
-  if (assetVersionError || !assetVersion?.storage_path) {
-    await releaseReservation("Asset lookup failed");
+  let failureStage = "Asset lookup";
+  let reservationCommitted = false;
+
+  try {
+    const { data: assetVersion, error: assetVersionError } = await admin
+      .from("digital_product_asset_versions")
+      .select("storage_path")
+      .eq("id", grant.asset_version_id)
+      .maybeSingle();
+    if (assetVersionError || !assetVersion?.storage_path) {
+      return NextResponse.json({ error: "Unable to prepare download." }, { status: 500 });
+    }
+
+    failureStage = "Storage signing";
+    const { data: signed, error: signedError } = await admin.storage.from(DIGITAL_ASSET_BUCKET).createSignedUrl(assetVersion.storage_path, DIGITAL_PRODUCT_CONFIG.signedDownloadTtlSeconds, { download: grant.customer_filename });
+    if (signedError || !signed?.signedUrl) {
+      return NextResponse.json({ error: "Unable to prepare download." }, { status: 500 });
+    }
+
+    failureStage = "Grant commit";
+    const { data: commitStatus, error: commitError } = await admin.rpc("commit_digital_download_grant", {
+      p_grant_id: grant.grant_id,
+      p_client_fingerprint_hash: clientFingerprintHash,
+    });
+    if (commitError || commitStatus !== "issued") {
+      return NextResponse.json({ error: "Unable to finalize download." }, { status: 409 });
+    }
+
+    reservationCommitted = true;
+    return NextResponse.redirect(signed.signedUrl, 303);
+  } catch {
+    if (failureStage === "Grant commit") {
+      return NextResponse.json({ error: "Unable to finalize download." }, { status: 409 });
+    }
     return NextResponse.json({ error: "Unable to prepare download." }, { status: 500 });
+  } finally {
+    if (!reservationCommitted) {
+      try {
+        await releaseReservation(`${failureStage} failed`);
+      } catch {
+        // Reservation expiry is the final backstop when best-effort cleanup is unavailable.
+      }
+    }
   }
-
-  const { data: signed, error: signedError } = await admin.storage.from(DIGITAL_ASSET_BUCKET).createSignedUrl(assetVersion.storage_path, DIGITAL_PRODUCT_CONFIG.signedDownloadTtlSeconds, { download: grant.customer_filename });
-  if (signedError || !signed?.signedUrl) {
-    await releaseReservation("Storage signing failed");
-    return NextResponse.json({ error: "Unable to prepare download." }, { status: 500 });
-  }
-
-  const { data: commitStatus, error: commitError } = await admin.rpc("commit_digital_download_grant", {
-    p_grant_id: grant.grant_id,
-    p_client_fingerprint_hash: clientFingerprintHash,
-  });
-  if (commitError || commitStatus !== "issued") {
-    await releaseReservation("Grant commit failed");
-    return NextResponse.json({ error: commitError?.message ?? "Unable to finalize download." }, { status: 409 });
-  }
-
-  return NextResponse.redirect(signed.signedUrl, 303);
 }
