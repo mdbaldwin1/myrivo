@@ -10,7 +10,9 @@ export async function POST(request: NextRequest) {
   const acceptanceEnvironment = process.env.MYRIVO_DIGITAL_ACCEPTANCE_ENVIRONMENT;
   const approvedOrigin = process.env.MYRIVO_DIGITAL_ACCEPTANCE_ORIGIN;
   const approvedProject = process.env.MYRIVO_DIGITAL_ACCEPTANCE_PROJECT_REF;
-  if (process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production" || !["test", "preview"].includes(acceptanceEnvironment ?? "")
+  const previewDeployment = process.env.NODE_ENV === "production" && process.env.VERCEL_ENV === "preview";
+  const localTestDeployment = process.env.NODE_ENV !== "production" && process.env.VERCEL_ENV === "preview";
+  if ((!previewDeployment && !localTestDeployment) || process.env.MYRIVO_DIGITAL_ACCEPTANCE_BUILD !== "enabled" || !["test", "preview"].includes(acceptanceEnvironment ?? "")
     || !approvedOrigin || new URL(request.url).origin !== approvedOrigin || !approvedProject?.match(/^[a-z0-9-]{6,64}$/)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

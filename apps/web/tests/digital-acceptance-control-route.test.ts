@@ -16,6 +16,7 @@ describe("digital acceptance control route", () => {
     process.env.VERCEL_ENV = "preview";
     process.env.MYRIVO_DIGITAL_ACCEPTANCE_ORIGIN = "http://localhost";
     process.env.MYRIVO_DIGITAL_ACCEPTANCE_PROJECT_REF = "test-project";
+    process.env.MYRIVO_DIGITAL_ACCEPTANCE_BUILD = "enabled";
   });
 
   it("is unavailable in production even with a valid credential", async () => {
@@ -35,6 +36,17 @@ describe("digital acceptance control route", () => {
     const response = await POST(new NextRequest("http://localhost/api/internal/digital-products/acceptance", { method: "POST" }));
     expect(response.status).toBe(404);
     expect(observe).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
+  });
+
+  it("allows an explicitly allowlisted deployed preview despite production Node mode", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    observe.mockResolvedValue({ version: 1, runId: "10000000-0000-4000-8000-000000000001", observedAt: new Date().toISOString(), observation: {} });
+    const { POST } = await import("@/app/api/internal/digital-products/acceptance/route");
+    const response = await POST(new NextRequest("http://localhost/api/internal/digital-products/acceptance", {
+      method: "POST", headers: { authorization: `Bearer ${"s".repeat(32)}` }, body: JSON.stringify({ version: 1, action: "observe", runId: "10000000-0000-4000-8000-000000000001", subjectId: "20000000-0000-4000-8000-000000000001", idempotencyKey: "30000000-0000-4000-8000-000000000001" }),
+    }));
+    expect(response.status).toBe(200);
     vi.unstubAllEnvs();
   });
 

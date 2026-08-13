@@ -40,10 +40,16 @@ const signature = evidence.signature; delete evidence.signature;
 const expectedSignature = createHmac("sha256", evidenceKey).update(JSON.stringify(evidence)).digest("hex");
 if (typeof signature !== "string" || !timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) fail("evidence signature is invalid");
 if (evidence.schemaVersion !== 3 || evidence.runId !== fixture.runId || evidence.origin !== baseUrl.origin || evidence.releaseVersion !== (process.env.GITHUB_HEAD_SHA || process.env.GITHUB_SHA) || !Array.isArray(evidence.observations)) fail("evidence is incomplete or not run-bound");
-const requiredActions = new Set(["reset:", "inject-refund:partial", "inject-refund:full", "inject-dispute:opened", "inject-dispute:won", "inject-dispute:lost", "inject-delivery-failure:"]);
+const requiredActions = new Set(["observe:stripe-digital", "observe:stripe-mixed", "observe:resend-access", "observe:five-grants", "observe:replacement", "observe:stripe-partial-refund", "observe:stripe-full-refund", "observe:stripe-dispute-won", "observe:stripe-dispute-lost", "observe:delivery-retry", "observe:merchant-resend"]);
+const fixedScenarioSubjects = new Map([
+  ["replacement", fixture.orderId], ["delivery-retry", fixture.orderId], ["merchant-resend", fixture.orderId],
+  ["stripe-partial-refund", fixture.financialOrders?.partialRefund], ["stripe-full-refund", fixture.financialOrders?.fullRefund],
+  ["stripe-dispute-won", fixture.financialOrders?.disputeWon], ["stripe-dispute-lost", fixture.financialOrders?.disputeLost],
+]);
 for (const item of evidence.observations) {
-  requiredActions.delete(`${item.action}:${item.transition ?? ""}`);
-  if (item.runId !== fixture.runId || !item.observedAt || !item.observation?.order || item.observation.order.id !== fixture.orderId) fail("an observation is null, stale, or unlinked");
+  requiredActions.delete(`${item.action}:${item.scenario ?? ""}`);
+  const expectedSubject = fixedScenarioSubjects.get(item.scenario);
+  if (item.runId !== fixture.runId || !item.observedAt || !item.subjectId || !item.observation?.order || item.observation.order.id !== item.subjectId || (expectedSubject && item.subjectId !== expectedSubject)) fail("an observation is null, stale, or unlinked");
   if (item.observation.providerPayment && (item.observation.providerPayment.livemode !== false || item.observation.providerPayment.status !== "succeeded")) fail("provider payment is not a succeeded test-mode payment");
 }
 if (requiredActions.size) fail(`evidence is missing required actions: ${[...requiredActions].join(", ")}`);

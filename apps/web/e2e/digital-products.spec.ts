@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { acceptanceAction, loadDigitalAcceptanceFixture } from "./digital-products-fixture";
+import { acceptanceAction, getResendAccessMessage, loadDigitalAcceptanceFixture } from "./digital-products-fixture";
 import { login } from "./helpers";
 
 const fixture = loadDigitalAcceptanceFixture();
@@ -14,12 +14,15 @@ async function completeStripeCheckout(page: import("@playwright/test").Page) {
   await page.getByRole("button", { name: /pay|submit/i }).click();
   await expect(page).toHaveURL(new RegExp(new URL(fixture!.baseUrl).host), { timeout: 60_000 });
   await expect(page.getByRole("link", { name: /view downloads|access.*downloads/i })).toBeVisible({ timeout: 60_000 });
+  const text = await page.locator("main").innerText();
+  const orderId = text.match(/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i)?.[0];
+  if (!orderId) throw new Error("Checkout return did not expose the newly completed order identity.");
+  return orderId;
 }
 test.skip(!fixture, "Digital acceptance requires an explicit non-production fixture.");
 
 test.describe.serial("digital product user journeys", () => {
   test("merchant uploads, previews, and publishes through the catalog UI", async ({ page, request }) => {
-    await acceptanceAction(request, fixture!, "reset");
     await login(page, fixture!.merchant.email, fixture!.merchant.password);
     await page.goto(fixture!.routes.catalogFiles);
     await page.getByLabel(/file/i).setInputFiles({ name: "acceptance-art.png", mimeType: "image/png", buffer: validPng });
@@ -40,12 +43,28 @@ test.describe.serial("digital product user journeys", () => {
       }
       await page.goto(fixture!.routes.cart);
       await page.getByRole("button", { name: /checkout/i }).click();
-      await completeStripeCheckout(page);
+      const orderId = await completeStripeCheckout(page);
+      const message = await getResendAccessMessage(request, fixture!.customer.email, orderId);
+      expect(message.to).toContain(fixture!.customer.email);
+      await acceptanceAction(request, fixture!, "observe", undefined, orderId, "resend-access");
+      const clean = await page.context().browser()!.newContext();
+      const downloadPage = await clean.newPage();
+      await downloadPage.goto(message.link);
+      await expect(downloadPage).toHaveURL(/\/downloads$/);
+      await downloadPage.getByRole("button", { name: /download/i }).click();
+      await clean.close();
       await page.getByRole("link", { name: /view downloads|access.*downloads/i }).click();
-      await page.getByRole("button", { name: /download/i }).click();
+      const downloadButton = page.getByRole("button", { name: /download/i });
+      await downloadButton.click();
       await expect(page.getByRole("status")).toContainText(/started|preparing/i);
-      const observation = await acceptanceAction(request, fixture!, "observe");
-      expect(observation.observation).toBeTruthy();
+      if (composition === "digital") {
+        for (let additionalGrant = 0; additionalGrant < 3; additionalGrant += 1) await downloadButton.click();
+        await acceptanceAction(request, fixture!, "observe", undefined, orderId, "five-grants");
+        await downloadButton.click();
+        await expect(page.getByRole("status")).toContainText(/limit|contact|unavailable/i);
+      }
+      const observation = await acceptanceAction(request, fixture!, "observe", undefined, orderId, composition === "digital" ? "stripe-digital" : "stripe-mixed");
+      expect(observation.observation?.order).toEqual(expect.objectContaining({ id: orderId, checkout_composition: composition === "digital" ? "digital_only" : "mixed" }));
     }
   });
 
@@ -59,28 +78,31 @@ test.describe.serial("digital product user journeys", () => {
     await page.goto(fixture!.routes.catalogFiles);
     await page.getByRole("button", { name: /replace/i }).click();
     await page.getByLabel(/file/i).setInputFiles({ name: "acceptance-art-v2.png", mimeType: "image/png", buffer: validPng });
+    await acceptanceAction(request, fixture!, "observe", undefined, fixture!.orderId, "replacement");
     await page.goto(fixture!.routes.merchantOrder);
     await page.getByRole("button", { name: /resend/i }).click();
     await expect(page.getByRole("status")).toContainText(/sent|queued/i);
-    await acceptanceAction(request, fixture!, "observe");
+    await acceptanceAction(request, fixture!, "observe", undefined, fixture!.orderId, "merchant-resend");
   });
 
   test("provider financial events produce exact customer UI state", async ({ page, request }) => {
     for (const transition of ["partial", "full"] as const) {
-      await acceptanceAction(request, fixture!, "inject-refund", transition);
+      const subject = transition === "partial" ? fixture!.financialOrders.partialRefund : fixture!.financialOrders.fullRefund;
+      await acceptanceAction(request, fixture!, "inject-refund", transition, subject);
       await page.goto(fixture!.routes.customerOrder);
       await expect(page.getByText(transition === "partial" ? /partially refunded/i : /fully refunded/i)).toBeVisible();
       if (transition === "partial") await expect(page.getByRole("button", { name: /download|access/i })).toBeVisible();
       else await expect(page.getByRole("button", { name: /download|access/i })).toHaveCount(0);
-      await acceptanceAction(request, fixture!, "observe");
+      await acceptanceAction(request, fixture!, "observe", undefined, subject, transition === "partial" ? "stripe-partial-refund" : "stripe-full-refund");
     }
     for (const transition of ["opened", "won", "lost"] as const) {
-      await acceptanceAction(request, fixture!, "inject-dispute", transition);
+      const subject = transition === "lost" ? fixture!.financialOrders.disputeLost : fixture!.financialOrders.disputeWon;
+      await acceptanceAction(request, fixture!, "inject-dispute", transition, subject);
       await page.goto(fixture!.routes.download);
       await expect(page.locator("main")).toContainText(transition === "opened" ? /temporarily unavailable/i : transition === "won" ? /your files/i : /no longer available|revoked/i);
       if (transition === "won") await expect(page.getByRole("button", { name: /download/i })).toBeVisible();
       else await expect(page.getByRole("button", { name: /download/i })).toHaveCount(0);
-      await acceptanceAction(request, fixture!, "observe");
+      if (transition !== "opened") await acceptanceAction(request, fixture!, "observe", undefined, subject, transition === "won" ? "stripe-dispute-won" : "stripe-dispute-lost");
     }
   });
 
@@ -90,6 +112,6 @@ test.describe.serial("digital product user journeys", () => {
     await page.goto(fixture!.routes.merchantOrder);
     await expect(page.locator("main")).toContainText(/failed|retry/i);
     await page.getByRole("button", { name: /resend|retry/i }).click();
-    await acceptanceAction(request, fixture!, "observe");
+    await acceptanceAction(request, fixture!, "observe", undefined, fixture!.orderId, "delivery-retry");
   });
 });
