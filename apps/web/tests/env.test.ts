@@ -31,13 +31,27 @@ describe("env schema", () => {
     expect(serverEnvSchema.safeParse({
       SUPABASE_SERVICE_ROLE_KEY: "service-role",
       DIGITAL_DELIVERY_PROCESS_SECRET: "short",
-      DIGITAL_DELIVERY_TOKEN_SECRET: "also-short"
+      DIGITAL_DELIVERY_TOKEN_SECRET: "also-short",
+      DIGITAL_DOWNLOAD_SESSION_SECRET: "still-short"
     }).success).toBe(false);
 
     expect(serverEnvSchema.safeParse({
       SUPABASE_SERVICE_ROLE_KEY: "service-role",
       DIGITAL_DELIVERY_PROCESS_SECRET: "process-secret-that-is-at-least-32-characters",
-      DIGITAL_DELIVERY_TOKEN_SECRET: "token-secret-that-is-at-least-32-characters"
+      DIGITAL_DELIVERY_TOKEN_SECRET: "token-secret-that-is-at-least-32-characters",
+      DIGITAL_DOWNLOAD_SESSION_SECRET: "download-session-secret-that-is-at-least-32-characters"
+    }).success).toBe(true);
+  });
+
+  test("rejects a weak digital download session signing secret", () => {
+    expect(serverEnvSchema.safeParse({
+      SUPABASE_SERVICE_ROLE_KEY: "service-role",
+      DIGITAL_DOWNLOAD_SESSION_SECRET: "short"
+    }).success).toBe(false);
+
+    expect(serverEnvSchema.safeParse({
+      SUPABASE_SERVICE_ROLE_KEY: "service-role",
+      DIGITAL_DOWNLOAD_SESSION_SECRET: "download-session-secret-that-is-at-least-32-characters"
     }).success).toBe(true);
   });
 

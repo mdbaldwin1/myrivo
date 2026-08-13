@@ -1,11 +1,24 @@
+import { createHmac } from "node:crypto";
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const createSupabaseAdminClientMock = vi.fn();
+const SESSION_SECRET = "download-session-secret-that-is-at-least-32-characters";
+const sessionEnvironment = vi.hoisted(
+  (): { secret: string | undefined } => ({
+    secret: "download-session-secret-that-is-at-least-32-characters",
+  }),
+);
 
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: (...args: unknown[]) =>
     createSupabaseAdminClientMock(...args),
+}));
+
+vi.mock("@/lib/env", () => ({
+  getServerEnv: () => ({
+    DIGITAL_DOWNLOAD_SESSION_SECRET: sessionEnvironment.secret,
+  }),
 }));
 
 const ACCESS_TOKEN = "a".repeat(43);
@@ -19,6 +32,7 @@ const PRODUCT_ID = "20000000-0000-4000-8000-000000000001";
 const ASSET_ID = "60000000-0000-4000-8000-000000000001";
 const VERSION_ID = "70000000-0000-4000-8000-000000000001";
 const GRANT_ID = "a0000000-0000-4000-8000-000000000001";
+const OTHER_GRANT_ID = "a0000000-0000-4000-8000-000000000002";
 const SESSION_ID = "b0000000-0000-4000-8000-000000000001";
 const PRIVATE_PATH = `${STORE_ID}/${PRODUCT_ID}/${ASSET_ID}/v1/customer-file.pdf`;
 const SIGNED_URL = "https://storage.example.test/signed/customer-file.pdf";
@@ -204,7 +218,8 @@ function buildAdmin(options: FakeOptions = {}) {
 function downloadRequest(options: {
   token?: string;
   entitlementId?: string;
-  sessionId?: string | null;
+  sessionId?: string;
+  sessionCookie?: string | null;
   forwardedFor?: string;
   userAgent?: string;
 } = {}) {
@@ -214,10 +229,17 @@ function downloadRequest(options: {
     "user-agent": options.userAgent ?? "Myrivo route regression test",
     "x-forwarded-for": options.forwardedFor ?? "198.51.100.8",
   });
-  if (options.sessionId !== null) {
+  const sessionId = options.sessionId ?? SESSION_ID;
+  const sessionCookie =
+    options.sessionCookie === undefined
+      ? `v1.${sessionId}.${createHmac("sha256", SESSION_SECRET)
+          .update(`digital-download-session-cookie-v1\0${sessionId}`)
+          .digest("base64url")}`
+      : options.sessionCookie;
+  if (sessionCookie !== null) {
     headers.set(
       "cookie",
-      `myrivo_download_session=${options.sessionId ?? SESSION_ID}`,
+      `myrivo_download_session=${sessionCookie}`,
     );
   }
   return new NextRequest(
@@ -249,7 +271,7 @@ async function invokeList(token = ACCESS_TOKEN) {
       {
         headers: {
           "x-forwarded-for": "198.51.100.8",
-          cookie: `myrivo_download_session=${SESSION_ID}`,
+          cookie: downloadRequest().headers.get("cookie") ?? "",
         },
       },
     ),
@@ -268,6 +290,7 @@ function expectHardenedHeaders(response: Response) {
 
 beforeEach(async () => {
   createSupabaseAdminClientMock.mockReset();
+  sessionEnvironment.secret = SESSION_SECRET;
   const { hashDigitalAccessToken } = await import(
     "@/lib/digital-products/entitlements"
   );
@@ -360,19 +383,41 @@ describe("digital download grant route", () => {
         )?.args.p_client_fingerprint_hash,
     );
     expect(fingerprints[0]).not.toBe(fingerprints[1]);
+    const buckets = [first, second].map(
+      (state) =>
+        state.rpcArgs.find(
+          (entry) => entry.name === "check_api_rate_limit",
+        )?.args.p_bucket_key,
+    );
+    expect(buckets[0]).not.toBe(buckets[1]);
   });
 
   test("creates an opaque HttpOnly session cookie when the browser has none", async () => {
     const state = buildAdmin();
     createSupabaseAdminClientMock.mockReturnValue(state.admin);
 
-    const response = await invokeDownload(downloadRequest({ sessionId: null }));
+    const response = await invokeDownload(
+      downloadRequest({ sessionCookie: null }),
+    );
 
     expect(response.status).toBe(303);
     expect(response.headers.get("set-cookie")).toMatch(
-      /myrivo_download_session=[0-9a-f-]{36}.*HttpOnly.*SameSite=Lax/i,
+      /myrivo_download_session=v1\.[0-9a-f-]{36}\.[A-Za-z0-9_-]{43}.*HttpOnly.*SameSite=Lax/i,
     );
     expect(response.headers.get("set-cookie")).not.toContain(ACCESS_TOKEN);
+  });
+
+  test("fails closed before database access when session signing is not configured", async () => {
+    const state = buildAdmin();
+    createSupabaseAdminClientMock.mockReturnValue(state.admin);
+    sessionEnvironment.secret = undefined;
+
+    const response = await invokeDownload();
+
+    expect(response.status).toBe(503);
+    expect(state.events).toEqual([]);
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expectHardenedHeaders(response);
   });
 
   test.each([
@@ -432,6 +477,62 @@ describe("digital download grant route", () => {
     expect(buckets[0]).toBe(buckets[1]);
   });
 
+  test("repeated missing cookies use one deterministic bearer-link rate bucket", async () => {
+    const first = buildAdmin();
+    createSupabaseAdminClientMock.mockReturnValueOnce(first.admin);
+    await invokeDownload(downloadRequest({ sessionCookie: null }));
+    const second = buildAdmin();
+    createSupabaseAdminClientMock.mockReturnValueOnce(second.admin);
+    await invokeDownload(downloadRequest({ sessionCookie: null }));
+
+    const buckets = [first, second].map(
+      (state) => state.rpcArgs.find((entry) => entry.name === "check_api_rate_limit")?.args.p_bucket_key,
+    );
+    expect(buckets[0]).toBe(buckets[1]);
+    expect(JSON.stringify(buckets)).not.toContain(ACCESS_TOKEN);
+  });
+
+  test("rotating arbitrary unsigned UUID cookies cannot mint rate-limit buckets", async () => {
+    const first = buildAdmin();
+    createSupabaseAdminClientMock.mockReturnValueOnce(first.admin);
+    await invokeDownload(
+      downloadRequest({ sessionCookie: SESSION_ID }),
+    );
+    const second = buildAdmin();
+    createSupabaseAdminClientMock.mockReturnValueOnce(second.admin);
+    await invokeDownload(
+      downloadRequest({
+        sessionCookie: "b0000000-0000-4000-8000-000000000099",
+      }),
+    );
+
+    const buckets = [first, second].map(
+      (state) => state.rpcArgs.find((entry) => entry.name === "check_api_rate_limit")?.args.p_bucket_key,
+    );
+    expect(buckets[0]).toBe(buckets[1]);
+  });
+
+  test("a forged signed-cookie shape falls back to the bearer-link rate bucket", async () => {
+    const missing = buildAdmin();
+    createSupabaseAdminClientMock.mockReturnValueOnce(missing.admin);
+    await invokeDownload(downloadRequest({ sessionCookie: null }));
+    const forged = buildAdmin();
+    createSupabaseAdminClientMock.mockReturnValueOnce(forged.admin);
+    await invokeDownload(
+      downloadRequest({
+        sessionCookie: `v1.${SESSION_ID}.${"A".repeat(43)}`,
+      }),
+    );
+
+    const buckets = [missing, forged].map(
+      (state) =>
+        state.rpcArgs.find(
+          (entry) => entry.name === "check_api_rate_limit",
+        )?.args.p_bucket_key,
+    );
+    expect(buckets[0]).toBe(buckets[1]);
+  });
+
   test("fails closed without exposing the shared throttle error", async () => {
     const state = buildAdmin({
       rateLimitError: { message: "relation api_rate_limits unavailable" },
@@ -475,10 +576,10 @@ describe("digital download grant route", () => {
     expect(state.events).toEqual(["rate-limit", "authorize", "reserve"]);
   });
 
-  test("releases a created reservation when the successful RPC payload has a valid grant id but malformed metadata", async () => {
+  test("a swapped malformed response cleans up only the caller-known reservation identity", async () => {
     const state = buildAdmin({
       reserveData: {
-        grant_id: GRANT_ID,
+        grant_id: OTHER_GRANT_ID,
         store_id: "malformed-store",
         product_id: PRODUCT_ID,
         asset_id: ASSET_ID,
@@ -497,8 +598,16 @@ describe("digital download grant route", () => {
       "rate-limit",
       "authorize",
       "reserve",
-      "release",
+      "cleanup-reservation",
     ]);
+    const reserve = state.rpcArgs.find((entry) => entry.name === "reserve_digital_download_grant");
+    const cleanup = state.rpcArgs.find((entry) => entry.name === "release_digital_download_reservation");
+    expect(cleanup?.args).toMatchObject({
+      p_entitlement_id: ENTITLEMENT_ID,
+      p_access_token_id: ACCESS_ID,
+      p_reservation_key: reserve?.args.p_reservation_key,
+    });
+    expect(state.rpcArgs.some((entry) => entry.name === "release_digital_download_grant")).toBe(false);
     expect(state.releaseReasons).toEqual(["Reservation response invalid"]);
   });
 

@@ -1,6 +1,12 @@
-import { createHash, randomUUID } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  randomUUID,
+  timingSafeEqual,
+} from "node:crypto";
 import type { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { getServerEnv } from "@/lib/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { DIGITAL_ASSET_BUCKET } from "./assets";
 import { DIGITAL_PRODUCT_CONFIG } from "./config";
@@ -11,6 +17,8 @@ const POSTGRES_UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SHA_256_PATTERN = /^[a-f0-9]{64}$/;
 const DOWNLOAD_SESSION_COOKIE = "myrivo_download_session";
+const DOWNLOAD_SESSION_COOKIE_PATTERN =
+  /^v1\.([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.([A-Za-z0-9_-]{43})$/i;
 
 const accessSchema = z.object({
   access_token_id: z.string().regex(POSTGRES_UUID_PATTERN),
@@ -43,8 +51,6 @@ const reservationSchema = z.object({
   grant_status: z.enum(["reserved", "issued"]),
   reservation_expires_at: z.string().datetime({ offset: true }),
 });
-
-const grantIdentitySchema = reservationSchema.pick({ grant_id: true });
 
 const storagePathSchema = z.object({
   storage_path: z.string().trim().min(1).max(1024),
@@ -128,18 +134,62 @@ export function isValidDigitalEntitlementId(id: string): boolean {
   return POSTGRES_UUID_PATTERN.test(id);
 }
 
-export function getDigitalDownloadSession(request: NextRequest): {
+function signDigitalDownloadSession(id: string, secret: string): string {
+  return createHmac("sha256", secret)
+    .update(`digital-download-session-cookie-v1\0${id}`)
+    .digest("base64url");
+}
+
+function verifiedDigitalDownloadSessionId(
+  candidate: string | undefined,
+  secret: string,
+): string | null {
+  const match = candidate?.match(DOWNLOAD_SESSION_COOKIE_PATTERN);
+  if (!match) return null;
+  const id = match[1];
+  const signature = match[2];
+  if (!id || !signature) return null;
+  const presented = Buffer.from(signature, "base64url");
+  const expected = Buffer.from(
+    signDigitalDownloadSession(id, secret),
+    "base64url",
+  );
+  return presented.length === expected.length &&
+    timingSafeEqual(presented, expected)
+    ? id
+    : null;
+}
+
+export function getDigitalDownloadSession(
+  request: NextRequest,
+  accessToken: string,
+): {
   id: string;
+  cookieValue: string;
   fingerprintHash: string;
+  rateLimitSubjectHash: string;
   isNew: boolean;
 } {
+  const secret = getServerEnv().DIGITAL_DOWNLOAD_SESSION_SECRET?.trim();
+  if (!secret) {
+    throw new DigitalDownloadError("rate_limit_unavailable");
+  }
   const candidate = request.cookies.get(DOWNLOAD_SESSION_COOKIE)?.value;
-  const isExisting = Boolean(candidate && POSTGRES_UUID_PATTERN.test(candidate));
-  const id = isExisting ? String(candidate) : randomUUID();
+  const existingId = verifiedDigitalDownloadSessionId(candidate, secret);
+  const isExisting = existingId !== null;
+  const id = existingId ?? randomUUID();
+  const cookieValue = `v1.${id}.${signDigitalDownloadSession(id, secret)}`;
+  const rateLimitIdentity = isExisting
+    ? `session\0${id}`
+    : `access-token\0${hashDigitalAccessToken(accessToken)}`;
   return {
     id,
+    cookieValue,
     fingerprintHash: createHash("sha256")
       .update(`digital-download-session-v1\0${id}`)
+      .digest("hex"),
+    rateLimitSubjectHash: createHash("sha256")
+      .update(`digital-download-rate-subject-v1\0${rateLimitIdentity}`)
       .digest("hex"),
     isNew: !isExisting,
   };
@@ -147,10 +197,10 @@ export function getDigitalDownloadSession(request: NextRequest): {
 
 export function attachDigitalDownloadSession(
   response: NextResponse,
-  session: { id: string; isNew: boolean },
+  session: { cookieValue: string; isNew: boolean },
 ) {
   if (!session.isNew) return response;
-  response.cookies.set(DOWNLOAD_SESSION_COOKIE, session.id, {
+  response.cookies.set(DOWNLOAD_SESSION_COOKIE, session.cookieValue, {
     httpOnly: true,
     maxAge: DIGITAL_PRODUCT_CONFIG.accessLinkTtlHours * 60 * 60,
     path: "/",
@@ -175,19 +225,19 @@ export function hardenDigitalDownloadResponse<T extends Response>(response: T): 
 }
 
 export async function enforceDigitalDownloadRateLimit({
-  sessionFingerprintHash,
+  rateLimitSubjectHash,
   action,
   client = defaultClient(),
 }: {
-  sessionFingerprintHash: string;
+  rateLimitSubjectHash: string;
   action: "grant" | "list";
   client?: DigitalDownloadClient;
 }) {
-  if (!SHA_256_PATTERN.test(sessionFingerprintHash)) {
+  if (!SHA_256_PATTERN.test(rateLimitSubjectHash)) {
     throw new DigitalDownloadError("rate_limit_unavailable");
   }
   const identifierHash = createHash("sha256")
-    .update(`digital-download-rate-v2\0${action}\0${sessionFingerprintHash}`)
+    .update(`digital-download-rate-v3\0${action}\0${rateLimitSubjectHash}`)
     .digest("hex");
   const limit =
     action === "grant"
@@ -309,34 +359,17 @@ export async function reserveDownloadGrant({
   const row = unwrapRpcRow(result.data);
   const parsed = reservationSchema.safeParse(row);
   if (!parsed.success) {
-    const identity = grantIdentitySchema.safeParse(row);
-    let released = false;
-    if (identity.success) {
-      try {
-        await releaseDownloadGrant({
-          grantId: identity.data.grant_id,
-          clientFingerprintHash,
-          safeError: "Reservation response invalid",
-          client,
-        });
-        released = true;
-      } catch {
-        // Fall back to the request identity if the malformed row cannot be released by id.
-      }
-    }
-    if (!released) {
-      try {
-        await releaseDownloadReservation({
-          entitlementId,
-          accessTokenId,
-          reservationKey,
-          clientFingerprintHash,
-          safeError: "Reservation response invalid",
-          client,
-        });
-      } catch {
-        // Reservation expiry remains the bounded cleanup backstop.
-      }
+    try {
+      await releaseDownloadReservation({
+        entitlementId,
+        accessTokenId,
+        reservationKey,
+        clientFingerprintHash,
+        safeError: "Reservation response invalid",
+        client,
+      });
+    } catch {
+      // Reservation expiry remains the bounded cleanup backstop.
     }
     throw new DigitalDownloadError("download_unavailable");
   }
@@ -417,7 +450,7 @@ export async function releaseDownloadReservation({
   );
   if (
     error ||
-    (data !== "released" && data !== "issued" && data !== "missing")
+    (data !== "released" && data !== "missing")
   ) {
     throw new DigitalDownloadError("download_unavailable");
   }

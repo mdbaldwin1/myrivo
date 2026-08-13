@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - Added reliable digital order-delivery notifications with enriched order confirmations, attempt-by-attempt provider auditing, durable retries, neutral 48-hour access copy, and tenant-authorized idempotent merchant resend that rotates links without resetting download grants.
 
 ### Fixed
+- Bound malformed digital-download reservation cleanup to caller-known request identity and authenticated opaque browser sessions so swapped responses and client-controlled cookies cannot release or bypass limits for another request.
 - Fixed digital storefront cart handling so zero-inventory downloads remain purchasable and visibly available in product grids, persisted carts are transactionally repaired from the active catalog, stale or mismatched selections are removed, duplicate digital quantities are constrained to one, and checkout type/composition snapshots are enforced against authoritative catalog data.
 - Made storefront checkout retries idempotent across double submits, reloads, legacy cart completion, mutable catalog or promotion changes, ambiguous Stripe responses, and checkout-session persistence failures; accepted Stripe session IDs are bound even without a redirect URL, paid sessions finalize from the immutable purchase snapshot regardless of later store status, and stub/free retries create one order.
 - Fixed shipping-order checkout capture so Stripe-collected shipping addresses are saved onto orders and shown in the merchant order flyout.

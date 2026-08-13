@@ -31,10 +31,18 @@ export async function GET(request: NextRequest, context: RouteContext) {
   }
 
   const client = createSupabaseAdminClient() as unknown as DigitalDownloadClient;
-  const session = getDigitalDownloadSession(request);
+  let session;
+  try {
+    session = getDigitalDownloadSession(request, token);
+  } catch {
+    return response(
+      { error: "Download service is temporarily unavailable." },
+      503,
+    );
+  }
   try {
     await enforceDigitalDownloadRateLimit({
-      sessionFingerprintHash: session.fingerprintHash,
+      rateLimitSubjectHash: session.rateLimitSubjectHash,
       action: "list",
       client,
     });

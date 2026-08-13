@@ -30,6 +30,10 @@ const grantHardeningMigration = join(
   repoRoot,
   "supabase/migrations/20260813011000_harden_atomic_digital_download_grants.sql",
 );
+const grantCleanupIdentityMigration = join(
+  repoRoot,
+  "supabase/migrations/20260813012000_bind_digital_download_cleanup_identity.sql",
+);
 
 const ids = {
   owner: "00000000-0000-4000-8000-000000000901",
@@ -273,6 +277,11 @@ beforeAll(() => {
       `Missing hardened atomic grant migration: ${grantHardeningMigration}`,
     );
   }
+  if (!existsSync(grantCleanupIdentityMigration)) {
+    throw new Error(
+      `Missing grant cleanup identity migration: ${grantCleanupIdentityMigration}`,
+    );
+  }
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-download-grants-"));
   port = 58_000 + (process.pid % 6_000);
   execFileSync(
@@ -304,6 +313,7 @@ beforeAll(() => {
   runSql(readFileSync(hardeningMigration, "utf8"));
   runSql(readFileSync(grantMigration, "utf8"));
   runSql(readFileSync(grantHardeningMigration, "utf8"));
+  runSql(readFileSync(grantCleanupIdentityMigration, "utf8"));
   runSql(`
     insert into auth.users(id) values ('${ids.owner}');
     insert into public.stores(id, owner_user_id) values ('${ids.store}', '${ids.owner}');
@@ -712,6 +722,78 @@ describe("atomic digital download grants", () => {
          where id = '${String(grant.grant_id)}'`,
       ),
     ).toBe("released:Reservation response invalid");
+  });
+
+  test("a swapped same-session grant id cannot release another request's reservation", () => {
+    runSql(
+      `update public.digital_order_access_tokens
+       set order_id = '${ids.order}'
+       where id = '${ids.otherToken}'`,
+    );
+    const otherReservationKey = randomUUID();
+    const other = JSON.parse(
+      runSql(
+        `select to_jsonb(result) from public.reserve_digital_download_grant(
+          '${ids.entitlement}', '${ids.otherToken}', '${otherReservationKey}', '${fingerprintA}'
+        ) result`,
+      ),
+    ) as Record<string, unknown>;
+    const ownReservationKey = randomUUID();
+    const own = JSON.parse(
+      runSql(
+        `select to_jsonb(result) from public.reserve_digital_download_grant(
+          '${ids.entitlement}', '${ids.token}', '${ownReservationKey}', '${fingerprintA}'
+        ) result`,
+      ),
+    ) as Record<string, unknown>;
+
+    expect(
+      runSql(
+        `select public.release_digital_download_reservation(
+          '${ids.entitlement}', '${ids.token}', '${ownReservationKey}', '${fingerprintA}',
+          'Swapped response cleanup'
+        )`,
+      ),
+    ).toBe("released");
+    expect(
+      runSql(
+        `select id || ':' || status from public.digital_download_grants
+         where id in ('${String(other.grant_id)}', '${String(own.grant_id)}')
+         order by id`,
+      ).split("\n"),
+    ).toEqual(
+      [
+        `${String(other.grant_id)}:reserved`,
+        `${String(own.grant_id)}:released`,
+      ].sort(),
+    );
+  });
+
+  test("request-identity cleanup mutates only a still-reserved row", () => {
+    const reservationKey = randomUUID();
+    const grant = JSON.parse(
+      runSql(
+        `select to_jsonb(result) from public.reserve_digital_download_grant(
+          '${ids.entitlement}', '${ids.token}', '${reservationKey}', '${fingerprintA}'
+        ) result`,
+      ),
+    ) as Record<string, unknown>;
+    expect(commit(String(grant.grant_id))).toBe("issued");
+
+    expect(
+      runSql(
+        `select public.release_digital_download_reservation(
+          '${ids.entitlement}', '${ids.token}', '${reservationKey}', '${fingerprintA}',
+          'Late malformed response cleanup'
+        )`,
+      ),
+    ).toBe("missing");
+    expect(
+      runSql(
+        `select status from public.digital_download_grants
+         where id = '${String(grant.grant_id)}'`,
+      ),
+    ).toBe("issued");
   });
 
   test("enforces counter agreement and rejects a sixth issued grant", () => {

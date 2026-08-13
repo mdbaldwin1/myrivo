@@ -108,3 +108,23 @@ The full suite retained only pre-existing refund/dispute mock stderr and zero-si
 - Lint, typecheck, production build, and `git diff --check`: passed.
 
 The full suite retains only the pre-existing refund/dispute mock stderr and zero-size chart warnings. The build retains the pre-existing middleware deprecation and stale Browserslist-data warnings. The local `bd` executable was unavailable, so issue-tracker sync could not be run from this checkout.
+
+## Fix 2: Request-Bound Cleanup and Authenticated Sessions
+
+### Findings addressed
+
+- Malformed reserve responses are never trusted to identify cleanup targets. The application now always invokes request-identity cleanup using only the caller-known entitlement, authorized access-token ID, generated reservation UUID, and session fingerprint.
+- Added forward migration `20260813012000_bind_digital_download_cleanup_identity.sql`. Its cleanup RPC selects and locks only an exact full-identity row while it is still `reserved`; issued, released, failed, missing, or mismatched rows return `missing` without mutation.
+- Replaced client-controlled UUID cookies with versioned HMAC-SHA256 download-session cookies verified with a timing-safe comparison. A dedicated stable `DIGITAL_DOWNLOAD_SESSION_SECRET` is validated as at least 32 characters and documented in `.env.example`, the environment matrix, and the Vercel deployment runbook.
+- Missing, malformed, unsigned, and forged cookies all use an action-separated fallback bucket derived from the server-side bearer-token hash. They cannot mint new throttle buckets by rotating arbitrary cookie values. A valid signed cookie retains a stable per-browser bucket and session fingerprint, while separately signed browser sessions remain distinct.
+- Download routes fail closed with a hardened generic 503 before database access when the signing secret is unavailable.
+
+### RED / GREEN evidence
+
+- Route RED reproduced six failures: signed-cookie rejection, unstable valid sessions, unsigned replacement cookies, missing-cookie bucket rotation, arbitrary UUID bucket rotation, and swapped malformed responses releasing the returned grant ID.
+- PostgreSQL RED proved exact cleanup of an already-issued reservation returned `issued` instead of behaving as a reserved-only cleanup boundary.
+- Focused GREEN: 4 files, 147 tests passed, including 27 route tests, 11 environment tests, 29 native PostgreSQL grant tests, and the 80-test full migration-chain suite.
+- Full web suite: 244 files, 926 tests passed.
+- Lint, typecheck, production build, and `git diff --check`: passed.
+
+The full suite and build retain the same pre-existing warnings documented above. The local `bd` executable remains unavailable.

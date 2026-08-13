@@ -31,9 +31,11 @@ Add these when the corresponding production features are enabled:
 - Digital-product delivery worker
   - `DIGITAL_DELIVERY_PROCESS_SECRET`
   - `DIGITAL_DELIVERY_TOKEN_SECRET`
+  - `DIGITAL_DOWNLOAD_SESSION_SECRET`
   - Configure the scheduler to `POST /api/internal/digital-delivery/process` with `Authorization: Bearer <DIGITAL_DELIVERY_PROCESS_SECRET>` only after the digital-product release gate is enabled.
   - The processor drains both purchase-finalization jobs and delivery-notification/resend jobs. Monitor `digital_delivery_jobs`, `digital_delivery_notifications`, and their attempt tables for terminal failures; these records contain bounded safe errors and never bearer links or storage URLs.
   - Keep `DIGITAL_DELIVERY_TOKEN_SECRET` stable. Merchant resend intentionally rotates the active purchase/resend token and queues a new 48-hour message; it never resets entitlement grant counters.
+  - Keep `DIGITAL_DOWNLOAD_SESSION_SECRET` stable and separate from delivery-token credentials. It signs opaque download-session cookies used for grace reuse and throttling; rotation invalidates only those browser sessions.
 - Onboarding AI
   - `MYRIVO_ONBOARDING_AI_PROVIDER`
   - `MYRIVO_ONBOARDING_AI_MODEL`

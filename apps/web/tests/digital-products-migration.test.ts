@@ -97,6 +97,10 @@ const hardenedAtomicDigitalDownloadGrantsMigration = join(
   repoRoot,
   "supabase/migrations/20260813011000_harden_atomic_digital_download_grants.sql",
 );
+const boundDigitalDownloadCleanupMigration = join(
+  repoRoot,
+  "supabase/migrations/20260813012000_bind_digital_download_cleanup_identity.sql",
+);
 
 const ids = {
   storeA: "10000000-0000-0000-0000-000000000001",
@@ -480,6 +484,9 @@ beforeAll(() => {
   }
   if (!existsSync(hardenedAtomicDigitalDownloadGrantsMigration)) {
     throw new Error(`Missing hardened atomic digital download grants migration: ${hardenedAtomicDigitalDownloadGrantsMigration}`);
+  }
+  if (!existsSync(boundDigitalDownloadCleanupMigration)) {
+    throw new Error(`Missing bound digital download cleanup migration: ${boundDigitalDownloadCleanupMigration}`);
   }
 
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-digital-migration-"));
