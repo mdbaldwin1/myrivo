@@ -1080,11 +1080,11 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     return { ok: true };
   }
 
-  async function refreshCatalogProducts(options: { surfaceError?: boolean } = {}) {
+  async function refreshCatalogProducts(options: { surfaceError?: boolean; signal?: AbortSignal } = {}) {
     const generation = catalogRefreshGenerationRef.current + 1;
     catalogRefreshGenerationRef.current = generation;
     try {
-      const response = await fetch("/api/products");
+      const response = await fetch("/api/products", { signal: options.signal });
       const payload = (await response.json().catch(() => null)) as ProductResponse | null;
       if (catalogRefreshGenerationRef.current !== generation) return null;
       if (!response.ok || !payload?.products) {
@@ -1093,7 +1093,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       }
       setProducts(payload.products);
       return payload.products;
-    } catch {
+    } catch (error) {
+      if (options.signal?.aborted || (error instanceof Error && error.name === "AbortError")) return null;
       if (catalogRefreshGenerationRef.current === generation && options.surfaceError) {
         setCatalogError("Unable to refresh publishing readiness. Try again before publishing.");
       }
@@ -2783,7 +2784,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                       status: variant.status,
                     }))}
                     focusTarget={digitalInspectorTarget}
-                    onCatalogChange={async () => { await refreshCatalogProducts(); }}
+                    onCatalogChange={async (signal) => { await refreshCatalogProducts({ signal }); }}
                   />
                 </div>
               ) : null}

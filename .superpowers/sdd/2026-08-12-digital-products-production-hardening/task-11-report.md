@@ -117,3 +117,24 @@ Fresh Fix 1 gates:
 - `git diff --check` — passed.
 
 The full suite retained the pre-existing refund/dispute mock stderr and zero-size chart warnings. The build retained the existing middleware deprecation and stale Browserslist-data warnings.
+
+## Fix 2: Active Files Lifecycle Cancellation
+
+- Added one tracked `AbortController` per Files operation. The signal spans upload-intent creation, signed object PUT, completion, in-session and persisted retry, replacement, rename/assignment, reorder, removal, asset reload, and the parent catalog refresh.
+- Product identity changes and unmounts now abort and clear every active controller, so network/storage work for the previous product stops instead of merely being ignored after it finishes. Abort errors are intentionally silent: they do not create a failed upload, show an alert, call the catalog callback, or advance into later lifecycle stages. Any already-created intent/object remains covered by the existing expiry/orphan cleanup contract.
+- Confirmed Media already owns an `AbortController` for both preview mutation paths and aborts its controller set on product change/unmount; no Media change was required in this round.
+
+### Fix 2 TDD evidence
+
+The strengthened product-switch regression first failed because the deferred signed PUT received no signal (`uploadSignal?.aborted` was undefined). It now deterministically waits until the PUT begins, switches from product A to B, observes `signal.aborted === true`, and verifies completion, callback, stale upload state, and error UI never occur.
+
+Fresh Fix 2 gates:
+
+- Focused Files/Catalog UX: 2 files and 16 tests passed.
+- `npm run lint --workspace @myrivo/web` — passed with zero warnings/errors and both consistency checks passed.
+- `npm run typecheck --workspace @myrivo/web` — passed.
+- `npm test` — 249 files and 982 tests passed.
+- `npm run build` — passed; all 161 static pages generated.
+- `git diff --check` — passed.
+
+The full suite retained the pre-existing refund/dispute mock stderr and zero-size chart warnings. The build retained the existing middleware deprecation and stale Browserslist-data warnings.

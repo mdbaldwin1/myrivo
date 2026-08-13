@@ -360,9 +360,10 @@ describe("DigitalProductFiles", () => {
     expect(notificationMocks.success).toHaveBeenCalledWith("Customer file is ready.");
   });
 
-  test("does not let an upload for product A mutate product B after a product switch", async () => {
+  test("actively aborts product A's upload when switching to product B and never runs later lifecycle stages", async () => {
     let releaseUpload!: () => void;
     const uploadReleased = new Promise<void>((resolve) => { releaseUpload = resolve; });
+    let uploadSignal: AbortSignal | null = null;
     const onCatalogChange = vi.fn();
     const completedIntents: string[] = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -376,7 +377,17 @@ describe("DigitalProductFiles", () => {
         }, 201);
       }
       if (url === "https://uploads.example/product-a.pdf") {
-        await uploadReleased;
+        uploadSignal = init?.signal ?? null;
+        await Promise.race([
+          uploadReleased,
+          new Promise<never>((_resolve, reject) => {
+            uploadSignal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("The operation was aborted.", "AbortError")),
+              { once: true },
+            );
+          }),
+        ]);
         return new Response(null, { status: 200 });
       }
       if (url === "/api/products/digital-assets/complete") {
@@ -395,12 +406,18 @@ describe("DigitalProductFiles", () => {
       new File(["product-a"], "product-a.pdf", { type: "application/pdf" }),
     );
     expect(await screen.findByRole("status", { name: "Upload progress for product-a.pdf" })).toBeTruthy();
+    await waitFor(() => expect(uploadSignal).not.toBeNull());
     rerender(<DigitalProductFiles productId={PRODUCT_B_ID} onCatalogChange={onCatalogChange} />);
     expect(await screen.findByText("No customer files yet")).toBeTruthy();
-    releaseUpload();
+    try {
+      await waitFor(() => expect(uploadSignal?.aborted).toBe(true));
+    } finally {
+      releaseUpload();
+    }
 
     await waitFor(() => expect(screen.queryByRole("status", { name: "Upload progress for product-a.pdf" })).toBeNull());
     expect(completedIntents).toEqual([]);
     expect(onCatalogChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });
