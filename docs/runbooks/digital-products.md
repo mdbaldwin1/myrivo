@@ -59,7 +59,7 @@ Rollback starts by disabling every enabled store. Roll back application code onl
 
 ## Acceptance matrix and evidence
 
-Run against a dedicated non-production store with Stripe test mode and a Resend-authorized recipient. Save a redacted evidence file outside git and point `MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE` and `MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE` at the seeded fixture/evidence records before running the two digital Playwright specs.
+Run against a dedicated non-production store with Stripe test mode and a Resend-authorized recipient. Point `MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE` at the versioned fixture and `MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_OUTPUT` at a new empty temporary path. The browser run performs user-facing merchant/buyer actions; the separately authenticated control endpoint is limited to deterministic reset, provider-event/failure injection, and independent state observation. It returns 404 in production. The run generates its own SHA/environment/run-bound HMAC evidence; static or pre-created evidence is rejected.
 
 Record timestamps and safe IDs (store/order/job/manifest IDs are acceptable internally), Stripe test event IDs, Resend delivery IDs, screenshots, and observed states for:
 
@@ -131,6 +131,6 @@ npm run build
 npm run -w @myrivo/web e2e -- digital-products.spec.ts digital-products-accessibility.spec.ts
 ```
 
-The final command is a real acceptance gate only when the fixture and evidence variables are present and no tests are skipped. Keep the feature off if Stripe/Resend credentials, a non-production backend, migrations, or reviewer approval are unavailable.
+The final command is a real acceptance gate only when the fixture, fresh evidence output path, approved non-production host, and provider credentials are present and no tests are skipped. Keep the feature off if Stripe/Resend credentials, a non-production backend, official Supabase fresh/upgrade verification, migrations, or reviewer approval are unavailable. Native PostgreSQL tests validate migration behavior locally, but do not replace an official Supabase reset/upgrade run.
 
 Related procedures: `docs/runbooks/digital-products-rollout-operations.md`, `docs/runbooks/refunds-disputes-operations.md`, `docs/runbooks/deployment-vercel.md`, and `docs/env-matrix.md`.

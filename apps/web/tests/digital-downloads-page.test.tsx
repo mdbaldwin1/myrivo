@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import React from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { DigitalDownloadList } from "@/components/customer/digital-download-list";
@@ -71,6 +71,7 @@ describe("active digital downloads page", () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -183,6 +184,23 @@ describe("active digital downloads page", () => {
       method: "POST", body: JSON.stringify({ token: TOKEN }),
     }));
     expect(window.location.hash).toBe("");
+  });
+
+  test("clears a silent download attempt and offers a retry without claiming success", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => successfulListResponse()));
+    const submit = vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(() => undefined);
+    render(<DigitalDownloadList />);
+    await screen.findByRole("button", { name: "Download Printable wall art" });
+    vi.useFakeTimers();
+
+    act(() => screen.getByRole("button", { name: "Download Printable wall art" }).click());
+    expect(screen.getByRole("button", { name: "Download Printable wall art" }).textContent).toContain("Preparing");
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+
+    expect(screen.getByRole("status").textContent).toContain("did not respond");
+    expect(screen.getByRole("button", { name: "Download Printable wall art" }).textContent).toContain("Download");
+    expect(submit).toHaveBeenCalledTimes(1);
+    submit.mockRestore();
   });
 });
 

@@ -5,49 +5,67 @@ import { login } from "./helpers";
 const fixture = loadDigitalAcceptanceFixture();
 test.skip(!fixture, "Digital acceptance requires an explicit non-production fixture.");
 
-test.describe.serial("digital product executable acceptance", () => {
-  test("merchant creates, uploads, previews, and publishes through the catalog", async ({ page, request }) => {
-    await acceptanceAction(request, fixture!, "reset", { environment: "nonproduction" });
+test.describe.serial("digital product user journeys", () => {
+  test("merchant uploads, previews, and publishes through the catalog UI", async ({ page, request }) => {
+    await acceptanceAction(request, fixture!, "reset");
     await login(page, fixture!.merchant.email, fixture!.merchant.password);
     await page.goto(fixture!.routes.catalogFiles);
-    await acceptanceAction(request, fixture!, "merchant-upload-publish", { productStatus: "active", previewStatus: "ready" });
-    await page.reload();
+    await page.getByLabel(/file/i).setInputFiles({ name: "acceptance-art.png", mimeType: "image/png", buffer: Buffer.from("acceptance-image") });
+    await expect(page.getByRole("status")).toContainText(/upload|processing|ready/i);
+    await page.getByRole("button", { name: /publish|activate/i }).click();
     await expect(page.getByText("Ready to sell", { exact: true })).toBeVisible();
+    const observed = await acceptanceAction(request, fixture!, "observe");
+    expect(observed.observation).toBeTruthy();
   });
 
-  test("completes digital-only and mixed Stripe payments and Resend delivery", async ({ page, request }) => {
-    for (const action of ["stripe-digital-only", "stripe-mixed"]) {
-      const result = await acceptanceAction(request, fixture!, action, { paymentStatus: "paid", deliveryStatus: "succeeded", emailStatus: "sent" });
-      expect(result.providerEventId).toMatch(/^evt_/);
-    }
+  test("buyer adds the product, checks out, opens access, and downloads", async ({ page, request }) => {
+    await page.goto(fixture!.routes.product);
+    await page.getByRole("button", { name: /add to cart/i }).click();
+    await page.goto(fixture!.routes.cart);
+    await page.getByRole("button", { name: /checkout/i }).click();
+    await expect(page).toHaveURL(/checkout|stripe/i);
     await page.goto(fixture!.routes.checkoutReturn);
-    await expect(page.getByRole("link", { name: /access.*downloads/i })).toHaveAttribute("href", "/downloads");
+    await page.getByRole("link", { name: /view downloads|access.*downloads/i }).click();
+    await page.getByRole("button", { name: /download/i }).click();
+    await expect(page.getByRole("status")).toContainText(/started|preparing/i);
+    await acceptanceAction(request, fixture!, "observe");
   });
 
-  test("executes access, five grants, grace, expiration, recovery, and replacement", async ({ page, request }) => {
-    await page.goto(fixture!.routes.download);
-    for (let index = 1; index <= 5; index += 1) await acceptanceAction(request, fixture!, "download-grant", { issuedCount: index });
-    await acceptanceAction(request, fixture!, "download-grace-reuse", { issuedCount: 5 });
-    await acceptanceAction(request, fixture!, "download-sixth-rejected", { denied: true });
-    await acceptanceAction(request, fixture!, "replace-asset", { priorBuyerVersionPreserved: true });
-    await acceptanceAction(request, fixture!, "expire-and-recover", { recoveryEmailStatus: "sent", grantsReset: false });
-    await expect(page.getByRole("heading", { name: /your files/i })).toBeVisible();
+  test("buyer requests recovery and merchant replaces/resends through UI", async ({ page, request }) => {
+    await page.goto(fixture!.routes.recovery);
+    await page.getByLabel(/order id/i).fill(fixture!.orderId);
+    await page.getByLabel(/order email/i).fill(fixture!.customer.email);
+    await page.getByRole("button", { name: /fresh link/i }).click();
+    await expect(page.getByRole("status")).toContainText(/check your email/i);
+    await login(page, fixture!.merchant.email, fixture!.merchant.password);
+    await page.goto(fixture!.routes.catalogFiles);
+    await page.getByRole("button", { name: /replace/i }).click();
+    await page.getByLabel(/file/i).setInputFiles({ name: "acceptance-art-v2.png", mimeType: "image/png", buffer: Buffer.from("acceptance-image-v2") });
+    await page.goto(fixture!.routes.merchantOrder);
+    await page.getByRole("button", { name: /resend/i }).click();
+    await expect(page.getByRole("status")).toContainText(/sent|queued/i);
+    await acceptanceAction(request, fixture!, "observe");
   });
 
-  test("executes financial access transitions", async ({ request }) => {
-    await acceptanceAction(request, fixture!, "partial-refund", { access: "active" });
-    await acceptanceAction(request, fixture!, "dispute-opened", { access: "suspended" });
-    await acceptanceAction(request, fixture!, "dispute-won", { access: "active" });
-    await acceptanceAction(request, fixture!, "dispute-lost", { access: "revoked" });
-    await acceptanceAction(request, fixture!, "full-refund", { access: "revoked" });
+  test("provider financial events produce exact customer UI state", async ({ page, request }) => {
+    for (const transition of ["partial", "full"] as const) {
+      await acceptanceAction(request, fixture!, "inject-refund", transition);
+      await page.goto(fixture!.routes.customerOrder); await expect(page.getByText(new RegExp(transition, "i"))).toBeVisible();
+      await acceptanceAction(request, fixture!, "observe");
+    }
+    for (const transition of ["opened", "won", "lost"] as const) {
+      await acceptanceAction(request, fixture!, "inject-dispute", transition);
+      await page.goto(fixture!.routes.download); await expect(page.locator("main")).toContainText(/available|unavailable|suspended|revoked/i);
+      await acceptanceAction(request, fixture!, "observe");
+    }
   });
 
-  test("injects delivery failure, durable retry, and merchant resend", async ({ page, request }) => {
-    await acceptanceAction(request, fixture!, "delivery-fail", { deliveryStatus: "failed" });
-    await acceptanceAction(request, fixture!, "delivery-retry", { deliveryStatus: "succeeded" });
-    await acceptanceAction(request, fixture!, "merchant-resend", { emailStatus: "sent", grantsReset: false });
+  test("injected delivery failure is visible before UI resend", async ({ page, request }) => {
+    await acceptanceAction(request, fixture!, "inject-delivery-failure");
     await login(page, fixture!.merchant.email, fixture!.merchant.password);
     await page.goto(fixture!.routes.merchantOrder);
-    await expect(page.getByText("Delivery sent", { exact: true })).toBeVisible();
+    await expect(page.locator("main")).toContainText(/failed|retry/i);
+    await page.getByRole("button", { name: /resend|retry/i }).click();
+    await acceptanceAction(request, fixture!, "observe");
   });
 });

@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { spawnSync } from "node:child_process";
 
 function fail(message) {
@@ -8,9 +8,9 @@ function fail(message) {
 }
 
 const fixturePath = process.env.MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE;
-const evidencePath = process.env.MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE;
+const evidencePath = process.env.MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_OUTPUT;
 if (!fixturePath || !fs.existsSync(fixturePath)) fail("acceptance fixture is missing");
-if (!evidencePath || !fs.existsSync(evidencePath)) fail("acceptance evidence is missing");
+if (!evidencePath) fail("acceptance evidence output path is missing");
 for (const key of ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "RESEND_API_KEY", "MYRIVO_DIGITAL_TEST_RECIPIENT"]) {
   if (!process.env[key]?.trim()) fail(`${key} is missing`);
 }
@@ -28,12 +28,16 @@ for (const route of Object.values(fixture.routes ?? {})) {
   const resolved = new URL(String(route), baseUrl);
   if (resolved.origin !== baseUrl.origin) fail("fixture routes must be same-origin");
 }
-const evidence = JSON.parse(fs.readFileSync(evidencePath, "utf8"));
-if (evidence.schemaVersion !== 2 || evidence.runId !== fixture.runId || evidence.origin !== baseUrl.origin || evidence.releaseVersion !== process.env.GITHUB_SHA) fail("evidence is not bound to this run, origin, and release");
-if (!evidence.completedAt || Date.now() - Date.parse(evidence.completedAt) > 60 * 60 * 1000) fail("evidence is stale");
-const digest = createHash("sha256").update(fs.readFileSync(evidencePath)).digest("hex");
-console.log(`Validated redacted acceptance evidence sha256=${digest}`);
 const result = spawnSync("npm", ["run", "-w", "@myrivo/web", "e2e", "--", "digital-products.spec.ts", "digital-products-accessibility.spec.ts"], {
-  stdio: "inherit", env: { ...process.env, MYRIVO_DIGITAL_RELEASE_GATE: "true", E2E_BASE_URL: baseUrl.origin, E2E_MANAGED_SERVER: "false" },
+  stdio: "inherit", env: { ...process.env, MYRIVO_DIGITAL_RELEASE_GATE: "true", MYRIVO_DIGITAL_RELEASE_SHA: process.env.GITHUB_HEAD_SHA || process.env.GITHUB_SHA, E2E_BASE_URL: baseUrl.origin, E2E_MANAGED_SERVER: loopback ? "true" : "false" },
 });
 if (result.status !== 0) process.exit(result.status ?? 1);
+if (!fs.existsSync(evidencePath)) fail("acceptance run did not generate evidence");
+const evidence = JSON.parse(fs.readFileSync(evidencePath, "utf8"));
+const signature = evidence.signature; delete evidence.signature;
+const expectedSignature = createHmac("sha256", fixture.controlSecret).update(JSON.stringify(evidence)).digest("hex");
+if (typeof signature !== "string" || !timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) fail("evidence signature is invalid");
+if (evidence.schemaVersion !== 3 || evidence.runId !== fixture.runId || evidence.origin !== baseUrl.origin || evidence.releaseVersion !== (process.env.GITHUB_HEAD_SHA || process.env.GITHUB_SHA) || evidence.observations?.length < 5) fail("evidence is incomplete or not run-bound");
+if (!evidence.completedAt || Date.now() - Date.parse(evidence.completedAt) > 60 * 60 * 1000) fail("evidence is stale");
+const digest = createHash("sha256").update(fs.readFileSync(evidencePath)).digest("hex");
+console.log(`Validated current-run acceptance evidence sha256=${digest}`);

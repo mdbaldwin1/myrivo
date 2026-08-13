@@ -54,7 +54,7 @@ jobs:
         if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.base_ref == 'main')
         env:
           MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE_BASE64: ${{ secrets.MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE_BASE64 }}
-          MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_BASE64: ${{ secrets.MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_BASE64 }}
+          MYRIVO_DIGITAL_APPROVED_NONPROD_HOST: ${{ vars.MYRIVO_DIGITAL_APPROVED_NONPROD_HOST }}
           MYRIVO_DIGITAL_TEST_RECIPIENT: ${{ secrets.MYRIVO_DIGITAL_TEST_RECIPIENT }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_TEST_WEBHOOK_SECRET }}
@@ -65,5 +65,4 @@ jobs:
           evidence_file="$(mktemp)"
           trap 'rm -f "$fixture_file" "$evidence_file"' EXIT
           printf '%s' "$MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE_BASE64" | base64 --decode > "$fixture_file"
-          printf '%s' "$MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_BASE64" | base64 --decode > "$evidence_file"
-          MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE="$fixture_file" MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE="$evidence_file" npm run verify:digital-products-release
+          MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE="$fixture_file" MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_OUTPUT="$evidence_file" npm run verify:digital-products-release

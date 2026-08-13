@@ -27,7 +27,15 @@ for (const viewport of [
         await expect(page.locator("body")).toBeVisible();
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
         const primaryAction = page.getByRole("button").or(page.getByRole("link")).last();
-        if (await primaryAction.isVisible().catch(() => false)) await primaryAction.scrollIntoViewIfNeeded();
+        if (await primaryAction.isVisible().catch(() => false)) {
+          await primaryAction.scrollIntoViewIfNeeded();
+          await primaryAction.focus();
+          await expect(primaryAction).toBeFocused();
+          const bounds = await primaryAction.boundingBox();
+          expect(bounds).not.toBeNull();
+          expect(bounds!.x).toBeGreaterThanOrEqual(0);
+          expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
+        }
         await page.evaluate(() => { document.documentElement.style.zoom = "1"; });
       }
     });
@@ -61,6 +69,16 @@ for (const viewport of [
       await expect(alert).toContainText("Enter the full order ID");
       await expect(alert).toBeFocused();
       await expectNoSeriousAccessibilityViolations(page, `${viewport.name} recovery dynamic error`);
+
+      await login(page, acceptance!.merchant.email, acceptance!.merchant.password);
+      await page.goto(acceptance!.routes.catalogFiles);
+      const fileInput = page.getByLabel(/file/i).first();
+      await fileInput.focus();
+      await expect(fileInput).toBeFocused();
+      const publish = page.getByRole("button", { name: /publish|activate/i });
+      await publish.focus();
+      await expect(publish).toBeFocused();
+      await expectNoSeriousAccessibilityViolations(page, `${viewport.name} catalog keyboard state`);
     });
 
     test("loading animation respects reduced motion while the asynchronous state is active", async ({ page }) => {

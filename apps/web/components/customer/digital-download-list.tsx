@@ -13,6 +13,7 @@ import {
 import { z } from "zod";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { StatusChip } from "@/components/ui/status-chip";
+import { DIGITAL_PRODUCT_CONFIG } from "@/lib/digital-products/config";
 import { cn } from "@/lib/utils";
 
 const payloadSchema = z.object({
@@ -147,6 +148,7 @@ export function DigitalDownloadList() {
   }, []);
 
   function beginDownload(fileId: string, label: string) {
+    if (downloadingId) return;
     setDownloadingId(fileId);
     setDownloadFeedback(`Preparing ${label}.`);
     const iframe = document.createElement("iframe");
@@ -159,11 +161,18 @@ export function DigitalDownloadList() {
         failed = iframe.contentDocument?.contentType === "application/json";
       } catch { /* Cross-origin redirect confirms initiation. */ }
       iframe.removeEventListener("load", handleFrameLoad);
+      window.clearTimeout(timeoutId);
       setDownloadingId(null);
       setDownloadFeedback(failed ? `${label} could not be downloaded. Please try again.` : `${label} download started.`);
       window.setTimeout(() => iframe.remove(), 1_000);
     };
     iframe.addEventListener("load", handleFrameLoad);
+    const timeoutId = window.setTimeout(() => {
+      iframe.removeEventListener("load", handleFrameLoad);
+      iframe.remove();
+      setDownloadingId((current) => current === fileId ? null : current);
+      setDownloadFeedback(`${label} did not respond. Please try the download again.`);
+    }, DIGITAL_PRODUCT_CONFIG.downloadInitiationTimeoutMs);
     document.body.append(iframe);
     const form = document.createElement("form");
     form.method = "post";
@@ -293,6 +302,7 @@ export function DigitalDownloadList() {
                     {available ? (
                       <Button
                         type="button"
+                        disabled={downloadingId !== null}
                         className={cn(buttonVariants(), "w-full shrink-0 sm:w-auto")}
                         aria-label={`Download ${file.label}`}
                         onClick={() => beginDownload(file.id, file.label)}

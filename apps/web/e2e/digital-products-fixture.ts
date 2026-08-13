@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { createHmac } from "node:crypto";
 import { z } from "zod";
 
 const relativeRoute = z.string().startsWith("/").refine((value) => !value.startsWith("//") && !value.includes("#token="));
@@ -6,6 +7,7 @@ const identity = z.object({ email: z.string().email(), password: z.string().min(
 const schema = z.object({
   baseUrl: z.string().url(), runId: z.string().uuid(), controlSecret: z.string().min(32),
   merchant: identity, customer: identity, storeSlug: z.string().min(1), productSlug: z.string().min(1),
+  orderId: z.string().uuid(), productId: z.string().uuid(),
   controlUrl: relativeRoute,
   routes: z.object({ catalogFiles: relativeRoute, product: relativeRoute, cart: relativeRoute, checkoutReturn: relativeRoute, download: relativeRoute, recovery: relativeRoute, customerOrder: relativeRoute, merchantOrder: relativeRoute }).strict(),
 }).strict();
@@ -24,13 +26,17 @@ export function loadDigitalAcceptanceFixture(): DigitalAcceptanceFixture | null 
   return fixture;
 }
 
-export async function acceptanceAction(request: import("@playwright/test").APIRequestContext, fixture: DigitalAcceptanceFixture, action: string, expectedState: Record<string, unknown> = {}) {
-  const response = await request.post(fixture.controlUrl, { headers: { authorization: `Bearer ${fixture.controlSecret}`, "x-myrivo-acceptance-run": fixture.runId }, data: { action } });
+export async function acceptanceAction(request: import("@playwright/test").APIRequestContext, fixture: DigitalAcceptanceFixture, action: "observe" | "reset" | "inject-delivery-failure" | "inject-refund" | "inject-dispute", transition?: "partial" | "full" | "opened" | "won" | "lost") {
+  const response = await request.post(fixture.controlUrl, { headers: { authorization: `Bearer ${fixture.controlSecret}` }, data: { version: 1, action, runId: fixture.runId, subjectId: fixture.orderId, ...(transition ? { transition } : {}) } });
   if (!response.ok()) throw new Error(`Acceptance action ${action} failed with ${response.status()}`);
-  const body = await response.json() as { runId?: string; providerEventId?: string; state?: Record<string, unknown> };
-  if (body.runId !== fixture.runId || !body.providerEventId || !body.state) throw new Error(`Acceptance action ${action} returned unbound evidence.`);
-  for (const [key, value] of Object.entries(expectedState)) {
-    if (body.state[key] !== value) throw new Error(`Acceptance action ${action} expected ${key}=${String(value)}.`);
+  const body = await response.json() as { version?: number; runId?: string; observedAt?: string; observation?: Record<string, unknown> };
+  if (body.version !== 1 || body.runId !== fixture.runId || !body.observedAt || !body.observation) throw new Error(`Acceptance action ${action} returned unbound evidence.`);
+  const output = process.env.MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_OUTPUT;
+  if (output) {
+    const existing = fs.existsSync(output) ? JSON.parse(fs.readFileSync(output, "utf8")) : { schemaVersion: 3, runId: fixture.runId, origin: new URL(fixture.baseUrl).origin, releaseVersion: process.env.MYRIVO_DIGITAL_RELEASE_SHA, environment: process.env.MYRIVO_DIGITAL_ACCEPTANCE_ENVIRONMENT, startedAt: new Date().toISOString(), observations: [] };
+    delete existing.signature; existing.observations.push({ action, transition, ...body }); existing.completedAt = new Date().toISOString();
+    const unsigned = JSON.stringify(existing); existing.signature = createHmac("sha256", fixture.controlSecret).update(unsigned).digest("hex");
+    fs.writeFileSync(output, JSON.stringify(existing));
   }
   return body;
 }
