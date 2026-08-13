@@ -105,6 +105,10 @@ const customerDigitalAccessMigration = join(
   repoRoot,
   "supabase/migrations/20260813013000_customer_digital_access.sql",
 );
+const normalizedCustomerRecoveryMigration = join(
+  repoRoot,
+  "supabase/migrations/20260813014000_normalize_customer_recovery_security.sql",
+);
 
 const ids = {
   storeA: "10000000-0000-0000-0000-000000000001",
@@ -494,6 +498,9 @@ beforeAll(() => {
   }
   if (!existsSync(customerDigitalAccessMigration)) {
     throw new Error(`Missing customer digital access migration: ${customerDigitalAccessMigration}`);
+  }
+  if (!existsSync(normalizedCustomerRecoveryMigration)) {
+    throw new Error(`Missing normalized customer recovery migration: ${normalizedCustomerRecoveryMigration}`);
   }
 
   clusterDirectory = mkdtempSync(join(tmpdir(), "myrivo-digital-migration-"));
@@ -2191,6 +2198,43 @@ describe("durable digital delivery", () => {
              '${invalid.orderId}', '${suspended.orderId}',
              '${refunded.orderId}', '${disputed.orderId}'
            )`,
+      ),
+    ).toBe("0");
+  });
+
+  it("performs fixed decoy lock/write work for an invalid recovery without customer or audit residue", () => {
+    const before = Number(
+      runSql(
+        "full_chain",
+        `select touch_count from public.digital_access_recovery_decoys where bucket = 'd'`,
+      ),
+    );
+    const result = JSON.parse(
+      runSql(
+        "full_chain",
+        `select row_to_json(recovery) from public.prepare_customer_digital_access_recovery(
+          '40000000-0000-4000-8000-000000000999', 'nobody@example.test', repeat('d', 64),
+          'e1000000-0000-4000-8000-000000000101',
+          'e2000000-0000-4000-8000-000000000101',
+          'e3000000-0000-4000-8000-000000000101', repeat('e', 64), 172800
+        ) recovery`,
+      ),
+    );
+
+    expect(result).toEqual({ queued: false, notification_id: null });
+    expect(
+      Number(
+        runSql(
+          "full_chain",
+          `select touch_count from public.digital_access_recovery_decoys where bucket = 'd'`,
+        ),
+      ),
+    ).toBe(before + 1);
+    expect(
+      runSql(
+        "full_chain",
+        `select count(*) from public.audit_events
+         where entity_id = '40000000-0000-4000-8000-000000000999'`,
       ),
     ).toBe("0");
   });

@@ -10,7 +10,10 @@ const digitalProductConfigSchema = z
     downloadListRateLimitPerMinute: z.number().int().positive(),
     recoveryClientRateLimitPerHour: z.number().int().positive(),
     recoveryPairRateLimitPerHour: z.number().int().positive(),
-    recoveryResponsePaddingMs: z.number().int().nonnegative(),
+    recoveryResponseBaseMs: z.number().int().positive(),
+    recoveryResponseQuantumMs: z.number().int().positive(),
+    recoveryResponseJitterQuanta: z.number().int().positive(),
+    recoveryWorkTimeoutMs: z.number().int().positive(),
     authenticatedAccessRateLimitPerMinute: z.number().int().positive(),
     authenticatedAccessTtlMinutes: z.number().int().positive(),
     maxFilesPerProduct: z.number().int().positive(),
@@ -42,7 +45,16 @@ const digitalProductConfigSchema = z
       })
       .strict(),
   })
-  .strict();
+  .strict()
+  .superRefine((config, context) => {
+    if (config.recoveryWorkTimeoutMs >= config.recoveryResponseBaseMs) {
+      context.addIssue({
+        code: "custom",
+        path: ["recoveryWorkTimeoutMs"],
+        message: "Recovery work timeout must be below the response envelope",
+      });
+    }
+  });
 
 type DeepReadonly<T> = T extends object
   ? { readonly [Key in keyof T]: DeepReadonly<T[Key]> }
@@ -61,7 +73,10 @@ const parsedDigitalProductConfig = digitalProductConfigSchema.parse({
   downloadListRateLimitPerMinute: 30,
   recoveryClientRateLimitPerHour: 20,
   recoveryPairRateLimitPerHour: 5,
-  recoveryResponsePaddingMs: 350,
+  recoveryResponseBaseMs: 2_000,
+  recoveryResponseQuantumMs: 250,
+  recoveryResponseJitterQuanta: 2,
+  recoveryWorkTimeoutMs: 750,
   authenticatedAccessRateLimitPerMinute: 10,
   authenticatedAccessTtlMinutes: 15,
   maxFilesPerProduct: 20,

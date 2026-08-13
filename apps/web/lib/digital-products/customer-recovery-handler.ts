@@ -3,11 +3,12 @@ import { z } from "zod";
 import {
   attachDigitalRecoverySession,
   enforceDigitalRecoveryRateLimits,
+  getDigitalRecoveryResponseTargetMs,
   getDigitalRecoverySession,
   queueCustomerDigitalAccessRecovery,
+  runCustomerRecoveryWithinTimeout,
   type DigitalAccessRateLimitResult,
 } from "@/lib/digital-products/customer-access";
-import { DIGITAL_PRODUCT_CONFIG } from "@/lib/digital-products/config";
 import { getServerEnv } from "@/lib/env";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
@@ -27,6 +28,7 @@ type HandlerDependencies = {
   nowMs: () => number;
   sleep: (milliseconds: number) => Promise<void>;
   enforceRateLimits: (input: {
+    clientIpSubjectHash: string;
     clientSubjectHash: string;
     pairSubjectHash: string;
   }) => Promise<DigitalAccessRateLimitResult>;
@@ -91,8 +93,12 @@ export function createDigitalLinkRequestHandler(
         { status: 503 },
       );
     }
+    const responseTargetMs = getDigitalRecoveryResponseTargetMs(
+      session.clientIpSubjectHash,
+    );
 
     const limited = await dependencies.enforceRateLimits({
+      clientIpSubjectHash: session.clientIpSubjectHash,
       clientSubjectHash: session.clientSubjectHash,
       pairSubjectHash: session.pairSubjectHash,
     });
@@ -112,11 +118,13 @@ export function createDigitalLinkRequestHandler(
       return attachDigitalRecoverySession(response, session);
     }
 
-    await dependencies.queueRecovery(input);
+    await runCustomerRecoveryWithinTimeout(() =>
+      dependencies.queueRecovery(input),
+    );
     const elapsed = Math.max(0, dependencies.nowMs() - startedAt);
     const remaining = Math.max(
       0,
-      DIGITAL_PRODUCT_CONFIG.recoveryResponsePaddingMs - elapsed,
+      responseTargetMs - elapsed,
     );
     if (remaining > 0) await dependencies.sleep(remaining);
     return attachDigitalRecoverySession(

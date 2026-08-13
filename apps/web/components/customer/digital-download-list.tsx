@@ -18,7 +18,6 @@ import { cn } from "@/lib/utils";
 const payloadSchema = z.object({
   expiresAt: z.string().datetime({ offset: true }),
   context: z.object({
-    orderReference: z.string().trim().min(1).max(20),
     store: z.object({
       name: z.string().trim().min(1).max(200),
       slug: z.string().trim().min(1).max(200),
@@ -203,7 +202,6 @@ export function DigitalDownloadList({ token }: { token: string }) {
               <div>
                 <p className="text-sm font-medium uppercase tracking-[0.18em] text-muted-foreground">Digital order</p>
                 <h1 className="mt-2 text-3xl font-semibold tracking-tight">{payload.context.store.name}</h1>
-                <p className="mt-2 text-sm text-muted-foreground">Order #{payload.context.orderReference}</p>
               </div>
               <div className="rounded-xl border border-border/60 bg-background/80 px-4 py-3 text-sm backdrop-blur">
                 <p className="font-medium">Link expires</p>

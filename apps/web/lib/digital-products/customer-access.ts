@@ -5,6 +5,7 @@ import {
   randomUUID,
   timingSafeEqual,
 } from "node:crypto";
+import { isIP } from "node:net";
 import type { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getExternalAppUrl, getServerEnv } from "@/lib/env";
@@ -32,6 +33,7 @@ export type CustomerDigitalAccessRpcClient = {
 export type DigitalRecoverySession = {
   cookieValue: string;
   isNew: boolean;
+  clientIpSubjectHash: string;
   clientSubjectHash: string;
   pairSubjectHash: string;
 };
@@ -84,6 +86,74 @@ function keyedSubjectHash(secret: string, domain: string, value: string) {
     .digest("hex");
 }
 
+export function resolveDigitalRecoveryClientIpSubjectHash(
+  request: NextRequest,
+): string {
+  const environment = getServerEnv();
+  const secret = environment.DIGITAL_DOWNLOAD_SESSION_SECRET?.trim();
+  if (!secret || secret.length < 32) {
+    throw new Error("Digital recovery session configuration is unavailable");
+  }
+  const configuredHeader = environment.DIGITAL_RECOVERY_TRUSTED_IP_HEADER
+    ?.trim()
+    .toLowerCase();
+  const headerName = process.env.VERCEL === "1"
+    ? "x-vercel-forwarded-for"
+    : configuredHeader;
+  if (
+    !headerName ||
+    headerName === "forwarded" ||
+    headerName === "x-forwarded-for"
+  ) {
+    throw new Error("Trusted client identity is unavailable");
+  }
+  const candidate = request.headers.get(headerName)?.trim().toLowerCase();
+  if (!candidate || candidate.includes(",") || isIP(candidate) === 0) {
+    throw new Error("Trusted client identity is unavailable");
+  }
+  return keyedSubjectHash(secret, "digital-recovery-client-ip-v1", candidate);
+}
+
+export function getDigitalRecoveryResponseTargetMs(
+  clientIpSubjectHash: string,
+): number {
+  if (!SHA_256_PATTERN.test(clientIpSubjectHash)) {
+    throw new Error("Digital recovery response identity is invalid");
+  }
+  const secret = getServerEnv().DIGITAL_DOWNLOAD_SESSION_SECRET?.trim();
+  if (!secret || secret.length < 32) {
+    throw new Error("Digital recovery session configuration is unavailable");
+  }
+  const digest = createHmac("sha256", secret)
+    .update(`digital-recovery-response-envelope-v1\0${clientIpSubjectHash}`)
+    .digest();
+  const jitter = (digest[0] ?? 0) % DIGITAL_PRODUCT_CONFIG.recoveryResponseJitterQuanta;
+  return (
+    DIGITAL_PRODUCT_CONFIG.recoveryResponseBaseMs +
+    jitter * DIGITAL_PRODUCT_CONFIG.recoveryResponseQuantumMs
+  );
+}
+
+export async function runCustomerRecoveryWithinTimeout(
+  operation: () => Promise<unknown>,
+): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<false>((resolve) => {
+    timer = setTimeout(
+      () => resolve(false),
+      DIGITAL_PRODUCT_CONFIG.recoveryWorkTimeoutMs,
+    );
+  });
+  try {
+    return await Promise.race([
+      operation().then(() => true, () => false),
+      timeout,
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export function getDigitalRecoverySession(
   request: NextRequest,
   orderId: string,
@@ -101,6 +171,7 @@ export function getDigitalRecoverySession(
   return {
     cookieValue: `v1.${id}.${recoverySessionSignature(id, secret)}`,
     isNew: existingId === null,
+    clientIpSubjectHash: resolveDigitalRecoveryClientIpSubjectHash(request),
     clientSubjectHash: keyedSubjectHash(
       secret,
       "digital-recovery-client-v1",
@@ -167,16 +238,26 @@ async function checkDistributedRateLimit(
 
 export async function enforceDigitalRecoveryRateLimits(
   input: {
+    clientIpSubjectHash: string;
     clientSubjectHash: string;
     pairSubjectHash: string;
   },
   client: CustomerDigitalAccessRpcClient = createSupabaseAdminClient(),
 ): Promise<DigitalAccessRateLimitResult> {
   const windowMs = 60 * 60 * 1000;
+  const clientIpResult = await checkDistributedRateLimit(
+    client,
+    createHash("sha256")
+      .update(`digital-recovery-client-ip-rate-v1\0${input.clientIpSubjectHash}`)
+      .digest("hex"),
+    DIGITAL_PRODUCT_CONFIG.recoveryClientRateLimitPerHour,
+    windowMs,
+  );
+  if (!clientIpResult.allowed) return clientIpResult;
   const clientResult = await checkDistributedRateLimit(
     client,
     createHash("sha256")
-      .update(`digital-recovery-client-rate-v1\0${input.clientSubjectHash}`)
+      .update(`digital-recovery-session-rate-v1\0${input.clientSubjectHash}`)
       .digest("hex"),
     DIGITAL_PRODUCT_CONFIG.recoveryClientRateLimitPerHour,
     windowMs,

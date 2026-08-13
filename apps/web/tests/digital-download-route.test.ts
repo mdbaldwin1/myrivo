@@ -800,7 +800,6 @@ describe("digital download list route", () => {
     expect(body).toEqual({
       expiresAt: "2099-08-12T12:00:00.000Z",
       context: {
-        orderReference: "40000000",
         store: {
           name: "Rachel's Prints",
           slug: "rachels-prints",
@@ -824,8 +823,9 @@ describe("digital download list route", () => {
         },
       ],
     });
+    expect(JSON.stringify(body)).not.toContain(ORDER_ID);
     expect(JSON.stringify(body)).not.toMatch(
-      /orderId|accessTokenId|storage_path|grant_id|token_hash/i,
+      /orderReference|orderId|accessTokenId|storage_path|grant_id|token_hash/i,
     );
     expect(state.events).toEqual(["rate-limit", "authorize", "list"]);
     const rateLimits = state.rpcArgs.filter(

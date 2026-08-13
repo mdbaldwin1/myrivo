@@ -83,7 +83,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
       response({
         expiresAt: access.expires_at,
         context: {
-          orderReference: access.order_id.slice(0, 8),
           store: {
             name: access.store_name,
             slug: access.store_slug,

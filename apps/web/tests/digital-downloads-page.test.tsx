@@ -46,7 +46,6 @@ function successfulListResponse(
     JSON.stringify({
       expiresAt: "2099-08-13T16:00:00.000Z",
       context: {
-        orderReference: "40000000",
         store: {
           name: "Rachel's Prints",
           slug: "rachels-prints",
@@ -86,7 +85,7 @@ describe("active digital downloads page", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Rachel's Prints" })).toBeTruthy();
     });
-    expect(screen.getByText("Order #40000000")).toBeTruthy();
+    expect(screen.queryByText(/Order #40000000/)).toBeNull();
     expect(screen.getByText("Printable wall art")).toBeTruthy();
     expect(screen.getByText("sunrise-print.pdf")).toBeTruthy();
     expect(screen.getByText("PDF · 2 MB")).toBeTruthy();
