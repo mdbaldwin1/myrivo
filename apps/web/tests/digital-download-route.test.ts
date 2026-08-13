@@ -42,6 +42,8 @@ const INTERNAL_ERROR =
 type FakeOptions = {
   rateLimited?: boolean;
   rateLimitError?: { message: string };
+  rateLimitState?: Map<string, number>;
+  rateLimitThreshold?: number;
   authorizeData?: Record<string, unknown> | null;
   authorizeError?: { message: string };
   listData?: Array<Record<string, unknown>>;
@@ -68,12 +70,22 @@ function buildAdmin(options: FakeOptions = {}) {
     rpc: vi.fn(async (name: string, args: Record<string, unknown>) => {
       rpcArgs.push({ name, args });
       if (name === "check_api_rate_limit") {
-        events.push("rate-limit");
+        if (events.at(-1) !== "rate-limit") events.push("rate-limit");
         if (options.rateLimitError) {
           return { data: null, error: options.rateLimitError };
         }
+        const bucketKey = String(args.p_bucket_key);
+        const count = (options.rateLimitState?.get(bucketKey) ?? 0) + 1;
+        options.rateLimitState?.set(bucketKey, count);
         return {
-          data: [{ allowed: !options.rateLimited, retry_after_seconds: 17 }],
+          data: [
+            {
+              allowed:
+                !options.rateLimited &&
+                count <= (options.rateLimitThreshold ?? Number.MAX_SAFE_INTEGER),
+              retry_after_seconds: 17,
+            },
+          ],
           error: null,
         };
       }
@@ -383,13 +395,15 @@ describe("digital download grant route", () => {
         )?.args.p_client_fingerprint_hash,
     );
     expect(fingerprints[0]).not.toBe(fingerprints[1]);
-    const buckets = [first, second].map(
-      (state) =>
-        state.rpcArgs.find(
-          (entry) => entry.name === "check_api_rate_limit",
-        )?.args.p_bucket_key,
+    const buckets = [first, second].map((state) =>
+      state.rpcArgs
+        .filter((entry) => entry.name === "check_api_rate_limit")
+        .map((entry) => entry.args.p_bucket_key),
     );
-    expect(buckets[0]).not.toBe(buckets[1]);
+    expect(buckets[0]).toHaveLength(2);
+    expect(buckets[1]).toHaveLength(2);
+    expect(buckets[0]?.[0]).toBe(buckets[1]?.[0]);
+    expect(buckets[0]?.[1]).not.toBe(buckets[1]?.[1]);
   });
 
   test("creates an opaque HttpOnly session cookie when the browser has none", async () => {
@@ -471,10 +485,12 @@ describe("digital download grant route", () => {
       downloadRequest({ forwardedFor: "203.0.113.99", userAgent: "Browser B" }),
     );
 
-    const buckets = [first, second].map(
-      (state) => state.rpcArgs.find((entry) => entry.name === "check_api_rate_limit")?.args.p_bucket_key,
+    const buckets = [first, second].map((state) =>
+      state.rpcArgs
+        .filter((entry) => entry.name === "check_api_rate_limit")
+        .map((entry) => entry.args.p_bucket_key),
     );
-    expect(buckets[0]).toBe(buckets[1]);
+    expect(buckets[0]).toEqual(buckets[1]);
   });
 
   test("repeated missing cookies use one deterministic bearer-link rate bucket", async () => {
@@ -531,6 +547,42 @@ describe("digital download grant route", () => {
         )?.args.p_bucket_key,
     );
     expect(buckets[0]).toBe(buckets[1]);
+  });
+
+  test("minted signed cookies cannot escape the aggregate bearer-link limit when replayed", async () => {
+    const rateLimitState = new Map<string, number>();
+    const mintedCookies: string[] = [];
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const mint = buildAdmin({ rateLimitState, rateLimitThreshold: 2 });
+      createSupabaseAdminClientMock.mockReturnValueOnce(mint.admin);
+      const response = await invokeDownload(
+        downloadRequest({ sessionCookie: null }),
+      );
+      expect(response.status).toBe(303);
+      const cookie = response.headers
+        .get("set-cookie")
+        ?.match(/myrivo_download_session=([^;]+)/)?.[1];
+      expect(cookie).toBeTruthy();
+      mintedCookies.push(String(cookie));
+    }
+    expect(new Set(mintedCookies).size).toBe(2);
+
+    for (const cookie of mintedCookies) {
+      const replay = buildAdmin({ rateLimitState, rateLimitThreshold: 2 });
+      createSupabaseAdminClientMock.mockReturnValueOnce(replay.admin);
+      const response = await invokeDownload(
+        downloadRequest({ sessionCookie: cookie }),
+      );
+
+      expect(response.status).toBe(429);
+      expect(replay.events).toEqual(["rate-limit"]);
+      expect(
+        replay.rpcArgs.filter(
+          (entry) => entry.name === "check_api_rate_limit",
+        ),
+      ).toHaveLength(1);
+    }
+    expect([...rateLimitState.values()]).toEqual([4]);
   });
 
   test("fails closed without exposing the shared throttle error", async () => {
@@ -758,6 +810,13 @@ describe("digital download list route", () => {
       /orderId|accessTokenId|storage|path|grant_id|token_hash/i,
     );
     expect(state.events).toEqual(["rate-limit", "authorize", "list"]);
+    const rateLimits = state.rpcArgs.filter(
+      (entry) => entry.name === "check_api_rate_limit",
+    );
+    expect(rateLimits).toHaveLength(2);
+    expect(rateLimits.every((entry) =>
+      String(entry.args.p_bucket_key).startsWith("digital-download-list:"),
+    )).toBe(true);
     expectHardenedHeaders(response);
   });
 

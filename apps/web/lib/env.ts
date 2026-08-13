@@ -23,7 +23,7 @@ export const serverEnvSchema = z.object({
   MYRIVO_ORDER_ALERT_EMAILS: z.string().optional(),
   DIGITAL_DELIVERY_PROCESS_SECRET: z.string().min(32).optional(),
   DIGITAL_DELIVERY_TOKEN_SECRET: z.string().min(32).optional(),
-  DIGITAL_DOWNLOAD_SESSION_SECRET: z.string().min(32).optional(),
+  DIGITAL_DOWNLOAD_SESSION_SECRET: z.string().trim().min(32).optional(),
   REVIEWS_MAX_SUBMISSIONS_PER_IP_PER_HOUR: z.string().optional(),
   REVIEWS_MAX_SUBMISSIONS_PER_EMAIL_PER_DAY: z.string().optional(),
   REVIEWS_BLOCKED_TERMS: z.string().optional(),

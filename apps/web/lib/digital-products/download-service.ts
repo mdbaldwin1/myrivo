@@ -167,7 +167,8 @@ export function getDigitalDownloadSession(
   id: string;
   cookieValue: string;
   fingerprintHash: string;
-  rateLimitSubjectHash: string;
+  bearerRateLimitSubjectHash: string;
+  sessionRateLimitSubjectHash: string | null;
   isNew: boolean;
 } {
   const secret = getServerEnv().DIGITAL_DOWNLOAD_SESSION_SECRET?.trim();
@@ -179,18 +180,22 @@ export function getDigitalDownloadSession(
   const isExisting = existingId !== null;
   const id = existingId ?? randomUUID();
   const cookieValue = `v1.${id}.${signDigitalDownloadSession(id, secret)}`;
-  const rateLimitIdentity = isExisting
-    ? `session\0${id}`
-    : `access-token\0${hashDigitalAccessToken(accessToken)}`;
   return {
     id,
     cookieValue,
     fingerprintHash: createHash("sha256")
       .update(`digital-download-session-v1\0${id}`)
       .digest("hex"),
-    rateLimitSubjectHash: createHash("sha256")
-      .update(`digital-download-rate-subject-v1\0${rateLimitIdentity}`)
+    bearerRateLimitSubjectHash: createHash("sha256")
+      .update(
+        `digital-download-rate-subject-v1\0access-token\0${hashDigitalAccessToken(accessToken)}`,
+      )
       .digest("hex"),
+    sessionRateLimitSubjectHash: isExisting
+      ? createHash("sha256")
+          .update(`digital-download-rate-subject-v1\0session\0${id}`)
+          .digest("hex")
+      : null,
     isNew: !isExisting,
   };
 }
@@ -224,7 +229,7 @@ export function hardenDigitalDownloadResponse<T extends Response>(response: T): 
   return response;
 }
 
-export async function enforceDigitalDownloadRateLimit({
+async function enforceDigitalDownloadRateLimit({
   rateLimitSubjectHash,
   action,
   client = defaultClient(),
@@ -270,6 +275,31 @@ export async function enforceDigitalDownloadRateLimit({
         ? row.retry_after_seconds
         : 1;
     throw new DigitalDownloadError("rate_limited", retryAfter);
+  }
+}
+
+export async function enforceDigitalDownloadRateLimits({
+  bearerRateLimitSubjectHash,
+  sessionRateLimitSubjectHash,
+  action,
+  client = defaultClient(),
+}: {
+  bearerRateLimitSubjectHash: string;
+  sessionRateLimitSubjectHash: string | null;
+  action: "grant" | "list";
+  client?: DigitalDownloadClient;
+}) {
+  await enforceDigitalDownloadRateLimit({
+    rateLimitSubjectHash: bearerRateLimitSubjectHash,
+    action,
+    client,
+  });
+  if (sessionRateLimitSubjectHash) {
+    await enforceDigitalDownloadRateLimit({
+      rateLimitSubjectHash: sessionRateLimitSubjectHash,
+      action,
+      client,
+    });
   }
 }
 

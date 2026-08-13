@@ -128,3 +128,21 @@ The full suite retains only the pre-existing refund/dispute mock stderr and zero
 - Lint, typecheck, production build, and `git diff --check`: passed.
 
 The full suite and build retain the same pre-existing warnings documented above. The local `bd` executable remains unavailable.
+
+## Fix 3: Aggregate Bearer Throttling
+
+### Findings addressed
+
+- Every syntactically valid download request now checks the distributed bearer-link/action bucket first, regardless of cookie state. A verified signed session then checks a second session/action bucket. Both checks fail closed through the existing generic 429/503 responses.
+- Omitting, replacing, minting, collecting, or replaying signed session cookies cannot escape the aggregate bearer-link limit. The secondary bucket retains useful per-browser isolation without becoming the only enforcement boundary.
+- List and grant actions remain independently domain-separated, and only nested SHA-256 identifiers reach the rate-limit database RPC; raw bearer tokens, IP addresses, and user agents are never persisted.
+- `DIGITAL_DOWNLOAD_SESSION_SECRET` now uses `z.string().trim().min(32)`. Whitespace padding cannot satisfy the minimum, while legitimate surrounding whitespace is normalized consistently before runtime HMAC use.
+
+### RED / GREEN evidence
+
+- RED: two omitted-cookie requests minted distinct valid cookies; replaying both received independent session buckets and bypassed the aggregate test threshold. A whitespace-padded five-character secret also passed schema validation.
+- GREEN: the mint/replay test exhausts one bearer bucket and both replay attempts stop at that first check with 429; the padded short secret is rejected and a valid padded secret is returned trimmed.
+- Full web suite: 244 files, 928 tests passed.
+- Lint, typecheck, production build, and `git diff --check`: passed.
+
+The full suite and build retain the same pre-existing warnings documented above. The local `bd` executable remains unavailable.

@@ -3,7 +3,7 @@ import {
   attachDigitalDownloadSession,
   authorizeAccessToken,
   DigitalDownloadError,
-  enforceDigitalDownloadRateLimit,
+  enforceDigitalDownloadRateLimits,
   getDigitalDownloadSession,
   hardenDigitalDownloadResponse,
   isValidDigitalAccessToken,
@@ -41,8 +41,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
     );
   }
   try {
-    await enforceDigitalDownloadRateLimit({
-      rateLimitSubjectHash: session.rateLimitSubjectHash,
+    await enforceDigitalDownloadRateLimits({
+      bearerRateLimitSubjectHash: session.bearerRateLimitSubjectHash,
+      sessionRateLimitSubjectHash: session.sessionRateLimitSubjectHash,
       action: "list",
       client,
     });

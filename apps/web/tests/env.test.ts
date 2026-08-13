@@ -55,6 +55,20 @@ describe("env schema", () => {
     }).success).toBe(true);
   });
 
+  test("validates digital download session secrets after trimming whitespace", () => {
+    expect(serverEnvSchema.safeParse({
+      SUPABASE_SERVICE_ROLE_KEY: "service-role",
+      DIGITAL_DOWNLOAD_SESSION_SECRET: `${" ".repeat(40)}short`
+    }).success).toBe(false);
+
+    const secret = "download-session-secret-that-is-at-least-32-characters";
+    const parsed = serverEnvSchema.parse({
+      SUPABASE_SERVICE_ROLE_KEY: "service-role",
+      DIGITAL_DOWNLOAD_SESSION_SECRET: `  ${secret}  `
+    });
+    expect(parsed.DIGITAL_DOWNLOAD_SESSION_SECRET).toBe(secret);
+  });
+
   test("stripe env validates checkout keys", () => {
     const parsed = stripeEnvSchema.safeParse({
       STRIPE_SECRET_KEY: "sk_test_123",
