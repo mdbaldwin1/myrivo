@@ -1,66 +1,67 @@
-# Task 15 Independent Security Re-review — Round 4
+# Task 15 Independent Security Re-review — Round 5
 
 ## Verdict
 
-**FAIL — two P1 release blockers remain in the acceptance-control boundary.** Migration versions, release-approval behavior/privileges, bearer handling, POST/origin protection, and evidence binding are now materially improved. Docker and real provider availability remain external rollout blockers rather than code defects, but the repository-side acceptance control is not yet production-safe or executable.
+**FAIL — two P1 release-gate defects remain.** The RPC now exists, uses unique migration version `20260813023000`, is service-role-only, and meaningfully enforces active run/store/project binding, action/transition validation, and idempotency. Evidence signing is separated from control authentication. However, the deployed acceptance endpoint is disabled in the environment where it must run, and the gate can certify synthetic database financial transitions as real provider acceptance.
 
 ## Findings
 
-### P1 — The acceptance mutation RPC is referenced but does not exist
+### P1 — The acceptance route is unavailable on normal deployed preview builds
 
 Evidence:
 
-- `apps/web/lib/digital-products/acceptance-control.ts:17-22` invokes service-role RPC `acceptance_control_digital_products` for reset, delivery-failure, refund, and dispute mutations.
-- Repository-wide search finds no SQL definition, migration, generated database type, or test implementation of `public.acceptance_control_digital_products`—the only reference is the caller.
-- `apps/web/tests/digital-acceptance-control-route.test.ts` mocks `executeDigitalAcceptanceControl`, so it cannot catch the missing RPC.
-- The browser suite depends on these mutations to create deterministic acceptance state and provider transitions. Every non-observe action will fail at runtime, causing the strict gate to fail even with valid Stripe/Resend credentials.
+- `apps/web/app/api/internal/digital-products/acceptance/route.ts:13-15` returns 404 whenever `NODE_ENV === "production"`.
+- Next.js production builds and deployed Vercel preview deployments normally run with `NODE_ENV=production`; `VERCEL_ENV=preview` distinguishes the deployment tier.
+- The strict verifier permits an explicitly approved remote HTTPS non-production host and sets `E2E_MANAGED_SERVER=false`, so its intended deployment target is a built preview application. That target will always reject the control route before its preview/environment/origin/project/credential checks.
+- The route test changes `VERCEL_ENV` but does not model a deployed preview with `NODE_ENV=production`, so it misses this contradiction.
 
 Impact:
 
-The required real-provider acceptance path cannot execute, so release approval can never be generated honestly from the checked-in system. This is fail-closed, but it is a release blocker rather than an external credential limitation.
+The real remote Stripe/Resend acceptance suite cannot execute against the intended preview deployment even with all credentials and fixture state present. This is fail-closed but blocks the only path to a valid release approval.
 
 Required remediation:
 
-Add a uniquely versioned migration defining a narrowly scoped, service-role-only acceptance RPC, or replace it with explicit test-provider operations implemented in the server service. It must reject production and non-acceptance stores at the database boundary, bind every subject to the supplied run ID/internal fixture store, strictly validate action/transition combinations, preserve immutable audit evidence, and expose no arbitrary mutation primitive. Revoke execution from `public`, `anon`, and `authenticated`; add native PostgreSQL privilege, cross-store/run tampering, invalid-transition, idempotency, and production-mode tests. Run the strict browser suite against it before approval.
+Do not use `NODE_ENV` alone to distinguish preview from production. Require a conjunction of independently validated controls: `VERCEL_ENV === "preview"` (or a supported explicit deployment tier), exact allowlisted app origin, exact non-production Supabase project reference/URL, explicit acceptance-build flag, run-scoped target, and control credential. Reject `VERCEL_ENV=production` and unknown/self-hosted tiers by default. If self-hosted acceptance is supported, require a separate immutable deployment-tier value and project allowlist. Add tests for deployed preview (`NODE_ENV=production`, preview tier) succeeding and production/unknown tiers failing.
 
-### P1 — Acceptance control can be enabled in a non-Vercel production runtime
+### P1 — The gate treats synthetic database refund/dispute transitions as provider acceptance
 
 Evidence:
 
-- `apps/web/app/api/internal/digital-products/acceptance/route.ts:9-13` returns 404 only when `VERCEL_ENV === "production"` or `MYRIVO_DIGITAL_ACCEPTANCE_ENVIRONMENT` is not `test|preview`.
-- It does not reject `NODE_ENV === "production"`, an application deployment environment identifier, or a production hostname/origin.
-- On any self-hosted/container production runtime where `VERCEL_ENV` is absent, setting or leaking `MYRIVO_DIGITAL_ACCEPTANCE_ENVIRONMENT=test` enables a bearer-authenticated endpoint backed by the unrestricted Supabase service role (`apps/web/lib/digital-products/acceptance-control.ts:15-27`).
-- The route tests cover Vercel production and missing acceptance configuration, but not `NODE_ENV=production` without `VERCEL_ENV`, production hostnames, or production Supabase targets.
+- `supabase/migrations/20260813023000_nonproduction_digital_acceptance_control.sql:57-67` creates refunds with fabricated `re_acceptance_*`/`evt_acceptance_*` identifiers and directly calls `sync_refund_digital_access`; dispute actions similarly fabricate `dp_acceptance_*`/`evt_acceptance_*` values and directly call `sync_dispute_digital_access`.
+- `apps/web/e2e/digital-products.spec.ts:68-84` labels these as “provider financial events” and uses them for partial/full refund and opened/won/lost dispute acceptance.
+- `scripts/verify-digital-products-acceptance.mjs:43-49` requires those synthetic action names but only checks `providerPayment` is a succeeded, non-live Stripe payment. It does not require Stripe refund IDs/events, dispute IDs/events, webhook receipt/processing evidence, or authoritative provider refund/dispute state for each transition.
+- The signed evidence can therefore satisfy the release gate and populate a production-bound approval without ever exercising Stripe's refund/dispute APIs, webhooks, signature verification, retry delivery, or event ordering.
 
 Impact:
 
-A configuration error could expose an endpoint capable of resetting/injecting delivery, refund, and dispute state in production. Its separate 32-character bearer is valuable defense, but it is not an acceptable sole barrier for a service-role-backed destructive test control.
+The release interlock can attest to a critical financial-security path that was never tested against the provider. Defects in webhook verification, metadata mapping, retries, ordering, or provider payload handling could reach production behind a seemingly valid approval.
 
 Required remediation:
 
-Fail closed when `NODE_ENV === "production"`, when any deployment/environment marker is production, or when the resolved external app/Supabase target is not an explicit allowlisted non-production target. Require all guards simultaneously: dedicated acceptance build flag, explicit approved non-production host/project ID, control secret, and run-scoped fixture identity. Enforce the non-production/store/run invariant again inside the database RPC so route configuration cannot bypass it. Add tests for self-hosted production, production host/project, missing/malformed environment markers, and a valid preview fixture.
+Use Stripe test-mode APIs/events for refund acceptance and the provider-supported test path for disputes; drive the real webhook endpoint and verify recorded Stripe test IDs, signed event receipt, durable processing, and final authoritative provider state. If Stripe cannot inject a required dispute transition, keep that scenario explicitly blocked/manual and prevent generation of a complete production approval—do not substitute direct database state changes. Reserve DB injection only for clearly labeled internal resilience tests excluded from provider-acceptance evidence. Make the evidence schema/verifier require scenario-specific provider event/object IDs and correlated webhook/application records.
 
 ## P2 observations
 
-### P2 — Evidence authentication shares the acceptance-control bearer
+### P2 — Database non-production enforcement trusts caller-supplied environment/project strings
 
-`apps/web/e2e/digital-products-fixture.ts:34-39` signs evidence with `fixture.controlSecret`, and the same secret authorizes the mutation/observation endpoint. Compromise of one credential permits both state manipulation and evidence signing. Use a distinct CI-held evidence-signing key or asymmetric signing, and never deliver that signing credential to the deployed acceptance application/fixture.
+The RPC compares `p_environment` and `p_project_ref` with `digital_acceptance_targets`, but does not independently derive them from a database deployment setting. A service-role caller can provide the stored values. Route and credential controls mitigate this, yet the claimed database-side production guard is weaker than documented. Bind the RPC to immutable database settings/project identity or use a dedicated limited database role available only in the acceptance project.
 
-### P2 — Evidence completeness checks are count-based
+### P2 — `reset` records success without resetting fixture state
 
-`scripts/verify-digital-products-acceptance.mjs:40` requires only five observations, while the suite and approved matrix contain many named transitions. Although Playwright assertions provide some coverage, the final signed artifact should require the exact scenario/action set, unique ordered actions, provider IDs, subject/run binding, test-mode provider state, and reviewer outputs before its digest can populate a production approval.
+The action allowlist includes `reset`, but the SQL action body has no reset branch; it only inserts an audit result. This can make serial browser runs depend on prior state. Implement a narrow deterministic fixture reset or remove the action and provision a fresh run fixture externally.
 
 ## Verified resolutions
 
-- Migration versions `20260813021000` and `20260813022000` are unique and monotonically follow the existing chain; the new repository contract rejects duplicate version prefixes.
-- Native PostgreSQL coverage now verifies secure-session RPC existence/privileges and exact approval/runtime matching, mismatched release/digest, revocation, expiry/window, review timestamps, and application-role denial.
-- `authorize_digital_download_session` is service-role-only and rechecks token expiry, revocation, and payment eligibility.
-- Release approval is bound to exact runtime release version, evidence digest, and production target environment; it remains current, unrevoked, and bounded to seven days.
-- Main-target pull requests run the strict gate before merge. Fixture targets are constrained to loopback or an explicit HTTPS non-production host; current-run evidence is SHA/run/origin-bound and HMAC-verified.
-- Prior bearer leaks remain fixed: APIs return `/downloads`, fragment bootstrap is memory-only, and grants use trusted-origin POST.
-- Focused/full tests reported by the fix passed, including 130 native migration tests. Official Supabase fresh/upgrade validation is still externally blocked by unavailable Docker and remains mandatory before rollout.
-- Real Stripe/Resend acceptance is not claimed and must continue to block approval.
+- Migration versions are unique and covered by a repository-wide uniqueness test.
+- `acceptance_control_digital_products` exists, validates action/transition pairs, locks an active unexpired run target, rejects cross-run/cross-store/project mismatch, and records one result per run/idempotency key.
+- RPC execution is revoked from public/anon/authenticated and granted only to service role; acceptance tables have RLS and no application-role privileges.
+- Native PostgreSQL tests exercise privileges, production-string/project/run/store tampering, invalid transitions, and idempotent audit recording.
+- Route authentication uses timing-safe hashed comparison and requires explicit environment, exact origin, and project-format configuration before service-role work.
+- Evidence uses a separate CI HMAC key and rejects reuse of the control secret. Required action names, run/order/origin/release binding, recent completion, and non-live succeeded payment are checked.
+- Prior bearer/session/POST/origin/release-approval fixes remain intact.
+- Focused acceptance-control/evidence/migration-version tests passed: 3 files, 7 tests. Full validation was reported as 1,103 tests plus lint/typecheck/build.
+- Docker/Supabase official reset and real Stripe/Resend availability remain external rollout blockers and are not classified as code defects here.
 
 ## Review scope
 
-Reviewed diff `10a59ba..14cafc6`, migration filenames and contracts, secure-session/release-approval SQL and native tests, acceptance route/service/schema/tests, Playwright fixture/actions, evidence verifier, CI materialization/host constraints, runbook, and prior credential/session fixes. No implementation file was changed.
+Reviewed diff `a25e377..8e43d02`, acceptance migration/RPC, native migration tests, route guards/authentication, service observation, browser financial journeys, evidence signing/verifier, CI secrets, and prior session/release controls. No implementation file was changed.
