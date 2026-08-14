@@ -532,7 +532,7 @@ beforeAll(() => {
   });
   execFileSync(
     pgCtl,
-    ["-D", clusterDirectory, "-o", `-F -p ${port} -h 127.0.0.1`, "-w", "start"],
+    ["-D", clusterDirectory, "-o", `-F -p ${port} -h 127.0.0.1 -k ${clusterDirectory}`, "-w", "start"],
     { stdio: "ignore" },
   );
   runSql(
