@@ -7,7 +7,7 @@ alter table public.digital_purchase_manifests
 
 update public.digital_purchase_manifests
 set request_fingerprint_sha256 = encode(
-  digest(
+  sha256(
     convert_to(
       jsonb_build_object(
         'checkoutSessionId', checkout_session_id,
@@ -16,8 +16,7 @@ set request_fingerprint_sha256 = encode(
         'licenseVersion', license_version
       )::text,
       'UTF8'
-    ),
-    'sha256'
+    )
   ),
   'hex'
 )
@@ -272,7 +271,7 @@ begin
   end if;
 
   v_request_fingerprint := encode(
-    digest(
+    sha256(
       convert_to(
         jsonb_build_object(
           'checkoutSessionId', p_checkout_session_id,
@@ -283,8 +282,7 @@ begin
           'licenseVersion', p_license_version
         )::text,
         'UTF8'
-      ),
-      'sha256'
+      )
     ),
     'hex'
   );

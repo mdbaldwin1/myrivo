@@ -436,7 +436,7 @@ set store_id = entitlement.store_id,
     order_id = entitlement.order_id,
     client_fingerprint_hash = coalesce(
       grant_row.client_fingerprint_hash,
-      encode(digest(grant_row.reservation_key, 'sha256'), 'hex')
+      encode(sha256(convert_to(grant_row.reservation_key, 'UTF8')), 'hex')
     ),
     reservation_expires_at = coalesce(
       grant_row.reservation_expires_at,
