@@ -34,16 +34,19 @@ for (const viewport of [
         await page.evaluate(() => { document.documentElement.style.zoom = "2"; });
         await expect(page.locator("body")).toBeVisible();
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
-        const primaryAction = page.getByRole("button").or(page.getByRole("link")).last();
-        if (await primaryAction.isVisible().catch(() => false)) {
-          await primaryAction.scrollIntoViewIfNeeded();
-          await tabTo(page, primaryAction);
-          await expect(primaryAction).toBeFocused();
-          const bounds = await primaryAction.boundingBox();
-          expect(bounds).not.toBeNull();
-          expect(bounds!.x).toBeGreaterThanOrEqual(0);
-          expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
-        }
+        const primaryAction = label === "product" ? page.getByRole("button", { name: /add to cart/i })
+          : label === "cart" ? page.getByRole("button", { name: /checkout/i })
+            : label === "recovery" ? page.getByRole("button", { name: /fresh link/i })
+              : label === "download" ? page.getByRole("button", { name: /download/i }).first()
+                : page.getByRole("link", { name: /view downloads|access.*downloads/i });
+        await expect(primaryAction).toBeVisible();
+        await primaryAction.scrollIntoViewIfNeeded();
+        await tabTo(page, primaryAction);
+        await expect(primaryAction).toBeFocused();
+        const bounds = await primaryAction.boundingBox();
+        expect(bounds).not.toBeNull();
+        expect(bounds!.x).toBeGreaterThanOrEqual(0);
+        expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
         await page.evaluate(() => { document.documentElement.style.zoom = "1"; });
       }
     });
@@ -139,13 +142,12 @@ for (const viewport of [
 
       await page.goto(acceptance!.routes.download);
       const download = page.getByRole("button", { name: /download/i }).first();
-      if (await download.isVisible().catch(() => false)) {
-        await tabTo(page, download);
-        await page.keyboard.press("Enter");
-        await expect(page.getByRole("status")).toContainText(/started|preparing/i);
-        await expect(download).toBeFocused();
-        await expectNoSeriousAccessibilityViolations(page, `${viewport.name} download result`);
-      }
+      await expect(download).toBeVisible();
+      await tabTo(page, download);
+      await page.keyboard.press("Enter");
+      await expect(page.getByRole("status")).toContainText(/started|preparing/i);
+      await expect(download).toBeFocused();
+      await expectNoSeriousAccessibilityViolations(page, `${viewport.name} download result`);
     });
 
     test("loading animation respects reduced motion while the asynchronous state is active", async ({ page }) => {

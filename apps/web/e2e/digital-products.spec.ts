@@ -65,8 +65,11 @@ test.describe.serial("digital product user journeys", () => {
       if (composition === "digital") {
         const sessionHashes: string[] = [];
         let graceReusedGrantId = "";
+        let graceCountBefore = -1;
+        let graceCountAfter = -1;
         const beforeSigningFailure = await acceptanceAction(request, fixture!, "observe", undefined, orderId);
-        const signingFailureGrantIdsBefore = beforeSigningFailure.observation.grants.map((grant) => grant.id);
+        const signingFailureIssuedIdsBefore = beforeSigningFailure.observation.grants.filter((grant) => grant.status === "issued").map((grant) => grant.id);
+        const signingFailureUsedBefore = beforeSigningFailure.observation.entitlements.reduce((sum, entitlement) => sum + entitlement.download_grants_used, 0);
         await acceptanceAction(request, fixture!, "inject-signing-failure", undefined, orderId);
         const failureContext = await page.context().browser()!.newContext();
         const failurePage = await failureContext.newPage();
@@ -75,8 +78,10 @@ test.describe.serial("digital product user journeys", () => {
         await expect(failurePage.getByRole("status")).toContainText(/unable|retry/i);
         await failureContext.close();
         const afterInjectedFailure = await acceptanceAction(request, fixture!, "observe", undefined, orderId);
-        const signingFailureGrantIdsAfter = afterInjectedFailure.observation.grants.map((grant) => grant.id);
-        if (JSON.stringify(signingFailureGrantIdsAfter) !== JSON.stringify(signingFailureGrantIdsBefore)) throw new Error("Signing failure changed download grants.");
+        const signingFailureIssuedIdsAfter = afterInjectedFailure.observation.grants.filter((grant) => grant.status === "issued").map((grant) => grant.id);
+        const signingFailureUsedAfter = afterInjectedFailure.observation.entitlements.reduce((sum, entitlement) => sum + entitlement.download_grants_used, 0);
+        const releasedFaults = afterInjectedFailure.observation.grants.filter((grant) => grant.status === "released" && !beforeSigningFailure.observation.grants.some((beforeGrant) => beforeGrant.id === grant.id));
+        if (JSON.stringify(signingFailureIssuedIdsAfter) !== JSON.stringify(signingFailureIssuedIdsBefore) || signingFailureUsedAfter !== signingFailureUsedBefore || releasedFaults.length !== 1) throw new Error("Signing failure did not release exactly one reservation without changing issued usage.");
         for (let index = 0; index < 5; index += 1) {
           const context = await page.context().browser()!.newContext();
           const sessionPage = await context.newPage();
@@ -87,10 +92,12 @@ test.describe.serial("digital product user journeys", () => {
           if (index === 0) {
             const beforeGrace = await acceptanceAction(request, fixture!, "observe", undefined, orderId);
             const firstGrantId = beforeGrace.observation.grants.at(-1)?.id;
+            graceCountBefore = beforeGrace.observation.grants.filter((grant) => grant.status === "issued").length;
             await sessionPage.getByRole("button", { name: /download/i }).click();
             const grace = await acceptanceAction(request, fixture!, "observe", undefined, orderId);
             graceReusedGrantId = grace.observation.grants.at(-1)?.id ?? "";
-            if (!firstGrantId || graceReusedGrantId !== firstGrantId || grace.observation.grants.length !== beforeGrace.observation.grants.length) throw new Error("Same-session grace did not reuse the same grant.");
+            graceCountAfter = grace.observation.grants.filter((grant) => grant.status === "issued").length;
+            if (!firstGrantId || graceReusedGrantId !== firstGrantId || graceCountAfter !== graceCountBefore) throw new Error("Same-session grace did not reuse the same grant.");
           }
           await context.close();
         }
@@ -109,7 +116,10 @@ test.describe.serial("digital product user journeys", () => {
         await expect(sixthPage.getByText(sixthDeniedMessage, { exact: true })).toBeVisible();
         sessionHashes.push(acceptanceSessionHash((await sixth.cookies()).map((cookie) => `${cookie.name}:${cookie.value}`).join("|")));
         await sixth.close();
-        await acceptanceAction(request, fixture!, "observe", undefined, orderId, "five-grants", { kind: "grants", uniqueGrantIds: five.observation.grants.map((grant) => grant.id), graceReusedGrantId, graceCountBefore: five.observation.grants.length, graceCountAfter: five.observation.grants.length, signingFailureGrantIdsBefore, signingFailureGrantIdsAfter, sixthDeniedStatus: denied.status(), sixthDeniedMessage, sessionHashes, assetVersionId: five.observation.grants[0]?.asset_version_id });
+        const issued = five.observation.grants.filter((grant) => grant.status === "issued");
+        const successfulRetryGrantId = issued.find((grant) => !signingFailureIssuedIdsAfter.includes(grant.id))?.id;
+        if (!successfulRetryGrantId) throw new Error("No successful issued retry followed the released signing fault.");
+        await acceptanceAction(request, fixture!, "observe", undefined, orderId, "five-grants", { kind: "grants", uniqueGrantIds: issued.map((grant) => grant.id), graceReusedGrantId, graceCountBefore, graceCountAfter, signingFailureIssuedIdsBefore, signingFailureIssuedIdsAfter, signingFailureUsedBefore, signingFailureUsedAfter, releasedFaultGrantId: releasedFaults[0]!.id, successfulRetryGrantId, sixthDeniedStatus: denied.status(), sixthDeniedMessage, sessionHashes, assetVersionId: issued[0]?.asset_version_id });
       } else {
         await downloadButton.click();
         await expect(page.getByRole("status")).toContainText(/started|preparing/i);
@@ -180,7 +190,7 @@ test.describe.serial("digital product user journeys", () => {
     if (replacementContentSha256 === priorContentSha256) throw new Error("Replacement checkout served the prior file bytes.");
     await buyer.close();
     if (!replacementOrder.observation.manifestItems.some((item) => item.asset_version_id === replacementVersion)) throw new Error("New checkout did not snapshot the replacement version.");
-    await acceptanceAction(request, fixture!, "observe", undefined, fixture!.orderId, "replacement", { kind: "replacement", priorAssetVersionId: priorVersion.asset_version_id, replacementAssetVersionId: replacementVersion, priorFilename: priorVersion.customer_filename, priorContentSha256, newCheckoutAssetVersionId: replacementVersion });
+    await acceptanceAction(request, fixture!, "observe", undefined, fixture!.orderId, "replacement", { kind: "replacement", priorAssetVersionId: priorVersion.asset_version_id, replacementAssetVersionId: replacementVersion, oldBeforeFilename: priorVersion.customer_filename, oldAfterFilename: priorVersion.customer_filename, newFilename: replacementFilename, oldBeforeHash: priorContentSha256, oldAfterHash, newHash: replacementContentSha256, newCheckoutAssetVersionId: replacementVersion });
     await page.goto(fixture!.routes.merchantOrder);
     await page.getByRole("button", { name: /resend/i }).click();
     await expect(page.getByRole("status")).toContainText(/sent|queued/i);

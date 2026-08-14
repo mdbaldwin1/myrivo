@@ -74,14 +74,16 @@ for (const item of evidence.observations) {
     const provider = item.providerEvidence;
     if (provider.kind !== "grants" || provider.sessionHashes?.length !== 6 || new Set(provider.sessionHashes).size !== 6 || provider.sessionHashes.some((hash) => !/^[a-f0-9]{64}$/.test(hash))) fail("grant session hashes are not six exact unique digests");
     if (provider.graceCountBefore !== provider.graceCountAfter || !provider.uniqueGrantIds.includes(provider.graceReusedGrantId)) fail("same-session grace did not reuse an existing grant");
-    if (JSON.stringify(provider.signingFailureGrantIdsBefore) !== JSON.stringify(provider.signingFailureGrantIdsAfter)) fail("signing failure changed grant state");
+    if (JSON.stringify(provider.signingFailureIssuedIdsBefore) !== JSON.stringify(provider.signingFailureIssuedIdsAfter) || provider.signingFailureUsedBefore !== provider.signingFailureUsedAfter) fail("signing failure changed issued usage");
+    const released = grants.filter((grant) => grant.status === "released" && grant.id === provider.releasedFaultGrantId);
+    if (released.length !== 1 || !released[0].released_at || !released[0].last_safe_error || !grants.some((grant) => grant.status === "issued" && grant.id === provider.successfulRetryGrantId)) fail("signing fault release and successful retry are not correlated");
     if (provider.sixthDeniedStatus < 400 || provider.sixthDeniedStatus > 499 || provider.sixthDeniedMessage !== "Download limit reached") fail("sixth unique download denial is not proven by production state");
     if (!grants.every((grant) => grant.asset_version_id === provider.assetVersionId)) fail("grant asset versions are uncorrelated");
   }
   if (item.scenario === "replacement") {
     const provider = item.providerEvidence;
-    if (provider.kind !== "replacement" || provider.priorAssetVersionId === provider.replacementAssetVersionId || provider.newCheckoutAssetVersionId !== provider.replacementAssetVersionId || !/^[a-f0-9]{64}$/.test(provider.priorContentSha256)) fail("replacement immutability evidence is invalid");
-    if (!item.observation.manifestItems.some((manifest) => manifest.asset_version_id === provider.priorAssetVersionId && manifest.customer_filename === provider.priorFilename)) fail("prior buyer manifest is not retained");
+    if (provider.kind !== "replacement" || provider.priorAssetVersionId === provider.replacementAssetVersionId || provider.newCheckoutAssetVersionId !== provider.replacementAssetVersionId || provider.oldBeforeHash !== provider.oldAfterHash || provider.oldBeforeHash === provider.newHash || provider.oldBeforeFilename !== provider.oldAfterFilename) fail("replacement immutability evidence is invalid");
+    if (!item.observation.manifestItems.some((manifest) => manifest.asset_version_id === provider.priorAssetVersionId && manifest.customer_filename === provider.oldBeforeFilename)) fail("prior buyer manifest is not retained");
   }
   if (item.scenario === "delivery-retry") {
     const attempts = item.providerEvidence?.attempts;

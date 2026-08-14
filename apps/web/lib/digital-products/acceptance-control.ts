@@ -24,10 +24,11 @@ export async function executeDigitalAcceptanceControl(input: DigitalAcceptanceCo
     });
     if (error) throw error;
   }
-  const [{ data: order }, { data: job }, { data: grants }, { data: notifications }, { data: manifestItems }, { data: refunds }, { data: disputes }, { data: deliveryAttempts }, { data: orderItems }] = await Promise.all([
+  const [{ data: order }, { data: job }, { data: grants }, { data: entitlements }, { data: notifications }, { data: manifestItems }, { data: refunds }, { data: disputes }, { data: deliveryAttempts }, { data: orderItems }] = await Promise.all([
     supabase.from("orders").select("id,store_id,status,payment_status,refund_status,dispute_status,stripe_payment_intent_id,checkout_composition").eq("id", input.subjectId).maybeSingle(),
     supabase.from("digital_delivery_jobs").select("id,status,attempt_count,last_safe_error").eq("order_id", input.subjectId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-    supabase.from("digital_download_grants").select("id,status,asset_version_id,created_at").eq("order_id", input.subjectId).order("created_at", { ascending: true }),
+    supabase.from("digital_download_grants").select("id,entitlement_id,status,asset_version_id,created_at,released_at,last_safe_error").eq("order_id", input.subjectId).order("created_at", { ascending: true }),
+    supabase.from("digital_order_entitlements").select("id,asset_version_id,download_grants_used,customer_filename,status").eq("order_id", input.subjectId),
     supabase.from("digital_delivery_notifications").select("id,notification_type,status,provider,attempt_count,sent_at").eq("order_id", input.subjectId).order("created_at", { ascending: true }),
     supabase.from("digital_purchase_manifest_items").select("asset_version_id,customer_filename").eq("order_id", input.subjectId),
     supabase.from("order_refunds").select("stripe_refund_id,amount_cents,status,source_event_id").eq("order_id", input.subjectId).not("stripe_refund_id", "is", null).not("source_event_id", "is", null),
@@ -43,5 +44,5 @@ export async function executeDigitalAcceptanceControl(input: DigitalAcceptanceCo
   const providerPayment = typeof paymentIntentId === "string"
     ? await getStripeClient().paymentIntents.retrieve(paymentIntentId).then((payment) => ({ id: payment.id, status: payment.status, livemode: payment.livemode }))
     : null;
-  return digitalAcceptanceObservationSchema.parse({ version: 1, runId: input.runId, subjectId: input.subjectId, observedAt: new Date().toISOString(), observation: { order, deliveryJob: job, grants: grants ?? [], notifications: notifications ?? [], manifestItems: manifestItems ?? [], providerPayment, refunds: refunds ?? [], disputes: disputes ?? [], webhookEvents: webhookEvents ?? [], deliveryAttempts: deliveryAttempts ?? [], catalogAssetVersions: catalogAssetVersions ?? [] } });
+  return digitalAcceptanceObservationSchema.parse({ version: 1, runId: input.runId, subjectId: input.subjectId, observedAt: new Date().toISOString(), observation: { order, deliveryJob: job, grants: grants ?? [], entitlements: entitlements ?? [], notifications: notifications ?? [], manifestItems: manifestItems ?? [], providerPayment, refunds: refunds ?? [], disputes: disputes ?? [], webhookEvents: webhookEvents ?? [], deliveryAttempts: deliveryAttempts ?? [], catalogAssetVersions: catalogAssetVersions ?? [] } });
 }

@@ -18,7 +18,7 @@ const order = z.object({
   refund_status: z.string().nullable(), dispute_status: z.string().nullable(),
   stripe_payment_intent_id: z.string().startsWith("pi_"), checkout_composition: z.enum(["digital_only", "mixed"]),
 }).strict();
-const grant = z.object({ id: uuid, status: z.string().min(1), asset_version_id: uuid, created_at: z.string() }).strict();
+const grant = z.object({ id: uuid, entitlement_id: uuid, status: z.enum(["reserved", "issued", "released", "failed"]), asset_version_id: uuid, created_at: z.string(), released_at: z.string().nullable(), last_safe_error: z.string().nullable() }).strict();
 const notification = z.object({ id: uuid, notification_type: z.string().min(1), status: z.string().min(1), provider: z.string().min(1), attempt_count: z.number().int().nonnegative(), sent_at: z.string().nullable() }).strict();
 
 export const digitalAcceptanceObservationSchema = z.object({
@@ -27,6 +27,7 @@ export const digitalAcceptanceObservationSchema = z.object({
     order,
     deliveryJob: z.object({ id: uuid, status: z.string().min(1), attempt_count: z.number().int().nonnegative(), last_safe_error: z.string().nullable() }).strict(),
     grants: z.array(grant), notifications: z.array(notification),
+    entitlements: z.array(z.object({ id: uuid, asset_version_id: uuid, download_grants_used: z.number().int().nonnegative(), customer_filename: z.string().min(1), status: z.string() }).strict()).min(1),
     manifestItems: z.array(z.object({ asset_version_id: uuid, customer_filename: z.string().min(1) }).strict()).min(1),
     providerPayment: z.object({ id: z.string().startsWith("pi_"), status: z.literal("succeeded"), livemode: z.literal(false) }).strict(),
     refunds: z.array(z.object({ stripe_refund_id: z.string().startsWith("re_"), amount_cents: z.number().int().positive(), status: z.string(), source_event_id: z.string().startsWith("evt_") }).strict()),
@@ -52,11 +53,11 @@ const disputeEvidence = z.object({ kind: z.literal("dispute"), disputeId: z.stri
 const resendEvidence = z.object({ kind: z.literal("resend"), messageId: z.string().min(1), status: z.literal("sent"), recipient: z.string().email(), orderId: uuid, accessUrlHash: z.string().regex(/^[a-f0-9]{64}$/), sentAt: z.string().datetime() }).strict();
 const checkoutEvidence = z.object({ kind: z.literal("checkout"), sessionId: z.string().startsWith("cs_test_"), paymentIntentId: z.string().startsWith("pi_"), orderId: uuid }).strict();
 const grantIds = z.array(uuid);
-const grantsEvidence = z.object({ kind: z.literal("grants"), uniqueGrantIds: grantIds.length(5).refine((ids) => new Set(ids).size === 5), graceReusedGrantId: uuid, graceCountBefore: z.number().int().nonnegative(), graceCountAfter: z.number().int().nonnegative(), signingFailureGrantIdsBefore: grantIds, signingFailureGrantIdsAfter: grantIds, sixthDeniedStatus: z.number().int().min(400).max(499), sixthDeniedMessage: z.string().min(1), sessionHashes: z.array(z.string().regex(/^[a-f0-9]{64}$/)).length(6).refine((ids) => new Set(ids).size === 6), assetVersionId: uuid }).strict().superRefine((value, context) => {
+const grantsEvidence = z.object({ kind: z.literal("grants"), uniqueGrantIds: grantIds.length(5).refine((ids) => new Set(ids).size === 5), graceReusedGrantId: uuid, graceCountBefore: z.number().int().nonnegative(), graceCountAfter: z.number().int().nonnegative(), signingFailureIssuedIdsBefore: grantIds, signingFailureIssuedIdsAfter: grantIds, signingFailureUsedBefore: z.number().int().nonnegative(), signingFailureUsedAfter: z.number().int().nonnegative(), releasedFaultGrantId: uuid, successfulRetryGrantId: uuid, sixthDeniedStatus: z.number().int().min(400).max(499), sixthDeniedMessage: z.string().min(1), sessionHashes: z.array(z.string().regex(/^[a-f0-9]{64}$/)).length(6).refine((ids) => new Set(ids).size === 6), assetVersionId: uuid }).strict().superRefine((value, context) => {
   if (value.graceCountBefore !== value.graceCountAfter || !value.uniqueGrantIds.includes(value.graceReusedGrantId)) context.addIssue({ code: "custom", message: "Grace reuse consumed a grant or changed identity." });
-  if (JSON.stringify(value.signingFailureGrantIdsBefore) !== JSON.stringify(value.signingFailureGrantIdsAfter)) context.addIssue({ code: "custom", message: "Signing failure changed grants." });
+  if (JSON.stringify(value.signingFailureIssuedIdsBefore) !== JSON.stringify(value.signingFailureIssuedIdsAfter) || value.signingFailureUsedBefore !== value.signingFailureUsedAfter) context.addIssue({ code: "custom", message: "Signing failure changed issued usage." });
 });
-const replacementEvidence = z.object({ kind: z.literal("replacement"), priorAssetVersionId: uuid, replacementAssetVersionId: uuid, priorFilename: z.string().min(1), priorContentSha256: z.string().regex(/^[a-f0-9]{64}$/), newCheckoutAssetVersionId: uuid }).strict().refine((value) => value.priorAssetVersionId !== value.replacementAssetVersionId && value.newCheckoutAssetVersionId === value.replacementAssetVersionId);
+const replacementEvidence = z.object({ kind: z.literal("replacement"), priorAssetVersionId: uuid, replacementAssetVersionId: uuid, oldBeforeFilename: z.string().min(1), oldAfterFilename: z.string().min(1), newFilename: z.string().min(1), oldBeforeHash: z.string().regex(/^[a-f0-9]{64}$/), oldAfterHash: z.string().regex(/^[a-f0-9]{64}$/), newHash: z.string().regex(/^[a-f0-9]{64}$/), newCheckoutAssetVersionId: uuid }).strict().refine((value) => value.priorAssetVersionId !== value.replacementAssetVersionId && value.newCheckoutAssetVersionId === value.replacementAssetVersionId && value.oldBeforeHash === value.oldAfterHash && value.oldBeforeHash !== value.newHash && value.oldBeforeFilename === value.oldAfterFilename);
 const deliveryEvidence = z.object({ kind: z.literal("delivery"), jobId: uuid, attempts: z.array(z.object({ attempt: z.number().int().positive(), status: z.enum(["failed", "succeeded"]), timestamp: z.string().datetime() }).strict()).min(2), resendMessageId: z.string().min(1) }).strict();
 
 export const digitalAcceptanceScenarioEvidenceSchema = z.discriminatedUnion("scenario", [
@@ -68,3 +69,19 @@ export const digitalAcceptanceScenarioEvidenceSchema = z.discriminatedUnion("sce
   z.object({ scenario: z.literal("replacement"), providerEvidence: replacementEvidence }).strict(),
   z.object({ scenario: z.literal("delivery-retry"), providerEvidence: deliveryEvidence }).strict(),
 ]);
+
+export const digitalAcceptanceSignedEvidenceSchema = z.object({
+  schemaVersion: z.literal(3), runId: uuid, origin: z.string().url(), releaseVersion: z.string().min(1),
+  environment: z.enum(["test", "preview"]), startedAt: z.string().datetime(), completedAt: z.string().datetime(),
+  observations: z.array(z.object({ action: z.literal("observe"), transition: z.undefined().optional() }).passthrough()).min(1),
+  signature: z.string().regex(/^[a-f0-9]{64}$/),
+}).strict().superRefine((value, context) => {
+  const scenarios = new Set<string>();
+  value.observations.forEach((record, index) => {
+    const parsed = digitalAcceptanceScenarioEvidenceSchema.safeParse(record);
+    const observation = digitalAcceptanceObservationSchema.safeParse(record);
+    if (!parsed.success || !observation.success) context.addIssue({ code: "custom", path: ["observations", index], message: "Invalid canonical scenario observation." });
+    else if (scenarios.has(parsed.data.scenario)) context.addIssue({ code: "custom", path: ["observations", index], message: "Duplicate scenario." });
+    else scenarios.add(parsed.data.scenario);
+  });
+});
