@@ -25,6 +25,23 @@ describe("active store async resolver", () => {
     expect(slug).toBe("domain-store");
   });
 
+  test("prefers request host over forwarded host for domain mapping", async () => {
+    resolveStoreSlugFromDomainMock.mockResolvedValueOnce("domain-store");
+
+    const request = new NextRequest("https://shop.example.com/api/storefront/cart-preview", {
+      headers: {
+        host: "shop.example.com",
+        "x-forwarded-host": "www.myrivo.app"
+      }
+    });
+
+    const { resolveStoreSlugFromRequestAsync } = await import("@/lib/stores/active-store");
+    const slug = await resolveStoreSlugFromRequestAsync(request);
+
+    expect(resolveStoreSlugFromDomainMock).toHaveBeenCalledWith("shop.example.com");
+    expect(slug).toBe("domain-store");
+  });
+
   test("keeps explicit store query precedence over domain mapping", async () => {
     resolveStoreSlugFromDomainMock.mockResolvedValueOnce("domain-store");
 

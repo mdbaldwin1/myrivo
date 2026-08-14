@@ -12,7 +12,7 @@ type SitemapUrlEntry = {
 };
 
 function resolveOrigin(request: NextRequest) {
-  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? "localhost:3000";
+  const host = request.headers.get("host") ?? request.headers.get("x-forwarded-host") ?? "localhost:3000";
   const proto = request.headers.get("x-forwarded-proto")?.toLowerCase() === "http" ? "http" : "https";
   return `${proto}://${host}`;
 }
@@ -41,7 +41,7 @@ function buildSitemapXml(entries: SitemapUrlEntry[]) {
 
 export async function GET(request: NextRequest) {
   const origin = resolveOrigin(request);
-  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  const host = request.headers.get("host") ?? request.headers.get("x-forwarded-host");
   const customDomainStoreSlug = await resolveStoreSlugFromDomain(host);
   const admin = createSupabaseAdminClient();
 
