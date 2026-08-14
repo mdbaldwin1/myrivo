@@ -1,51 +1,50 @@
-# Task 15 Independent Security Re-review — Round 7
+# Task 15 Independent Security Re-review — Round 8
 
 ## Verdict
 
-**FAIL — one P1 evidence-integrity blocker remains.** Database-owned acceptance configuration, target/run/store checks, privileges, preview/production guards, and provider preflight are materially improved. The browser now calls provider-backed refund/dispute helpers rather than rejected synthetic RPCs. However, the provider results are discarded and the signed canonical evidence contains no refund, dispute, webhook, or Resend provider identity, so scenario labels can still certify unproven provider behavior.
+**FAIL — one P1 credential-leak blocker remains.** Provider-specific refund/dispute/webhook/Resend evidence is now carried into the signed artifact and correlated by the verifier; database-owned acceptance configuration and helper security remain sound. However, five-grant evidence serializes complete active HttpOnly download session cookies, turning the evidence artifact into a collection of reusable bearer credentials.
 
 ## Finding
 
-### P1 — Canonical signed evidence does not include or verify the provider artifacts that supposedly establish acceptance
+### P1 — Signed acceptance evidence contains raw download-session bearer cookies
 
 Evidence:
 
-- `apps/web/e2e/digital-products-fixture.ts:65-75` creates a real Stripe test refund and validates its `re_` ID/payment/status, but `apps/web/e2e/digital-products.spec.ts:94` discards the returned refund object. It is never passed into `acceptanceAction` or the evidence writer.
-- `apps/web/e2e/digital-products-fixture.ts:78-86` obtains a dispute ID and event IDs from the configured helper, but `apps/web/e2e/digital-products.spec.ts:107` also discards that result.
-- `getResendAccessMessage()` returns the provider message ID/content/link, but `apps/web/e2e/digital-products.spec.ts:47-49` records only a subsequent generic application observation under scenario label `resend-access`.
-- The shared strict schema in `apps/web/lib/digital-products/acceptance-evidence.ts:12-25` contains the original succeeded PaymentIntent and application order/job/grant/notification/manifest rows only. It has no Stripe refund/dispute object, Stripe event/webhook receipt, or Resend provider message/delivery fields.
-- `scripts/verify-digital-products-acceptance.mjs:44-63` treats scenario names as satisfying the matrix. Its provider check at lines 53-54 validates only the original PaymentIntent. It does not correlate refund/dispute helper results to provider state or a persisted webhook event, and does not bind the Resend ID/recipient/sender/delivery time to the signed artifact.
+- `apps/web/e2e/digital-products.spec.ts:54-80` creates six independent browser contexts, calls `context.cookies()`, and appends `${cookie.name}:${cookie.value}` for every cookie into `sessionIds`.
+- At line 82, those raw strings are passed as `providerEvidence.sessionIds` for the `five-grants` scenario.
+- `apps/web/lib/digital-products/acceptance-evidence.ts:42` accepts six arbitrary non-empty session strings rather than privacy-safe digests.
+- `apps/web/e2e/digital-products-fixture.ts:38-44` writes this provider evidence into the HMAC-signed evidence file. The verifier reads and hashes that file, and the acceptance workflow/runbook expects its digest to be retained for release approval.
+- The `myrivo_download_session` cookie contains the signed opaque access-token row/session identity and is HttpOnly precisely because possession authorizes listing and grant requests. Capturing its full value defeats the browser boundary and conflicts with the approved invariant that bearer credentials never appear in evidence, logs, or persisted artifacts.
 
 Impact:
 
-A validly signed evidence file can claim `stripe-partial-refund`, `stripe-full-refund`, `stripe-dispute-won`, `stripe-dispute-lost`, and `resend-access` based only on caller-selected scenario labels plus resulting application state. It does not prove which provider object/event caused that state, that the real webhook endpoint received a correctly signed event, or that the matching Resend message was current and delivered. This weakens the release approval from provider acceptance to labeled state observation.
+Anyone with access to the acceptance artifact can replay one of the captured cookies against the preview host until token/session expiry, list purchased files, and consume/download remaining grants. The artifact also becomes sensitive secret material that is likely to be retained or shared as release evidence.
 
 Required remediation:
 
-Extend the canonical schema with a discriminated, scenario-specific `providerEvidence` union. Refund evidence must include Stripe `re_` object ID, PaymentIntent ID, amount/status/livemode, relevant `evt_` ID, and correlated persisted webhook receipt/processed record. Dispute evidence must include `dp_` ID, expected Stripe status/livemode, correlated `evt_` sequence, helper attestation identity, and persisted webhook/application correlation. Resend evidence must include message ID, sender, exact recipient/order, provider delivery status/timestamps, and safe-link validation result. Pass provider results into the evidence writer, sign them, and have the verifier require exact provider/application correlation for every scenario. Reject duplicate or stale scenario/provider IDs and any scenario label without its required discriminant.
+Never serialize cookie names or values. Derive a one-way, domain-separated digest inside the browser test (prefer HMAC with a separate CI-only evidence key, otherwise SHA-256 over a random run salt plus the cookie value), store only six unique digests, and clear the raw cookie arrays immediately. Rename the schema field to `sessionFingerprintHashes`, require exactly six unique 64-hex values, and reject cookie-shaped strings (`myrivo_download_session`, `v2.`, separators). Add a test scanning the complete serialized evidence for access tokens, session cookie names/values, signed URLs, private paths, authorization headers, provider/API secrets, and email credentials before signing and again in the verifier.
 
 ## P2 observations
 
-### P2 — Dispute helper trust is bearer-only and URL scope is not validated
+### P2 — Webhook signature verification is asserted rather than persisted
 
-`MYRIVO_STRIPE_DISPUTE_HELPER_URL` is accepted as an arbitrary URL and called with a privileged helper token. Constrain it to an explicit allowlisted HTTPS origin, reject redirects, require a versioned signed response/attestation, and bind run/release/payment IDs. This prevents configuration mistakes from exfiltrating the helper token or accepting a lookalike response.
+Financial provider evidence sets `signatureVerified: true` in the browser code after finding a processed ledger row. The ledger exists only after the webhook route's `constructEvent` succeeds, so this is a reasonable inference, but the evidence schema/verifier does not independently prove that property. Prefer an explicit immutable ingestion field/version or treat processed ledger existence as the canonical proof without a caller-supplied boolean.
 
-### P2 — Provider transitions need bounded polling rather than a single eventual UI assertion
+### P2 — Resend message freshness and delivery status remain weakly represented
 
-The financial tests trigger provider operations and immediately navigate/assert. A 60-second dispute UI timeout exists, but refunds use default timeouts and neither path explicitly polls for correlated webhook completion. Use bounded polling of the authoritative acceptance observation keyed by provider event/object before evaluating UI, with safe timeout diagnostics.
+The retrieval code labels a successfully retrieved message as `status: "sent"` and uses `created_at` opportunistically, but does not query provider delivery events/status or reject a message older than the current run. Bind the message ID to current-run start/order/recipient/sender and require provider delivery status/timestamps in the signed evidence.
 
 ## Verified resolutions
 
-- Acceptance configuration is now database-owned in `digital_acceptance_configuration`, inaccessible even to `service_role`; callers cannot choose environment/project identity through RPC arguments.
-- The service-role RPC validates active database config against active, unexpired run/store target and rejects cross-run/store subjects, invalid transition pairs, unsupported financial injection, and replayed mutation keys.
-- Observe requests also cross the database RPC boundary before privileged queries, preventing the route from observing arbitrary orders outside the configured target store/run.
-- Preview/production route guards remain fail closed and require preview tier, acceptance build, exact origin/project, and control credential.
-- Refund acceptance uses Stripe test API; dispute acceptance requires explicit helper URL/token and otherwise fails before the suite. Synthetic database financial certification is removed.
-- Dynamic checkout order IDs, exact checkout composition, manifest versions, unique five-grant count, and application order/provider-PaymentIntent correlation use one strict shared schema.
-- HMAC evidence key remains separate from control authentication, and run/origin/release/subject/scenario freshness checks remain enforced.
-- Prior bearer/API/path, fragment retry, POST/origin, migration uniqueness, release approval/runtime binding, and service-role privilege fixes remain intact.
-- Focused control/evidence/migration-version suites passed: 3 files, 9 tests. Docker/Supabase official verification and real provider execution remain external blockers, not code defects.
+- The observer now loads correlated refunds, disputes, source-event ledger rows, delivery attempts, and catalog asset versions under the run/store-bound service-role control.
+- Canonical scenario evidence is discriminated for checkout, refund, dispute, Resend, grants, replacement, and delivery retry; the writer validates the exact scenario/evidence pair before signing.
+- The verifier requires provider evidence for every scenario and checks PaymentIntent/order, refund/dispute webhook processing, Resend order/recipient, exact composition, five unique grants, and manifest versions.
+- Refunds use Stripe test API and are correlated to persisted refund/source-event/webhook rows. Disputes use an exact allowlisted HTTPS helper origin, no redirects, bounded timeout, bearer authentication, and HMAC-authenticated request/response bound to the PaymentIntent/outcome/provider IDs.
+- Replacement evidence binds prior immutable version and content hash to a distinct current version and a fresh checkout manifest. Delivery retry evidence captures failed/succeeded attempts and resend identity.
+- Database configuration remains inaccessible to service/application roles; RPC observe/mutations enforce active configuration and run/store target. Preview/production routing remains fail closed.
+- Prior bearer URL/API, POST/origin, migration uniqueness, release approval/runtime, and provider fail-closed findings remain resolved.
+- Focused control/evidence/migration-version tests passed: 3 files, 10 tests. External Docker and provider execution remain rollout blockers rather than code defects.
 
 ## Review scope
 
-Reviewed diff `a9224c5..39eb128`, database-owned configuration and privileges, observe/mutation RPC behavior, refund/dispute preflight and browser calls, strict shared schema, evidence writer/verifier, Resend handling, native tests, and all prior security findings. No implementation file was changed.
+Reviewed diff `84c88ec..5f73e6a`, strict evidence schemas and tests, observer queries, provider helper authentication, financial webhook correlation, Resend retrieval, grant/session evidence, replacement/version hashing, delivery retry evidence, verifier and CI configuration, and prior security findings. No implementation file was changed.
