@@ -555,3 +555,37 @@ The replacement dialog is keyboard-opened, retains focus after Shift+Tab, closes
 ### Round 11 release disposition
 
 Do not approve the UX/accessibility gate. The sole remaining P1 is the complete absence of accessibility validation for the feature's financial and failure/recovery states.
+
+---
+
+## Round 12 re-review — commit `9eb27d4`
+
+### Verdict
+
+**FAIL** — dynamic financial/failure states now receive axe scans in the functional provider journey, which is important progress. One P1 remains because those states still lack live-region/focus/keyboard assertions and mobile/desktop coverage, zoom actions remain unactivated, and the dialog confirmation path is still absent.
+
+### P1 — Dynamic-state scans alone do not verify announcements, focus, or responsive accessibility
+
+**Evidence:** `apps/web/e2e/digital-products.spec.ts:77-80`, `:116-119`, `:216-219`, `:232-235`, and `:242-247`; `apps/web/e2e/digital-products-accessibility.spec.ts:27-52` and `:106-118`.
+
+The provider-backed functional suite now runs axe after signing failure, grant exhaustion, partial/full refund, dispute opened/won/lost, delivery failure, and delivery retry. This resolves the total absence of dynamic-state axe coverage.
+
+However, these scans run in the ordinary functional project/default viewport and assert no accessibility behavior beyond DOM content/action visibility. They do not verify that state changes are announced, that focus moves to or remains at a meaningful location, that disabled/removed actions leave a coherent keyboard path, or that the same states pass at both configured mobile and desktop viewports. Signing/limit errors also occur in fresh contexts without keyboard activation or focus assertions. Delivery retry uses a mouse click and does not assert the result announcement before scanning.
+
+The dedicated accessibility suite still does not create these financial/failure states. Its zoom test still focuses named controls without activating any of them. Its dialog test only covers Escape cancellation; it does not traverse the full trap or confirm replacement and verify resulting focus/status.
+
+**Required remediation:** Run each financial/failure state through the accessibility projects at both viewports, assert exact status/alert semantics and focus behavior, keyboard-operate retry/download where applicable, then axe-scan. Activate each named zoom action and assert the expected result. Add full dialog Tab/Shift+Tab wrapping plus keyboard confirmation, result announcement, and deterministic focus destination.
+
+### P2 — Checkout-return and financial transitions are largely tested by navigation rather than transition announcements
+
+The provider journey waits for eventual content, which verifies final semantics, but does not assert checkout polling/delivery announcements or a perceivable transition when refund/dispute state changes. This overlaps the P1 above and should be addressed by explicit live-region assertions rather than additional static text checks.
+
+### Resolved from round 11
+
+- Axe now runs for signing failure, grant limit, both refund states, all three dispute states, delivery failure, and delivery retry.
+- Canonical evidence validation is unified and strengthened.
+- Mandatory named zoom/download controls and exact grant/replacement evidence remain intact.
+
+### Round 12 release disposition
+
+Do not approve the UX/accessibility gate. The remaining gap is now narrower: dynamic states are scanned, but their screen-reader/focus/responsive behavior and actual zoom/dialog operation are not verified.
