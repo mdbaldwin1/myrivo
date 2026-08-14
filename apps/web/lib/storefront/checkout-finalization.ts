@@ -512,6 +512,18 @@ export async function finalizeStorefrontCheckout(
     throw new Error(updateError.message);
   }
 
+  if (paymentIntentId && !isStripeStubMode()) {
+    // Bind the finalized order into the provider payment record so release
+    // acceptance can correlate the Stripe payment with this exact order. The
+    // annotation is evidentiary, not transactional: delivery must not fail
+    // because the provider metadata write was interrupted.
+    try {
+      await getStripeClient().paymentIntents.update(paymentIntentId, { metadata: { order_id: orderId } });
+    } catch {
+      // Best-effort provider annotation; acceptance evidence surfaces gaps.
+    }
+  }
+
   await sendOrderCreatedNotifications(orderId);
   if (checkout.digital_manifest_id) {
     await enqueueDigitalDelivery(orderId, checkout.digital_manifest_id);
