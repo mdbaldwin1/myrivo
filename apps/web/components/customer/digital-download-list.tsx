@@ -156,14 +156,19 @@ export function DigitalDownloadList() {
     iframe.name = `digital-download-${crypto.randomUUID()}`;
     const handleFrameLoad = () => {
       let failed = false;
+      let failureMessage: string | null = null;
       try {
         if (iframe.contentWindow?.location.href === "about:blank") return;
         failed = iframe.contentDocument?.contentType === "application/json";
+        if (failed) {
+          const payload = JSON.parse(iframe.contentDocument?.body.textContent ?? "null") as { error?: unknown } | null;
+          if (typeof payload?.error === "string" && payload.error.trim()) failureMessage = payload.error.trim();
+        }
       } catch { /* Cross-origin redirect confirms initiation. */ }
       iframe.removeEventListener("load", handleFrameLoad);
       window.clearTimeout(timeoutId);
       setDownloadingId(null);
-      setDownloadFeedback(failed ? `${label} could not be downloaded. Please try again.` : `${label} download started.`);
+      setDownloadFeedback(failed ? failureMessage ?? `${label} could not be downloaded. Please try again.` : `${label} download started.`);
       window.setTimeout(() => iframe.remove(), 1_000);
     };
     iframe.addEventListener("load", handleFrameLoad);

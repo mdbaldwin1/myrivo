@@ -11,11 +11,13 @@ export function DigitalOrderDownloads({
   fileCount,
   activeFileCount = fileCount,
   accessStatus = "active",
+  accessReason = null,
 }: {
   orderId: string;
   fileCount: number;
   activeFileCount?: number;
   accessStatus?: "active" | "suspended" | "revoked";
+  accessReason?: "dispute_open" | "dispute_lost" | "full_refund" | null;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -67,8 +69,12 @@ export function DigitalOrderDownloads({
   const isAvailable = accessStatus === "active" && activeFileCount > 0;
   const description = accessStatus === "suspended"
     ? "Downloads are temporarily unavailable while a payment dispute is reviewed. Your download grants are preserved."
-    : accessStatus === "revoked"
-      ? "Download access was removed after this order was fully refunded. Contact the store if you believe this is a mistake."
+    : accessStatus === "revoked" && accessReason === "dispute_lost"
+      ? "Download access was removed after the payment dispute was decided against this order. Contact the store if you believe this is a mistake."
+      : accessStatus === "revoked" && accessReason === "full_refund"
+        ? "Download access was removed after this order was fully refunded. Contact the store if you believe this is a mistake."
+        : accessStatus === "revoked"
+          ? "Download access is no longer available for this order. Contact the store if you believe this is a mistake."
       : activeFileCount < fileCount
         ? `${activeFileCount} of ${fileCount} purchased files ${activeFileCount === 1 ? "is" : "are"} currently available. Opening them creates a private 15-minute access session.`
         : `${fileCount} purchased ${fileCount === 1 ? "file" : "files"}. Opening this order creates a private 15-minute access session; each file still has five lifetime download grants.`;

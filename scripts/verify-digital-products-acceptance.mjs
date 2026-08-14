@@ -44,62 +44,27 @@ const result = spawnSync("npm", ["run", "-w", "@myrivo/web", "e2e", "--", "digit
 if (result.status !== 0) process.exit(result.status ?? 1);
 if (!fs.existsSync(evidencePath)) fail("acceptance run did not generate evidence");
 const evidence = JSON.parse(fs.readFileSync(evidencePath, "utf8"));
-const serializedEvidence = JSON.stringify(evidence);
-for (const forbidden of [/(^|[?&#])token=/i, /cookie[^\n]{0,64}[=:]/i, /[?&](signature|x-amz-signature)=/i, /(^|["'/:])private\//i, /digital_download_session/i]) {
-  if (forbidden.test(serializedEvidence)) fail("evidence contains bearer or private-path material");
-}
 try {
-  verifyDigitalAcceptanceArtifact(evidence, { key: evidenceKey, requiredScenarios: ["stripe-digital", "stripe-mixed", "resend-access", "five-grants", "replacement", "stripe-partial-refund", "stripe-full-refund", "stripe-dispute-opened", "stripe-dispute-won", "stripe-dispute-lost", "delivery-retry", "merchant-resend"] });
+  verifyDigitalAcceptanceArtifact(evidence, {
+    key: evidenceKey,
+    requiredScenarios: ["stripe-digital", "stripe-mixed", "resend-access", "five-grants", "replacement", "stripe-partial-refund", "stripe-full-refund", "stripe-dispute-opened", "stripe-dispute-won", "stripe-dispute-lost", "delivery-retry", "merchant-resend"],
+    expectedRunId: fixture.runId,
+    expectedOrigin: baseUrl.origin,
+    expectedReleaseVersion: process.env.GITHUB_HEAD_SHA || process.env.GITHUB_SHA,
+    expectedRecipient: fixture.customer.email,
+    expectedScenarioSubjects: {
+      replacement: fixture.orderId,
+      "delivery-retry": fixture.orderId,
+      "merchant-resend": fixture.orderId,
+      "stripe-partial-refund": fixture.financialOrders?.partialRefund,
+      "stripe-full-refund": fixture.financialOrders?.fullRefund,
+      "stripe-dispute-opened": fixture.financialOrders?.disputeOpened,
+      "stripe-dispute-won": fixture.financialOrders?.disputeWon,
+      "stripe-dispute-lost": fixture.financialOrders?.disputeLost,
+    },
+  });
 } catch (error) {
   fail(`canonical evidence validation failed: ${error instanceof Error ? error.message : "invalid evidence"}`);
 }
-delete evidence.signature;
-if (evidence.schemaVersion !== 3 || evidence.runId !== fixture.runId || evidence.origin !== baseUrl.origin || evidence.releaseVersion !== (process.env.GITHUB_HEAD_SHA || process.env.GITHUB_SHA) || !Array.isArray(evidence.observations)) fail("evidence is incomplete or not run-bound");
-const requiredActions = new Set(["observe:stripe-digital", "observe:stripe-mixed", "observe:resend-access", "observe:five-grants", "observe:replacement", "observe:stripe-partial-refund", "observe:stripe-full-refund", "observe:stripe-dispute-opened", "observe:stripe-dispute-won", "observe:stripe-dispute-lost", "observe:delivery-retry", "observe:merchant-resend"]);
-const fixedScenarioSubjects = new Map([
-  ["replacement", fixture.orderId], ["delivery-retry", fixture.orderId], ["merchant-resend", fixture.orderId],
-  ["stripe-partial-refund", fixture.financialOrders?.partialRefund], ["stripe-full-refund", fixture.financialOrders?.fullRefund],
-  ["stripe-dispute-opened", fixture.financialOrders?.disputeOpened],
-  ["stripe-dispute-won", fixture.financialOrders?.disputeWon], ["stripe-dispute-lost", fixture.financialOrders?.disputeLost],
-]);
-const seenScenarios = new Set();
-for (const item of evidence.observations) {
-  if (item.scenario && seenScenarios.has(item.scenario)) fail(`duplicate scenario evidence: ${item.scenario}`);
-  if (item.scenario) seenScenarios.add(item.scenario);
-  requiredActions.delete(`${item.action}:${item.scenario ?? ""}`);
-  const expectedSubject = fixedScenarioSubjects.get(item.scenario);
-  if (item.runId !== fixture.runId || !item.observedAt || !item.subjectId || !item.observation?.order || item.observation.order.id !== item.subjectId || (expectedSubject && item.subjectId !== expectedSubject)) fail("an observation is null, stale, or unlinked");
-  if (item.observation.providerPayment && (item.observation.providerPayment.livemode !== false || item.observation.providerPayment.status !== "succeeded")) fail("provider payment is not a succeeded test-mode payment");
-  if (item.scenario === "stripe-digital" && item.observation.order.checkout_composition !== "digital_only") fail("digital checkout composition evidence is wrong");
-  if (item.scenario === "stripe-mixed" && item.observation.order.checkout_composition !== "mixed") fail("mixed checkout composition evidence is wrong");
-  if (item.scenario === "five-grants") {
-    const grants = item.observation.grants;
-    if (grants.length !== 5 || new Set(grants.map((grant) => grant.id)).size !== 5) fail("five-grant evidence is not exact and unique");
-    const provider = item.providerEvidence;
-    if (provider.kind !== "grants" || provider.sessionHashes?.length !== 6 || new Set(provider.sessionHashes).size !== 6 || provider.sessionHashes.some((hash) => !/^[a-f0-9]{64}$/.test(hash))) fail("grant session hashes are not six exact unique digests");
-    if (provider.graceCountBefore !== provider.graceCountAfter || !provider.uniqueGrantIds.includes(provider.graceReusedGrantId)) fail("same-session grace did not reuse an existing grant");
-    if (JSON.stringify(provider.signingFailureIssuedIdsBefore) !== JSON.stringify(provider.signingFailureIssuedIdsAfter) || provider.signingFailureUsedBefore !== provider.signingFailureUsedAfter) fail("signing failure changed issued usage");
-    const released = grants.filter((grant) => grant.status === "released" && grant.id === provider.releasedFaultGrantId);
-    if (released.length !== 1 || !released[0].released_at || !released[0].last_safe_error || !grants.some((grant) => grant.status === "issued" && grant.id === provider.successfulRetryGrantId)) fail("signing fault release and successful retry are not correlated");
-    if (provider.sixthDeniedStatus < 400 || provider.sixthDeniedStatus > 499 || provider.sixthDeniedMessage !== "Download limit reached") fail("sixth unique download denial is not proven by production state");
-    if (!grants.every((grant) => grant.asset_version_id === provider.assetVersionId)) fail("grant asset versions are uncorrelated");
-  }
-  if (item.scenario === "replacement") {
-    const provider = item.providerEvidence;
-    if (provider.kind !== "replacement" || provider.priorAssetVersionId === provider.replacementAssetVersionId || provider.newCheckoutAssetVersionId !== provider.replacementAssetVersionId || provider.oldBeforeHash !== provider.oldAfterHash || provider.oldBeforeHash === provider.newHash || provider.oldBeforeFilename !== provider.oldAfterFilename) fail("replacement immutability evidence is invalid");
-    if (!item.observation.manifestItems.some((manifest) => manifest.asset_version_id === provider.priorAssetVersionId && manifest.customer_filename === provider.oldBeforeFilename)) fail("prior buyer manifest is not retained");
-  }
-  if (item.scenario === "delivery-retry") {
-    const attempts = item.providerEvidence?.attempts;
-    if (item.providerEvidence?.kind !== "delivery" || attempts?.length < 2 || attempts[0].status !== "failed" || attempts.at(-1).status !== "succeeded") fail("delivery retry evidence is not ordered failed to succeeded");
-  }
-  if (!item.providerEvidence?.kind) fail(`scenario ${item.scenario} has no typed provider evidence`);
-  if (["stripe-digital", "stripe-mixed"].includes(item.scenario) && (item.providerEvidence.kind !== "checkout" || item.providerEvidence.orderId !== item.subjectId || item.providerEvidence.paymentIntentId !== item.observation.providerPayment.id)) fail("checkout provider evidence is uncorrelated");
-  if (["stripe-partial-refund", "stripe-full-refund"].includes(item.scenario) && (item.providerEvidence.kind !== "refund" || item.providerEvidence.paymentIntentId !== item.observation.providerPayment.id || !item.providerEvidence.webhook?.signatureVerified || item.providerEvidence.webhook.status !== "processed")) fail("refund provider/webhook evidence is uncorrelated");
-  if (["stripe-dispute-opened", "stripe-dispute-won", "stripe-dispute-lost"].includes(item.scenario) && (item.providerEvidence.kind !== "dispute" || item.providerEvidence.paymentIntentId !== item.observation.providerPayment.id || !item.providerEvidence.webhook?.signatureVerified || item.providerEvidence.webhook.status !== "processed")) fail("dispute provider/webhook evidence is uncorrelated");
-  if (["resend-access", "merchant-resend"].includes(item.scenario) && (item.providerEvidence.kind !== "resend" || item.providerEvidence.orderId !== item.subjectId || item.providerEvidence.recipient !== fixture.customer.email)) fail("Resend provider evidence is uncorrelated");
-  if (!item.observation.manifestItems?.length || item.observation.manifestItems.some((manifest) => !manifest.asset_version_id)) fail("manifest evidence is missing asset versions");
-}
-if (requiredActions.size) fail(`evidence is missing required actions: ${[...requiredActions].join(", ")}`);
 const digest = createHash("sha256").update(fs.readFileSync(evidencePath)).digest("hex");
 console.log(`Validated current-run acceptance evidence sha256=${digest}`);

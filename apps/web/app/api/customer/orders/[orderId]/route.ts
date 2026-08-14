@@ -111,9 +111,9 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   // entitlement metadata. Only aggregate availability is exposed here.
   const { data: digitalEntitlements, error: digitalEntitlementsError } = await createSupabaseAdminClient()
     .from("digital_order_entitlements")
-    .select("id,status")
+    .select("id,status,status_source_dispute_id")
     .eq("order_id", order.id)
-    .returns<Array<{ id: string; status: DigitalEntitlementStatus }>>();
+    .returns<Array<{ id: string; status: DigitalEntitlementStatus; status_source_dispute_id: string | null }>>();
 
   if (digitalEntitlementsError) {
     return NextResponse.json(
@@ -134,13 +134,18 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     : digitalEntitlements?.some(({ status }) => status === "suspended")
       ? "suspended"
       : "revoked";
+  const accessReason = accessStatus === "suspended"
+    ? "dispute_open"
+    : accessStatus === "revoked"
+      ? digitalEntitlements?.some(({ status_source_dispute_id }) => status_source_dispute_id !== null) ? "dispute_lost" : "full_refund"
+      : null;
 
   return NextResponse.json({
     order,
     items: items ?? [],
     shippingDelays: shippingDelays ?? [],
     digitalDownloads: fileCount > 0
-      ? { fileCount, activeFileCount, status: digitalDownloadStatus, accessStatus }
+      ? { fileCount, activeFileCount, status: digitalDownloadStatus, accessStatus, accessReason }
       : null,
   });
 }

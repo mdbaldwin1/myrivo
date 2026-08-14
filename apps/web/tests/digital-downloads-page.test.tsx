@@ -336,11 +336,19 @@ describe("signed-in order downloads", () => {
   });
 
   test("explains full-refund revocation without offering recovery", () => {
-    render(<DigitalOrderDownloads orderId={ORDER_ID} fileCount={1} activeFileCount={0} accessStatus="revoked" />);
+    render(<DigitalOrderDownloads orderId={ORDER_ID} fileCount={1} activeFileCount={0} accessStatus="revoked" accessReason="full_refund" />);
 
     expect(screen.getByText(/removed after this order was fully refunded/i)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /View/i })).toBeNull();
     expect(screen.queryByRole("link", { name: "Request an emailed link" })).toBeNull();
+  });
+
+  test("explains lost-dispute revocation without claiming the order was refunded", () => {
+    render(<DigitalOrderDownloads orderId={ORDER_ID} fileCount={1} activeFileCount={0} accessStatus="revoked" accessReason="dispute_lost" />);
+
+    expect(screen.getByText(/removed after the payment dispute was decided against this order/i)).toBeTruthy();
+    expect(screen.queryByText(/fully refunded/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /View/i })).toBeNull();
   });
 
   test("keeps available files actionable when only part of an order is available", () => {

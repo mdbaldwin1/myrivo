@@ -47,7 +47,7 @@ describe("customer digital order detail", () => {
         items={[{ id: "item-1", quantity: 1, unit_price_cents: 2800, variant_label: "PDF", products: { id: "product-1", title: "Printable" } }]}
         shippingDelays={[]}
         backHref="/dashboard"
-        digitalDownloads={{ fileCount: 1, activeFileCount: 1, accessStatus: "active" }}
+        digitalDownloads={{ fileCount: 1, activeFileCount: 1, accessStatus: "active", accessReason: null }}
       />
     );
 

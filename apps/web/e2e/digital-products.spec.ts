@@ -247,6 +247,8 @@ test.describe.serial("digital product user journeys", () => {
     const observed = await acceptanceAction(request, fixture!, "observe");
     await expectNoSeriousAccessibilityViolations(page, "delivery retry dynamic state");
     const resend = await getResendAccessMessage(request, fixture!.customer.email, fixture!.orderId);
-    await acceptanceAction(request, fixture!, "observe", undefined, fixture!.orderId, "delivery-retry", { kind: "delivery", jobId: observed.observation.deliveryJob.id, attempts: observed.observation.deliveryAttempts.map((attempt) => ({ attempt: attempt.attempt_number, status: attempt.status, startedAt: attempt.started_at, finishedAt: attempt.finished_at })), resendMessageId: resend.id });
+    const persistedResend = observed.observation.notifications.find((notification) => notification.provider_message_id === resend.id && notification.status === "succeeded");
+    if (!persistedResend?.sent_at) throw new Error("Delivery retry did not persist the exact successful Resend message.");
+    await acceptanceAction(request, fixture!, "observe", undefined, fixture!.orderId, "delivery-retry", { kind: "delivery", jobId: observed.observation.deliveryJob.id, attempts: observed.observation.deliveryAttempts.map((attempt) => ({ attempt: attempt.attempt_number, status: attempt.status, startedAt: attempt.started_at, finishedAt: attempt.finished_at })), resendMessageId: resend.id, resendSentAt: persistedResend.sent_at });
   });
 });

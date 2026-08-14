@@ -188,7 +188,8 @@ describe("customer order detail route", () => {
       fileCount: 2,
       activeFileCount: 1,
       status: "partially_available",
-      accessStatus: "active"
+      accessStatus: "active",
+      accessReason: null
     });
   });
 });

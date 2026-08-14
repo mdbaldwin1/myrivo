@@ -20,11 +20,23 @@ describe("digital acceptance evidence", () => {
     ["Resend message ID", "resend-access", (record: any) => { record.observation.notifications[0].provider_message_id = "email_other"; }],
     ["refund webhook", "stripe-full-refund", (record: any) => { record.observation.webhookEvents[0].signature_verified = false; }],
     ["grant identity", "five-grants", (record: any) => { record.providerEvidence.uniqueGrantIds[0] = crypto.randomUUID(); }],
+    ["released grant proof", "five-grants", (record: any) => { record.observation.grants = record.observation.grants.filter((grant: any) => grant.status !== "released"); }],
+    ["post-fault retry order", "five-grants", (record: any) => { record.observation.grants.find((grant: any) => grant.id === record.providerEvidence.successfulRetryGrantId).created_at = record.observation.grants.find((grant: any) => grant.id === record.providerEvidence.releasedFaultGrantId).created_at; }],
+    ["delivery resend persistence", "delivery-retry", (record: any) => { record.observation.notifications.find((notification: any) => notification.provider_message_id === record.providerEvidence.resendMessageId).status = "failed"; }],
     ["checkout composition", "stripe-mixed", (record: any) => { record.observation.order.checkout_composition = "digital_only"; }],
+    ["record run binding", "stripe-digital", (record: any) => { record.runId = crypto.randomUUID(); record.observation.runId = record.runId; }],
   ])("rejects adversarial %s evidence", (_label, scenario, mutate) => {
     const evidence: any = buildDigitalAcceptanceEvidenceFixture();
     mutate(evidence.observations.find((record: any) => record.scenario === scenario));
     expect(() => verifyDigitalAcceptanceEvidence(evidence, { requiredScenarios: [...requiredDigitalAcceptanceScenarios] })).toThrow();
+  });
+
+  it("binds a complete envelope to the expected release fixture", () => {
+    const evidence: any = buildDigitalAcceptanceEvidenceFixture();
+    expect(() => verifyDigitalAcceptanceEvidence(evidence, { expectedRunId: crypto.randomUUID() })).toThrow(/run/i);
+    expect(() => verifyDigitalAcceptanceEvidence(evidence, { expectedOrigin: "https://other.example.test" })).toThrow(/origin/i);
+    expect(() => verifyDigitalAcceptanceEvidence(evidence, { expectedReleaseVersion: "other" })).toThrow(/release/i);
+    expect(() => verifyDigitalAcceptanceEvidence(evidence, { expectedRecipient: "other@example.test" })).toThrow(/recipient/i);
   });
   it("rejects null, live-mode, unlinked, or unexpected observations", () => {
     expect(() => digitalAcceptanceObservationSchema.parse({ action: "observe", order: null })).toThrow();

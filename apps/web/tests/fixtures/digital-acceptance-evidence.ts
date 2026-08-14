@@ -38,7 +38,13 @@ export function buildDigitalAcceptanceEvidenceFixture() {
   const grants = makeObservation();
   const grantIds = Array.from({ length: 5 }, () => nextId());
   const grantVersion = grants.observation.entitlements[0].asset_version_id;
-  grants.observation.grants = grantIds.map((id) => ({ id, entitlement_id: grants.observation.entitlements[0].id, status: "issued", asset_version_id: grantVersion, created_at: at(sequence++), released_at: null, last_safe_error: null }));
+  const releasedFaultGrantId = nextId();
+  const releasedAt = at(sequence++);
+  grants.observation.grants = [
+    ...grantIds.slice(0, 4).map((id) => ({ id, entitlement_id: grants.observation.entitlements[0].id, status: "issued", asset_version_id: grantVersion, created_at: at(sequence++), released_at: null, last_safe_error: null })),
+    { id: releasedFaultGrantId, entitlement_id: grants.observation.entitlements[0].id, status: "released", asset_version_id: grantVersion, created_at: releasedAt, released_at: releasedAt, last_safe_error: "Storage signing failed" },
+    { id: grantIds[4], entitlement_id: grants.observation.entitlements[0].id, status: "issued", asset_version_id: grantVersion, created_at: at(sequence++), released_at: null, last_safe_error: null },
+  ];
   const replacement = makeObservation();
   const oldVersion = replacement.observation.manifestItems[0].asset_version_id;
   const replacementCheckout = makeObservation();
@@ -61,23 +67,25 @@ export function buildDigitalAcceptanceEvidenceFixture() {
     base.observation.entitlements[0].status = outcome === "opened" ? "suspended" : outcome === "won" ? "active" : "revoked";
     return record(`stripe-dispute-${outcome}`, { kind: "dispute", disputeId, chargeId, paymentIntentId: base.observation.providerPayment.id, outcome, eventIds: [eventId], webhook: { eventId, type: `charge.dispute.${outcome}`, signatureVerified: true, status: "processed", receivedAt: at(sequence), processedAt: at(sequence++), attempts: 1 } }, base);
   };
-  const delivery = makeObservation(), deliveryStart = at(sequence++), deliveryFinish = at(sequence++);
+  const delivery = replacement, deliveryStart = at(sequence++), deliveryFinish = at(sequence++);
   delivery.observation.deliveryJob.attempt_count = 2;
   delivery.observation.deliveryAttempts = [
     { job_id: delivery.observation.deliveryJob.id, attempt_number: 1, status: "failed", started_at: deliveryStart, finished_at: deliveryStart },
     { job_id: delivery.observation.deliveryJob.id, attempt_number: 2, status: "succeeded", started_at: deliveryFinish, finished_at: deliveryFinish },
   ];
-  const merchant = makeObservation(), merchantSentAt = at(sequence++);
+  const deliverySentAt = at(sequence++);
+  delivery.observation.notifications.push({ id: nextId(), notification_type: "merchant_resend", status: "succeeded", provider: "resend", provider_message_id: "email_retry", attempt_count: 1, sent_at: deliverySentAt });
+  const merchant = replacement, merchantSentAt = at(sequence++);
   merchant.observation.notifications.push({ id: nextId(), notification_type: "merchant_resend", status: "succeeded", provider: "resend", provider_message_id: "email_merchant", attempt_count: 1, sent_at: merchantSentAt });
   const observations = [
     record("stripe-digital", { kind: "checkout", sessionId: "cs_test_digital", paymentIntentId: digital.observation.providerPayment.id, orderId: digital.subjectId }, digital),
     record("stripe-mixed", { kind: "checkout", sessionId: "cs_test_mixed", paymentIntentId: mixed.observation.providerPayment.id, orderId: mixed.subjectId }, mixed),
     record("resend-access", { kind: "resend", messageId: "email_access", status: "sent", recipient: "buyer@example.test", orderId: resend.subjectId, accessUrlHash: "a".repeat(64), sentAt: resendSentAt }, resend),
-    record("five-grants", { kind: "grants", uniqueGrantIds: grantIds, graceReusedGrantId: grantIds[0], graceCountBefore: 5, graceCountAfter: 5, signingFailureIssuedIdsBefore: grantIds, signingFailureIssuedIdsAfter: grantIds, signingFailureUsedBefore: 5, signingFailureUsedAfter: 5, releasedFaultGrantId: nextId(), successfulRetryGrantId: grantIds[4], sixthDeniedStatus: 409, sixthDeniedMessage: "Download limit reached", sessionHashes: Array.from({ length: 6 }, (_, index) => index.toString(16).padStart(64, "0")), assetVersionId: grantVersion }, grants),
+    record("five-grants", { kind: "grants", uniqueGrantIds: grantIds, graceReusedGrantId: grantIds[0], graceCountBefore: 5, graceCountAfter: 5, signingFailureIssuedIdsBefore: grantIds.slice(0, 4), signingFailureIssuedIdsAfter: grantIds.slice(0, 4), signingFailureUsedBefore: 4, signingFailureUsedAfter: 4, releasedFaultGrantId, successfulRetryGrantId: grantIds[4], sixthDeniedStatus: 409, sixthDeniedMessage: "Download limit reached", sessionHashes: Array.from({ length: 6 }, (_, index) => index.toString(16).padStart(64, "0")), assetVersionId: grantVersion }, grants),
     { ...record("replacement", { kind: "replacement", priorAssetVersionId: oldVersion, replacementAssetVersionId: newVersion, oldBeforeFilename: "art.png", oldAfterFilename: "art.png", newFilename: "art.png", oldBeforeHash: "1".repeat(64), oldAfterHash: "1".repeat(64), newHash: "2".repeat(64), newCheckoutAssetVersionId: newVersion, newCheckoutOrderId: replacementCheckout.subjectId }, replacement), newObservation: replacementCheckout },
     refundRecord("stripe-partial-refund", partial, 100), refundRecord("stripe-full-refund", full, 1000),
     disputeRecord("opened"), disputeRecord("won"), disputeRecord("lost"),
-    record("delivery-retry", { kind: "delivery", jobId: delivery.observation.deliveryJob.id, attempts: [{ attempt: 1, status: "failed", startedAt: deliveryStart, finishedAt: deliveryStart }, { attempt: 2, status: "succeeded", startedAt: deliveryFinish, finishedAt: deliveryFinish }], resendMessageId: "email_retry" }, delivery),
+    record("delivery-retry", { kind: "delivery", jobId: delivery.observation.deliveryJob.id, attempts: [{ attempt: 1, status: "failed", startedAt: deliveryStart, finishedAt: deliveryStart }, { attempt: 2, status: "succeeded", startedAt: deliveryFinish, finishedAt: deliveryFinish }], resendMessageId: "email_retry", resendSentAt: deliverySentAt }, delivery),
     record("merchant-resend", { kind: "resend", messageId: "email_merchant", status: "sent", recipient: "buyer@example.test", orderId: merchant.subjectId, accessUrlHash: "b".repeat(64), sentAt: merchantSentAt }, merchant),
   ];
   return { schemaVersion: 3, runId, origin: "https://preview.example.test", releaseVersion: "sha", environment: "preview", startedAt: at(0), completedAt: at(59), observations, signature: "a".repeat(64) };

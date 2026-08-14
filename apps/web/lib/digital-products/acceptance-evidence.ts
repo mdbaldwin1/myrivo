@@ -58,7 +58,7 @@ const grantsEvidence = z.object({ kind: z.literal("grants"), uniqueGrantIds: gra
   if (JSON.stringify(value.signingFailureIssuedIdsBefore) !== JSON.stringify(value.signingFailureIssuedIdsAfter) || value.signingFailureUsedBefore !== value.signingFailureUsedAfter) context.addIssue({ code: "custom", message: "Signing failure changed issued usage." });
 });
 const replacementEvidence = z.object({ kind: z.literal("replacement"), priorAssetVersionId: uuid, replacementAssetVersionId: uuid, oldBeforeFilename: z.string().min(1), oldAfterFilename: z.string().min(1), newFilename: z.string().min(1), oldBeforeHash: z.string().regex(/^[a-f0-9]{64}$/), oldAfterHash: z.string().regex(/^[a-f0-9]{64}$/), newHash: z.string().regex(/^[a-f0-9]{64}$/), newCheckoutAssetVersionId: uuid, newCheckoutOrderId: uuid }).strict().refine((value) => value.priorAssetVersionId !== value.replacementAssetVersionId && value.newCheckoutAssetVersionId === value.replacementAssetVersionId && value.oldBeforeHash === value.oldAfterHash && value.oldBeforeHash !== value.newHash && value.oldBeforeFilename === value.oldAfterFilename);
-const deliveryEvidence = z.object({ kind: z.literal("delivery"), jobId: uuid, attempts: z.array(z.object({ attempt: z.number().int().positive(), status: z.enum(["failed", "succeeded"]), startedAt: z.string().datetime(), finishedAt: z.string().datetime() }).strict()).min(2), resendMessageId: z.string().min(1) }).strict().superRefine((value, context) => {
+const deliveryEvidence = z.object({ kind: z.literal("delivery"), jobId: uuid, attempts: z.array(z.object({ attempt: z.number().int().positive(), status: z.enum(["failed", "succeeded"]), startedAt: z.string().datetime(), finishedAt: z.string().datetime() }).strict()).min(2), resendMessageId: z.string().min(1), resendSentAt: z.string().datetime() }).strict().superRefine((value, context) => {
   value.attempts.forEach((attempt, index) => {
     if (attempt.attempt !== index + 1 || Date.parse(attempt.finishedAt) < Date.parse(attempt.startedAt) || (index > 0 && Date.parse(attempt.startedAt) < Date.parse(value.attempts[index - 1]!.finishedAt))) context.addIssue({ code: "custom", message: "Delivery attempts are not an ordered chronology." });
   });
@@ -91,8 +91,20 @@ export const digitalAcceptanceSignedEvidenceSchema = z.object({
   });
 });
 
-export function verifyDigitalAcceptanceEvidence(input: unknown, options: { requiredScenarios?: string[] } = {}) {
+export type DigitalAcceptanceVerificationOptions = {
+  requiredScenarios?: string[];
+  expectedRunId?: string;
+  expectedOrigin?: string;
+  expectedReleaseVersion?: string;
+  expectedRecipient?: string;
+  expectedScenarioSubjects?: Record<string, string | undefined>;
+};
+
+export function verifyDigitalAcceptanceEvidence(input: unknown, options: DigitalAcceptanceVerificationOptions = {}) {
   const evidence = digitalAcceptanceSignedEvidenceSchema.parse(input);
+  if (options.expectedRunId && evidence.runId !== options.expectedRunId) throw new Error("Acceptance evidence run mismatch.");
+  if (options.expectedOrigin && evidence.origin !== options.expectedOrigin) throw new Error("Acceptance evidence origin mismatch.");
+  if (options.expectedReleaseVersion && evidence.releaseVersion !== options.expectedReleaseVersion) throw new Error("Acceptance evidence release mismatch.");
   const records = evidence.observations as Array<Record<string, unknown>>;
   const byScenario = new Map(records.map((record) => [String(record.scenario), record]));
   for (const scenario of options.requiredScenarios ?? []) if (!byScenario.has(scenario)) throw new Error(`Missing required scenario: ${scenario}`);
@@ -101,6 +113,9 @@ export function verifyDigitalAcceptanceEvidence(input: unknown, options: { requi
     const observed = (record.observation as Record<string, unknown>);
     const order = observed.order as Record<string, unknown>;
     const payment = observed.providerPayment as Record<string, unknown>;
+    if (record.runId !== evidence.runId) throw new Error(`Scenario ${record.scenario} run mismatch.`);
+    const expectedSubject = options.expectedScenarioSubjects?.[String(record.scenario)];
+    if (expectedSubject && record.subjectId !== expectedSubject) throw new Error(`Scenario ${record.scenario} fixture subject mismatch.`);
     if (record.subjectId !== order.id) throw new Error(`Scenario ${record.scenario} order mismatch.`);
     if (["checkout", "refund", "dispute"].includes(String(provider.kind)) && provider.paymentIntentId !== payment.id) throw new Error(`Scenario ${record.scenario} payment mismatch.`);
     if (provider.kind === "checkout" && provider.orderId !== order.id) throw new Error(`Scenario ${record.scenario} checkout order mismatch.`);
@@ -110,7 +125,7 @@ export function verifyDigitalAcceptanceEvidence(input: unknown, options: { requi
     }
     if (provider.kind === "resend") {
       const notifications = observed.notifications as Array<Record<string, unknown>>;
-      if (provider.orderId !== order.id || !notifications.some((notification) => notification.provider === "resend" && notification.provider_message_id === provider.messageId && notification.status === "succeeded" && notification.sent_at === provider.sentAt)) throw new Error(`Scenario ${record.scenario} Resend evidence mismatch.`);
+      if ((options.expectedRecipient && provider.recipient !== options.expectedRecipient) || provider.orderId !== order.id || !notifications.some((notification) => notification.provider === "resend" && notification.provider_message_id === provider.messageId && notification.status === "succeeded" && notification.sent_at === provider.sentAt)) throw new Error(`Scenario ${record.scenario} Resend recipient or persisted evidence mismatch.`);
     }
     if (provider.kind === "refund") {
       const refunds = observed.refunds as Array<Record<string, unknown>>;
@@ -135,7 +150,9 @@ export function verifyDigitalAcceptanceEvidence(input: unknown, options: { requi
       const grants = observed.grants as Array<Record<string, unknown>>;
       const issued = grants.filter((grant) => grant.status === "issued").map((grant) => String(grant.id)).sort();
       const claimed = (provider.uniqueGrantIds as string[]).slice().sort();
-      if (JSON.stringify(issued) !== JSON.stringify(claimed) || provider.sessionHashes instanceof Array === false || new Set(provider.sessionHashes as string[]).size !== 6 || grants.filter((grant) => grant.status === "issued").some((grant) => grant.asset_version_id !== provider.assetVersionId)) throw new Error("Grant evidence mismatch.");
+      const released = grants.filter((grant) => grant.id === provider.releasedFaultGrantId && grant.status === "released" && typeof grant.released_at === "string" && typeof grant.last_safe_error === "string" && grant.last_safe_error.length > 0);
+      const retry = grants.find((grant) => grant.id === provider.successfulRetryGrantId && grant.status === "issued");
+      if (JSON.stringify(issued) !== JSON.stringify(claimed) || provider.sessionHashes instanceof Array === false || new Set(provider.sessionHashes as string[]).size !== 6 || grants.some((grant) => grant.asset_version_id !== provider.assetVersionId) || released.length !== 1 || !retry || Date.parse(String(retry.created_at)) <= Date.parse(String(released[0]?.released_at))) throw new Error("Grant evidence mismatch.");
     }
     if (provider.kind === "replacement") {
       const entitlements = observed.entitlements as Array<Record<string, unknown>>;
@@ -150,14 +167,16 @@ export function verifyDigitalAcceptanceEvidence(input: unknown, options: { requi
       const job = observed.deliveryJob as Record<string, unknown>;
       const attempts = provider.attempts as Array<Record<string, unknown>>;
       const observedAttempts = observed.deliveryAttempts as Array<Record<string, unknown>>;
-      if (provider.jobId !== job.id || attempts[0]?.status !== "failed" || attempts.at(-1)?.status !== "succeeded" || attempts.length !== observedAttempts.length || attempts.some((attempt, index) => observedAttempts[index]?.job_id !== provider.jobId || attempt.attempt !== observedAttempts[index]?.attempt_number || attempt.status !== observedAttempts[index]?.status || attempt.startedAt !== observedAttempts[index]?.started_at || attempt.finishedAt !== observedAttempts[index]?.finished_at)) throw new Error("Delivery chronology mismatch.");
+      const notification = (observed.notifications as Array<Record<string, unknown>>).find((item) => item.provider_message_id === provider.resendMessageId);
+      if (provider.jobId !== job.id || attempts[0]?.status !== "failed" || attempts.at(-1)?.status !== "succeeded" || attempts.length !== observedAttempts.length || attempts.some((attempt, index) => observedAttempts[index]?.job_id !== provider.jobId || attempt.attempt !== observedAttempts[index]?.attempt_number || attempt.status !== observedAttempts[index]?.status || attempt.startedAt !== observedAttempts[index]?.started_at || attempt.finishedAt !== observedAttempts[index]?.finished_at) || !notification || notification.status !== "succeeded" || notification.provider !== "resend" || notification.sent_at !== provider.resendSentAt) throw new Error("Delivery chronology or persisted resend mismatch.");
     }
   }
   return evidence;
 }
 
-export function verifyDigitalAcceptanceArtifact(input: unknown, options: { key: string; now?: number; maxAgeMs?: number; requiredScenarios?: string[] }) {
+export function verifyDigitalAcceptanceArtifact(input: unknown, options: { key: string; now?: number; maxAgeMs?: number } & DigitalAcceptanceVerificationOptions) {
   if (options.key.length < 32) throw new Error("Acceptance evidence signing key is invalid.");
+  assertNoAcceptanceSecrets(input);
   const candidate = digitalAcceptanceSignedEvidenceSchema.parse(input);
   const unsigned = { ...candidate } as Record<string, unknown>;
   const signature = String(unsigned.signature);
@@ -170,5 +189,5 @@ export function verifyDigitalAcceptanceArtifact(input: unknown, options: { key: 
   const completedAt = Date.parse(candidate.completedAt);
   const startedAt = Date.parse(candidate.startedAt);
   if (completedAt < startedAt || completedAt > now + 5 * 60_000 || now - completedAt > (options.maxAgeMs ?? 60 * 60_000)) throw new Error("Acceptance evidence is stale or has invalid chronology.");
-  return verifyDigitalAcceptanceEvidence(candidate, { requiredScenarios: options.requiredScenarios });
+  return verifyDigitalAcceptanceEvidence(candidate, options);
 }

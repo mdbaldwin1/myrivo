@@ -68,6 +68,7 @@ type CustomerOrderDetailViewProps = {
     fileCount: number;
     activeFileCount: number;
     accessStatus: "active" | "suspended" | "revoked";
+    accessReason: "dispute_open" | "dispute_lost" | "full_refund" | null;
   } | null;
 };
 
@@ -223,6 +224,7 @@ export function CustomerOrderDetailView({
           fileCount={digitalDownloads.fileCount}
           activeFileCount={digitalDownloads.activeFileCount}
           accessStatus={digitalDownloads.accessStatus}
+          accessReason={digitalDownloads.accessReason}
         />
       ) : null}
 

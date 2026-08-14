@@ -57,6 +57,7 @@ export function DigitalOrderDeliveryPanel({
   }
   const [sending, setSending] = useState(false);
   const [feedback, setFeedback] = useState<{ kind: "success" | "error"; message: string } | null>(null);
+  const feedbackRef = useRef<HTMLParagraphElement | null>(null);
 
   async function resend() {
     setSending(true);
@@ -78,6 +79,7 @@ export function DigitalOrderDeliveryPanel({
       onQueued?.();
     } catch (error) {
       setFeedback({ kind: "error", message: error instanceof Error ? error.message : "Unable to queue a fresh link." });
+      queueMicrotask(() => feedbackRef.current?.focus());
     } finally {
       setSending(false);
     }
@@ -130,7 +132,7 @@ export function DigitalOrderDeliveryPanel({
       </div>
 
       {feedback ? (
-        <p role={feedback.kind === "error" ? "alert" : "status"} className={feedback.kind === "error" ? "text-sm text-destructive" : "text-sm text-emerald-700"}>
+        <p ref={feedbackRef} role={feedback.kind === "error" ? "alert" : "status"} tabIndex={feedback.kind === "error" ? -1 : undefined} className={`${feedback.kind === "error" ? "text-sm text-destructive" : "text-sm text-emerald-700"} focus:outline-none`}>
           {feedback.message}
         </p>
       ) : null}

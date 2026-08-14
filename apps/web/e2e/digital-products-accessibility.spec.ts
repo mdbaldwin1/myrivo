@@ -59,6 +59,12 @@ for (const viewport of [
         } else if (label === "download") {
           await page.keyboard.press("Enter");
           await expect(page.getByRole("status")).toContainText(/Download started|Preparing your download/);
+        } else if (label === "cart") {
+          await page.keyboard.press("Enter");
+          await expect(page).toHaveURL(/checkout\.stripe\.com/);
+        } else if (label === "checkoutReturn") {
+          await page.keyboard.press("Enter");
+          await expect(page).toHaveURL(/\/downloads/);
         }
         await page.evaluate(() => { document.documentElement.style.zoom = "1"; });
       }
@@ -159,16 +165,61 @@ for (const viewport of [
     test("financial access states expose exact live status under guarded provisioning", async ({ page, request }) => {
       await login(page, acceptance!.customer.email, acceptance!.customer.password);
       for (const state of [
-        { orderId: acceptance!.financialOrders.disputeOpened, action: "inject-dispute" as const, transition: "opened" as const, text: "Downloads are temporarily unavailable while a payment dispute is reviewed. Your download grants are preserved." },
-        { orderId: acceptance!.financialOrders.disputeWon, action: "inject-dispute" as const, transition: "won" as const, text: "Digital downloads" },
-        { orderId: acceptance!.financialOrders.disputeLost, action: "inject-dispute" as const, transition: "lost" as const, text: "Download access was removed after this order was fully refunded. Contact the store if you believe this is a mistake." },
-        { orderId: acceptance!.financialOrders.fullRefund, action: "inject-refund" as const, transition: "full" as const, text: "Download access was removed after this order was fully refunded. Contact the store if you believe this is a mistake." },
+        { orderId: acceptance!.financialOrders.disputeOpened, transition: "opened", text: "Downloads are temporarily unavailable while a payment dispute is reviewed. Your download grants are preserved." },
+        { orderId: acceptance!.financialOrders.disputeWon, transition: "won", text: "Opening this order creates a private 15-minute access session" },
+        { orderId: acceptance!.financialOrders.disputeLost, transition: "lost", text: "Download access was removed after the payment dispute was decided against this order. Contact the store if you believe this is a mistake." },
+        { orderId: acceptance!.financialOrders.partialRefund, transition: "partial", text: "Opening this order creates a private 15-minute access session" },
+        { orderId: acceptance!.financialOrders.fullRefund, transition: "full", text: "Download access was removed after this order was fully refunded. Contact the store if you believe this is a mistake." },
       ]) {
-        await acceptanceAction(request, acceptance!, state.action, state.transition, state.orderId);
+        await acceptanceAction(request, acceptance!, "observe", undefined, state.orderId);
         await page.goto(acceptance!.routes.customerOrder.replace(acceptance!.orderId, state.orderId));
-        await expect(page.locator('[role="status"][aria-live="polite"]').filter({ hasText: state.text }).first()).toHaveText(state.text);
+        await expect(page.locator('[role="status"][aria-live="polite"]').filter({ hasText: state.text }).first()).toContainText(state.text);
         await expectNoSeriousAccessibilityViolations(page, `${viewport.name} ${state.transition} financial state`);
       }
+    });
+
+    test("failure, retry, limit, and timeout states remain announced and keyboard recoverable", async ({ page, request }) => {
+      await login(page, acceptance!.merchant.email, acceptance!.merchant.password);
+      await acceptanceAction(request, acceptance!, "inject-delivery-failure");
+      await page.goto(acceptance!.routes.merchantOrder);
+      await expect(page.locator("main")).toContainText(/delivery needs attention|failed|retry/i);
+      await expectNoSeriousAccessibilityViolations(page, `${viewport.name} delivery failure`);
+      const resendOrderId = acceptance!.financialOrders.disputeWon;
+      await page.goto(acceptance!.routes.merchantOrder.replace(acceptance!.orderId, resendOrderId));
+      await page.route(`**/api/orders/${resendOrderId}/digital-delivery/resend`, (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Fresh link delivery is temporarily unavailable." }) }));
+      const resend = page.getByRole("button", { name: /send fresh access link|resend|retry/i });
+      await tabTo(page, resend);
+      await resend.press("Enter");
+      const resendAlert = page.getByRole("alert");
+      await expect(resendAlert).toHaveText("Fresh link delivery is temporarily unavailable.");
+      await expect(resendAlert).toBeFocused();
+      await page.keyboard.press("Shift+Tab");
+      await expect(page.getByRole("button", { name: "Try sending again" })).toBeFocused();
+      await expectNoSeriousAccessibilityViolations(page, `${viewport.name} resend error`);
+
+      await page.request.post("/api/auth/signout");
+      await acceptanceAction(request, acceptance!, "inject-signing-failure");
+      await page.goto(acceptance!.routes.download);
+      const download = page.getByRole("button", { name: /download/i }).first();
+      await tabTo(page, download);
+      await download.press("Enter");
+      await expect(page.getByRole("status")).toContainText(/could not be downloaded|Please try again/);
+      await expect(download).toBeEnabled();
+      await expectNoSeriousAccessibilityViolations(page, `${viewport.name} signing failure`);
+
+      await page.route("**/api/digital-downloads/file/**", (route) => route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "Download limit reached" }) }));
+      await download.press("Space");
+      await expect(page.getByRole("status")).toContainText("Download limit reached");
+      await expect(download).toBeEnabled();
+      await expectNoSeriousAccessibilityViolations(page, `${viewport.name} download limit`);
+      await page.unroute("**/api/digital-downloads/file/**");
+
+      await page.route("**/api/digital-downloads/file/**", async () => new Promise(() => undefined));
+      await download.press("Enter");
+      await expect(page.getByRole("status")).toContainText("did not respond", { timeout: 20_000 });
+      await expect(download).toBeEnabled();
+      await expect(download).toBeFocused();
+      await expectNoSeriousAccessibilityViolations(page, `${viewport.name} download timeout`);
     });
 
     test("keyboard buyer workflow preserves focus order through cart and download", async ({ page }) => {

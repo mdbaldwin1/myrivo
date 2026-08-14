@@ -120,9 +120,9 @@ export default async function DashboardCustomerOrderPage({ params, searchParams 
   const store = Array.isArray(order.stores) ? order.stores[0] : order.stores;
   const { data: digitalEntitlements, error: digitalEntitlementsError } = await createSupabaseAdminClient()
     .from("digital_order_entitlements")
-    .select("status")
+    .select("status,status_source_dispute_id")
     .eq("order_id", order.id)
-    .returns<Array<{ status: DigitalEntitlementStatus }>>();
+    .returns<Array<{ status: DigitalEntitlementStatus; status_source_dispute_id: string | null }>>();
   if (digitalEntitlementsError) {
     throw new Error("Unable to load digital downloads.");
   }
@@ -133,6 +133,11 @@ export default async function DashboardCustomerOrderPage({ params, searchParams 
     : digitalEntitlements?.some(({ status }) => status === "suspended")
       ? "suspended" as const
       : "revoked" as const;
+  const digitalAccessReason = digitalAccessStatus === "suspended"
+    ? "dispute_open" as const
+    : digitalAccessStatus === "revoked"
+      ? digitalEntitlements?.some(({ status_source_dispute_id }) => status_source_dispute_id !== null) ? "dispute_lost" as const : "full_refund" as const
+      : null;
   const storefrontLinksBySlug = await resolveCustomerStorefrontLinksBySlug(store?.slug ? [store.slug] : []);
   const storefrontHref = store?.slug ? storefrontLinksBySlug[store.slug]?.storefrontHref ?? null : null;
 
@@ -146,7 +151,8 @@ export default async function DashboardCustomerOrderPage({ params, searchParams 
       digitalDownloads={digitalFileCount > 0 ? {
         fileCount: digitalFileCount,
         activeFileCount: activeDigitalFileCount,
-        accessStatus: digitalAccessStatus
+        accessStatus: digitalAccessStatus,
+        accessReason: digitalAccessReason
       } : null}
     />
   );
