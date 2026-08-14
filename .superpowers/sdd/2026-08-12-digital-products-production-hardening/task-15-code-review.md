@@ -589,3 +589,34 @@ The new mutation matrix covers replacement manifests/new order, delivery ownersh
 - **Opened dispute mapping/access:** Resolved with `opened` → `needs_response` and suspended/active/revoked entitlement checks.
 - **Persisted Resend provider ID:** Migration, delivery pipeline, observer schema, and ordinary resend correlation are implemented; delivery-retry correlation remains P1 above.
 - **Twelve-scenario fixture and adversarial matrix:** Added, but the fixture demonstrates shared-verifier success rather than actual CLI parity because of the split semantics above.
+
+---
+
+## Round 15 Re-review — commit `1f804dd`
+
+### Verdict
+
+**FAIL** — CLI/shared-verifier drift, released-fault/retry proof, delivery notification correlation, and real subprocess coverage are fixed, but consolidating the gate silently weakened the required sixth-download denial invariant.
+
+### P1 — The canonical gate accepts any unrelated 4xx as the sixth-download limit denial
+
+**Evidence:** `grantsEvidence` permits `sixthDeniedStatus` to be any integer from 400 through 499 and `sixthDeniedMessage` to be any nonempty string (`apps/web/lib/digital-products/acceptance-evidence.ts`, `grantsEvidence`). The `provider.kind === "grants"` semantic branch verifies issued IDs, hashes, asset versions, the released signing-fault grant, and the later issued retry, but never checks either sixth-denial field. The removed CLI implementation required the exact contract (`sixthDeniedMessage === "Download limit reached"`), so moving semantics into the shared verifier dropped that assertion. The adversarial matrix also has no sixth-status/message mutation.
+
+**Impact:** A sixth request failing for an unrelated reason—such as a 404, authorization failure, or generic 409—can satisfy the production release gate without proving that the five-download limit was enforced.
+
+**Remediation:** Put the expected limit response contract in shared configurable acceptance policy and enforce it in `verifyDigitalAcceptanceEvidence()` (at minimum the intended status and stable error code/message). Add adversarial cases showing an unrelated 4xx and wrong error identifier/message fail through both the shared verifier and actual subprocess command.
+
+### P2 — Delivery retry correlation does not assert the persisted notification type or final job state
+
+The delivery branch now exactly correlates message ID, provider, success status, and sent timestamp, but it accepts any notification type and does not require the observed delivery job itself to be succeeded with an attempt count matching the chronology. Tightening both would prevent a coincidentally matching notification or stale job row from proving recovery.
+
+### Validation performed
+
+- `npm run -w @myrivo/web test -- --run tests/digital-acceptance-evidence.test.ts tests/digital-acceptance-cli.test.ts` — **PASS** (2 files, 27 tests), including the real subprocess success and signed semantic/signature rejection test.
+
+### Previous findings disposition
+
+- **CLI/shared verifier semantic duplication:** Resolved. The CLI is now a runtime/target wrapper around `verifyDigitalAcceptanceArtifact()`.
+- **Released signing-fault and successful retry correlation:** Resolved. The fixture contains the released row, safe metadata, and a later issued retry; the canonical verifier enforces them.
+- **Delivery resend persistence:** Resolved for provider message ID/status/provider/timestamp correlation; the P2 hardening above remains.
+- **Actual CLI coverage:** Resolved. Tests spawn the command with a stubbed successful test runner and exercise valid, signed-semantic-invalid, and invalid-signature artifacts.
