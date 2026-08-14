@@ -463,3 +463,39 @@ Even after the canonical-envelope defect is fixed, the current manual CLI does n
 - **Actual grace artifact:** Resolved. The artifact now carries the captured immediate before/after issued counts and reused grant ID rather than later snapshots.
 - **Replacement artifact:** Resolved in the live flow and artifact. It carries old-before, old-after, and new final-storage hashes/filenames with equality/difference refinements and retained manifest version linkage.
 - **Final-storage byte hashing:** Remains resolved.
+
+---
+
+## Round 12 Re-review — commit `9eb27d4`
+
+### Verdict
+
+**FAIL** — the canonical envelope now accepts valid records and the CLI invokes the shared verifier, but full semantic cross-correlation and adversarial verifier coverage are still missing.
+
+### P1 — Shared verification does not correlate critical provider artifacts with authoritative observed rows
+
+**Evidence:** `verifyDigitalAcceptanceEvidence()` now parses the canonical envelope and checks subject/order/payment plus basic Checkout, Resend order, and delivery first/last state (`apps/web/lib/digital-products/acceptance-evidence.ts:89-108`). The CLI also retains some manual checks. However, a signed artifact can still pass with these internal contradictions:
+
+- `five-grants.providerEvidence.uniqueGrantIds` may be five arbitrary UUIDs. Neither shared nor CLI verification requires equality with the exact set of observed `issued` grant IDs; the CLI only checks that the observation has five unique rows and that all observed asset versions equal the provider asset version.
+- A refund artifact's `refundId`, amount, status, and webhook event ID are not matched to an observed `refunds` row and its `source_event_id`; only PaymentIntent equality and the artifact's self-declared processed webhook are checked.
+- A dispute artifact's dispute/charge/outcome/event IDs are not matched to the observed `disputes` and `webhookEvents` rows, nor is opened/won/lost matched to authoritative entitlement/order access status.
+- A Resend artifact's `messageId` is not matched to an observed sent `digital_delivery_notifications` record/provider identity; only order ID and recipient from the artifact are checked.
+- Delivery artifact attempts are required to start failed/end succeeded, but are not required to equal the observed `deliveryAttempts` rows with the same job ID, attempt numbers, and timestamps.
+
+These are precisely the durable cross-correlations needed to prevent an HMAC-valid but semantically fabricated release artifact. The live Playwright writer derives many fields from real operations, but the release artifact is the persisted approval input and must be independently self-consistent.
+
+**Remediation:** Add scenario-specific cross-record refinements to the shared verifier: exact set equality for issued grant IDs and entitlement usage; refund/dispute provider IDs, amounts/outcomes and webhook IDs/status/signature against observed rows; Resend message/provider/status against observed notification; exact ordered delivery attempts/job identity; and financial/access status predicates for each scenario. Remove or minimize duplicate manual CLI predicates once shared verification is authoritative.
+
+### P1 — Tests do not cover a complete release envelope or adversarial semantic mutations
+
+**Evidence:** The new test named “accepts and semantically verifies a complete canonical signed envelope” contains exactly one `stripe-digital` checkout record and passes `requiredScenarios: ["stripe-digital"]` (`apps/web/tests/digital-acceptance-evidence.test.ts:14-22`). It does not construct the twelve-scenario production matrix. There are no tests that mutate a structurally valid envelope to introduce arbitrary grant IDs, mismatched refund/dispute/webhook IDs, incorrect financial/access state, unmatched Resend message, or delivery-attempt divergence. No test invokes the CLI wrapper/signature/freshness path.
+
+**Impact:** The shared verifier's missing correlations are unguarded, and future schema/CLI drift can recur despite green tests. Task 15's requirement for adversarial and full release-gate validation remains unmet.
+
+**Remediation:** Build one realistic full twelve-scenario envelope fixture that passes both shared verifier and CLI core. Add table-driven mutations for every correlation above, duplicate/missing scenarios, wrong run/origin/release/signature/freshness, and leaked material; assert each fails for the intended reason. Expose the CLI core as a pure function so tests do not spawn providers or terminate the process.
+
+### Previous findings disposition
+
+- **Canonical valid envelope parsing:** Resolved. Full records are projected into the strict scenario and observation schemas correctly.
+- **Shared verifier used by CLI:** Resolved. The promotion script imports and calls `verifyDigitalAcceptanceEvidence()` before release-specific checks.
+- **Grant release/grace/replacement evidence:** Live-flow and artifact-shape fixes remain resolved; exact observed/artifact set correlation is part of the remaining verifier P1.
