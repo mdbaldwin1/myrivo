@@ -141,6 +141,8 @@ function findPostgresBinary(name: string) {
     configuredDirectory ? join(configuredDirectory, name) : null,
     `/opt/homebrew/opt/postgresql@17/bin/${name}`,
     `/opt/homebrew/opt/postgresql@16/bin/${name}`,
+    `/usr/lib/postgresql/17/bin/${name}`,
+    `/usr/lib/postgresql/16/bin/${name}`,
     name,
   ].filter((candidate): candidate is string => Boolean(candidate));
   return candidates.find((candidate) => {
