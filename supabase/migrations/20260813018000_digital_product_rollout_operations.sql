@@ -97,7 +97,7 @@ begin
     raise exception 'Store is unavailable';
   end if;
 
-  v_request_hash := encode(digest(trim(p_idempotency_key), 'sha256'), 'hex');
+  v_request_hash := encode(sha256(convert_to(trim(p_idempotency_key), 'UTF8')), 'hex');
   if exists (
     select 1 from public.digital_product_operator_actions
     where store_id = p_store_id and action = v_action and request_key_hash = v_request_hash
@@ -446,7 +446,7 @@ begin
   if coalesce(char_length(trim(p_idempotency_key)), 0) not between 8 and 200 then
     raise exception 'Valid operation key is required';
   end if;
-  v_request_hash := encode(digest(trim(p_idempotency_key), 'sha256'), 'hex');
+  v_request_hash := encode(sha256(convert_to(trim(p_idempotency_key), 'UTF8')), 'hex');
   if exists (
     select 1 from public.digital_product_operator_actions
     where store_id = p_store_id and action = 'delivery_requeued' and request_key_hash = v_request_hash
@@ -499,7 +499,7 @@ begin
   ) then
     raise exception 'Digital order is unavailable';
   end if;
-  v_request_hash := encode(digest(trim(p_idempotency_key), 'sha256'), 'hex');
+  v_request_hash := encode(sha256(convert_to(trim(p_idempotency_key), 'UTF8')), 'hex');
   if exists (
     select 1 from public.digital_product_operator_actions
     where store_id = p_store_id and action = 'access_reconciled' and request_key_hash = v_request_hash

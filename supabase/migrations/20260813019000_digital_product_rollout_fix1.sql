@@ -386,7 +386,7 @@ begin
     raise exception 'Store is unavailable';
   end if;
 
-  v_request_hash := encode(digest(trim(p_idempotency_key), 'sha256'), 'hex');
+  v_request_hash := encode(sha256(convert_to(trim(p_idempotency_key), 'UTF8')), 'hex');
   perform pg_advisory_xact_lock(hashtextextended(
     p_store_id::text || ':' || v_action || ':' || v_request_hash, 0
   ));
@@ -444,7 +444,7 @@ begin
   if p_store_id is null or p_order_id is null or p_actor_user_id is null
      or coalesce(char_length(trim(p_idempotency_key)), 0) not between 8 and 200
   then raise exception 'Valid operation context is required'; end if;
-  v_request_hash := encode(digest(trim(p_idempotency_key), 'sha256'), 'hex');
+  v_request_hash := encode(sha256(convert_to(trim(p_idempotency_key), 'UTF8')), 'hex');
   perform pg_advisory_xact_lock(hashtextextended(
     p_store_id::text || ':delivery_requeued:' || v_request_hash, 0
   ));
@@ -506,7 +506,7 @@ begin
     select 1 from public.orders where id = p_order_id and store_id = p_store_id
   ) then raise exception 'Digital order is unavailable'; end if;
 
-  v_request_hash := encode(digest(trim(p_idempotency_key), 'sha256'), 'hex');
+  v_request_hash := encode(sha256(convert_to(trim(p_idempotency_key), 'UTF8')), 'hex');
   perform pg_advisory_xact_lock(hashtextextended(
     p_store_id::text || ':access_reconciled:' || v_request_hash, 0
   ));
