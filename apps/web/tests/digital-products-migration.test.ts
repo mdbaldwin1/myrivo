@@ -4747,8 +4747,8 @@ describe("digital checkout composition database contract", () => {
     );
   });
 
-  it("requires authoritative composition on new rows while preserving legacy null snapshots", () => {
-    expectRejected(
+  it("derives physical-only composition for legacy writers while preserving legacy null snapshots", () => {
+    expect(runSql(
       "full_chain",
       `insert into public.storefront_checkout_sessions(
          id, store_id, store_slug, customer_email, items, checkout_composition, status
@@ -4756,8 +4756,26 @@ describe("digital checkout composition database contract", () => {
          '42000000-0000-4000-8000-000000000627', '${ids.manifestStore}',
          'manifest-store', 'new-null@example.test',
          jsonb_build_array(${physicalItem()}), null, 'pending'
-       )`,
-    );
+       ) returning checkout_composition`,
+    )).toBe("physical_only");
+
+    expect(runSql(
+      "full_chain",
+      `insert into public.storefront_checkout_sessions(
+         id, store_id, store_slug, customer_email, items, checkout_composition, status
+       ) values (
+         '42000000-0000-4000-8000-000000000629', '${ids.manifestStore}',
+         'manifest-store', 'legacy-shape@example.test',
+         jsonb_build_array(jsonb_build_object(
+           'productId', '${ids.manifestPhysicalProduct}',
+           'variantId', '${ids.manifestPhysicalVariant}',
+           'quantity', 1,
+           'variantLabel', 'Oak',
+           'productTitle', 'Frame',
+           'unitPriceCents', 1500
+         )), null, 'pending'
+       ) returning checkout_composition`,
+    )).toBe("physical_only");
 
     expect(runSql(
       "full_chain",
@@ -4766,6 +4784,37 @@ describe("digital checkout composition database contract", () => {
        where id = '${ids.legacyNullCheckout}'
        returning coalesce(checkout_composition, 'legacy-null')`,
     )).toBe("legacy-null");
+  });
+
+  it("still requires explicit composition and product type snapshots for digital items", () => {
+    expectRejected(
+      "full_chain",
+      `insert into public.storefront_checkout_sessions(
+         id, store_id, store_slug, customer_email, items, checkout_composition, status
+       ) values (
+         '42000000-0000-4000-8000-000000000630', '${ids.manifestStore}',
+         'manifest-store', 'digital-null-composition@example.test',
+         jsonb_build_array(${digitalItem()}), null, 'pending'
+       )`,
+    );
+
+    expectRejected(
+      "full_chain",
+      `insert into public.storefront_checkout_sessions(
+         id, store_id, store_slug, customer_email, items, checkout_composition, status
+       ) values (
+         '42000000-0000-4000-8000-000000000631', '${ids.manifestStore}',
+         'manifest-store', 'digital-missing-type@example.test',
+         jsonb_build_array(jsonb_build_object(
+           'productId', '${ids.manifestProduct}',
+           'variantId', '${ids.manifestVariant}',
+           'quantity', 1,
+           'variantLabel', 'Blue',
+           'productTitle', 'Digital set',
+           'unitPriceCents', 2500
+         )), 'digital_only', 'pending'
+       )`,
+    );
   });
 
   it("accepts configured digital policy snapshots while leaving physical-only attempts unaffected", () => {

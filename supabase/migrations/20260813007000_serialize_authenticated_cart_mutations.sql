@@ -271,8 +271,16 @@ begin
 end;
 $$;
 
+-- Anonymous clients never mutate authenticated carts. The authenticated and
+-- service_role writes stay granted for now because the previously deployed
+-- application still writes customer_cart_items directly during the deploy
+-- window (and after an application rollback); row access is enforced by the
+-- customer_cart_items_self_manage RLS policy either way. Revoke the remaining
+-- direct writes in a follow-up migration once every running application
+-- version uses the replace/clear/repair RPCs (see
+-- docs/runbooks/digital-products-rollout-operations.md).
 revoke insert, update, delete on table public.customer_cart_items
-from anon, authenticated, service_role;
+from anon;
 
 revoke all on function public.repair_authenticated_customer_cart(uuid)
 from public, anon, authenticated, service_role;

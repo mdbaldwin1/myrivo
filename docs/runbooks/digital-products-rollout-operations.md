@@ -12,7 +12,7 @@ Physical catalog and checkout behavior is independent of this flag.
 
 ## Rollout sequence
 
-1. Deploy the migration and application with every plan explicitly ineligible and every store effectively disabled.
+1. Deploy the migration and application with every plan explicitly ineligible and every store effectively disabled. The migrations tolerate the previous application version during the deploy window: checkout inserts without `checkout_composition` or item `productType` snapshots derive the authoritative physical-only values instead of failing, and direct `customer_cart_items` writes remain granted (guarded by RLS) until every running application version uses the cart RPCs.
 2. Confirm `/dashboard/admin/digital-products` loads with no unsafe fields and the migration health RPC is service-role-only.
 3. Set `digitalProducts` to boolean `true` on one eligible internal billing plan.
 4. Enable one internal store through the admin operation API using a unique `Idempotency-Key`.
@@ -24,7 +24,14 @@ Physical catalog and checkout behavior is independent of this flag.
 
 Use the rollout operation with `enabled: false`. Do not delete manifests, jobs, entitlements, access tokens, or financial records. Existing paid orders must continue through their normal durable workflows.
 
-For a full application rollback, first disable every enabled store, then deploy the prior application. Leave the rollout tables and migration in place. Database additions are backward compatible and preserve historical order access.
+For a full application rollback, first disable every enabled store, then deploy the prior application. Leave the rollout tables and migration in place. Database additions are backward compatible and preserve historical order access: the prior application's direct checkout inserts and cart writes keep working because composition snapshots are derived for physical-only writes and direct cart-item grants are retained.
+
+After the rollout is complete and no prior application version can run again, apply a follow-up migration that revokes the remaining direct cart writes so the RPCs become the only mutation path:
+
+```sql
+revoke insert, update, delete on table public.customer_cart_items
+from authenticated, service_role;
+```
 
 ## Health and alerts
 

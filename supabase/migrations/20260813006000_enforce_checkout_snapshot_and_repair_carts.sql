@@ -49,7 +49,15 @@ begin
       raise exception 'Checkout item does not belong to the selected store and product';
     end if;
 
-    if v_snapshot_product_type is distinct from v_catalog_product_type then
+    -- Application versions that predate digital products write checkout items
+    -- without a productType key. Those writers can only sell physical catalog
+    -- items, so the missing key is tolerated for physical products only;
+    -- digital items always require an explicit, matching snapshot.
+    if v_snapshot_product_type is null then
+      if v_catalog_product_type = 'digital' then
+        raise exception 'Checkout product type snapshot does not match the catalog';
+      end if;
+    elsif v_snapshot_product_type is distinct from v_catalog_product_type then
       raise exception 'Checkout product type snapshot does not match the catalog';
     end if;
 
@@ -67,11 +75,21 @@ begin
   end;
 
   if new.checkout_composition is null then
-    if tg_op = 'INSERT'
-       or old.checkout_composition is not null
-       or new.items is distinct from old.items
-    then
+    -- Digital checkouts always require an explicit composition snapshot.
+    -- Physical-only writes from application versions that predate the
+    -- snapshot derive the authoritative value instead of failing, so a
+    -- deploy-window version skew (or an application rollback) cannot break
+    -- live checkouts. Clearing an existing snapshot is still rejected, and
+    -- untouched legacy rows keep their null snapshot.
+    if v_has_digital then
       raise exception 'Checkout composition snapshot is required';
+    end if;
+    if tg_op = 'INSERT' then
+      new.checkout_composition := v_authoritative_composition;
+    elsif old.checkout_composition is not null then
+      raise exception 'Checkout composition snapshot is required';
+    elsif new.items is distinct from old.items then
+      new.checkout_composition := v_authoritative_composition;
     end if;
   elsif new.checkout_composition is distinct from v_authoritative_composition then
     raise exception 'Checkout composition snapshot does not match the catalog';
