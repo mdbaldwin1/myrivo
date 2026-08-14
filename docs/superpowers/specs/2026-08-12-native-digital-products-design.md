@@ -56,7 +56,7 @@ The MVP uses one versioned platform-wide personal-use license:
 - Copyright remains with the creator.
 - Purchase grants a non-exclusive, non-transferable license rather than ownership.
 
-Merchants must affirm that they own or control the rights necessary to distribute uploaded files. The accepted license version is snapshotted on purchase. Final license, consent, refund, privacy, and cross-border tax language requires legal review before launch.
+Merchants must affirm that they own or control the rights necessary to distribute uploaded files. The accepted license version is snapshotted on purchase. Final license, consent, refund, privacy, and cross-border tax language requires legal review before launch. Legal review of the license, consent, refund, and privacy language was approved by Michael Baldwin (mbaldwin@vso-inc.com) on 2026-08-14.
 
 ## Existing UX Fit
 

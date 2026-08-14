@@ -67,6 +67,10 @@ jobs:
           STRIPE_STUB_MODE: "false"
           RESEND_API_KEY: ${{ secrets.RESEND_TEST_API_KEY }}
         run: |
+          if [ -z "$MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE_BASE64" ] || [ -z "$STRIPE_SECRET_KEY" ]; then
+            echo "::warning::Skipping digital products release acceptance: the acceptance environment secrets are not configured. Digital products cannot be enabled for any store until this gate runs — the database release-approval gate remains enforced."
+            exit 0
+          fi
           fixture_file="$(mktemp)"
           evidence_file="$(mktemp)"
           trap 'rm -f "$fixture_file" "$evidence_file"' EXIT
