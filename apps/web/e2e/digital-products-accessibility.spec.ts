@@ -70,6 +70,13 @@ for (const viewport of [
       await expect(alert).toBeFocused();
       await expectNoSeriousAccessibilityViolations(page, `${viewport.name} recovery dynamic error`);
 
+      await page.getByLabel("Order ID").fill(acceptance!.orderId);
+      await page.getByLabel("Order email").fill(acceptance!.customer.email);
+      await page.getByRole("button", { name: "Email me a fresh link" }).press("Enter");
+      const recoveryStatus = page.getByRole("status");
+      await expect(recoveryStatus).toContainText(/check your email/i);
+      await expectNoSeriousAccessibilityViolations(page, `${viewport.name} recovery success`);
+
       await login(page, acceptance!.merchant.email, acceptance!.merchant.password);
       await page.goto(acceptance!.routes.catalogFiles);
       const fileInput = page.getByLabel(/file/i).first();
@@ -79,6 +86,36 @@ for (const viewport of [
       await publish.focus();
       await expect(publish).toBeFocused();
       await expectNoSeriousAccessibilityViolations(page, `${viewport.name} catalog keyboard state`);
+
+      await page.goto(acceptance!.routes.merchantOrder);
+      const resend = page.getByRole("button", { name: /resend|retry/i });
+      await resend.focus();
+      await resend.press("Enter");
+      await expect(page.getByRole("status")).toContainText(/sent|queued/i);
+      await expectNoSeriousAccessibilityViolations(page, `${viewport.name} merchant resend result`);
+    });
+
+    test("keyboard buyer workflow preserves focus order through cart and download", async ({ page }) => {
+      await page.goto(acceptance!.routes.product);
+      const add = page.getByRole("button", { name: /add to cart/i });
+      await add.focus();
+      await add.press("Enter");
+      await expectNoSeriousAccessibilityViolations(page, `${viewport.name} product added`);
+      await page.goto(acceptance!.routes.cart);
+      const checkout = page.getByRole("button", { name: /checkout/i });
+      await checkout.focus();
+      await expect(checkout).toBeFocused();
+      await expectNoSeriousAccessibilityViolations(page, `${viewport.name} populated cart`);
+
+      await page.goto(acceptance!.routes.download);
+      const download = page.getByRole("button", { name: /download/i }).first();
+      if (await download.isVisible().catch(() => false)) {
+        await download.focus();
+        await download.press("Enter");
+        await expect(page.getByRole("status")).toContainText(/started|preparing/i);
+        await expect(download).toBeFocused();
+        await expectNoSeriousAccessibilityViolations(page, `${viewport.name} download result`);
+      }
     });
 
     test("loading animation respects reduced motion while the asynchronous state is active", async ({ page }) => {

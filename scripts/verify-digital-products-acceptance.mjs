@@ -14,6 +14,7 @@ if (!evidencePath) fail("acceptance evidence output path is missing");
 for (const key of ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "RESEND_API_KEY", "MYRIVO_DIGITAL_TEST_RECIPIENT"]) {
   if (!process.env[key]?.trim()) fail(`${key} is missing`);
 }
+if (!process.env.MYRIVO_STRIPE_DISPUTE_HELPER_URL || !process.env.MYRIVO_STRIPE_DISPUTE_HELPER_TOKEN) fail("exact Stripe dispute won/lost scenarios are unsupported without the audited provider test helper");
 const evidenceKey = process.env.MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_HMAC_KEY?.trim();
 if (process.env.STRIPE_STUB_MODE !== "false" || !process.env.STRIPE_SECRET_KEY.startsWith("sk_test_")) {
   fail("Stripe must be explicitly configured in test mode");
@@ -51,6 +52,13 @@ for (const item of evidence.observations) {
   const expectedSubject = fixedScenarioSubjects.get(item.scenario);
   if (item.runId !== fixture.runId || !item.observedAt || !item.subjectId || !item.observation?.order || item.observation.order.id !== item.subjectId || (expectedSubject && item.subjectId !== expectedSubject)) fail("an observation is null, stale, or unlinked");
   if (item.observation.providerPayment && (item.observation.providerPayment.livemode !== false || item.observation.providerPayment.status !== "succeeded")) fail("provider payment is not a succeeded test-mode payment");
+  if (item.scenario === "stripe-digital" && item.observation.order.checkout_composition !== "digital_only") fail("digital checkout composition evidence is wrong");
+  if (item.scenario === "stripe-mixed" && item.observation.order.checkout_composition !== "mixed") fail("mixed checkout composition evidence is wrong");
+  if (item.scenario === "five-grants") {
+    const grants = item.observation.grants;
+    if (grants.length !== 5 || new Set(grants.map((grant) => grant.id)).size !== 5) fail("five-grant evidence is not exact and unique");
+  }
+  if (!item.observation.manifestItems?.length || item.observation.manifestItems.some((manifest) => !manifest.asset_version_id)) fail("manifest evidence is missing asset versions");
 }
 if (requiredActions.size) fail(`evidence is missing required actions: ${[...requiredActions].join(", ")}`);
 if (!evidence.completedAt || Date.now() - Date.parse(evidence.completedAt) > 60 * 60 * 1000) fail("evidence is stale");

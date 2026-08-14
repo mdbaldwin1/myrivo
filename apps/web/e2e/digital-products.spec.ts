@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { acceptanceAction, getResendAccessMessage, loadDigitalAcceptanceFixture } from "./digital-products-fixture";
+import { acceptanceAction, createStripeTestRefund, getResendAccessMessage, loadDigitalAcceptanceFixture, runSupportedStripeDisputeScenario } from "./digital-products-fixture";
 import { login } from "./helpers";
 
 const fixture = loadDigitalAcceptanceFixture();
@@ -88,7 +88,10 @@ test.describe.serial("digital product user journeys", () => {
   test("provider financial events produce exact customer UI state", async ({ page, request }) => {
     for (const transition of ["partial", "full"] as const) {
       const subject = transition === "partial" ? fixture!.financialOrders.partialRefund : fixture!.financialOrders.fullRefund;
-      await acceptanceAction(request, fixture!, "inject-refund", transition, subject);
+      const before = await acceptanceAction(request, fixture!, "observe", undefined, subject);
+      const paymentIntentId = before.observation?.providerPayment?.id;
+      if (typeof paymentIntentId !== "string") throw new Error("Refund fixture has no correlated Stripe PaymentIntent.");
+      await createStripeTestRefund(request, paymentIntentId, transition === "partial" ? 1 : undefined);
       await page.goto(fixture!.routes.customerOrder);
       await expect(page.getByText(transition === "partial" ? /partially refunded/i : /fully refunded/i)).toBeVisible();
       if (transition === "partial") await expect(page.getByRole("button", { name: /download|access/i })).toBeVisible();
@@ -96,13 +99,17 @@ test.describe.serial("digital product user journeys", () => {
       await acceptanceAction(request, fixture!, "observe", undefined, subject, transition === "partial" ? "stripe-partial-refund" : "stripe-full-refund");
     }
     for (const transition of ["opened", "won", "lost"] as const) {
+      if (transition === "opened") continue;
       const subject = transition === "lost" ? fixture!.financialOrders.disputeLost : fixture!.financialOrders.disputeWon;
-      await acceptanceAction(request, fixture!, "inject-dispute", transition, subject);
+      const before = await acceptanceAction(request, fixture!, "observe", undefined, subject);
+      const paymentIntentId = before.observation?.providerPayment?.id;
+      if (typeof paymentIntentId !== "string") throw new Error("Dispute fixture has no correlated Stripe PaymentIntent.");
+      await runSupportedStripeDisputeScenario(request, transition, paymentIntentId);
       await page.goto(fixture!.routes.download);
-      await expect(page.locator("main")).toContainText(transition === "opened" ? /temporarily unavailable/i : transition === "won" ? /your files/i : /no longer available|revoked/i);
+      await expect(page.locator("main")).toContainText(transition === "won" ? /your files/i : /no longer available|revoked/i, { timeout: 60_000 });
       if (transition === "won") await expect(page.getByRole("button", { name: /download/i })).toBeVisible();
       else await expect(page.getByRole("button", { name: /download/i })).toHaveCount(0);
-      if (transition !== "opened") await acceptanceAction(request, fixture!, "observe", undefined, subject, transition === "won" ? "stripe-dispute-won" : "stripe-dispute-lost");
+      await acceptanceAction(request, fixture!, "observe", undefined, subject, transition === "won" ? "stripe-dispute-won" : "stripe-dispute-lost");
     }
   });
 

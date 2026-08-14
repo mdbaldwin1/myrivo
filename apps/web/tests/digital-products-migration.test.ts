@@ -1252,33 +1252,30 @@ describe("non-production digital acceptance control", () => {
   beforeAll(() => {
     runSql("full_chain", `insert into public.orders(id,store_id,customer_email,subtotal_cents,total_cents,status)
       values('${orderId}','${ids.manifestStore}','acceptance@example.test',100,100,'paid');
+      insert into public.digital_acceptance_configuration(environment,project_ref,active) values ('test','local-test',true);
       insert into public.digital_acceptance_targets(store_id,run_id,environment,project_ref,expires_at)
       values('${ids.manifestStore}','${runId}','test','local-test',now()+interval '1 hour')`);
   });
 
   it("is service-role-only and rejects production, cross-run, and cross-store tampering", () => {
     expect(runSql("full_chain", `select
-      has_function_privilege('authenticated','public.acceptance_control_digital_products(integer,text,uuid,uuid,text,uuid,text,text)','execute')::text || ':' ||
-      has_function_privilege('service_role','public.acceptance_control_digital_products(integer,text,uuid,uuid,text,uuid,text,text)','execute')::text`)).toBe("false:true");
-    const call = (run: string, order = orderId, environment = "test") => `select public.acceptance_control_digital_products(1,'expire-access','${run}','${order}',null,'${key}','${environment}','local-test')`;
-    expectRejectedAs("full_chain", "service_role", `set app.acceptance_environment='test'; set app.acceptance_project_ref='local-test'; ${call(runId, orderId, "production")}`);
-    expectRejectedAs("full_chain", "service_role", `set app.acceptance_environment='test'; set app.acceptance_project_ref='local-test'; ${call("c0000000-0000-4000-8000-000000000002")}`);
-    expectRejectedAs("full_chain", "service_role", `set app.acceptance_environment='test'; set app.acceptance_project_ref='local-test'; ${call(runId, ids.orderA)}`);
+      has_function_privilege('authenticated','public.acceptance_control_digital_products(integer,text,uuid,uuid,text,uuid)','execute')::text || ':' ||
+      has_function_privilege('service_role','public.acceptance_control_digital_products(integer,text,uuid,uuid,text,uuid)','execute')::text`)).toBe("false:true");
+    const call = (run: string, order = orderId) => `select public.acceptance_control_digital_products(1,'expire-access','${run}','${order}',null,'${key}')`;
+    expectRejectedAs("full_chain", "service_role", call("c0000000-0000-4000-8000-000000000002"));
+    expectRejectedAs("full_chain", "service_role", call(runId, ids.orderA));
   });
 
   it("applies one idempotent run-bound action and records immutable audit evidence", () => {
-    const statement = `set app.acceptance_environment='test'; set app.acceptance_project_ref='local-test';
-      select public.acceptance_control_digital_products(1,'expire-access','${runId}','${orderId}',null,'${key}','test','local-test') ->> 'action'`;
+    const statement = `select public.acceptance_control_digital_products(1,'expire-access','${runId}','${orderId}',null,'${key}') ->> 'action'`;
     expect(runSqlAs("full_chain", "service_role", statement)).toBe("expire-access");
     expect(runSqlAs("full_chain", "service_role", statement)).toBe("expire-access");
     expect(runSql("full_chain", `select count(*) from public.digital_acceptance_actions where run_id='${runId}' and idempotency_key='${key}'`)).toBe("1");
   });
 
   it("rejects invalid action-transition pairs and project mismatch", () => {
-    expectRejectedAs("full_chain", "service_role", `set app.acceptance_environment='test'; set app.acceptance_project_ref='local-test';
-      select public.acceptance_control_digital_products(1,'inject-refund','${runId}','${orderId}','full',gen_random_uuid(),'test','wrong-project')`);
-    expectRejectedAs("full_chain", "service_role", `set app.acceptance_environment='test'; set app.acceptance_project_ref='local-test';
-      select public.acceptance_control_digital_products(1,'inject-delivery-failure','${runId}','${orderId}','lost',gen_random_uuid(),'test','local-test')`);
+    expectRejectedAs("full_chain", "service_role", `select public.acceptance_control_digital_products(1,'inject-refund','${runId}','${orderId}','full',gen_random_uuid())`);
+    expectRejectedAs("full_chain", "service_role", `select public.acceptance_control_digital_products(1,'inject-delivery-failure','${runId}','${orderId}','lost',gen_random_uuid())`);
   });
 });
 
@@ -1792,6 +1789,15 @@ describe("transactional checkout manifests", () => {
 });
 
 describe("durable digital delivery", () => {
+  it("binds acceptance controls to database-owned deployment configuration", () => {
+    const sql = readFileSync(join(repoRoot, "supabase/migrations/20260813023000_nonproduction_digital_acceptance_control.sql"), "utf8");
+    expect(sql).toContain("digital_acceptance_configuration");
+    expect(sql).toContain("revoke all on table public.digital_acceptance_configuration from public, anon, authenticated, service_role");
+    expect(sql).not.toContain("current_setting('app.acceptance_environment'");
+    expect(sql).not.toContain("p_environment text, p_project_ref text");
+    expect(sql).toContain("v_config.environment<>v_target.environment");
+    expect(sql).toContain("v_config.project_ref<>v_target.project_ref");
+  });
   const deliveryItemsSql = `jsonb_build_array(jsonb_build_object(
     'productId', '${ids.manifestProduct}',
     'variantId', '${ids.manifestVariant}',
