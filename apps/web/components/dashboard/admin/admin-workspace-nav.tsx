@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Shield, Scale, ScrollText, LayoutDashboard, FileText, ChartNoAxesColumn, Users, DollarSign } from "lucide-react";
+import { Shield, Scale, ScrollText, LayoutDashboard, FileText, ChartNoAxesColumn, Users, DollarSign, Download } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -12,6 +12,7 @@ const links = [
   { href: "/dashboard/admin/users", label: "Users", icon: Users },
   { href: "/dashboard/admin/stores", label: "Stores", icon: Scale },
   { href: "/dashboard/admin/revenue", label: "Revenue", icon: DollarSign },
+  { href: "/dashboard/admin/digital-products", label: "Digital Ops", icon: Download },
   { href: "/dashboard/admin/audit", label: "Audit Explorer", icon: ScrollText },
   { href: "/dashboard/admin/legal", label: "Legal Governance", icon: FileText },
   { href: "/dashboard/admin/marketing", label: "Marketing Analytics", icon: ChartNoAxesColumn }

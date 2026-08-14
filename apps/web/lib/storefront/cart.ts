@@ -9,6 +9,58 @@ export type StorefrontCartEntry = {
   quantity: number;
 };
 
+export type StorefrontCartProduct = {
+  id: string;
+  product_type?: "physical" | "digital";
+  product_variants: ReadonlyArray<{
+    id: string;
+    status: "active" | "archived";
+  }>;
+};
+
+export function normalizeStorefrontCart(
+  entries: readonly StorefrontCartEntry[],
+  products: readonly StorefrontCartProduct[]
+): StorefrontCartEntry[] {
+  const activeSelections = new Map<string, "physical" | "digital">();
+  for (const product of products) {
+    for (const variant of product.product_variants) {
+      if (variant.status === "active") {
+        activeSelections.set(
+          `${product.id}:${variant.id}`,
+          product.product_type ?? "physical"
+        );
+      }
+    }
+  }
+  const normalized = new Map<string, StorefrontCartEntry>();
+
+  for (const entry of entries) {
+    const key = `${entry.productId}:${entry.variantId}`;
+    if (
+      !activeSelections.has(key) ||
+      !Number.isFinite(entry.quantity) ||
+      entry.quantity <= 0
+    ) {
+      continue;
+    }
+
+    const productType = activeSelections.get(key);
+    const quantity = Math.max(1, Math.min(99, Math.trunc(entry.quantity)));
+    const existing = normalized.get(key);
+
+    normalized.set(key, {
+      productId: entry.productId,
+      variantId: entry.variantId,
+      quantity: productType === "digital"
+        ? 1
+        : Math.min(99, (existing?.quantity ?? 0) + quantity)
+    });
+  }
+
+  return [...normalized.values()];
+}
+
 export function readStorefrontCart(): StorefrontCartEntry[] {
   if (typeof window === "undefined") {
     return [];

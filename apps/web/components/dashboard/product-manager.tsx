@@ -6,6 +6,9 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { MoreHorizontal, Pencil, Plus, RotateCcw, Search, Star, X } from "lucide-react";
 import { AppAlert } from "@/components/ui/app-alert";
+import { DigitalPreviewManager } from "@/components/dashboard/digital-preview-manager";
+import { DigitalProductFiles } from "@/components/dashboard/digital-product-files";
+import { DigitalProductOverview } from "@/components/dashboard/digital-product-overview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -19,13 +22,16 @@ import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   createBlankVariant,
-  hasStructuredVariants,
+  inspectorTabsForProduct,
   normalizeTierDisplayLabel,
   resolvePriceRange,
   resolveTierNamesForProduct,
   sortVariants,
   statusOptions,
+  variantOptionInstruction,
+  variantOptionSummary,
   type OptionPairDraft,
+  type CatalogInspectorTab,
   type ProductListItem,
   type ProductVariantListItem,
   type VariantDraft,
@@ -525,6 +531,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   const [imageAltText, setImageAltText] = useState("");
   const [sku, setSku] = useState("");
   const [isFeatured, setIsFeatured] = useState(false);
+  const [productType, setProductType] = useState<"physical" | "digital">("physical");
+  const [digitalRightsAffirmed, setDigitalRightsAffirmed] = useState(false);
   const [createImageUrls, setCreateImageUrls] = useState<string[]>([]);
   const [createDraggingImageIndex, setCreateDraggingImageIndex] = useState<number | null>(null);
   const [createVariants, setCreateVariants] = useState<VariantDraft[]>([createBlankVariant(true)]);
@@ -567,6 +575,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   const [editSku, setEditSku] = useState("");
   const [editStatus, setEditStatus] = useState<ProductRecord["status"]>("draft");
   const [editIsFeatured, setEditIsFeatured] = useState(false);
+  const [editProductType, setEditProductType] = useState<"physical" | "digital">("physical");
+  const [editDigitalRightsAffirmed, setEditDigitalRightsAffirmed] = useState(false);
   const [editImageUrls, setEditImageUrls] = useState<string[]>([]);
   const [editDraggingImageIndex, setEditDraggingImageIndex] = useState<number | null>(null);
   const [editVariants, setEditVariants] = useState<VariantDraft[]>([createBlankVariant(true)]);
@@ -595,8 +605,10 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   const [deleteConfirmDescription, setDeleteConfirmDescription] = useState("Are you sure you want to continue?");
   const [deleteConfirmLabel, setDeleteConfirmLabel] = useState("Delete");
   const [catalogError, setCatalogError] = useState<string | null>(null);
+  const catalogRefreshGenerationRef = useRef(0);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(searchParams.get("productId") ?? initialProducts[0]?.id ?? null);
-  const [catalogInspectorTab, setCatalogInspectorTab] = useState<"overview" | "variants" | "inventory" | "media">("overview");
+  const [catalogInspectorTab, setCatalogInspectorTab] = useState<CatalogInspectorTab>("overview");
+  const [digitalInspectorTarget, setDigitalInspectorTarget] = useState<string | null>(null);
   const [variantInspectorMode, setVariantInspectorMode] = useState<"flat" | "grouped">("flat");
   const [inventoryAdjustDraft, setInventoryAdjustDraft] = useState<{
     productId: string;
@@ -630,6 +642,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
         imageAltText,
         sku,
         isFeatured,
+        productType,
+        digitalRightsAffirmed,
         createImageUrls,
         createVariants,
         createHasVariants,
@@ -650,6 +664,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       imageAltText,
       sku,
       isFeatured,
+      productType,
+      digitalRightsAffirmed,
       createImageUrls,
       createVariants,
       createHasVariants,
@@ -676,6 +692,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
         editSku,
         editStatus,
         editIsFeatured,
+        editProductType,
+        editDigitalRightsAffirmed,
         editImageUrls,
         editVariants,
         editHasVariants,
@@ -696,6 +714,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       editSku,
       editStatus,
       editIsFeatured,
+      editProductType,
+      editDigitalRightsAffirmed,
       editImageUrls,
       editVariants,
       editHasVariants,
@@ -752,6 +772,13 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     () => visibleProducts.find((product) => product.id === selectedProductId) ?? visibleProducts[0] ?? null,
     [selectedProductId, visibleProducts]
   );
+
+  useEffect(() => {
+    if (!selectedProduct) return;
+    if (!inspectorTabsForProduct(selectedProduct.product_type).includes(catalogInspectorTab)) {
+      setCatalogInspectorTab("overview");
+    }
+  }, [catalogInspectorTab, selectedProduct]);
 
   useEffect(() => {
     if (visibleProducts.length === 0) {
@@ -871,7 +898,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
 
     try {
       const baseVariant = createVariants[0] ?? createBlankVariant(true);
-      const variantsForSubmission = createHasVariants
+      const variantsForSubmission = (createHasVariants
         ? createVariants
         : [
             {
@@ -882,7 +909,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
               isMadeToOrder: createSingleMadeToOrder,
               optionPairs: []
             }
-          ];
+          ]).map((variant) => productType === "digital" ? { ...variant, inventoryQty: "0", isMadeToOrder: false } : variant);
 
       const parsed = parseVariantsFromDrafts(
         variantsForSubmission,
@@ -923,6 +950,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title,
+        productType,
+        digitalRightsAffirmed,
         description,
         slug: productSlug.trim() || null,
         seoTitle: seoTitle.trim() || null,
@@ -957,6 +986,9 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     }
 
     setProducts((current) => [payload.product!, ...current]);
+    setSelectedProductId(payload.product.id);
+    setCatalogInspectorTab(productType === "digital" ? "files" : "overview");
+    setDigitalInspectorTarget(productType === "digital" ? "upload" : null);
     setTitle("");
     setDescription("");
     setProductSlug("");
@@ -965,6 +997,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     setImageAltText("");
     setSku("");
     setIsFeatured(false);
+    setProductType("physical");
+    setDigitalRightsAffirmed(false);
     setCreateImageUrls([]);
     setCreateVariants([createBlankVariant(true)]);
     setCreateHasVariants(false);
@@ -982,7 +1016,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     setCreateVariantsSnapshotByMode(null);
     setCreatePending(false);
     setIsCreateFlyoutOpen(false);
-    notify.success("Product created.");
+    notify.success(productType === "digital" ? "Digital draft created. Add customer files to continue." : "Product created.");
   }
 
   async function updateProduct(
@@ -1031,6 +1065,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       return { ok: false, error: message };
     }
 
+    const previousProduct = products.find((product) => product.id === productId);
     setProducts((current) =>
       current.map((product) => {
         if (product.id !== productId) return product;
@@ -1038,7 +1073,50 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       })
     );
 
+    if (previousProduct?.product_type === "digital" || payload.product.product_type === "digital") {
+      await refreshCatalogProducts();
+    }
+
     return { ok: true };
+  }
+
+  async function refreshCatalogProducts(options: { surfaceError?: boolean; signal?: AbortSignal } = {}) {
+    const generation = catalogRefreshGenerationRef.current + 1;
+    catalogRefreshGenerationRef.current = generation;
+    try {
+      const response = await fetch("/api/products", { signal: options.signal });
+      options.signal?.throwIfAborted();
+      const payload = (await response.json().catch(() => null)) as ProductResponse | null;
+      options.signal?.throwIfAborted();
+      if (catalogRefreshGenerationRef.current !== generation) return null;
+      if (!response.ok || !payload?.products) {
+        options.signal?.throwIfAborted();
+        if (options.surfaceError) setCatalogError(payload?.error ?? "Unable to refresh publishing readiness.");
+        return null;
+      }
+      options.signal?.throwIfAborted();
+      setProducts(payload.products);
+      return payload.products;
+    } catch (error) {
+      if (options.signal?.aborted || (error instanceof Error && error.name === "AbortError")) return null;
+      if (catalogRefreshGenerationRef.current === generation && options.surfaceError) {
+        setCatalogError("Unable to refresh publishing readiness. Try again before publishing.");
+      }
+      return null;
+    }
+  }
+
+  async function publishDigitalProduct(productId: string) {
+    setCatalogError(null);
+    const authoritativeProducts = await refreshCatalogProducts({ surfaceError: true });
+    const authoritativeProduct = authoritativeProducts?.find((product) => product.id === productId);
+    if (!authoritativeProduct?.digital_readiness?.ready) {
+      if (authoritativeProducts) {
+        setCatalogError("Complete the publishing readiness steps before publishing this digital product.");
+      }
+      return;
+    }
+    await updateProduct(productId, { status: "active" });
   }
 
   async function validateVariantRemovals(productId: string, variantIds: string[]) {
@@ -1259,7 +1337,9 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       return { ok: false, error: parsed.error };
     }
 
-    const parsedVariants = parsed.variants as ParsedVariantSubmission[];
+    const parsedVariants = (parsed.variants as ParsedVariantSubmission[]).map((variant) =>
+      product.product_type === "digital" ? { ...variant, inventoryQty: 0, isMadeToOrder: false } : variant
+    );
     const tierCount = nextDrafts.some((variant) => variant.optionPairs.length >= 2) ? 2 : 1;
     const tierOneName = tierNames[0] ?? "Option";
     const tierTwoName = tierNames[1] ?? "Option 2";
@@ -1381,6 +1461,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     setEditSku(product.sku ?? "");
     setEditStatus(product.status);
     setEditIsFeatured(product.is_featured);
+    setEditProductType(product.product_type);
+    setEditDigitalRightsAffirmed(Boolean(product.digital_rights_affirmed_at));
     setEditImageUrls(product.image_urls ?? []);
     const tierNames = resolveTierNamesForProduct(product);
 
@@ -1445,7 +1527,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
 
     try {
       const baseVariant = editVariants[0] ?? createBlankVariant(true);
-      const variantsForSubmission = editHasVariants
+      const variantsForSubmission = (editHasVariants
         ? editVariants
         : [
             {
@@ -1455,7 +1537,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
               isMadeToOrder: editSingleMadeToOrder,
               optionPairs: []
             }
-          ];
+          ]).map((variant) => editProductType === "digital" ? { ...variant, inventoryQty: "0", isMadeToOrder: false } : variant);
 
       const parsed = parseVariantsFromDrafts(variantsForSubmission, editSku.trim() || editTitle.trim() || "SKU", {
         strictValidation: editStatus === "active",
@@ -1497,6 +1579,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       editingProductId,
       {
       title: editTitle,
+      productType: editProductType,
+      digitalRightsAffirmed: editDigitalRightsAffirmed,
       description: editDescription,
       slug: editProductSlug.trim() || null,
       seoTitle: editSeoTitle.trim() || null,
@@ -2348,7 +2432,11 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
         className="flex w-[300%] transition-transform duration-300 ease-out"
         style={{ transform: `translateX(-${editStepIndex * 33.3333}%)` }}
       >
-        <span className="w-1/3">Update product content, image, and variant pricing/inventory.</span>
+        <span className="w-1/3">
+          {editProductType === "digital"
+            ? "Update product content, images, and variant pricing."
+            : "Update product content, images, and variant pricing/inventory."}
+        </span>
         <span className="w-1/3">Configure this variant group and its sellable options.</span>
         <span className="w-1/3">Configure one sellable option under this variant.</span>
       </span>
@@ -2424,8 +2512,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       <header className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="space-y-2">
-            <h2 className="text-2xl font-semibold">Catalog and Inventory</h2>
-            <p className="text-sm text-muted-foreground">Add products with configurable variants and independent pricing/inventory.</p>
+            <h2 className="text-2xl font-semibold">Catalog</h2>
+            <p className="text-sm text-muted-foreground">Manage pricing, fulfillment, variants, and storefront content.</p>
           </div>
           <Button
             type="button"
@@ -2434,6 +2522,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
               setDescription("");
               setSku("");
               setIsFeatured(false);
+              setProductType("physical");
+              setDigitalRightsAffirmed(false);
               setCreateImageUrls([]);
               setCreateVariants([createBlankVariant(true)]);
               setCreateHasVariants(false);
@@ -2480,9 +2570,9 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
             <TableHeader className="bg-muted/45">
               <TableRow>
                 <TableHead>Title</TableHead>
+                <TableHead>Fulfillment</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Price</TableHead>
-                <TableHead>Inventory</TableHead>
                 <TableHead>Variants</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -2498,9 +2588,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                 visibleProducts.map((product) => {
                   const sortedVariants = sortVariants(product.product_variants ?? []);
                   const productPreviewImage = product.image_urls?.[0] ?? null;
-                  const variantProduct = hasStructuredVariants(product);
                   const isSelected = selectedProduct?.id === product.id;
-                  const singleVariantForInventory = !variantProduct ? sortedVariants[0] : null;
 
                   return (
                     <TableRow
@@ -2527,6 +2615,9 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         </div>
                       </TableCell>
                       <TableCell>
+                        <Badge variant="secondary">{product.product_type === "digital" ? "Digital download" : "Physical"}</Badge>
+                      </TableCell>
+                      <TableCell>
                         <Select
                           value={product.status}
                           onChange={(event) =>
@@ -2543,29 +2634,26 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                       <TableCell>{resolvePriceRange(sortedVariants)}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <span className="w-10 text-center tabular-nums">{product.inventory_qty}</span>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-6 px-2"
-                            aria-label={`Adjust inventory for ${product.title}`}
-                            disabled={!singleVariantForInventory}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              if (singleVariantForInventory) {
-                                openInventoryAdjustModal(product.id, singleVariantForInventory, singleVariantForInventory.title?.trim() || product.title);
-                              }
-                            }}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
+                          <p className="text-xs text-muted-foreground">
+                            {sortedVariants.length} variant{sortedVariants.length === 1 ? "" : "s"}
+                          </p>
+                          {product.product_type === "physical" && sortedVariants.length === 1 && sortedVariants[0] ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-6 px-2"
+                              aria-label={`Adjust inventory for ${product.title}`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                const variant = sortedVariants[0]!;
+                                openInventoryAdjustModal(product.id, variant, variant.title?.trim() || product.title);
+                              }}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          ) : null}
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <p className="text-xs text-muted-foreground">
-                          {sortedVariants.length} variant{sortedVariants.length === 1 ? "" : "s"}
-                        </p>
                       </TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
@@ -2629,14 +2717,20 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
 
           {selectedProduct ? (
             <>
-              <div className="flex flex-wrap items-center gap-2">
-                {(["overview", "variants", "inventory", "media"] as const).map((tab) => (
+              <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Product details">
+                {inspectorTabsForProduct(selectedProduct.product_type).map((tab) => (
                   <Button
                     key={tab}
                     type="button"
+                    role="tab"
+                    aria-selected={catalogInspectorTab === tab}
+                    aria-controls={`catalog-panel-${tab}`}
                     size="sm"
                     variant={catalogInspectorTab === tab ? "default" : "outline"}
-                    onClick={() => setCatalogInspectorTab(tab)}
+                    onClick={() => {
+                      setDigitalInspectorTarget(null);
+                      setCatalogInspectorTab(tab);
+                    }}
                   >
                     {tab.charAt(0).toUpperCase()}
                     {tab.slice(1)}
@@ -2644,8 +2738,25 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                 ))}
               </div>
 
-              {catalogInspectorTab === "overview" ? (
-                <div className="space-y-3 text-sm">
+              {catalogInspectorTab === "overview" && selectedProduct.product_type === "digital" ? (
+                <div role="tabpanel" id="catalog-panel-overview">
+                  <DigitalProductOverview
+                    product={selectedProduct}
+                    onNavigate={(tab, target) => {
+                      setDigitalInspectorTarget(target);
+                      setCatalogInspectorTab(tab);
+                    }}
+                    onEdit={() => {
+                      openEditFlyout(selectedProduct);
+                      window.requestAnimationFrame(() => document.getElementById("edit-digital-rights")?.focus());
+                    }}
+                    onPublish={async () => { await publishDigitalProduct(selectedProduct.id); }}
+                  />
+                </div>
+              ) : null}
+
+              {catalogInspectorTab === "overview" && selectedProduct.product_type === "physical" ? (
+                <div className="space-y-3 text-sm" role="tabpanel" id="catalog-panel-overview">
                   <p className="text-muted-foreground">
                     {richTextToPlainText(selectedProduct.description).replace(/\s+/g, " ").trim() || "No description yet."}
                   </p>
@@ -2663,6 +2774,22 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                       <span className="font-medium">Inventory:</span> {selectedProduct.inventory_qty}
                     </p>
                   </div>
+                </div>
+              ) : null}
+
+              {catalogInspectorTab === "files" && selectedProduct.product_type === "digital" ? (
+                <div role="tabpanel" id="catalog-panel-files">
+                  <DigitalProductFiles
+                    key={selectedProduct.id}
+                    productId={selectedProduct.id}
+                    variants={sortVariants(selectedProduct.product_variants ?? []).map((variant) => ({
+                      id: variant.id,
+                      label: formatVariantLabel(variant),
+                      status: variant.status,
+                    }))}
+                    focusTarget={digitalInspectorTarget}
+                    onCatalogChange={async (signal) => { await refreshCatalogProducts({ signal }); }}
+                  />
                 </div>
               ) : null}
 
@@ -2686,9 +2813,13 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                 })();
 
                 return (
-                  <div className="space-y-3">
+                  <div className="space-y-3" role="tabpanel" id="catalog-panel-variants">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs text-muted-foreground">Manage variant-level pricing, stock, and status.</p>
+                      <p className="text-xs text-muted-foreground">
+                        {selectedProduct.product_type === "digital"
+                          ? "Manage variant-level pricing, file availability, and status."
+                          : "Manage variant-level pricing, stock, and status."}
+                      </p>
                       <Select value={variantInspectorMode} onChange={(event) => setVariantInspectorMode(event.target.value as "flat" | "grouped")}>
                         <option value="flat">Flat list</option>
                         <option value="grouped">Grouped by {tierOneDisplayName}</option>
@@ -2739,7 +2870,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                                 <div key={variant.id} className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-2 py-1.5 text-xs">
                                   <span>{tierTwoName ? variant.option_values?.[tierTwoName] ?? formatVariantLabel(variant) : formatVariantLabel(variant)}</span>
                                   <span className="text-muted-foreground">
-                                    {variant.inventory_qty} in stock • {variant.status}
+                                    {selectedProduct.product_type === "digital" ? variant.status : `${variant.inventory_qty} in stock • ${variant.status}`}
                                   </span>
                                 </div>
                               ))}
@@ -2754,7 +2885,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                             <tr>
                               <th className="px-3 py-2 text-left">Variant</th>
                               <th className="px-3 py-2 text-left">Price</th>
-                              <th className="px-3 py-2 text-left">Inventory</th>
+                              {selectedProduct.product_type === "physical" ? <th className="px-3 py-2 text-left">Inventory</th> : null}
                               <th className="px-3 py-2 text-left">Status</th>
                               <th className="px-3 py-2 text-right">Actions</th>
                             </tr>
@@ -2766,7 +2897,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                                 <tr key={`${selectedProduct.id}-${variant.id}`} className="border-t border-border">
                                   <td className="px-3 py-2">{variantLabel}</td>
                                   <td className="px-3 py-2">${((variant.price_cents ?? 0) / 100).toFixed(2)}</td>
-                                  <td className="px-3 py-2">
+                                  {selectedProduct.product_type === "physical" ? <td className="px-3 py-2">
                                     <div className="flex items-center gap-2">
                                       <span className="w-10 text-center tabular-nums">{variant.inventory_qty}</span>
                                       <Button
@@ -2779,7 +2910,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                                         <Pencil className="h-3.5 w-3.5" />
                                       </Button>
                                     </div>
-                                  </td>
+                                  </td> : null}
                                   <td className="px-3 py-2">
                                     <Select
                                       value={variant.status}
@@ -2836,10 +2967,10 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                 );
               })() : null}
 
-              {catalogInspectorTab === "inventory" ? (() => {
+              {catalogInspectorTab === "inventory" && selectedProduct.product_type === "physical" ? (() => {
                 const sortedVariants = sortVariants(selectedProduct.product_variants ?? []);
                 return (
-                  <div className="space-y-2">
+                  <div className="space-y-2" role="tabpanel" id="catalog-panel-inventory">
                     <p className="text-xs text-muted-foreground">Inventory totals roll up from variant rows.</p>
                     <div className="rounded-md border border-border p-3 text-sm">
                       <span className="font-medium">Product inventory total:</span> {selectedProduct.inventory_qty}
@@ -2869,8 +3000,21 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                 );
               })() : null}
 
-              {catalogInspectorTab === "media" ? (
-                <div className="space-y-3">
+              {catalogInspectorTab === "media" && selectedProduct.product_type === "digital" ? (
+                <div role="tabpanel" id="catalog-panel-media">
+                  <DigitalPreviewManager
+                    key={selectedProduct.id}
+                    productId={selectedProduct.id}
+                    productTitle={selectedProduct.title}
+                    storefrontImages={selectedProduct.image_urls ?? []}
+                    preview={selectedProduct.digital_preview}
+                    onChange={async (_preview, signal) => { await refreshCatalogProducts({ signal }); }}
+                  />
+                </div>
+              ) : null}
+
+              {catalogInspectorTab === "media" && selectedProduct.product_type === "physical" ? (
+                <div className="space-y-3" role="tabpanel" id="catalog-panel-media">
                   <p className="text-xs text-muted-foreground">Product-level media and variant image coverage.</p>
                   <div className="grid grid-cols-3 gap-2">
                     {(selectedProduct.image_urls ?? []).slice(0, 6).map((imageUrl) => (
@@ -2919,6 +3063,25 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                 <FormField label="Title">
                   <Input required minLength={2} placeholder="Everyday Hand Cream" value={title} onChange={(event) => setTitle(event.target.value)} />
                 </FormField>
+                <FormField label="Fulfillment">
+                  <Select value={productType} onChange={(event) => {
+                    const nextType = event.target.value as "physical" | "digital";
+                    if (nextType !== productType) setDigitalRightsAffirmed(false);
+                    setProductType(nextType);
+                  }}>
+                    <option value="physical">Physical product</option>
+                    <option value="digital">Digital download</option>
+                  </Select>
+                </FormField>
+                {productType === "digital" ? (
+                  <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3">
+                    <label className="flex items-start gap-2">
+                      <Checkbox id="create-digital-rights" checked={digitalRightsAffirmed} onChange={(event) => setDigitalRightsAffirmed(event.target.checked)} />
+                      <span className="text-sm">I own or control the rights necessary to distribute and sell these files.</span>
+                    </label>
+                    <p className="text-xs text-muted-foreground">Files are attached after this draft is created. Save it, then use the Files tab to add customer downloads.</p>
+                  </div>
+                ) : null}
                 <FormField label="Description">
                   <RichTextEditor
                     required
@@ -3243,13 +3406,17 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         onChange={(event) => setCreateSinglePriceDollars(event.target.value)}
                       />
                     </FormField>
-                    <FormField label="Inventory">
-                      <Input inputMode="numeric" placeholder="0" value={createSingleInventoryQty} onChange={(event) => setCreateSingleInventoryQty(event.target.value)} />
-                    </FormField>
-                    <label className="flex items-center gap-2">
-                      <Checkbox checked={createSingleMadeToOrder} onChange={(event) => setCreateSingleMadeToOrder(event.target.checked)} />
-                      <span className="text-sm font-medium">Enable made to order</span>
-                    </label>
+                    {productType === "physical" ? (
+                      <>
+                        <FormField label="Inventory">
+                          <Input inputMode="numeric" placeholder="0" value={createSingleInventoryQty} onChange={(event) => setCreateSingleInventoryQty(event.target.value)} />
+                        </FormField>
+                        <label className="flex items-center gap-2">
+                          <Checkbox checked={createSingleMadeToOrder} onChange={(event) => setCreateSingleMadeToOrder(event.target.checked)} />
+                          <span className="text-sm font-medium">Enable made to order</span>
+                        </label>
+                      </>
+                    ) : null}
                   </div>
                 )}
                 </div>
@@ -3483,7 +3650,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                             }
                           />
                         </FormField>
-                        <FormField label="Inventory">
+                        {productType === "physical" ? <FormField label="Inventory">
                           <Input
                             inputMode="numeric"
                             placeholder="0"
@@ -3498,8 +3665,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                               )
                             }
                           />
-                        </FormField>
-                        <label className="flex items-center gap-2">
+                        </FormField> : null}
+                        {productType === "physical" ? <label className="flex items-center gap-2">
                           <Checkbox
                             checked={activeCreateVariant.isMadeToOrder}
                             onChange={(event) =>
@@ -3513,12 +3680,12 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                             }
                           />
                           <span className="text-sm font-medium">Enable made to order</span>
-                        </label>
+                        </label> : null}
                       </>
                     ) : (
                       <div className="space-y-3 rounded-md border border-border bg-white p-3">
                         <p className="text-sm font-medium">Options</p>
-                        <p className="text-sm text-muted-foreground">Add options for this variant, then configure price, SKU, inventory, and images for each option.</p>
+                        <p className="text-sm text-muted-foreground">{variantOptionInstruction(productType)}</p>
                         <div className="space-y-2">
                           {activeCreateSubOptionIndexes.length === 0 ? (
                             <p className="text-xs text-muted-foreground">No options yet.</p>
@@ -3534,7 +3701,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                                 <div>
                                   <p className="text-sm font-medium">{getOptionValue(option, activeCreateLevelTwoName) || `${activeCreateLevelTwoName} option`}</p>
                                   <p className="text-xs text-muted-foreground">
-                                    ${option.priceDollars || "0.00"} · Inv {option.inventoryQty || "0"} · {option.status}
+                                    {variantOptionSummary(productType, option)}
                                   </p>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -3770,7 +3937,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         }
                       />
                     </FormField>
-                    <FormField label="Inventory">
+                    {productType === "physical" ? <FormField label="Inventory">
                       <Input
                         inputMode="numeric"
                         placeholder="0"
@@ -3785,8 +3952,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                           )
                         }
                       />
-                    </FormField>
-                    <label className="flex items-center gap-2">
+                    </FormField> : null}
+                    {productType === "physical" ? <label className="flex items-center gap-2">
                       <Checkbox
                         checked={activeCreateVariant.isMadeToOrder}
                         onChange={(event) =>
@@ -3800,7 +3967,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         }
                       />
                       <span className="text-sm font-medium">Enable made to order</span>
-                    </label>
+                    </label> : null}
                   </>
                 ) : (
                   <p className="text-sm text-muted-foreground">Select an option to configure.</p>
@@ -3844,6 +4011,25 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                 <FormField label="Title">
                   <Input required minLength={2} placeholder="Everyday Hand Cream" value={editTitle} onChange={(event) => setEditTitle(event.target.value)} />
                 </FormField>
+                <FormField label="Fulfillment">
+                  <Select value={editProductType} onChange={(event) => {
+                    const nextType = event.target.value as "physical" | "digital";
+                    if (nextType !== editProductType) setEditDigitalRightsAffirmed(false);
+                    setEditProductType(nextType);
+                  }}>
+                    <option value="physical">Physical product</option>
+                    <option value="digital">Digital download</option>
+                  </Select>
+                </FormField>
+                {editProductType === "digital" ? (
+                  <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3">
+                    <label className="flex items-start gap-2">
+                      <Checkbox id="edit-digital-rights" checked={editDigitalRightsAffirmed} onChange={(event) => setEditDigitalRightsAffirmed(event.target.checked)} />
+                      <span className="text-sm">I own or control the rights necessary to distribute and sell these files.</span>
+                    </label>
+                    <p className="text-xs text-muted-foreground">Files are attached after this draft is created. Save it, then use the Files tab to add customer downloads.</p>
+                  </div>
+                ) : null}
                 <FormField label="Description">
                   <RichTextEditor
                     required
@@ -4149,13 +4335,17 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         onChange={(event) => setEditSku(event.target.value)}
                       />
                     </FormField>
-                    <FormField label="Inventory">
-                      <Input inputMode="numeric" placeholder="0" value={editSingleInventoryQty} onChange={(event) => setEditSingleInventoryQty(event.target.value)} />
-                    </FormField>
-                    <label className="flex items-center gap-2">
-                      <Checkbox checked={editSingleMadeToOrder} onChange={(event) => setEditSingleMadeToOrder(event.target.checked)} />
-                      <span className="text-sm font-medium">Enable made to order</span>
-                    </label>
+                    {editProductType === "physical" ? (
+                      <>
+                        <FormField label="Inventory">
+                          <Input inputMode="numeric" placeholder="0" value={editSingleInventoryQty} onChange={(event) => setEditSingleInventoryQty(event.target.value)} />
+                        </FormField>
+                        <label className="flex items-center gap-2">
+                          <Checkbox checked={editSingleMadeToOrder} onChange={(event) => setEditSingleMadeToOrder(event.target.checked)} />
+                          <span className="text-sm font-medium">Enable made to order</span>
+                        </label>
+                      </>
+                    ) : null}
                   </div>
                 )}
                 </div>
@@ -4402,7 +4592,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                             }
                           />
                         </FormField>
-                        <FormField label="Inventory">
+                        {editProductType === "physical" ? <FormField label="Inventory">
                           <Input
                             inputMode="numeric"
                             placeholder="0"
@@ -4417,8 +4607,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                               )
                             }
                           />
-                        </FormField>
-                        <label className="flex items-center gap-2">
+                        </FormField> : null}
+                        {editProductType === "physical" ? <label className="flex items-center gap-2">
                           <Checkbox
                             checked={activeEditVariant.isMadeToOrder}
                             onChange={(event) =>
@@ -4432,12 +4622,12 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                             }
                           />
                           <span className="text-sm font-medium">Enable made to order</span>
-                        </label>
+                        </label> : null}
                       </>
                     ) : (
                       <div className="space-y-3 rounded-md border border-border bg-white p-3">
                         <p className="text-sm font-medium">Options</p>
-                        <p className="text-sm text-muted-foreground">Add options for this variant, then configure price, SKU, inventory, and images for each option.</p>
+                        <p className="text-sm text-muted-foreground">{variantOptionInstruction(editProductType)}</p>
                         <div className="space-y-2">
                           {activeEditSubOptionIndexes.length === 0 ? (
                             <p className="text-xs text-muted-foreground">No options yet.</p>
@@ -4453,7 +4643,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                                 <div>
                                   <p className="text-sm font-medium">{getOptionValue(option, activeEditLevelTwoName) || `${activeEditLevelTwoName} option`}</p>
                                   <p className="text-xs text-muted-foreground">
-                                    ${option.priceDollars || "0.00"} · Inv {option.inventoryQty || "0"} · {option.status}
+                                    {variantOptionSummary(editProductType, option)}
                                   </p>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -4698,7 +4888,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         }
                       />
                     </FormField>
-                    <FormField label="Inventory">
+                    {editProductType === "physical" ? <FormField label="Inventory">
                       <Input
                         inputMode="numeric"
                         placeholder="0"
@@ -4713,8 +4903,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                           )
                         }
                       />
-                    </FormField>
-                    <label className="flex items-center gap-2">
+                    </FormField> : null}
+                    {editProductType === "physical" ? <label className="flex items-center gap-2">
                       <Checkbox
                         checked={activeEditVariant.isMadeToOrder}
                         onChange={(event) =>
@@ -4728,7 +4918,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         }
                       />
                       <span className="text-sm font-medium">Enable made to order</span>
-                    </label>
+                    </label> : null}
                   </>
                 ) : (
                   <p className="text-sm text-muted-foreground">Select an option to configure.</p>

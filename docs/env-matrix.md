@@ -106,6 +106,19 @@ Recommended local defaults:
 - `NOTIFICATIONS_CRON_SECRET`
   - Required to secure `/api/notifications/digest/weekly`
 
+### Digital delivery processor
+
+- `DIGITAL_DELIVERY_PROCESS_SECRET`
+  - Required to authorize `POST /api/internal/digital-delivery/process`; use a random value of at least 32 characters.
+- `DIGITAL_DELIVERY_TOKEN_SECRET`
+  - Required to derive reproducible purchase bearer tokens without storing them; use a separate random value of at least 32 characters and keep it stable across deploys.
+- `DIGITAL_DOWNLOAD_SESSION_SECRET`
+  - Required to authenticate opaque browser download-session cookies; use a dedicated random value of at least 32 characters and keep it stable across deploys. Rotation invalidates current browser sessions but does not invalidate emailed access links.
+- `DIGITAL_RECOVERY_TRUSTED_IP_HEADER`
+  - Required for customer recovery outside Vercel. Set it to a private header name that the trusted ingress proxy always removes from incoming traffic and overwrites with exactly one client IP. Never configure `Forwarded` or `X-Forwarded-For`. Vercel deployments ignore this setting and use Vercel's protected `X-Vercel-Forwarded-For` value.
+- `RESEND_API_KEY` and a configured platform sender
+  - Required before processing digital-delivery jobs so the buyer notification can complete.
+
 ### Vercel domain automation
 
 - `VERCEL_API_TOKEN`
@@ -141,7 +154,7 @@ These are not general app runtime vars, but they matter for automated delivery:
 
 ## Notes
 
-- Keep `SUPABASE_SERVICE_ROLE_KEY`, Stripe secrets, Resend keys, and Vercel API tokens server-only.
+- Keep `SUPABASE_SERVICE_ROLE_KEY`, digital-delivery and download-session secrets, Stripe secrets, Resend keys, and Vercel API tokens server-only.
 - `NEXT_PUBLIC_APP_URL` should match the real deployed origin in production, and the Supabase auth redirect allowlist should include its callback URL.
 - `MYRIVO_PUBLIC_APP_URL` lets local/dev runtime actions still generate public-facing email links without pointing recipients at `localhost`.
 - `MYRIVO_SINGLE_STORE_SLUG` is a fallback/default runtime slug, not the source of truth for store ownership.

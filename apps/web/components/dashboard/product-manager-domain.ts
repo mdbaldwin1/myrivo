@@ -1,4 +1,6 @@
-import { ProductRecord } from "@/types/database";
+import { digitalReadinessReasonLabel } from "@/lib/digital-products/readiness-service";
+import type { DigitalProductReadiness } from "@/lib/digital-products/types";
+import type { ProductRecord } from "@/types/database";
 
 export type ProductVariantListItem = {
   id: string;
@@ -32,8 +34,12 @@ export type ProductListItem = Pick<
   | "price_cents"
   | "inventory_qty"
   | "status"
+  | "product_type"
+  | "digital_rights_affirmed_at"
   | "created_at"
 > & {
+  digital_readiness?: DigitalProductReadiness | null;
+  digital_preview?: DigitalProductPreview | null;
   product_variants: ProductVariantListItem[];
   product_option_axes?: Array<{
     id: string;
@@ -47,6 +53,14 @@ export type ProductListItem = Pick<
       is_active: boolean;
     }>;
   }>;
+};
+
+export type DigitalProductPreview = {
+  status: "missing" | "processing" | "ready" | "failed";
+  sourceAssetVersionId: string | null;
+  publicUrl: string | null;
+  isMerchantOverride: boolean;
+  failureReason: string | null;
 };
 
 export type OptionPairDraft = {
@@ -71,6 +85,60 @@ export type VariantDraft = {
 
 export const statusOptions: Array<ProductRecord["status"]> = ["draft", "active", "archived"];
 export const variantStatusOptions: Array<ProductVariantListItem["status"]> = ["active", "archived"];
+
+export function buildDigitalPublishReadinessView(readiness: DigitalProductReadiness) {
+  return {
+    ready: readiness.ready,
+    applicableFileCount: readiness.applicableFileCount,
+    previewStatus: readiness.previewStatus,
+    blockers: readiness.reasons.map(digitalReadinessReasonLabel)
+  };
+}
+
+export type CatalogInspectorTab = "overview" | "variants" | "inventory" | "files" | "media";
+
+export type DigitalReadinessAction = {
+  reason: DigitalProductReadiness["reasons"][number];
+  label: string;
+  tab: "files" | "media" | null;
+  target: string;
+};
+
+export function buildDigitalReadinessActions(
+  product: Pick<ProductListItem, "product_variants">,
+  readiness: DigitalProductReadiness,
+): DigitalReadinessAction[] {
+  return readiness.reasons.map((reason) => {
+    if (reason === "rights_missing") {
+      return { reason, label: "Confirm distribution rights", tab: null, target: "rights" };
+    }
+    if (reason === "preview_not_ready") {
+      return { reason, label: "Finish storefront preview", tab: "media", target: "preview" };
+    }
+    if (reason === "product_missing_file") {
+      return { reason, label: "Attach a customer file", tab: "files", target: "upload" };
+    }
+    const variantId = reason.slice("variant_missing_file:".length);
+    const variant = product.product_variants.find((candidate) => candidate.id === variantId);
+    return {
+      reason,
+      label: `Attach a file to ${variant ? formatVariantLabelForReadiness(variant) : "the active variant"}`,
+      tab: "files",
+      target: variantId,
+    };
+  });
+}
+
+function formatVariantLabelForReadiness(variant: ProductVariantListItem) {
+  const values = Object.values(variant.option_values ?? {}).filter((value) => value.trim());
+  return values.join(" · ") || variant.title?.trim() || "the active variant";
+}
+
+export function inspectorTabsForProduct(productType: ProductListItem["product_type"]): CatalogInspectorTab[] {
+  return productType === "digital"
+    ? ["overview", "variants", "files", "media"]
+    : ["overview", "variants", "inventory", "media"];
+}
 
 export function resolvePriceRange(variants: ProductVariantListItem[]) {
   if (variants.length === 0) {
@@ -143,4 +211,20 @@ export function createBlankVariant(isDefault = false): VariantDraft {
     status: "active",
     isDefault
   };
+}
+
+export function variantOptionInstruction(productType: ProductListItem["product_type"]) {
+  return productType === "digital"
+    ? "Add options for this variant, then configure price, SKU, and images for each option."
+    : "Add options for this variant, then configure price, SKU, inventory, and images for each option.";
+}
+
+export function variantOptionSummary(
+  productType: ProductListItem["product_type"],
+  option: Pick<VariantDraft, "priceDollars" | "inventoryQty" | "status">,
+) {
+  const priceAndStatus = `$${option.priceDollars || "0.00"} · ${option.status}`;
+  return productType === "digital"
+    ? priceAndStatus
+    : `$${option.priceDollars || "0.00"} · Inv ${option.inventoryQty || "0"} · ${option.status}`;
 }

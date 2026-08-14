@@ -54,7 +54,8 @@ vi.mock("@/lib/pickup/scheduling", () => ({
 
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: vi.fn(() => ({
-    from: (...args: unknown[]) => adminFromMock(...args)
+    from: (...args: unknown[]) => adminFromMock(...args),
+    rpc: vi.fn(async () => ({ data: null, error: null }))
   }))
 }));
 
@@ -129,6 +130,37 @@ function setupSupabaseFixtures() {
                 checkout_allow_order_note: true
               },
               error: null
+            }))
+          }))
+        }))
+      };
+    }
+
+    if (table === "product_variants") {
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            in: vi.fn(() => ({
+              returns: vi.fn(async () => ({
+                data: [{
+                  id: "22222222-2222-4222-8222-222222222222",
+                  product_id: "33333333-3333-4333-8333-333333333333",
+                  title: "Default",
+                  price_cents: 2400,
+                  inventory_qty: 8,
+                  is_made_to_order: false,
+                  status: "active",
+                  option_values: null,
+                  products: {
+                    id: "33333333-3333-4333-8333-333333333333",
+                    title: "Starter Kit",
+                    status: "active",
+                    store_id: "store-1",
+                    product_type: "physical"
+                  }
+                }],
+                error: null
+              }))
             }))
           }))
         }))

@@ -1,7 +1,7 @@
 import { renderEmailStudioTemplate } from "@/lib/email-studio/render";
 import type { EmailStudioTemplateDocument, EmailStudioTemplateId, EmailStudioThemeDocument } from "@/lib/email-studio/model";
 
-export type EmailStudioPreviewScenarioId = "pickup" | "shipping" | "welcome";
+export type EmailStudioPreviewScenarioId = "pickup" | "shipping" | "welcome" | "digitalOnly" | "mixed";
 
 export type EmailStudioPreviewScenario = {
   id: EmailStudioPreviewScenarioId;
@@ -113,6 +113,53 @@ export const emailStudioPreviewScenarios: readonly EmailStudioPreviewScenario[] 
     }
   },
   {
+    id: "digitalOnly",
+    label: "Digital-only order",
+    values: {
+      orderId: "ord_digital_preview",
+      orderShortId: "DIGITAL1",
+      storeName: "Olive Mercantile",
+      customerName: "Jordan Lee",
+      customerFirstName: "Jordan",
+      customerLastName: "Lee",
+      customerEmail: "jordan@example.com",
+      supportEmail: "support@olivemercantile.com",
+      replyToEmail: "support@olivemercantile.com",
+      subtotal: "$18.00", discount: "$0.00", total: "$18.00", promoCode: "",
+      items: "- Digital Field Guide x1 @ $18.00",
+      digitalFileCount: "2 files", digitalAccessWindow: "Available for 30 days",
+      dashboardUrl: "https://myrivo.local/dashboard/orders", orderUrl: "https://myrivo.local/orders/preview",
+      orderActionLabel: "View order", orderAccountNote: "", storeUrl: "https://olivemercantile.com",
+      policiesUrl: "https://olivemercantile.com/policies", fulfillmentMethod: "digital delivery",
+      pickupLocationName: "", pickupAddress: "", pickupCityRegion: "", pickupWindow: "", pickupInstructions: "",
+      pickupDetails: "Fulfillment: Digital delivery", previousPickupDetails: "", pickupUpdateReason: "",
+      refundAmount: "$18.00", refundReason: "Customer request", refundCustomerMessage: "",
+      disputeAmount: "$18.00", disputeReason: "product_not_received", disputeStatus: "Under review", disputeResponseDueBy: "",
+      status: "ready", trackingUrl: "", trackingNumber: "", carrier: "", shippingDelayReason: "",
+      originalShipPromise: "", revisedShipDate: "", shippingDelayCustomerPath: "",
+    }
+  },
+  {
+    id: "mixed",
+    label: "Mixed order",
+    values: {
+      orderId: "ord_mixed_preview", orderShortId: "MIXED001", storeName: "Olive Mercantile",
+      customerName: "Jordan Lee", customerFirstName: "Jordan", customerLastName: "Lee",
+      customerEmail: "jordan@example.com", supportEmail: "support@olivemercantile.com", replyToEmail: "support@olivemercantile.com",
+      subtotal: "$44.00", discount: "$0.00", total: "$44.00", promoCode: "",
+      items: "- Digital Field Guide x1 @ $18.00\n- Printed Field Guide x1 @ $26.00",
+      digitalFileCount: "2 files", digitalAccessWindow: "Available for 30 days",
+      dashboardUrl: "https://myrivo.local/dashboard/orders", orderUrl: "https://myrivo.local/orders/preview",
+      orderActionLabel: "View order", orderAccountNote: "", storeUrl: "https://olivemercantile.com", policiesUrl: "https://olivemercantile.com/policies",
+      fulfillmentMethod: "digital delivery and shipping", pickupLocationName: "", pickupAddress: "", pickupCityRegion: "",
+      pickupWindow: "", pickupInstructions: "", pickupDetails: "Fulfillment: Digital delivery and shipping", previousPickupDetails: "", pickupUpdateReason: "",
+      refundAmount: "$18.00", refundReason: "Customer request", refundCustomerMessage: "", disputeAmount: "$44.00",
+      disputeReason: "product_not_received", disputeStatus: "Under review", disputeResponseDueBy: "", status: "processing",
+      trackingUrl: "", trackingNumber: "", carrier: "", shippingDelayReason: "", originalShipPromise: "",
+      revisedShipDate: "", shippingDelayCustomerPath: "",
+    }
+  },
+  {
     id: "welcome",
     label: "Welcome signup",
     values: {
@@ -181,17 +228,23 @@ export function resolveEmailStudioPreviewScenario(templateId: EmailStudioTemplat
   if (
     templateId === "welcomeDiscount"
   ) {
-    return emailStudioPreviewScenarios[2]!;
+    return emailStudioPreviewScenarios.find((scenario) => scenario.id === "welcome")!;
+  }
+
+  if (templateId === "digitalDelivery") {
+    return emailStudioPreviewScenarios.find((scenario) => scenario.id === "digitalOnly")!;
   }
 
   if (
-    templateId === "customerConfirmation" ||
+    (templateId === "customerConfirmation" && base.id !== "mixed") ||
     templateId === "ownerNewOrder" ||
     templateId === "pickupUpdated" ||
     templateId === "refundIssued"
   ) {
-    return emailStudioPreviewScenarios[0]!;
+    return emailStudioPreviewScenarios.find((scenario) => scenario.id === "pickup")!;
   }
+
+  if (base.id === "mixed") return base;
 
   return base.id === "shipping" ? base : emailStudioPreviewScenarios[1]!;
 }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { resolveStorefrontSessionLink } from "@/lib/analytics/session-linking";
 import { getAppUrl, isStripeStubMode } from "@/lib/env";
-import { calculatePlatformFeeCents, resolveStoreFeeProfile, writeOrderFeeBreakdown } from "@/lib/billing/fees";
+import { calculatePlatformFeeCents, resolveStoreFeeProfile } from "@/lib/billing/fees";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { sendOrderCreatedNotifications } from "@/lib/notifications/order-emails";
 import { resolveAvailablePickupLocations } from "@/lib/pickup/availability";
@@ -14,23 +14,36 @@ import {
   type AppliedPromotionSummary,
   type PromotionApplicationRecord
 } from "@/lib/promotions/apply-promotions";
-import {
-  persistPromotionRedemptions,
-  type PromotionRedemptionPersistenceClient
-} from "@/lib/promotions/persist-redemptions";
 import { normalizePromotionRedemptionEmail, PROMOTION_CUSTOMER_CAP_REACHED_ERROR } from "@/lib/promotions/redemption";
 import { checkRateLimit } from "@/lib/security/rate-limit";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { resolveStoreSlugFromRequestAsync } from "@/lib/stores/active-store";
 import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 import { buildStorefrontCheckoutPath } from "@/lib/storefront/paths";
-import { buildStubCheckoutRpcPayload } from "@/lib/storefront/stub-checkout";
+import { resolveCheckoutAttemptIdentity } from "@/lib/storefront/checkout-attempt-identity";
+import {
+  resolveCheckoutComposition,
+  type CheckoutComposition
+} from "@/lib/storefront/checkout-composition";
+import {
+  buildStubCheckoutWithManifestRpcPayload
+} from "@/lib/storefront/stub-checkout";
 import { getStoreStripePaymentsReadiness } from "@/lib/stripe/store-payments-readiness";
 import { getStripeClient } from "@/lib/stripe/server";
 import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { resolveStoreDigitalProductsAccess } from "@/lib/digital-products/feature-gating";
+import { canResumeCheckoutWhenDigitalProductsDisabled } from "@/lib/digital-products/rollout-policy";
+import { recordDigitalProductEventBestEffort } from "@/lib/digital-products/telemetry";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isStorePaymentsReadyForLaunch, type StoreTaxCollectionMode } from "@/lib/stores/tax-compliance";
+import { enqueueDigitalDelivery } from "@/lib/digital-products/delivery-jobs";
+import { DIGITAL_PRODUCT_CONFIG } from "@/lib/digital-products/config";
+import {
+  buildDigitalManifestStripeMetadata,
+  createOrReuseCheckoutManifest,
+  DigitalPurchaseManifestError
+} from "@/lib/digital-products/manifest-service";
 
 const itemSchema = z
   .object({
@@ -54,13 +67,15 @@ const attributionTouchSchema = z.object({
 });
 
 const payloadSchema = z.object({
+  checkoutAttemptId: z.string().uuid().optional(),
   firstName: z.string().trim().min(1, "First name is required").max(80),
   lastName: z.string().trim().min(1, "Last name is required").max(80),
-  phone: z.string().trim().min(1, "Phone number is required").max(40),
+  phone: z.string().trim().max(40).optional().default(""),
   email: z.string().email("A valid email address is required"),
   buyerLatitude: z.number().min(-90).max(90).optional(),
   buyerLongitude: z.number().min(-180).max(180).optional(),
   fulfillmentMethod: z.enum(["pickup", "shipping"]).optional(),
+  digitalDeliveryConsent: z.boolean().optional().default(false),
   pickupLocationId: z.string().uuid().optional(),
   pickupWindowStartAt: z.string().datetime().optional(),
   pickupWindowEndAt: z.string().datetime().optional(),
@@ -77,11 +92,14 @@ const payloadSchema = z.object({
   items: z.array(itemSchema).min(1)
 });
 
+const LEGACY_ORDERED_CART_RECOVERY_LIMIT = 100;
+
 type VariantProductJoin = {
   id: string;
   title: string;
   status: string;
   store_id: string;
+  product_type: "physical" | "digital";
 };
 
 type VariantRow = {
@@ -103,6 +121,61 @@ type StripeCheckoutLineSource = {
   unitPriceCents: number;
 };
 
+type CheckoutSnapshotItem = StripeCheckoutLineSource & {
+  productId: string;
+  variantId: string;
+  productType: "physical" | "digital";
+};
+
+type CheckoutAttemptRow = {
+  id: string;
+  store_id: string;
+  store_slug: string;
+  customer_email: string;
+  customer_first_name: string | null;
+  customer_last_name: string | null;
+  customer_phone: string | null;
+  customer_note: string | null;
+  fulfillment_method: "pickup" | "shipping" | "digital_delivery" | null;
+  fulfillment_label: string | null;
+  shipping_fee_cents: number;
+  pickup_location_id: string | null;
+  pickup_location_snapshot_json: Record<string, unknown> | null;
+  pickup_window_start_at: string | null;
+  pickup_window_end_at: string | null;
+  pickup_timezone: string | null;
+  promo_code: string | null;
+  promo_codes_json: string[];
+  applied_promotions_json: AppliedPromotionSummary[];
+  analytics_session_key: string | null;
+  analytics_session_id: string | null;
+  source_cart_id: string | null;
+  fee_plan_key: string | null;
+  fee_bps: number | null;
+  fee_fixed_cents: number | null;
+  item_total_cents: number | null;
+  platform_fee_cents: number | null;
+  attribution_json: Record<string, unknown>;
+  items: CheckoutSnapshotItem[];
+  checkout_composition: CheckoutComposition | null;
+  digital_consent_version: string | null;
+  digital_consent_accepted_at: string | null;
+  digital_license_version: string | null;
+  digital_manifest_id: string | null;
+  checkout_mode: "stripe" | "stub" | null;
+  stripe_account_id_snapshot: string | null;
+  tax_collection_mode_snapshot: StoreTaxCollectionMode | null;
+  status: "pending" | "completed" | "failed";
+  order_id: string | null;
+  stripe_checkout_session_id: string | null;
+  stripe_checkout_url: string | null;
+  checkout_attempt_key: string;
+  checkout_request_fingerprint_sha256: string;
+  created: boolean;
+};
+
+type CheckoutAdminClient = ReturnType<typeof createSupabaseAdminClient>;
+
 type StripeCheckoutLineItem = {
   price_data: {
     currency: "usd";
@@ -114,6 +187,173 @@ type StripeCheckoutLineItem = {
   };
   quantity: number;
 };
+
+class CheckoutCatalogError extends Error {
+  constructor(message: string, readonly status = 400) {
+    super(message);
+  }
+}
+
+async function resolveCheckoutCatalog({
+  supabase,
+  storeId,
+  items
+}: {
+  supabase: CheckoutAdminClient;
+  storeId: string;
+  items: Array<z.infer<typeof itemSchema>>;
+}) {
+  const aggregatedVariantItems = new Map<string, { quantity: number; productId: string | null }>();
+  const unresolvedProductItems = new Map<string, number>();
+
+  for (const item of items) {
+    if (item.variantId) {
+      const current = aggregatedVariantItems.get(item.variantId) ?? {
+        quantity: 0,
+        productId: item.productId ?? null
+      };
+      if (current.productId && item.productId && current.productId !== item.productId) {
+        throw new CheckoutCatalogError("A selected variant does not match its product.");
+      }
+      aggregatedVariantItems.set(item.variantId, {
+        quantity: current.quantity + item.quantity,
+        productId: item.productId ?? current.productId
+      });
+      continue;
+    }
+
+    if (!item.productId) {
+      throw new CheckoutCatalogError("Each item requires a product or variant.");
+    }
+
+    unresolvedProductItems.set(
+      item.productId,
+      (unresolvedProductItems.get(item.productId) ?? 0) + item.quantity
+    );
+  }
+
+  if (unresolvedProductItems.size > 0) {
+    const unresolvedProductIds = [...unresolvedProductItems.keys()];
+    const { data: fallbackVariants, error: fallbackVariantsError } = await supabase
+      .from("product_variants")
+      .select("id,product_id,is_default,sort_order,created_at,status")
+      .eq("store_id", storeId)
+      .in("product_id", unresolvedProductIds)
+      .eq("status", "active")
+      .returns<
+        Array<{
+          id: string;
+          product_id: string;
+          is_default: boolean;
+          sort_order: number;
+          created_at: string;
+          status: "active" | "archived";
+        }>
+      >();
+
+    if (fallbackVariantsError) {
+      throw new CheckoutCatalogError(fallbackVariantsError.message, 500);
+    }
+
+    const candidatesByProduct = new Map<string, Array<(typeof fallbackVariants)[number]>>();
+    for (const variant of fallbackVariants ?? []) {
+      const candidates = candidatesByProduct.get(variant.product_id) ?? [];
+      candidates.push(variant);
+      candidatesByProduct.set(variant.product_id, candidates);
+    }
+
+    for (const [productId, quantity] of unresolvedProductItems) {
+      const candidates = candidatesByProduct.get(productId) ?? [];
+      candidates.sort((left, right) => {
+        if (left.is_default !== right.is_default) return left.is_default ? -1 : 1;
+        if (left.sort_order !== right.sort_order) return left.sort_order - right.sort_order;
+        return left.created_at.localeCompare(right.created_at);
+      });
+      const selectedVariant = candidates[0];
+      if (!selectedVariant) {
+        throw new CheckoutCatalogError(`Product ${productId} is unavailable.`);
+      }
+      const current = aggregatedVariantItems.get(selectedVariant.id) ?? {
+        quantity: 0,
+        productId
+      };
+      aggregatedVariantItems.set(selectedVariant.id, {
+        quantity: current.quantity + quantity,
+        productId
+      });
+    }
+  }
+
+  const variantIds = [...aggregatedVariantItems.keys()];
+  if (variantIds.length === 0) {
+    throw new CheckoutCatalogError("Checkout requires at least one item.");
+  }
+
+  const { data: variants, error: variantsError } = await supabase
+    .from("product_variants")
+    .select("id,product_id,title,price_cents,inventory_qty,is_made_to_order,status,option_values,products!inner(id,title,status,store_id,product_type)")
+    .eq("store_id", storeId)
+    .in("id", variantIds)
+    .returns<VariantRow[]>();
+
+  if (variantsError) {
+    throw new CheckoutCatalogError(variantsError.message, 500);
+  }
+
+  const variantMap = new Map((variants ?? []).map((variant) => [variant.id, variant]));
+  const checkoutItems: CheckoutSnapshotItem[] = [];
+  let subtotalCents = 0;
+
+  for (const [variantId, entry] of aggregatedVariantItems) {
+    const variant = variantMap.get(variantId);
+    if (!variant || variant.status !== "active") {
+      throw new CheckoutCatalogError(`Selected variant ${variantId} is unavailable.`);
+    }
+
+    const product = normalizeVariantProduct(variant.products);
+    if (!product || product.status !== "active" || product.store_id !== storeId) {
+      throw new CheckoutCatalogError("A selected product is unavailable.");
+    }
+    if (entry.productId && entry.productId !== product.id) {
+      throw new CheckoutCatalogError("A selected variant does not match its product.");
+    }
+    if (product.product_type === "digital" && entry.quantity !== 1) {
+      throw new CheckoutCatalogError("Digital products have a quantity of one.");
+    }
+    if (
+      product.product_type === "physical" &&
+      !variant.is_made_to_order &&
+      variant.inventory_qty < entry.quantity
+    ) {
+      const label = formatVariantLabel(
+        { title: variant.title, option_values: variant.option_values },
+        product.title
+      );
+      throw new CheckoutCatalogError(`Insufficient inventory for ${label}.`);
+    }
+
+    const variantLabel = formatVariantLabel(
+      { title: variant.title, option_values: variant.option_values },
+      product.title
+    );
+    subtotalCents += variant.price_cents * entry.quantity;
+    checkoutItems.push({
+      productId: product.id,
+      variantId,
+      quantity: entry.quantity,
+      variantLabel,
+      productTitle: product.title,
+      productType: product.product_type,
+      unitPriceCents: variant.price_cents
+    });
+  }
+
+  return {
+    items: checkoutItems,
+    subtotalCents,
+    composition: resolveCheckoutComposition(checkoutItems)
+  };
+}
 
 function normalizeVariantProduct(product: VariantRow["products"]): VariantProductJoin | null {
   if (!product) {
@@ -223,6 +463,292 @@ function buildStripeCheckoutLineItems(items: StripeCheckoutLineSource[], discoun
   return lineItems;
 }
 
+async function createDigitalManifestForCheckout(checkout: CheckoutAttemptRow) {
+  if (!checkout.digital_consent_accepted_at) {
+    return null;
+  }
+
+  return createOrReuseCheckoutManifest({
+    checkoutSessionId: checkout.id,
+    storeId: checkout.store_id,
+    items: checkout.items,
+    consent: {
+      version: checkout.digital_consent_version ?? DIGITAL_PRODUCT_CONFIG.consentVersion,
+      acceptedAt: checkout.digital_consent_accepted_at
+    }
+  });
+}
+
+async function markManifestFailure(
+  supabase: CheckoutAdminClient,
+  checkout: CheckoutAttemptRow,
+  error: unknown
+) {
+  await recordDigitalProductEventBestEffort(supabase, {
+    eventType: "manifest_failed",
+    storeId: checkout.store_id,
+    dimensions: {
+      stage: "checkout_manifest",
+      outcome: "failed",
+      composition: checkout.checkout_composition ?? resolveCheckoutComposition(checkout.items),
+    },
+  });
+  await supabase
+    .from("storefront_checkout_sessions")
+    .update({ status: "failed", error_message: "Digital files were not ready for checkout." })
+    .eq("id", checkout.id);
+
+  return NextResponse.json(
+    { error: error instanceof Error ? error.message : "Digital files are not ready for checkout." },
+    { status: error instanceof DigitalPurchaseManifestError ? 409 : 500 }
+  );
+}
+
+async function resumeStubCheckout(
+  supabase: CheckoutAdminClient,
+  checkout: CheckoutAttemptRow
+) {
+  if (checkout.status === "failed") {
+    return NextResponse.json(
+      { error: "This checkout attempt can no longer be used. Please try checkout again." },
+      { status: 409 }
+    );
+  }
+
+  const hasDigitalItems = checkout.items.some((item) => item.productType === "digital");
+  let manifestId = checkout.digital_manifest_id;
+  if (hasDigitalItems && !manifestId) {
+    try {
+      manifestId = (await createDigitalManifestForCheckout(checkout))?.manifestId ?? null;
+    } catch (error) {
+      return markManifestFailure(supabase, checkout, error);
+    }
+  }
+
+  const subtotalCents = checkout.items.reduce(
+    (sum, item) => sum + item.unitPriceCents * item.quantity,
+    0
+  );
+  const discountCents = Math.max(0, subtotalCents - (checkout.item_total_cents ?? subtotalCents));
+  const stubPaymentRef = `stub_pi_${checkout.id.replaceAll("-", "")}`;
+  const { data, error } = await supabase.rpc(
+    "stub_checkout_create_paid_order_with_manifest",
+    buildStubCheckoutWithManifestRpcPayload({
+      storeSlug: checkout.store_slug,
+      customerEmail: checkout.customer_email,
+      customerUserId: null,
+      items: checkout.items,
+      stubPaymentRef,
+      discountCents,
+      promoCode: checkout.promo_code,
+      checkoutSessionId: checkout.id,
+      digitalManifestId: manifestId
+    })
+  );
+
+  if (error) {
+    const message = error.message || "Unable to complete checkout.";
+    if (message.includes("Store not found")) {
+      return NextResponse.json({ error: message }, { status: 404 });
+    }
+    if (message.includes("Insufficient inventory") || message.includes("unavailable") || message.includes("Promo")) {
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+
+  const result = Array.isArray(data) ? data[0] : data;
+  if (!result?.order_id) {
+    return NextResponse.json({ error: "Checkout did not return an order id." }, { status: 500 });
+  }
+
+  await sendOrderCreatedNotifications(result.order_id);
+  if (manifestId) {
+    await enqueueDigitalDelivery(result.order_id, manifestId);
+  }
+
+  return NextResponse.json({
+    orderId: result.order_id,
+    status: "paid",
+    totalCents: result.total_cents,
+    discountCents: result.discount_cents,
+    promoCode: result.promo_code,
+    paymentMode: "stub"
+  });
+}
+
+async function resumeStripeCheckout(
+  supabase: CheckoutAdminClient,
+  checkout: CheckoutAttemptRow
+) {
+  if (checkout.status === "completed" && checkout.order_id) {
+    if (checkout.digital_manifest_id) {
+      await enqueueDigitalDelivery(checkout.order_id, checkout.digital_manifest_id);
+    }
+    return NextResponse.json({
+      orderId: checkout.order_id,
+      status: "paid",
+      paymentMode: "stripe"
+    });
+  }
+  if (checkout.status !== "pending") {
+    return NextResponse.json(
+      { error: "This checkout attempt can no longer be used. Please try checkout again." },
+      { status: 409 }
+    );
+  }
+  if (checkout.stripe_checkout_session_id && checkout.stripe_checkout_url) {
+    return NextResponse.json({
+      mode: "checkout",
+      checkoutUrl: checkout.stripe_checkout_url,
+      sessionId: checkout.stripe_checkout_session_id,
+      paymentMode: "stripe"
+    });
+  }
+  if (!checkout.stripe_account_id_snapshot) {
+    return NextResponse.json({ error: "This checkout attempt is missing its payment configuration." }, { status: 409 });
+  }
+
+  const checkoutComposition = checkout.checkout_composition ?? resolveCheckoutComposition(checkout.items);
+  const checkoutHasDigitalItems = checkoutComposition !== "physical_only";
+  const checkoutHasPhysicalItems = checkoutComposition !== "digital_only";
+  const checkoutSubtotalCents = checkout.items.reduce(
+    (sum, item) => sum + item.unitPriceCents * item.quantity,
+    0
+  );
+  const checkoutDiscountCents = Math.max(
+    0,
+    checkoutSubtotalCents - (checkout.item_total_cents ?? checkoutSubtotalCents)
+  );
+  let digitalManifestId = checkout.digital_manifest_id;
+  if (checkoutHasDigitalItems && !digitalManifestId) {
+    try {
+      digitalManifestId = (await createDigitalManifestForCheckout(checkout))?.manifestId ?? null;
+    } catch (error) {
+      return markManifestFailure(supabase, checkout, error);
+    }
+  }
+
+  const digitalManifestMetadata = digitalManifestId
+    ? buildDigitalManifestStripeMetadata(digitalManifestId)
+    : {};
+  const stripeAccountId = checkout.stripe_account_id_snapshot;
+  const metadata = {
+    checkout_kind: "storefront_order",
+    storefront_checkout_id: checkout.id,
+    store_id: checkout.store_id,
+    store_slug: checkout.store_slug,
+    promo_codes: checkout.promo_codes_json.join(","),
+    pickup_location_id: checkout.pickup_location_id ?? "",
+    pickup_window_start_at: checkout.pickup_window_start_at ?? "",
+    pickup_window_end_at: checkout.pickup_window_end_at ?? "",
+    ...digitalManifestMetadata
+  };
+  const paymentIntentData: {
+    transfer_data: { destination: string };
+    application_fee_amount?: number;
+    metadata: Record<string, string>;
+  } = {
+    transfer_data: { destination: stripeAccountId },
+    metadata
+  };
+  if ((checkout.platform_fee_cents ?? 0) > 0) {
+    paymentIntentData.application_fee_amount = checkout.platform_fee_cents ?? 0;
+  }
+
+  let sessionId: string | null = null;
+  let sessionUrl: string | null = null;
+  try {
+    const session = await getStripeClient().checkout.sessions.create({
+      mode: "payment",
+      customer_email: checkout.customer_email,
+      ...(checkout.tax_collection_mode_snapshot === "stripe_tax"
+        ? {
+            automatic_tax: {
+              enabled: true,
+              liability: { type: "account" as const, account: stripeAccountId }
+            }
+          }
+        : {}),
+      ...(checkoutHasPhysicalItems ? { billing_address_collection: "auto" as const } : {}),
+      ...(checkoutHasPhysicalItems && checkout.fulfillment_method === "shipping"
+        ? { shipping_address_collection: { allowed_countries: ["US" as const] } }
+        : {}),
+      line_items: buildStripeCheckoutLineItems(checkout.items, checkoutDiscountCents),
+      ...(checkoutHasPhysicalItems && checkout.fulfillment_method === "shipping"
+        ? {
+            shipping_options: [{
+              shipping_rate_data: {
+                display_name: checkout.fulfillment_label ?? "Shipping",
+                type: "fixed_amount" as const,
+                fixed_amount: { amount: checkout.shipping_fee_cents, currency: "usd" }
+              }
+            }]
+          }
+        : {}),
+      success_url: `${getAppUrl()}${buildStorefrontCheckoutPath(checkout.store_slug)}?status=success&session_id={CHECKOUT_SESSION_ID}&checkoutComposition=${checkoutComposition}`,
+      cancel_url: `${getAppUrl()}${buildStorefrontCheckoutPath(checkout.store_slug)}?status=cancelled`,
+      metadata: { ...metadata, promo_code: checkout.promo_code ?? "" },
+      payment_intent_data: paymentIntentData
+    }, {
+      idempotencyKey: `storefront-checkout:${checkout.id}`
+    });
+    sessionId = session.id;
+    sessionUrl = session.url;
+  } catch (error) {
+    await supabase
+      .from("storefront_checkout_sessions")
+      .update({ error_message: error instanceof Error ? error.message : "Stripe checkout session creation failed." })
+      .eq("id", checkout.id);
+    return NextResponse.json(
+      { error: "We could not confirm checkout yet. Please try again; you will not be charged twice." },
+      { status: 503, headers: { "Retry-After": "2" } }
+    );
+  }
+
+  if (!sessionId) {
+    await supabase
+      .from("storefront_checkout_sessions")
+      .update({ error_message: "Stripe checkout session did not return a session id." })
+      .eq("id", checkout.id);
+    return NextResponse.json(
+      { error: "We could not confirm checkout yet. Please try again; you will not be charged twice." },
+      { status: 503, headers: { "Retry-After": "2" } }
+    );
+  }
+
+  const { error } = await supabase.rpc("bind_storefront_checkout_stripe_session", {
+    p_checkout_session_id: checkout.id,
+    p_store_id: checkout.store_id,
+    p_stripe_checkout_session_id: sessionId,
+    p_stripe_checkout_url: sessionUrl
+  });
+  if (error) {
+    return NextResponse.json(
+      { error: "Checkout was created, but we could not confirm it yet. Please try again; you will not be charged twice." },
+      { status: 503, headers: { "Retry-After": "2" } }
+    );
+  }
+
+  if (!sessionUrl) {
+    await supabase
+      .from("storefront_checkout_sessions")
+      .update({ error_message: "Stripe checkout session is accepted but its redirect URL is not available yet." })
+      .eq("id", checkout.id);
+    return NextResponse.json(
+      { error: "We could not confirm checkout yet. Please try again; you will not be charged twice." },
+      { status: 503, headers: { "Retry-After": "2" } }
+    );
+  }
+
+  return NextResponse.json({
+    mode: "checkout",
+    checkoutUrl: sessionUrl,
+    sessionId,
+    paymentMode: "stripe"
+  });
+}
+
 export async function POST(request: NextRequest) {
   const trustedOriginResponse = enforceTrustedOrigin(request);
 
@@ -247,6 +773,7 @@ export async function POST(request: NextRequest) {
 
   const supabase = createSupabaseAdminClient();
   const {
+    checkoutAttemptId,
     firstName,
     lastName,
     phone,
@@ -262,7 +789,8 @@ export async function POST(request: NextRequest) {
     promoCode,
     promoCodes,
     analyticsSessionId,
-    attribution
+    attribution,
+    digitalDeliveryConsent
   } = payload.data;
   const storeSlug = await resolveStoreSlugFromRequestAsync(request);
   if (!storeSlug) {
@@ -328,6 +856,194 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  const findCustomerCarts = async (status: "active" | "ordered") => {
+    if (!authenticatedUser) {
+      return {
+        carts: [] as Array<{ id: string; status: "active" | "ordered" }>,
+        error: null,
+        exhaustive: true
+      };
+    }
+    const candidateLimit = status === "active" ? 1 : LEGACY_ORDERED_CART_RECOVERY_LIMIT;
+    const { data: carts, error, count } = await serverSupabase
+      .from("customer_carts")
+      .select("id,status", { count: "exact" })
+      .eq("user_id", authenticatedUser.id)
+      .eq("store_id", store.id)
+      .eq("status", status)
+      .order(status === "active" ? "created_at" : "updated_at", { ascending: false })
+      .limit(candidateLimit + 1)
+      .returns<Array<{ id: string; status: "active" | "ordered" }>>();
+
+    const resolvedCarts = carts ?? [];
+    const hasExactCandidateCount =
+      typeof count === "number" &&
+      Number.isFinite(count) &&
+      Number.isSafeInteger(count) &&
+      count >= 0;
+    return {
+      carts: resolvedCarts,
+      error,
+      exhaustive:
+        hasExactCandidateCount &&
+        count === resolvedCarts.length &&
+        count <= candidateLimit
+    };
+  };
+  const checkoutIntent = {
+    firstName,
+    lastName,
+    phone: phone.trim(),
+    email: email.trim().toLowerCase(),
+    buyerLatitude: buyerLatitude ?? null,
+    buyerLongitude: buyerLongitude ?? null,
+    fulfillmentMethod: fulfillmentMethod ?? null,
+    digitalDeliveryConsent,
+    pickupLocationId: pickupLocationId ?? null,
+    pickupWindowStartAt: pickupWindowStartAt ?? null,
+    pickupWindowEndAt: pickupWindowEndAt ?? null,
+    customerNote: customerNote?.trim() || null,
+    promoCode: promoCode?.trim().toUpperCase() || null,
+    promoCodes: promoCodes?.map((code) => code.trim().toUpperCase()) ?? [],
+    items
+  };
+  const resolveIdentity = (cartId: string | null) => resolveCheckoutAttemptIdentity({
+    checkoutAttemptId,
+    storeId: store.id,
+    customerEmail: email,
+    sourceCartId: cartId,
+    intent: checkoutIntent
+  });
+  const getExistingCheckout = async (identity: ReturnType<typeof resolveCheckoutAttemptIdentity>) => {
+    const result = await supabase.rpc("get_storefront_checkout_attempt", {
+      p_store_id: store.id,
+      p_checkout_attempt_key: identity.attemptKey,
+      p_request_fingerprint_sha256: identity.fingerprintSha256
+    });
+    return {
+      checkout: result.data as CheckoutAttemptRow | null,
+      error: result.error
+    };
+  };
+
+  let sourceCartId: string | null = null;
+  let checkoutAttemptIdentity: ReturnType<typeof resolveCheckoutAttemptIdentity>;
+  let existingCheckout: CheckoutAttemptRow | null = null;
+
+  if (!checkoutAttemptId && authenticatedUser) {
+    const [activeCartResult, orderedCartResult] = await Promise.all([
+      findCustomerCarts("active"),
+      findCustomerCarts("ordered")
+    ]);
+    const cartLookupError = activeCartResult.error ?? orderedCartResult.error;
+    if (cartLookupError) {
+      return NextResponse.json({ error: cartLookupError.message }, { status: 500 });
+    }
+    if (!activeCartResult.exhaustive || !orderedCartResult.exhaustive) {
+      return NextResponse.json(
+        { error: "We could not safely identify which checkout to resume. Please refresh your cart and try again." },
+        { status: 409 }
+      );
+    }
+
+    const matchingAttempts: Array<{
+      cartId: string;
+      identity: ReturnType<typeof resolveCheckoutAttemptIdentity>;
+      checkout: CheckoutAttemptRow;
+    }> = [];
+    const candidateCarts = [...new Map(
+      [...activeCartResult.carts, ...orderedCartResult.carts].map((cart) => [cart.id, cart])
+    ).values()];
+    for (const cart of candidateCarts) {
+      const identity = resolveIdentity(cart.id);
+      const lookup = await getExistingCheckout(identity);
+      if (lookup.error) {
+        const fingerprintConflict = lookup.error.message?.includes("different purchase details");
+        return NextResponse.json(
+          { error: fingerprintConflict ? "This checkout attempt does not match the original purchase." : "Unable to resume checkout." },
+          { status: fingerprintConflict ? 409 : 500 }
+        );
+      }
+      if (lookup.checkout) {
+        matchingAttempts.push({ cartId: cart.id, identity, checkout: lookup.checkout });
+      }
+    }
+
+    if (matchingAttempts.length > 1) {
+      return NextResponse.json(
+        { error: "We could not safely identify which checkout to resume. Please refresh your cart and try again." },
+        { status: 409 }
+      );
+    }
+
+    if (matchingAttempts.length === 1) {
+      const match = matchingAttempts[0]!;
+      sourceCartId = match.cartId;
+      checkoutAttemptIdentity = match.identity;
+      existingCheckout = match.checkout;
+    } else if (activeCartResult.carts.length === 1 && orderedCartResult.carts.length === 0) {
+      sourceCartId = activeCartResult.carts[0]!.id;
+      checkoutAttemptIdentity = resolveIdentity(sourceCartId);
+    } else {
+      return NextResponse.json(
+        { error: "We could not safely start this checkout. Please refresh your cart and try again." },
+        { status: 409 }
+      );
+    }
+  } else {
+    checkoutAttemptIdentity = resolveIdentity(null);
+    const lookup = await getExistingCheckout(checkoutAttemptIdentity);
+    if (lookup.error) {
+      const fingerprintConflict = lookup.error.message?.includes("different purchase details");
+      return NextResponse.json(
+        { error: fingerprintConflict ? "This checkout attempt does not match the original purchase." : "Unable to resume checkout." },
+        { status: fingerprintConflict ? 409 : 500 }
+      );
+    }
+    existingCheckout = lookup.checkout;
+  }
+
+  const digitalProductsAccess = await resolveStoreDigitalProductsAccess(supabase, store.id)
+    .catch(() => ({ enabled: false }));
+  if (
+    existingCheckout
+    && !digitalProductsAccess.enabled
+    && !canResumeCheckoutWhenDigitalProductsDisabled(
+      existingCheckout.checkout_composition ?? resolveCheckoutComposition(existingCheckout.items),
+      existingCheckout.status,
+    )
+  ) {
+    return NextResponse.json(
+      { error: "Digital products are no longer available for new checkout attempts." },
+      { status: 409 },
+    );
+  }
+
+  if (existingCheckout?.checkout_mode === "stub") {
+    return resumeStubCheckout(supabase, existingCheckout);
+  }
+  if (existingCheckout?.checkout_mode === "stripe") {
+    return resumeStripeCheckout(supabase, existingCheckout);
+  }
+
+  if (checkoutAttemptId) {
+    const activeCartResult = await findCustomerCarts("active");
+    if (activeCartResult.error) {
+      return NextResponse.json({ error: activeCartResult.error.message }, { status: 500 });
+    }
+    if (!activeCartResult.exhaustive) {
+      return NextResponse.json(
+        { error: "We could not safely identify your active cart. Please refresh your cart and try again." },
+        { status: 409 }
+      );
+    }
+    sourceCartId = activeCartResult.carts[0]?.id ?? null;
+  }
+  const sessionLink = await resolveStorefrontSessionLink(supabase, {
+    storeId: store.id,
+    sessionKey: analyticsSessionId
+  });
+
   const { data: taxDecision, error: taxDecisionError } = await supabase
     .from("stores")
     .select("tax_collection_mode")
@@ -342,24 +1058,30 @@ export async function POST(request: NextRequest) {
     ? "unconfigured"
     : (taxDecision?.tax_collection_mode ?? "unconfigured");
 
-  const sessionLink = await resolveStorefrontSessionLink(supabase, {
-    storeId: store.id,
-    sessionKey: analyticsSessionId
-  });
+  let resolvedCatalog: Awaited<ReturnType<typeof resolveCheckoutCatalog>>;
+  try {
+    resolvedCatalog = await resolveCheckoutCatalog({
+      supabase,
+      storeId: store.id,
+      items
+    });
+  } catch (error) {
+    if (error instanceof CheckoutCatalogError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    throw error;
+  }
 
-  let sourceCartId: string | null = null;
-  if (authenticatedUser) {
-    const { data: activeCart } = await serverSupabase
-      .from("customer_carts")
-      .select("id")
-      .eq("user_id", authenticatedUser.id)
-      .eq("store_id", store.id)
-      .eq("status", "active")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle<{ id: string }>();
-
-    sourceCartId = activeCart?.id ?? null;
+  const rpcItems = resolvedCatalog.items;
+  const subtotalCents = resolvedCatalog.subtotalCents;
+  const checkoutComposition = resolvedCatalog.composition;
+  const hasDigitalItems = checkoutComposition !== "physical_only";
+  const hasPhysicalItems = checkoutComposition !== "digital_only";
+  if (hasDigitalItems && !digitalProductsAccess.enabled) {
+    return NextResponse.json(
+      { error: "Digital products are no longer available for checkout." },
+      { status: 409 },
+    );
   }
 
   const { data: checkoutSettings, error: checkoutSettingsError } = await supabase
@@ -383,51 +1105,58 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: checkoutSettingsError.message }, { status: 500 });
   }
 
-  const { data: pickupSettings, error: pickupSettingsError } = await supabase
-    .from("store_pickup_settings")
-    .select(
-      "pickup_enabled,selection_mode,geolocation_fallback_mode,out_of_radius_behavior,eligibility_radius_miles,lead_time_hours,slot_interval_minutes,show_pickup_times,timezone"
-    )
-    .eq("store_id", store.id)
-    .maybeSingle<{
-      pickup_enabled: boolean;
-      selection_mode: "buyer_select" | "hidden_nearest";
-      geolocation_fallback_mode: "allow_without_distance" | "disable_pickup";
-      out_of_radius_behavior: "disable_pickup" | "allow_all_locations";
-      eligibility_radius_miles: number;
-      lead_time_hours: number;
-      slot_interval_minutes: number;
-      show_pickup_times: boolean;
-      timezone: string;
-    }>();
+  type PickupSettings = {
+    pickup_enabled: boolean;
+    selection_mode: "buyer_select" | "hidden_nearest";
+    geolocation_fallback_mode: "allow_without_distance" | "disable_pickup";
+    out_of_radius_behavior: "disable_pickup" | "allow_all_locations";
+    eligibility_radius_miles: number;
+    lead_time_hours: number;
+    slot_interval_minutes: number;
+    show_pickup_times: boolean;
+    timezone: string;
+  };
+  type PickupLocation = {
+    id: string;
+    name: string;
+    address_line1: string;
+    address_line2: string | null;
+    city: string;
+    state_region: string;
+    postal_code: string;
+    country_code: string;
+    latitude: number | null;
+    longitude: number | null;
+    is_active: boolean;
+  };
 
-  if (pickupSettingsError) {
-    return NextResponse.json({ error: pickupSettingsError.message }, { status: 500 });
-  }
+  let pickupSettings: PickupSettings | null = null;
+  let pickupLocations: PickupLocation[] = [];
+  if (hasPhysicalItems) {
+    const pickupSettingsResult = await supabase
+      .from("store_pickup_settings")
+      .select(
+        "pickup_enabled,selection_mode,geolocation_fallback_mode,out_of_radius_behavior,eligibility_radius_miles,lead_time_hours,slot_interval_minutes,show_pickup_times,timezone"
+      )
+      .eq("store_id", store.id)
+      .maybeSingle<PickupSettings>();
 
-  const { data: pickupLocations, error: pickupLocationsError } = await supabase
-    .from("pickup_locations")
-    .select("id,name,address_line1,address_line2,city,state_region,postal_code,country_code,latitude,longitude,is_active")
-    .eq("store_id", store.id)
-    .eq("is_active", true)
-    .returns<
-      Array<{
-        id: string;
-        name: string;
-        address_line1: string;
-        address_line2: string | null;
-        city: string;
-        state_region: string;
-        postal_code: string;
-        country_code: string;
-        latitude: number | null;
-        longitude: number | null;
-        is_active: boolean;
-      }>
-    >();
+    if (pickupSettingsResult.error) {
+      return NextResponse.json({ error: pickupSettingsResult.error.message }, { status: 500 });
+    }
+    pickupSettings = pickupSettingsResult.data;
 
-  if (pickupLocationsError) {
-    return NextResponse.json({ error: pickupLocationsError.message }, { status: 500 });
+    const pickupLocationsResult = await supabase
+      .from("pickup_locations")
+      .select("id,name,address_line1,address_line2,city,state_region,postal_code,country_code,latitude,longitude,is_active")
+      .eq("store_id", store.id)
+      .eq("is_active", true)
+      .returns<PickupLocation[]>();
+
+    if (pickupLocationsResult.error) {
+      return NextResponse.json({ error: pickupLocationsResult.error.message }, { status: 500 });
+    }
+    pickupLocations = pickupLocationsResult.data ?? [];
   }
 
   const configuredFulfillmentOptions: Array<{ method: "pickup" | "shipping"; label: string; feeCents: number }> = [];
@@ -453,8 +1182,14 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  let selectedFulfillment = configuredFulfillmentOptions[0]!;
-  if (configuredFulfillmentOptions.length > 1) {
+  let selectedFulfillment: {
+    method: "pickup" | "shipping" | "digital_delivery";
+    label: string;
+    feeCents: number;
+  } = checkoutComposition === "digital_only"
+    ? { method: "digital_delivery", label: "Digital delivery", feeCents: 0 }
+    : configuredFulfillmentOptions[0]!;
+  if (checkoutComposition !== "digital_only" && configuredFulfillmentOptions.length > 1) {
     if (!fulfillmentMethod) {
       return NextResponse.json({ error: "Please choose how to receive your order." }, { status: 400 });
     }
@@ -463,7 +1198,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Selected fulfillment option is unavailable." }, { status: 400 });
     }
     selectedFulfillment = matched;
-  } else if (fulfillmentMethod) {
+  } else if (checkoutComposition !== "digital_only" && fulfillmentMethod) {
     const matched = configuredFulfillmentOptions.find((option) => option.method === fulfillmentMethod);
     if (matched) {
       selectedFulfillment = matched;
@@ -471,7 +1206,10 @@ export async function POST(request: NextRequest) {
   }
 
   const normalizedCustomerNote = checkoutSettings?.checkout_allow_order_note ? customerNote?.trim() || null : null;
-  const normalizedPhone = phone.trim();
+  if (hasPhysicalItems && !phone.trim()) {
+    return NextResponse.json({ error: "Phone is required for physical fulfillment." }, { status: 400 });
+  }
+  const normalizedPhone = hasPhysicalItems ? phone.trim() : null;
   let resolvedPickupLocationId: string | null = null;
   let resolvedPickupLocationSnapshot: Record<string, unknown> | null = null;
   let resolvedPickupWindowStartAt: string | null = null;
@@ -647,145 +1385,17 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const aggregatedVariantItems = new Map<string, { quantity: number; productId: string | null }>();
-  const unresolvedProductItems = new Map<string, number>();
-
-  for (const item of items) {
-    if (item.variantId) {
-      const current = aggregatedVariantItems.get(item.variantId) ?? { quantity: 0, productId: item.productId ?? null };
-      aggregatedVariantItems.set(item.variantId, {
-        quantity: current.quantity + item.quantity,
-        productId: item.productId ?? current.productId
-      });
-      continue;
-    }
-
-    if (!item.productId) {
-      return NextResponse.json({ error: "Each item requires a product or variant." }, { status: 400 });
-    }
-
-    unresolvedProductItems.set(item.productId, (unresolvedProductItems.get(item.productId) ?? 0) + item.quantity);
-  }
-
-  if (unresolvedProductItems.size > 0) {
-    const unresolvedProductIds = [...unresolvedProductItems.keys()];
-
-    const { data: fallbackVariants, error: fallbackVariantsError } = await supabase
-      .from("product_variants")
-      .select("id,product_id,is_default,sort_order,created_at,status")
-      .eq("store_id", store.id)
-      .in("product_id", unresolvedProductIds)
-      .eq("status", "active")
-      .returns<
-        Array<{
-          id: string;
-          product_id: string;
-          is_default: boolean;
-          sort_order: number;
-          created_at: string;
-          status: "active" | "archived";
-        }>
-      >();
-
-    if (fallbackVariantsError) {
-      return NextResponse.json({ error: fallbackVariantsError.message }, { status: 500 });
-    }
-
-    const variantCandidatesByProduct = new Map<string, Array<(typeof fallbackVariants)[number]>>();
-
-    for (const variant of fallbackVariants ?? []) {
-      const bucket = variantCandidatesByProduct.get(variant.product_id) ?? [];
-      bucket.push(variant);
-      variantCandidatesByProduct.set(variant.product_id, bucket);
-    }
-
-    for (const [productId, quantity] of unresolvedProductItems.entries()) {
-      const candidates = variantCandidatesByProduct.get(productId) ?? [];
-      candidates.sort((left, right) => {
-        if (left.is_default !== right.is_default) {
-          return left.is_default ? -1 : 1;
-        }
-
-        if (left.sort_order !== right.sort_order) {
-          return left.sort_order - right.sort_order;
-        }
-
-        return left.created_at.localeCompare(right.created_at);
-      });
-
-      const selectedVariant = candidates[0];
-
-      if (!selectedVariant) {
-        return NextResponse.json({ error: `Product ${productId} is unavailable.` }, { status: 400 });
-      }
-
-      const current = aggregatedVariantItems.get(selectedVariant.id) ?? { quantity: 0, productId };
-      aggregatedVariantItems.set(selectedVariant.id, {
-        quantity: current.quantity + quantity,
-        productId
-      });
-    }
-  }
-
-  const variantIds = [...aggregatedVariantItems.keys()];
-
-  if (variantIds.length === 0) {
-    return NextResponse.json({ error: "Checkout requires at least one item." }, { status: 400 });
-  }
-
-  const { data: variants, error: variantsError } = await supabase
-    .from("product_variants")
-    .select("id,product_id,title,price_cents,inventory_qty,is_made_to_order,status,option_values,products!inner(id,title,status,store_id)")
-    .eq("store_id", store.id)
-    .in("id", variantIds)
-    .returns<VariantRow[]>();
-
-  if (variantsError) {
-    return NextResponse.json({ error: variantsError.message }, { status: 500 });
-  }
-
-  const variantMap = new Map((variants ?? []).map((variant) => [variant.id, variant]));
-  const rpcItems: Array<{ productId: string; variantId: string; quantity: number; variantLabel: string; productTitle: string; unitPriceCents: number }> = [];
-  let subtotalCents = 0;
-
-  for (const [variantId, entry] of aggregatedVariantItems.entries()) {
-    const variant = variantMap.get(variantId);
-
-    if (!variant || variant.status !== "active") {
-      return NextResponse.json({ error: `Selected variant ${variantId} is unavailable.` }, { status: 400 });
-    }
-
-    const product = normalizeVariantProduct(variant.products);
-
-    if (!product || product.status !== "active") {
-      return NextResponse.json({ error: "A selected product is unavailable." }, { status: 400 });
-    }
-
-    if (!variant.is_made_to_order && variant.inventory_qty < entry.quantity) {
-      const label = formatVariantLabel({ title: variant.title, option_values: variant.option_values }, product.title);
-      return NextResponse.json({ error: `Insufficient inventory for ${label}.` }, { status: 400 });
-    }
-
-    subtotalCents += variant.price_cents * entry.quantity;
-
-    const variantLabel = formatVariantLabel({ title: variant.title, option_values: variant.option_values }, product.title);
-
-    rpcItems.push({
-      productId: product.id,
-      variantId,
-      quantity: entry.quantity,
-      variantLabel,
-      productTitle: product.title,
-      unitPriceCents: variant.price_cents
-    });
-  }
-
   let discountCents = 0;
   let normalizedPromoCode: string | null = null;
   let normalizedPromoCodes: string[] = [];
   let appliedPromotions: AppliedPromotionSummary[] = [];
   const normalizedCustomerEmail = normalizePromotionRedemptionEmail(email);
-  let shippingFeeCents = selectedFulfillment.feeCents;
+  const allowsShippingPromotions = hasPhysicalItems && selectedFulfillment.method === "shipping";
+  let shippingFeeCents = hasPhysicalItems ? selectedFulfillment.feeCents : 0;
+  if (hasDigitalItems && !digitalDeliveryConsent) {
+    return NextResponse.json({ error: "Confirm immediate digital delivery before checkout." }, { status: 400 });
+  }
+  if (!hasPhysicalItems) shippingFeeCents = 0;
 
   normalizedPromoCodes = normalizeRequestedPromoCodes({ promoCode, promoCodes });
   normalizedPromoCode = normalizedPromoCodes.length > 0 ? normalizedPromoCodes.join(", ") : null;
@@ -809,9 +1419,9 @@ export async function POST(request: NextRequest) {
         requestedCodes: normalizedPromoCodes,
         promotionsByCode,
         subtotalCents,
-        shippingFeeCents: selectedFulfillment.method === "shipping" ? selectedFulfillment.feeCents : 0,
+        shippingFeeCents: allowsShippingPromotions ? selectedFulfillment.feeCents : 0,
         maxPromoCodes: checkoutSettings?.checkout_max_promo_codes ?? 1,
-        allowShippingPromotions: selectedFulfillment.method === "shipping",
+        allowShippingPromotions: allowsShippingPromotions,
         getCustomerRedemptionCount: async (promotion) => {
           const redemptionIds = new Set<string>();
 
@@ -853,7 +1463,9 @@ export async function POST(request: NextRequest) {
 
       discountCents = promotionApplication.itemDiscountCents;
       appliedPromotions = promotionApplication.appliedPromotions;
-      shippingFeeCents = selectedFulfillment.method === "shipping" ? promotionApplication.effectiveShippingFeeCents : selectedFulfillment.feeCents;
+      shippingFeeCents = allowsShippingPromotions
+        ? promotionApplication.effectiveShippingFeeCents
+        : (hasPhysicalItems ? selectedFulfillment.feeCents : 0);
     } catch (error) {
       return NextResponse.json(
         { error: error instanceof Error ? error.message : PROMOTION_CUSTOMER_CAP_REACHED_ERROR },
@@ -873,111 +1485,76 @@ export async function POST(request: NextRequest) {
 
   const isFreeOrder = totalCents === 0;
   const shouldUseStubMode = isStripeStubMode() || isFreeOrder || (isStoreTeamMember && !isStorePubliclyAccessibleStatus(store.status));
+  const digitalConsentAcceptedAt = hasDigitalItems ? new Date().toISOString() : null;
+  const pendingCheckoutValues = {
+    store_id: store.id,
+    store_slug: store.slug,
+    customer_email: email,
+    customer_first_name: firstName,
+    customer_last_name: lastName,
+    customer_phone: normalizedPhone,
+    customer_note: normalizedCustomerNote,
+    fulfillment_method: selectedFulfillment.method,
+    fulfillment_label: selectedFulfillment.label,
+    shipping_fee_cents: shippingFeeCents,
+    digital_consent_version: hasDigitalItems ? DIGITAL_PRODUCT_CONFIG.consentVersion : null,
+    digital_consent_accepted_at: digitalConsentAcceptedAt,
+    digital_license_version: hasDigitalItems ? DIGITAL_PRODUCT_CONFIG.licenseVersion : null,
+    pickup_location_id: resolvedPickupLocationId,
+    pickup_location_snapshot_json: resolvedPickupLocationSnapshot,
+    pickup_window_start_at: resolvedPickupWindowStartAt,
+    pickup_window_end_at: resolvedPickupWindowEndAt,
+    pickup_timezone: resolvedPickupTimezone,
+    promo_code: normalizedPromoCode,
+    promo_codes_json: normalizedPromoCodes,
+    applied_promotions_json: appliedPromotions,
+    analytics_session_key: sessionLink?.sessionKey ?? null,
+    analytics_session_id: sessionLink?.id ?? null,
+    source_cart_id: sourceCartId,
+    fee_plan_key: feeProfile.planKey,
+    fee_bps: feeProfile.feeBps,
+    fee_fixed_cents: feeProfile.feeFixedCents,
+    item_total_cents: itemTotalCents,
+    platform_fee_cents: platformFeeCents,
+    attribution_json: attribution ?? {},
+    items: rpcItems,
+    checkout_composition: checkoutComposition,
+    checkout_mode: shouldUseStubMode ? "stub" : "stripe",
+    stripe_account_id_snapshot: shouldUseStubMode ? null : store.stripe_account_id,
+    tax_collection_mode_snapshot: taxCollectionMode,
+    status: "pending"
+  } as const;
+
+  const createPendingCheckout = async () => {
+    const result = await supabase.rpc("create_or_reuse_storefront_checkout_attempt", {
+      p_store_id: store.id,
+      p_checkout_attempt_key: checkoutAttemptIdentity.attemptKey,
+      p_request_fingerprint_sha256: checkoutAttemptIdentity.fingerprintSha256,
+      p_checkout: pendingCheckoutValues
+    });
+
+    return {
+      data: result.data as CheckoutAttemptRow | null,
+      error: result.error
+    };
+  };
 
   if (shouldUseStubMode) {
-    const { data, error } = await supabase.rpc(
-      "stub_checkout_create_paid_order",
-      buildStubCheckoutRpcPayload({
-        storeSlug,
-        customerEmail: email,
-        customerUserId: authenticatedUser?.id ?? null,
-        items: rpcItems,
-        stubPaymentRef: `stub_pi_${Date.now()}`,
-        discountCents,
-        promoCode: null
-      })
-    );
-
-    if (error) {
-      const message = error.message || "Unable to complete checkout.";
-      if (message.includes("Store not found")) {
-        return NextResponse.json({ error: message }, { status: 404 });
-      }
-      if (message.includes("Insufficient inventory") || message.includes("unavailable") || message.includes("Promo")) {
-        return NextResponse.json({ error: message }, { status: 400 });
-      }
-      return NextResponse.json({ error: message }, { status: 500 });
+    const { data: pendingCheckout, error: pendingCheckoutError } = await createPendingCheckout();
+    if (pendingCheckoutError || !pendingCheckout) {
+      const fingerprintConflict = pendingCheckoutError?.message?.includes("different purchase details");
+      return NextResponse.json(
+        { error: pendingCheckoutError?.message ?? "Unable to create checkout session." },
+        { status: fingerprintConflict ? 409 : 500 }
+      );
     }
-
-    const result = Array.isArray(data) ? data[0] : data;
-
-    if (!result?.order_id) {
-      return NextResponse.json({ error: "Checkout did not return an order id." }, { status: 500 });
-    }
-
-    const { data: orderBeforeUpdate, error: orderBeforeUpdateError } = await supabase
-      .from("orders")
-      .select("subtotal_cents,discount_cents")
-      .eq("id", result.order_id)
-      .single<{ subtotal_cents: number; discount_cents: number }>();
-
-    if (orderBeforeUpdateError || !orderBeforeUpdate) {
-      return NextResponse.json({ error: orderBeforeUpdateError?.message ?? "Unable to finalize order details." }, { status: 500 });
-    }
-
-    const computedTotalCents = Math.max(0, orderBeforeUpdate.subtotal_cents - orderBeforeUpdate.discount_cents) + shippingFeeCents;
-
-    const { error: orderUpdateError } = await supabase
-      .from("orders")
-      .update({
-        customer_first_name: firstName,
-        customer_last_name: lastName,
-        customer_phone: normalizedPhone,
-        customer_note: normalizedCustomerNote,
-        fulfillment_method: selectedFulfillment.method,
-        fulfillment_label: selectedFulfillment.label,
-        pickup_location_id: resolvedPickupLocationId,
-        pickup_location_snapshot_json: resolvedPickupLocationSnapshot,
-        pickup_window_start_at: resolvedPickupWindowStartAt,
-        pickup_window_end_at: resolvedPickupWindowEndAt,
-        pickup_timezone: resolvedPickupTimezone,
-        promo_code: normalizedPromoCode,
-        shipping_fee_cents: shippingFeeCents,
-        total_cents: computedTotalCents
-      })
-      .eq("id", result.order_id);
-
-    if (orderUpdateError) {
-      return NextResponse.json({ error: orderUpdateError.message }, { status: 500 });
-    }
-
-    const promotionPersistenceClient = supabase as unknown as PromotionRedemptionPersistenceClient;
-
-    await persistPromotionRedemptions({
-      supabase: promotionPersistenceClient,
-      appliedPromotions,
-      storeId: store.id,
-      orderId: result.order_id,
-      customerEmail: email,
-      customerUserId: authenticatedUser?.id ?? null
-    });
-
-    await writeOrderFeeBreakdown({
-      orderId: result.order_id,
-      storeId: store.id,
-      feeBaseCents: computedTotalCents,
-      feeProfile,
-      platformFeeCents,
-      netPayoutCents: Math.max(0, computedTotalCents - platformFeeCents)
-    });
-
-    await sendOrderCreatedNotifications(result.order_id);
-
-    return NextResponse.json({
-      orderId: result.order_id,
-      status: "paid",
-      totalCents: computedTotalCents,
-      discountCents: result.discount_cents,
-      promoCode: result.promo_code,
-      paymentMode: "stub"
-    });
+    return resumeStubCheckout(supabase, pendingCheckout);
   }
 
   if (!store.stripe_account_id) {
     return NextResponse.json({ error: "This store has not configured payments yet." }, { status: 400 });
   }
 
-  const applicationFeeAmount = platformFeeCents;
   const stripeReadiness = await getStoreStripePaymentsReadiness(store.stripe_account_id);
 
   if (!isStorePaymentsReadyForLaunch(taxCollectionMode, stripeReadiness)) {
@@ -992,187 +1569,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "This store's Stripe account is not ready to accept live payments yet." }, { status: 409 });
   }
 
-  const stripe = getStripeClient();
-
-  const { data: pendingCheckout, error: pendingCheckoutError } = await supabase
-    .from("storefront_checkout_sessions")
-    .insert({
-      store_id: store.id,
-      store_slug: store.slug,
-      customer_email: email,
-      customer_first_name: firstName,
-      customer_last_name: lastName,
-      customer_phone: normalizedPhone,
-      customer_note: normalizedCustomerNote,
-      fulfillment_method: selectedFulfillment.method,
-      fulfillment_label: selectedFulfillment.label,
-      shipping_fee_cents: shippingFeeCents,
-      pickup_location_id: resolvedPickupLocationId,
-      pickup_location_snapshot_json: resolvedPickupLocationSnapshot,
-      pickup_window_start_at: resolvedPickupWindowStartAt,
-      pickup_window_end_at: resolvedPickupWindowEndAt,
-      pickup_timezone: resolvedPickupTimezone,
-      promo_code: normalizedPromoCode,
-      promo_codes_json: normalizedPromoCodes,
-      analytics_session_key: sessionLink?.sessionKey ?? null,
-      analytics_session_id: sessionLink?.id ?? null,
-      source_cart_id: sourceCartId,
-      fee_plan_key: feeProfile.planKey,
-      fee_bps: feeProfile.feeBps,
-      fee_fixed_cents: feeProfile.feeFixedCents,
-      item_total_cents: itemTotalCents,
-      platform_fee_cents: platformFeeCents,
-      attribution_json: attribution ?? {},
-      items: rpcItems,
-      status: "pending"
-    })
-    .select("id")
-    .single<{ id: string }>();
+  const { data: pendingCheckout, error: pendingCheckoutError } = await createPendingCheckout();
 
   if (pendingCheckoutError || !pendingCheckout) {
-    return NextResponse.json({ error: pendingCheckoutError?.message ?? "Unable to create checkout session." }, { status: 500 });
-  }
-
-  const appUrl = getAppUrl();
-
-  const paymentIntentData: {
-    transfer_data: { destination: string };
-    application_fee_amount?: number;
-    metadata: Record<string, string>;
-  } = {
-    transfer_data: {
-      destination: store.stripe_account_id
-    },
-    metadata: {
-      checkout_kind: "storefront_order",
-      storefront_checkout_id: pendingCheckout.id,
-      store_id: store.id,
-      store_slug: store.slug,
-      promo_codes: normalizedPromoCodes.join(","),
-      pickup_location_id: resolvedPickupLocationId ?? "",
-      pickup_window_start_at: resolvedPickupWindowStartAt ?? "",
-      pickup_window_end_at: resolvedPickupWindowEndAt ?? ""
-    }
-  };
-
-  if (applicationFeeAmount > 0) {
-    paymentIntentData.application_fee_amount = applicationFeeAmount;
-  }
-
-  let sessionId: string | null = null;
-  let sessionUrl: string | null = null;
-  const stripeLineItems = buildStripeCheckoutLineItems(
-    rpcItems.map((item) => ({
-      productTitle: item.productTitle,
-      variantLabel: item.variantLabel,
-      quantity: item.quantity,
-      unitPriceCents: item.unitPriceCents
-    })),
-    discountCents
-  );
-
-  try {
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      customer_email: email,
-      ...(taxCollectionMode === "stripe_tax"
-        ? {
-            automatic_tax: {
-              enabled: true,
-              liability: {
-                type: "account",
-                account: store.stripe_account_id
-              }
-            }
-          }
-        : {}),
-      billing_address_collection: "auto",
-      ...(selectedFulfillment.method === "shipping"
-        ? {
-            shipping_address_collection: {
-              allowed_countries: ["US"]
-            }
-          }
-        : {}),
-      line_items: stripeLineItems,
-      ...(selectedFulfillment.method === "shipping"
-        ? {
-            shipping_options: [
-              {
-                shipping_rate_data: {
-                  display_name: selectedFulfillment.label,
-                  type: "fixed_amount",
-                  fixed_amount: {
-                    amount: shippingFeeCents,
-                    currency: "usd"
-                  }
-                }
-              }
-            ]
-          }
-        : {}),
-      success_url: `${appUrl}${buildStorefrontCheckoutPath(store.slug)}?status=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${appUrl}${buildStorefrontCheckoutPath(store.slug)}?status=cancelled`,
-      metadata: {
-        checkout_kind: "storefront_order",
-        storefront_checkout_id: pendingCheckout.id,
-        store_id: store.id,
-        store_slug: store.slug,
-        promo_code: normalizedPromoCode ?? "",
-        promo_codes: normalizedPromoCodes.join(","),
-        pickup_location_id: resolvedPickupLocationId ?? "",
-        pickup_window_start_at: resolvedPickupWindowStartAt ?? "",
-        pickup_window_end_at: resolvedPickupWindowEndAt ?? ""
-      },
-      payment_intent_data: paymentIntentData
-    });
-
-    sessionId = session.id;
-    sessionUrl = session.url;
-  } catch (error) {
-    await supabase
-      .from("storefront_checkout_sessions")
-      .update({
-        status: "failed",
-        error_message: error instanceof Error ? error.message : "Stripe checkout session creation failed."
-      })
-      .eq("id", pendingCheckout.id);
-
+    const fingerprintConflict = pendingCheckoutError?.message?.includes("different purchase details");
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to create Stripe checkout session." },
-      { status: 502 }
+      { error: pendingCheckoutError?.message ?? "Unable to create checkout session." },
+      { status: fingerprintConflict ? 409 : 500 }
     );
   }
 
-  if (!sessionId || !sessionUrl) {
-    await supabase
-      .from("storefront_checkout_sessions")
-      .update({
-        status: "failed",
-        error_message: "Stripe checkout session did not return required session data."
-      })
-      .eq("id", pendingCheckout.id);
-
-    return NextResponse.json({ error: "Unable to create Stripe checkout session." }, { status: 502 });
-  }
-
-  const { error: updateCheckoutError } = await supabase
-    .from("storefront_checkout_sessions")
-    .update({ stripe_checkout_session_id: sessionId })
-    .eq("id", pendingCheckout.id);
-
-  if (updateCheckoutError) {
-    await supabase
-      .from("storefront_checkout_sessions")
-      .update({ status: "failed", error_message: updateCheckoutError.message })
-      .eq("id", pendingCheckout.id);
-    return NextResponse.json({ error: updateCheckoutError.message }, { status: 500 });
-  }
-
-  return NextResponse.json({
-    mode: "checkout",
-    checkoutUrl: sessionUrl,
-    sessionId,
-    paymentMode: "stripe"
-  });
+  return resumeStripeCheckout(supabase, pendingCheckout);
 }

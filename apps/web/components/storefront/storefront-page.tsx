@@ -29,7 +29,13 @@ import { useOptionalStorefrontRuntime } from "@/components/storefront/storefront
 import { useOptionalStorefrontAnalytics } from "@/components/storefront/storefront-analytics-provider";
 import { useStorefrontPageView, useStorefrontSearchAnalytics } from "@/components/storefront/use-storefront-analytics-events";
 import { buildStorefrontAddToCartValue } from "@/lib/analytics/storefront-instrumentation";
-import { readStorefrontCart, syncStorefrontCart, writeStorefrontCart, type StorefrontCartEntry } from "@/lib/storefront/cart";
+import {
+  normalizeStorefrontCart,
+  readStorefrontCart,
+  syncStorefrontCart,
+  writeStorefrontCart,
+  type StorefrontCartEntry
+} from "@/lib/storefront/cart";
 import { formatCopyTemplate, resolveStorefrontCopy } from "@/lib/storefront/copy";
 import { getStorefrontButtonRadiusClass, getStorefrontCardStyleClass, getStorefrontRadiusClass } from "@/lib/storefront/appearance";
 import { getStorefrontPageShellClass, getStorefrontPageWidthClass } from "@/lib/storefront/layout";
@@ -72,6 +78,7 @@ type StorefrontProduct = {
   created_at: string;
   price_cents: number;
   inventory_qty: number;
+  product_type?: "physical" | "digital";
   product_variants: StorefrontVariant[];
   product_option_axes?: Array<{
     id: string;
@@ -240,12 +247,17 @@ function buildProductHref(product: StorefrontProduct, storeSlug: string, routeBa
 }
 
 function getAvailabilityLabel(
+  productType: "physical" | "digital",
   variant: StorefrontVariant | null,
   fulfillmentMessage: string | null,
   copy: ReturnType<typeof resolveStorefrontCopy>
 ) {
   if (!variant) {
     return copy.availability.unavailable;
+  }
+
+  if (productType === "digital") {
+    return "Instant digital delivery";
   }
 
   const isMadeToOrderActive = variant.is_made_to_order && variant.inventory_qty < 1;
@@ -506,9 +518,9 @@ export function StorefrontPage(props: StorefrontPageProps) {
       scoped = scoped.filter((product) => {
         const variants = getSortedActiveVariants(product);
         if (availabilityFilter === "made-to-order") {
-          return variants.some((variant) => variant.is_made_to_order);
+          return product.product_type !== "digital" && variants.some((variant) => variant.is_made_to_order);
         }
-        return variants.some((variant) => !variant.is_made_to_order && variant.inventory_qty > 0);
+        return product.product_type === "digital" || variants.some((variant) => !variant.is_made_to_order && variant.inventory_qty > 0);
       });
     }
 
@@ -557,7 +569,7 @@ export function StorefrontPage(props: StorefrontPageProps) {
   useEffect(() => {
     queueMicrotask(() => {
       const loaded = readStorefrontCart();
-      const valid = loaded.filter((entry) => resolvedProducts.some((product) => product.id === entry.productId));
+      const valid = normalizeStorefrontCart(loaded, resolvedProducts);
       hasHydratedCartRef.current = true;
       setCart(valid);
     });
@@ -565,7 +577,7 @@ export function StorefrontPage(props: StorefrontPageProps) {
 
   useEffect(() => {
     if (!hasHydratedCartRef.current) return;
-    const valid = cart.filter((entry) => resolvedProducts.some((product) => product.id === entry.productId));
+    const valid = normalizeStorefrontCart(cart, resolvedProducts);
     writeStorefrontCart(valid);
   }, [cart, resolvedProducts]);
 
@@ -589,11 +601,12 @@ export function StorefrontPage(props: StorefrontPageProps) {
     const nextCart = (() => {
       const current = cart;
       const existing = current.find((item) => `${item.productId}:${item.variantId}` === lineItemKey);
-      return existing
+      const updated = existing
         ? current.map((item) =>
           `${item.productId}:${item.variantId}` === lineItemKey ? { ...item, quantity: Math.min(item.quantity + 1, 99) } : item
         )
         : [...current, { productId, variantId: variant.id, quantity: 1 }];
+      return normalizeStorefrontCart(updated, resolvedProducts);
     })();
 
     setCart(nextCart);
@@ -1382,7 +1395,13 @@ export function StorefrontPage(props: StorefrontPageProps) {
                       const cardImages = getVariantImages(defaultVariant, product);
                       const cardPriceCents = defaultVariant?.price_cents ?? 0;
                       const shortDescription = truncateWithEllipsis(toPlainText(product.description), 160);
-                      const canQuickAdd = Boolean(defaultVariant && (defaultVariant.is_made_to_order || defaultVariant.inventory_qty > 0));
+                      const canQuickAdd = Boolean(
+                        defaultVariant && (
+                          product.product_type === "digital" ||
+                          defaultVariant.is_made_to_order ||
+                          defaultVariant.inventory_qty > 0
+                        )
+                      );
 
                       return (
                         <article
@@ -1433,7 +1452,7 @@ export function StorefrontPage(props: StorefrontPageProps) {
                                 <p className="text-xs text-muted-foreground">
                                   {hasConfigurableChoices
                                     ? `${variants.length} ${copy.productDetail.optionsLabel.toLowerCase()}`
-                                    : getAvailabilityLabel(defaultVariant, null, copy)}
+                                    : getAvailabilityLabel(product.product_type ?? "physical", defaultVariant, null, copy)}
                                 </p>
                               ) : null}
                             </div>

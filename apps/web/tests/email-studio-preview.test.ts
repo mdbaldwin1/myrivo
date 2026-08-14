@@ -85,6 +85,15 @@ describe("email studio preview helpers", () => {
     expect(resolveEmailStudioPreviewScenario("failed", "pickup").id).toBe("shipping");
     expect(resolveEmailStudioPreviewScenario("cancelled", "pickup").id).toBe("shipping");
     expect(resolveEmailStudioPreviewScenario("delivered", "pickup").id).toBe("shipping");
+    expect(resolveEmailStudioPreviewScenario("digitalDelivery", "pickup").id).toBe("digitalOnly");
+  });
+
+  test("previews digital-only and mixed orders without bearer or path-shaped values", () => {
+    const digital = resolveEmailStudioPreviewScenario("digitalDelivery", "digitalOnly");
+    const mixed = resolveEmailStudioPreviewScenario("customerConfirmation", "mixed");
+    expect(digital.values.items).toContain("Digital");
+    expect(mixed.values.items).toContain("Digital");
+    expect(JSON.stringify([digital.values, mixed.values])).not.toMatch(/token|storage_path|signedUrl|\/v1\//i);
   });
 
   test("decodes leftover encoded apostrophes in stored template html before rendering", () => {
