@@ -657,3 +657,30 @@ The won case looks for exact text `Digital downloads` inside `[role="status"][ar
 ### Round 14 release disposition
 
 Do not approve the UX/accessibility gate. The remaining gaps include a real buyer-facing financial misstatement and still-uncovered required failure/zoom interactions.
+
+---
+
+## Round 15 re-review — commit `1f804dd`
+
+### Verdict
+
+**PASS** — no P0 or P1 UX/accessibility issues remain in the reviewed scope. The prior financial-copy defect and responsive dynamic-state/zoom coverage blockers are resolved.
+
+### Verified resolutions
+
+- **Reason-specific financial copy:** customer order data now carries `dispute_open`, `dispute_lost`, or `full_refund`; lost disputes explain that the payment dispute was decided against the order, while full refunds retain separate copy. A neutral fallback handles unknown legacy reasons.
+- **Financial responsive states:** mobile and desktop projects assert exact polite live-region content and run axe for partial/full refunds plus dispute opened/won/lost.
+- **Failure/recovery states:** both viewports exercise delivery failure, keyboard resend failure with focused alert and retry reachability, signing failure, grant-limit rejection, and stalled-download timeout with exact status text, enabled/focused recovery action, and axe scans.
+- **Zoom activation:** product add-to-cart, cart checkout, checkout-return access, recovery submission, and download initiation are mandatory named controls, keyboard reachable, horizontally bounded, and activated at 200% zoom.
+- **Dialog behavior:** replacement covers keyboard opening, two-end focus wrapping, Escape cancellation, trigger restoration, keyboard confirmation, asynchronous result status, and post-completion trigger restoration.
+- **Reduced motion and base surfaces:** active loading animation remains disabled under reduced-motion preference; all required public/authenticated surfaces retain mobile/desktop axe coverage.
+- **Grant and replacement semantics:** exact grace counts/ID, signing-failure release, sixth denial, old-buyer filename/bytes after replacement, and new-buyer replacement version/bytes remain verified.
+
+### Residual P2 observations
+
+- The financial-state test loads already-provisioned state rather than observing an in-place live update. It correctly validates the live-region semantics exposed on render, but a future realtime order-status UI would merit a separate transition-announcement test.
+- Replacement menu selection and hidden file population use Playwright helpers after the Actions menu is keyboard-opened. Focus trapping, cancellation, confirmation, and return focus are covered; a browser-level native file-picker flow is outside normal automated-test capability.
+
+### Release disposition
+
+The repository-side UX/accessibility gate is approved. Real provider execution with the configured non-production fixture remains a separate external acceptance requirement; it must complete with zero skips before rollout.
