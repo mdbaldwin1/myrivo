@@ -427,3 +427,40 @@ The scenario now captures the prior manifest version, hashes the prior download,
 ### Round 8 release disposition
 
 Do not approve the UX/accessibility gate. One P1 remains in the executable accessibility contract; provider unavailability should become the only blocker only after these repository-side assertions are complete.
+
+---
+
+## Round 9 re-review — commit `6e8dc70`
+
+### Verdict
+
+**FAIL** — the round-9 commit does not modify the accessibility spec, so the P1 from round 8 remains unchanged. Prior-buyer replacement continuity is now verified. Grant/signing-failure evidence improves, but exact grace and sixth-denial derivation remain incomplete.
+
+### P1 — Keyboard-complete and dynamic accessibility coverage is still incomplete
+
+**Evidence:** `apps/web/e2e/digital-products-accessibility.spec.ts:88-104` and `:106-127`.
+
+The accessibility spec is unchanged in this round. It still reaches the file input and publish button without uploading or activating publish; reaches checkout without activating it; omits replacement-dialog trap, reverse traversal, Escape/cancel, confirm, and return-focus checks; conditionally skips download if unavailable; and lacks financial, delivery-failure, download-failure/timeout, and resend-error axe/live-region checks. At zoom it still operates no named primary action.
+
+Consequently, the strict gate can pass without proving that a keyboard user can complete product publication or checkout, or that the most consequential dynamic/error states remain accessible.
+
+**Required remediation:** Apply the round-8 remediation in the actual accessibility spec: upload and publish via keyboard, keyboard-complete checkout, exercise dialog focus behavior, remove conditional skipping, scan and announce financial/delivery/download failure states, and activate named primary actions at 200% zoom.
+
+### P2 — Grace reuse and sixth-denial evidence are still not derived from before/after state
+
+**Evidence:** `apps/web/e2e/digital-products.spec.ts:66-92`.
+
+The first-session repeat still records only the post-repeat last grant ID; there is no pre-repeat observation proving the ID and count were unchanged. `sixthDenied` remains a literal `true`, and the sixth UI assertion still expects `/limit|contact|unavailable/` rather than the component's likely “could not be downloaded” failure announcement. Session evidence is now safely hashed, and the injected signing failure explicitly proves no grant-count increase, which resolves that portion.
+
+**Remediation:** Capture grant state immediately before and after the grace click and assert equality; observe after the sixth attempt and derive denial/zero remaining; assert the exact accessible error message rendered for the limit response.
+
+### Resolved from round 8
+
+- **Prior-buyer replacement continuity:** the original file is downloaded and hashed before replacement, downloaded again through the original buyer link afterward, and compared for equality. A new purchase is verified to receive distinct bytes and the replacement asset-version ID (`digital-products.spec.ts:104-155`).
+- **Signing failure:** an injected signing failure is exercised through the UI, its retry message is asserted, and before/after observations prove it consumed no grant (`digital-products.spec.ts:56-65`).
+- **Evidence privacy:** browser session evidence is domain-keyed and hashed rather than recording raw cookies.
+- **Opened dispute:** now has a dedicated provider-backed fixture and exact suspended UI assertion.
+
+### Round 9 release disposition
+
+Do not approve the UX/accessibility gate. No new accessibility implementation was provided in this round, so the sole P1 remains.
