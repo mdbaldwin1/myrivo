@@ -26,4 +26,5 @@ pnpm-debug.log*
 .DS_Store
 .vercel
 
-.mynotes.superpowers/
+.mynotes
+.superpowers/
