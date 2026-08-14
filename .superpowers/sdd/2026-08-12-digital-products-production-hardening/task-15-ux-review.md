@@ -464,3 +464,51 @@ The first-session repeat still records only the post-repeat last grant ID; there
 ### Round 9 release disposition
 
 Do not approve the UX/accessibility gate. No new accessibility implementation was provided in this round, so the sole P1 remains.
+
+---
+
+## Round 10 re-review — commit `e9a77f8`
+
+### Verdict
+
+**FAIL** — keyboard upload/publish, hosted-checkout activation, and basic replacement-dialog focus behavior are now covered. One P1 remains because mandatory financial/failure-state accessibility coverage and actionable zoom are still absent, and the required download interaction can still be skipped conditionally.
+
+### P1 — Critical financial/failure states and mandatory zoom/download behavior remain outside the accessibility gate
+
+**Evidence:** `apps/web/e2e/digital-products-accessibility.spec.ts:27-49`, `:103-123`, and `:125-149`.
+
+Round 10 materially improves the merchant keyboard path: a valid file is uploaded, dynamic upload state is axe-scanned, publish is activated with Enter, and the replacement dialog is opened with keyboard, retains focus on reverse traversal, closes with Escape, and restores focus. Checkout is also activated with Enter and hosted payment is scanned.
+
+The following release-gate gaps remain:
+
+- Download is still wrapped in `if (await download.isVisible())`, so the required keyboard/download/axe assertions silently disappear if the fixture or UI is wrong.
+- No accessibility test visits or scans delivery failure, partial/full refund, open-dispute suspension, won restoration, lost revocation, download signing/limit/timeout failure, or resend error states.
+- No live-region assertion covers checkout polling/delivery, download failure/timeout, financial access changes, or resend error.
+- At 200% zoom the suite still selects the last generic button/link, permits it to be absent/invisible, and only focuses it; it does not identify or activate each surface's named primary action.
+- The dialog test demonstrates containment for one Shift+Tab but does not prove full Tab/Shift+Tab wrapping or confirmation focus restoration, though this is now a narrower P2-level depth issue rather than the main blocker.
+
+Because refund/dispute/delivery/download failure states are explicit Task 15 surfaces, omitting all of them from axe/keyboard/announcement validation remains release-blocking.
+
+**Required remediation:** Make download visibility mandatory; add deterministic financial, delivery-failure, signing/limit/timeout, and resend-error states with axe and exact announcement assertions on both viewports; remove optional zoom branches and map each route to a named primary action that is keyboard-activated at 200%.
+
+### P2 — Grace scenario evidence records the wrong before/after counts
+
+**Evidence:** `apps/web/e2e/digital-products.spec.ts:87-93` and `:112`.
+
+The runtime check correctly compares the immediate pre/post grace ID and count, resolving the behavioral gap. But emitted evidence sets both `graceCountBefore` and `graceCountAfter` to `five.observation.grants.length`, not the actual `beforeGrace` and `grace` counts. The signed artifact can therefore claim valid grace evidence without preserving the values the runtime assertion used.
+
+**Remediation:** Retain the immediate before/after counts and IDs outside the loop and serialize those exact observed values into provider evidence.
+
+### Resolved from round 9
+
+- Valid upload is performed after real Tab traversal, with dynamic status and axe coverage.
+- Publish and checkout are keyboard-activated.
+- Replacement dialog opens from keyboard, keeps reverse focus inside, closes via Escape, and restores trigger focus.
+- Grace reuse is runtime-verified by immediate grant ID/count comparison.
+- Signing failure preserves exact grant IDs.
+- Sixth denial captures the endpoint status and exact visible label.
+- Prior-buyer filename and bytes are verified before and after replacement; the new buyer receives the replacement filename/version and distinct bytes.
+
+### Round 10 release disposition
+
+Do not approve the UX/accessibility gate. The remaining P1 is confined to untested critical financial/failure states and optional zoom/download assertions, but those are required release surfaces.
