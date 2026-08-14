@@ -8,7 +8,7 @@ export function hashAcceptanceSession(value: string, key: string) {
 
 export function assertNoAcceptanceSecrets(value: unknown) {
   const serialized = JSON.stringify(value);
-  const forbidden = [/(^|[?&#])token=/i, /cookie[^\n]{0,64}[=:]/i, /[?&](signature|x-amz-signature)=/i, /(^|["'/:])private\//i, /digital_download_session/i];
+  const forbidden = [/(^|[?&#])token=/i, /cookie[^\n]{0,64}[=:]/i, /[?&](signature|x-amz-signature)=/i, /(^|["'/:])private\//i, /digital_download_session/i, /bearer\s+[a-z0-9._-]+/i, /"apiKey"\s*:\s*"[^" ]+/i, /\b(sk_(live|test)|rk_live|whsec_)[a-z0-9_]+/i];
   if (forbidden.some((pattern) => pattern.test(serialized))) throw new Error("Acceptance evidence contains bearer or private-path material.");
 }
 
@@ -51,7 +51,11 @@ const refundEvidence = z.object({ kind: z.literal("refund"), refundId: z.string(
 const disputeEvidence = z.object({ kind: z.literal("dispute"), disputeId: z.string().startsWith("dp_"), chargeId: z.string().startsWith("ch_"), paymentIntentId: z.string().startsWith("pi_"), outcome: z.enum(["opened", "won", "lost"]), eventIds: z.array(z.string().startsWith("evt_")).min(1), webhook }).strict();
 const resendEvidence = z.object({ kind: z.literal("resend"), messageId: z.string().min(1), status: z.literal("sent"), recipient: z.string().email(), orderId: uuid, accessUrlHash: z.string().regex(/^[a-f0-9]{64}$/), sentAt: z.string().datetime() }).strict();
 const checkoutEvidence = z.object({ kind: z.literal("checkout"), sessionId: z.string().startsWith("cs_test_"), paymentIntentId: z.string().startsWith("pi_"), orderId: uuid }).strict();
-const grantsEvidence = z.object({ kind: z.literal("grants"), uniqueGrantIds: z.array(uuid).length(5).refine((ids) => new Set(ids).size === 5), graceReusedGrantId: uuid, signingFailureConsumedGrant: z.literal(false), sixthDenied: z.literal(true), sessionHashes: z.array(z.string().regex(/^[a-f0-9]{64}$/)).length(6).refine((ids) => new Set(ids).size === 6), assetVersionId: uuid }).strict();
+const grantIds = z.array(uuid);
+const grantsEvidence = z.object({ kind: z.literal("grants"), uniqueGrantIds: grantIds.length(5).refine((ids) => new Set(ids).size === 5), graceReusedGrantId: uuid, graceCountBefore: z.number().int().nonnegative(), graceCountAfter: z.number().int().nonnegative(), signingFailureGrantIdsBefore: grantIds, signingFailureGrantIdsAfter: grantIds, sixthDeniedStatus: z.number().int().min(400).max(499), sixthDeniedMessage: z.string().min(1), sessionHashes: z.array(z.string().regex(/^[a-f0-9]{64}$/)).length(6).refine((ids) => new Set(ids).size === 6), assetVersionId: uuid }).strict().superRefine((value, context) => {
+  if (value.graceCountBefore !== value.graceCountAfter || !value.uniqueGrantIds.includes(value.graceReusedGrantId)) context.addIssue({ code: "custom", message: "Grace reuse consumed a grant or changed identity." });
+  if (JSON.stringify(value.signingFailureGrantIdsBefore) !== JSON.stringify(value.signingFailureGrantIdsAfter)) context.addIssue({ code: "custom", message: "Signing failure changed grants." });
+});
 const replacementEvidence = z.object({ kind: z.literal("replacement"), priorAssetVersionId: uuid, replacementAssetVersionId: uuid, priorFilename: z.string().min(1), priorContentSha256: z.string().regex(/^[a-f0-9]{64}$/), newCheckoutAssetVersionId: uuid }).strict().refine((value) => value.priorAssetVersionId !== value.replacementAssetVersionId && value.newCheckoutAssetVersionId === value.replacementAssetVersionId);
 const deliveryEvidence = z.object({ kind: z.literal("delivery"), jobId: uuid, attempts: z.array(z.object({ attempt: z.number().int().positive(), status: z.enum(["failed", "succeeded"]), timestamp: z.string().datetime() }).strict()).min(2), resendMessageId: z.string().min(1) }).strict();
 

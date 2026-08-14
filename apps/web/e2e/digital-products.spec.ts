@@ -6,6 +6,18 @@ import { login } from "./helpers";
 const fixture = loadDigitalAcceptanceFixture();
 const validPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 
+function waitForFinalDownload(page: import("@playwright/test").Page) {
+  return page.waitForResponse((response) => {
+    let request: import("@playwright/test").Request | null = response.request();
+    let originatedAtDownloadPost = false;
+    while (request) {
+      if (request.url().includes("/api/digital-downloads/file/") && request.method() === "POST") originatedAtDownloadPost = true;
+      request = request.redirectedFrom();
+    }
+    return originatedAtDownloadPost && response.status() === 200 && !response.url().includes("/api/digital-downloads/file/");
+  });
+}
+
 async function completeStripeCheckout(page: import("@playwright/test").Page) {
   await expect(page).toHaveURL(/checkout\.stripe\.com/);
   await page.getByLabel(/email/i).fill(fixture!.customer.email).catch(() => undefined);
@@ -51,9 +63,10 @@ test.describe.serial("digital product user journeys", () => {
       await page.getByRole("link", { name: /view downloads|access.*downloads/i }).click();
       const downloadButton = page.getByRole("button", { name: /download/i });
       if (composition === "digital") {
-        const sessionIds: string[] = [];
+        const sessionHashes: string[] = [];
         let graceReusedGrantId = "";
         const beforeSigningFailure = await acceptanceAction(request, fixture!, "observe", undefined, orderId);
+        const signingFailureGrantIdsBefore = beforeSigningFailure.observation.grants.map((grant) => grant.id);
         await acceptanceAction(request, fixture!, "inject-signing-failure", undefined, orderId);
         const failureContext = await page.context().browser()!.newContext();
         const failurePage = await failureContext.newPage();
@@ -62,18 +75,22 @@ test.describe.serial("digital product user journeys", () => {
         await expect(failurePage.getByRole("status")).toContainText(/unable|retry/i);
         await failureContext.close();
         const afterInjectedFailure = await acceptanceAction(request, fixture!, "observe", undefined, orderId);
-        if (afterInjectedFailure.observation.grants.length !== beforeSigningFailure.observation.grants.length) throw new Error("Signing failure consumed a download grant.");
+        const signingFailureGrantIdsAfter = afterInjectedFailure.observation.grants.map((grant) => grant.id);
+        if (JSON.stringify(signingFailureGrantIdsAfter) !== JSON.stringify(signingFailureGrantIdsBefore)) throw new Error("Signing failure changed download grants.");
         for (let index = 0; index < 5; index += 1) {
           const context = await page.context().browser()!.newContext();
           const sessionPage = await context.newPage();
           await sessionPage.goto(message.link);
           await sessionPage.getByRole("button", { name: /download/i }).click();
           const cookies = await context.cookies();
-          sessionIds.push(acceptanceSessionHash(cookies.map((cookie) => `${cookie.name}:${cookie.value}`).join("|")));
+          sessionHashes.push(acceptanceSessionHash(cookies.map((cookie) => `${cookie.name}:${cookie.value}`).join("|")));
           if (index === 0) {
+            const beforeGrace = await acceptanceAction(request, fixture!, "observe", undefined, orderId);
+            const firstGrantId = beforeGrace.observation.grants.at(-1)?.id;
             await sessionPage.getByRole("button", { name: /download/i }).click();
             const grace = await acceptanceAction(request, fixture!, "observe", undefined, orderId);
             graceReusedGrantId = grace.observation.grants.at(-1)?.id ?? "";
+            if (!firstGrantId || graceReusedGrantId !== firstGrantId || grace.observation.grants.length !== beforeGrace.observation.grants.length) throw new Error("Same-session grace did not reuse the same grant.");
           }
           await context.close();
         }
@@ -81,15 +98,18 @@ test.describe.serial("digital product user journeys", () => {
         const corrupt = await page.context().browser()!.newContext();
         await (await corrupt.newPage()).goto(message.link.replace(/.$/, "x"));
         await corrupt.close();
-        const afterSigningFailure = await acceptanceAction(request, fixture!, "observe", undefined, orderId);
+        await acceptanceAction(request, fixture!, "observe", undefined, orderId);
         const sixth = await page.context().browser()!.newContext();
         const sixthPage = await sixth.newPage();
         await sixthPage.goto(message.link);
+        const sixthResponse = sixthPage.waitForResponse((response) => response.url().includes("/api/digital-downloads/file/"));
         await sixthPage.getByRole("button", { name: /download/i }).click();
-        await expect(sixthPage.getByRole("status")).toContainText(/limit|contact|unavailable/i);
-        sessionIds.push(acceptanceSessionHash((await sixth.cookies()).map((cookie) => `${cookie.name}:${cookie.value}`).join("|")));
+        const denied = await sixthResponse;
+        const sixthDeniedMessage = "Download limit reached";
+        await expect(sixthPage.getByText(sixthDeniedMessage, { exact: true })).toBeVisible();
+        sessionHashes.push(acceptanceSessionHash((await sixth.cookies()).map((cookie) => `${cookie.name}:${cookie.value}`).join("|")));
         await sixth.close();
-        await acceptanceAction(request, fixture!, "observe", undefined, orderId, "five-grants", { kind: "grants", uniqueGrantIds: five.observation.grants.map((grant) => grant.id), graceReusedGrantId, signingFailureConsumedGrant: afterSigningFailure.observation.grants.length !== five.observation.grants.length, sixthDenied: true, sessionHashes: sessionIds, assetVersionId: five.observation.grants[0]?.asset_version_id });
+        await acceptanceAction(request, fixture!, "observe", undefined, orderId, "five-grants", { kind: "grants", uniqueGrantIds: five.observation.grants.map((grant) => grant.id), graceReusedGrantId, graceCountBefore: five.observation.grants.length, graceCountAfter: five.observation.grants.length, signingFailureGrantIdsBefore, signingFailureGrantIdsAfter, sixthDeniedStatus: denied.status(), sixthDeniedMessage, sessionHashes, assetVersionId: five.observation.grants[0]?.asset_version_id });
       } else {
         await downloadButton.click();
         await expect(page.getByRole("status")).toContainText(/started|preparing/i);
@@ -109,9 +129,11 @@ test.describe.serial("digital product user journeys", () => {
     const priorContext = await page.context().browser()!.newContext();
     const priorPage = await priorContext.newPage();
     await priorPage.goto(priorMessage.link);
-    const priorResponse = priorPage.waitForResponse((response) => response.url().includes("/api/digital-downloads/file/") && response.ok());
+    const priorResponse = waitForFinalDownload(priorPage);
     await priorPage.getByRole("button", { name: /download/i }).click();
-    const priorContentSha256 = createHash("sha256").update(await (await priorResponse).body()).digest("hex");
+    const priorStorageResponse = await priorResponse;
+    expect(priorStorageResponse.headers()["content-disposition"]).toContain(priorVersion.customer_filename);
+    const priorContentSha256 = createHash("sha256").update(await priorStorageResponse.body()).digest("hex");
     await priorContext.close();
     await page.goto(fixture!.routes.recovery);
     await page.getByLabel(/order id/i).fill(fixture!.orderId);
@@ -136,18 +158,24 @@ test.describe.serial("digital product user journeys", () => {
     const oldAfterContext = await page.context().browser()!.newContext();
     const oldAfterPage = await oldAfterContext.newPage();
     await oldAfterPage.goto(priorMessage.link);
-    const oldAfterResponse = oldAfterPage.waitForResponse((response) => response.url().includes("/api/digital-downloads/file/") && response.ok());
+    const oldAfterResponse = waitForFinalDownload(oldAfterPage);
     await oldAfterPage.getByRole("button", { name: /download/i }).click();
-    const oldAfterHash = createHash("sha256").update(await (await oldAfterResponse).body()).digest("hex");
+    const oldAfterStorageResponse = await oldAfterResponse;
+    expect(oldAfterStorageResponse.headers()["content-disposition"]).toContain(priorVersion.customer_filename);
+    const oldAfterHash = createHash("sha256").update(await oldAfterStorageResponse.body()).digest("hex");
     await oldAfterContext.close();
     if (oldAfterHash !== priorContentSha256) throw new Error("Replacement changed the prior buyer's immutable file bytes.");
     const newMessage = await getResendAccessMessage(request, fixture!.customer.email, replacementOrderId);
     const newContext = await page.context().browser()!.newContext();
     const newPage = await newContext.newPage();
     await newPage.goto(newMessage.link);
-    const newResponse = newPage.waitForResponse((response) => response.url().includes("/api/digital-downloads/file/") && response.ok());
+    const newResponse = waitForFinalDownload(newPage);
     await newPage.getByRole("button", { name: /download/i }).click();
-    const replacementContentSha256 = createHash("sha256").update(await (await newResponse).body()).digest("hex");
+    const replacementStorageResponse = await newResponse;
+    const replacementFilename = replacementOrder.observation.manifestItems.find((item) => item.asset_version_id === replacementVersion)?.customer_filename;
+    if (!replacementFilename) throw new Error("Replacement manifest has no customer filename.");
+    expect(replacementStorageResponse.headers()["content-disposition"]).toContain(replacementFilename);
+    const replacementContentSha256 = createHash("sha256").update(await replacementStorageResponse.body()).digest("hex");
     await newContext.close();
     if (replacementContentSha256 === priorContentSha256) throw new Error("Replacement checkout served the prior file bytes.");
     await buyer.close();

@@ -14,7 +14,16 @@ describe("digital acceptance evidence", () => {
     for (const leaked of [
       { nested: { cookie: "session=secret" } }, { token: "#token=abc" },
       { url: "https://example.test/file?signature=secret" }, { path: "private/store/file.png" },
+      { authorization: "Bearer sk_test_secret" }, { apiKey: "re_very_secret_provider_key" },
     ]) expect(() => assertNoAcceptanceSecrets(leaked)).toThrow();
+  });
+
+  it("requires exact grace, signing-failure, and sixth-denial grant state", () => {
+    const ids = Array.from({ length: 5 }, () => crypto.randomUUID());
+    const base = { kind: "grants", uniqueGrantIds: ids, graceReusedGrantId: ids[0], graceCountBefore: 1, graceCountAfter: 1, signingFailureGrantIdsBefore: ids, signingFailureGrantIdsAfter: ids, sixthDeniedStatus: 409, sixthDeniedMessage: "Download limit reached. Contact the store for help.", sessionHashes: Array.from({ length: 6 }, (_, index) => index.toString(16).padStart(64, "0")), assetVersionId: crypto.randomUUID() };
+    expect(digitalAcceptanceScenarioEvidenceSchema.parse({ scenario: "five-grants", providerEvidence: base }).scenario).toBe("five-grants");
+    expect(() => digitalAcceptanceScenarioEvidenceSchema.parse({ scenario: "five-grants", providerEvidence: { ...base, graceCountAfter: 2 } })).toThrow();
+    expect(() => digitalAcceptanceScenarioEvidenceSchema.parse({ scenario: "five-grants", providerEvidence: { ...base, signingFailureGrantIdsAfter: ids.slice(1) } })).toThrow();
   });
 
   it("requires correlated checkout, manifest, delivery, and provider identifiers", () => {

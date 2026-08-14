@@ -90,10 +90,29 @@ for (const viewport of [
       const fileInput = page.getByLabel(/file/i).first();
       await tabTo(page, fileInput);
       await expect(fileInput).toBeFocused();
+      await fileInput.setInputFiles({ name: "keyboard-art.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") });
+      await expect(page.getByRole("status")).toContainText(/upload|processing|ready/i);
+      await expectNoSeriousAccessibilityViolations(page, `${viewport.name} upload dynamic state`);
       const publish = page.getByRole("button", { name: /publish|activate/i });
       await tabTo(page, publish);
       await expect(publish).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(page.getByText("Ready to sell", { exact: true })).toBeVisible();
       await expectNoSeriousAccessibilityViolations(page, `${viewport.name} catalog keyboard state`);
+
+      const replace = page.getByRole("button", { name: /replace/i }).first();
+      await tabTo(page, replace);
+      await page.keyboard.press("Enter");
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toBeVisible();
+      const focusedBefore = await page.locator(":focus").evaluate((node) => node.outerHTML);
+      await page.keyboard.press("Shift+Tab");
+      await expect(page.locator(":focus")).toBeVisible();
+      expect(await page.evaluate(() => document.querySelector('[role="dialog"]')?.contains(document.activeElement))).toBe(true);
+      await page.keyboard.press("Escape");
+      await expect(dialog).toBeHidden();
+      await expect(replace).toBeFocused();
+      expect(focusedBefore).toBeTruthy();
 
       await page.goto(acceptance!.routes.merchantOrder);
       const resend = page.getByRole("button", { name: /resend|retry/i });
@@ -114,6 +133,9 @@ for (const viewport of [
       await tabTo(page, checkout);
       await expect(checkout).toBeFocused();
       await expectNoSeriousAccessibilityViolations(page, `${viewport.name} populated cart`);
+      await page.keyboard.press("Enter");
+      await expect(page).toHaveURL(/checkout\.stripe\.com/);
+      await expectNoSeriousAccessibilityViolations(page, `${viewport.name} hosted payment`);
 
       await page.goto(acceptance!.routes.download);
       const download = page.getByRole("button", { name: /download/i }).first();

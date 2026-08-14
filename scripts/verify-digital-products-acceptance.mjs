@@ -71,6 +71,21 @@ for (const item of evidence.observations) {
   if (item.scenario === "five-grants") {
     const grants = item.observation.grants;
     if (grants.length !== 5 || new Set(grants.map((grant) => grant.id)).size !== 5) fail("five-grant evidence is not exact and unique");
+    const provider = item.providerEvidence;
+    if (provider.kind !== "grants" || provider.sessionHashes?.length !== 6 || new Set(provider.sessionHashes).size !== 6 || provider.sessionHashes.some((hash) => !/^[a-f0-9]{64}$/.test(hash))) fail("grant session hashes are not six exact unique digests");
+    if (provider.graceCountBefore !== provider.graceCountAfter || !provider.uniqueGrantIds.includes(provider.graceReusedGrantId)) fail("same-session grace did not reuse an existing grant");
+    if (JSON.stringify(provider.signingFailureGrantIdsBefore) !== JSON.stringify(provider.signingFailureGrantIdsAfter)) fail("signing failure changed grant state");
+    if (provider.sixthDeniedStatus < 400 || provider.sixthDeniedStatus > 499 || provider.sixthDeniedMessage !== "Download limit reached") fail("sixth unique download denial is not proven by production state");
+    if (!grants.every((grant) => grant.asset_version_id === provider.assetVersionId)) fail("grant asset versions are uncorrelated");
+  }
+  if (item.scenario === "replacement") {
+    const provider = item.providerEvidence;
+    if (provider.kind !== "replacement" || provider.priorAssetVersionId === provider.replacementAssetVersionId || provider.newCheckoutAssetVersionId !== provider.replacementAssetVersionId || !/^[a-f0-9]{64}$/.test(provider.priorContentSha256)) fail("replacement immutability evidence is invalid");
+    if (!item.observation.manifestItems.some((manifest) => manifest.asset_version_id === provider.priorAssetVersionId && manifest.customer_filename === provider.priorFilename)) fail("prior buyer manifest is not retained");
+  }
+  if (item.scenario === "delivery-retry") {
+    const attempts = item.providerEvidence?.attempts;
+    if (item.providerEvidence?.kind !== "delivery" || attempts?.length < 2 || attempts[0].status !== "failed" || attempts.at(-1).status !== "succeeded") fail("delivery retry evidence is not ordered failed to succeeded");
   }
   if (!item.providerEvidence?.kind) fail(`scenario ${item.scenario} has no typed provider evidence`);
   if (["stripe-digital", "stripe-mixed"].includes(item.scenario) && (item.providerEvidence.kind !== "checkout" || item.providerEvidence.orderId !== item.subjectId || item.providerEvidence.paymentIntentId !== item.observation.providerPayment.id)) fail("checkout provider evidence is uncorrelated");
