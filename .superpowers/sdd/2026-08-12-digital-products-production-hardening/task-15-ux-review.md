@@ -512,3 +512,46 @@ The runtime check correctly compares the immediate pre/post grace ID and count, 
 ### Round 10 release disposition
 
 Do not approve the UX/accessibility gate. The remaining P1 is confined to untested critical financial/failure states and optional zoom/download assertions, but those are required release surfaces.
+
+---
+
+## Round 11 re-review — commit `cdf280e`
+
+### Verdict
+
+**FAIL** — named zoom and download actions are now mandatory, and grace evidence is corrected. One P1 remains because dynamic financial and failure states still have no accessibility coverage, and zoom actions are not activated.
+
+### P1 — Required financial/failure accessibility states are still absent
+
+**Evidence:** `apps/web/e2e/digital-products-accessibility.spec.ts:27-52` and `:128-159`.
+
+The zoom test now maps every route to a named primary action and requires it to exist, fit horizontally, and be reachable by Tab. The download workflow also requires a visible control and no longer skips conditionally. These resolve the optional-assertion portion of round 10.
+
+However, the accessibility suite still never creates or visits these required dynamic states:
+
+- delivery failure and retry/resend error;
+- partial refund with preserved access and full refund with revoked access;
+- open-dispute suspension, won restoration, and lost revocation;
+- signing failure, grant-limit rejection, and stalled-download timeout.
+
+There are therefore no axe scans or exact live-region assertions for any of those states. Additionally, zoom actions are reached and measured but never activated, so obscuring overlays or post-activation reflow/focus failures remain undetected.
+
+**Required remediation:** Use deterministic acceptance controls/provider fixtures to place each order/download state, visit the corresponding customer/merchant surface at mobile and desktop, assert exact status/action semantics and announcements, and run axe. Simulate download signing, limit, and timeout responses. At 200% zoom, activate each named action and verify its expected result or navigation.
+
+### P2 — Dialog coverage validates cancellation but not confirmation path
+
+**Evidence:** `apps/web/e2e/digital-products-accessibility.spec.ts:106-118`.
+
+The replacement dialog is keyboard-opened, retains focus after Shift+Tab, closes with Escape, and restores trigger focus. It does not test Tab wrapping across both ends or the confirmation path and its focus destination/live status. This is no longer a release blocker by itself because the main functional replacement journey exists, but completing the dialog contract would strengthen regression protection.
+
+### Resolved from round 10
+
+- Every zoom surface now requires a specific named primary action; optional branches are removed.
+- Download presence and keyboard interaction are mandatory.
+- Grace evidence records the actual immediate before/after issued counts and matching reused grant ID.
+- Signing-failure evidence distinguishes released reservation from issued usage and records a successful subsequent retry.
+- Replacement continuity evidence includes old/new filenames and hashes.
+
+### Round 11 release disposition
+
+Do not approve the UX/accessibility gate. The sole remaining P1 is the complete absence of accessibility validation for the feature's financial and failure/recovery states.
