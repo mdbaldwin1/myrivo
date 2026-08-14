@@ -372,3 +372,58 @@ The replacement observation is parsed by a stronger schema but its manifest/vers
 ### Round 7 release disposition
 
 Do not approve the UX/accessibility gate. The new scans are meaningful progress, but the remaining P1 concerns natural keyboard reachability, focus behavior, and required dynamic states—not merely additional test quantity.
+
+---
+
+## Round 8 re-review — commit `5f73e6a`
+
+### Verdict
+
+**FAIL** — real tab-order reachability is now checked for several controls, and provider/grant/replacement evidence is substantially stronger. One P1 remains: the accessibility suite still stops short of keyboard-completing the core merchant and checkout workflows and omits the required dialog, financial, and failure-state accessibility checks.
+
+### P1 — Keyboard reachability improved, but critical workflows and dynamic states still are not accessibility-tested end to end
+
+**Evidence:** `apps/web/e2e/digital-products-accessibility.spec.ts:7-14`, `:88-104`, and `:106-127`.
+
+`tabTo()` is a meaningful improvement: file input, publish, resend, add-to-cart, checkout, download, and zoom targets must now be reachable in the browser's actual Tab order. Add-to-cart, resend, and download are keyboard-activated. However:
+
+- The file input is never supplied a file in the accessibility journey, so upload progress/completion/failure, preview readiness, and their announcements/axe states remain absent.
+- Publish and checkout are only reached and focused; neither is activated. Publish-result and checkout polling/delivery announcements remain untested.
+- Replacement/confirmation dialogs remain entirely absent: no keyboard opening, focus trap, Shift+Tab wrapping, Escape/cancel, confirmation, or return-focus assertion.
+- Download coverage still conditionally skips the entire interaction if the control is not visible, allowing the required assertion to disappear silently.
+- No accessibility scan covers delivery failure, partial/full refund, dispute suspension/restoration/revocation, download JSON failure/timeout, or resend error.
+- Zoom still targets the last generic button/link rather than a named primary control and does not activate it.
+- The recovery four-stop check still asserts uniqueness rather than an expected semantic order; no explicit Shift+Tab path is tested anywhere.
+
+These are explicit Task 15 requirements on the most consequential dynamic states. A release gate that can pass without keyboard-publishing, keyboard-checking out, encountering the replacement dialog, or scanning financial/failure states remains incomplete.
+
+**Required remediation:** In the accessibility suite, upload the valid PNG via the keyboard-reached input; assert upload and preview live messages and axe results; keyboard-activate publish and checkout; exercise the replacement dialog's trap, reverse traversal, Escape, confirm, and return focus; make download presence mandatory; inject/visit each financial and delivery-failure state and run axe; simulate download failure/timeout and assert announcements; and activate named surface-specific actions at 200% zoom.
+
+### P2 — Grant evidence is richer but grace reuse is not actually proven by comparison
+
+**Evidence:** `apps/web/e2e/digital-products.spec.ts:53-82`.
+
+Five isolated sessions are created, a first-session repeat is attempted, signing-failure state is compared, and scenario evidence carries grant/session IDs. However, `graceReusedGrantId` is simply assigned the last observed grant after the repeat; the test never captures the grant ID/count before the repeat and asserts they are unchanged. Likewise `sixthDenied` is supplied as the literal `true` rather than derived from exact post-click observation, and the sixth error still uses the potentially mismatched `/limit|contact|unavailable/` copy assertion.
+
+**Remediation:** Observe before and after the grace click and assert identical committed grant IDs/count; observe after the sixth attempt and derive denial/zero remaining from database state; assert the component's exact accessible rejection message.
+
+### P2 — Replacement evidence proves version selection but not prior buyer access after replacement
+
+**Evidence:** `apps/web/e2e/digital-products.spec.ts:94-133`.
+
+The scenario now captures the prior manifest version, hashes the prior download, verifies a new catalog version, and proves a subsequent checkout snapshots the replacement. That is substantial. It still does not reopen the original buyer's access after replacement and compare its filename/content hash to the pre-replacement value. The evidence therefore proves the database manifest remained and a new checkout changed, but not the final buyer-facing download continuity.
+
+**Remediation:** After replacement, reopen the original buyer's access link/session, assert the original customer filename/version, download it, and compare its hash with `priorContentSha256`.
+
+### Resolved/improved from round 7
+
+- Actual Tab traversal replaces programmatic focus for covered controls, with a bounded failure if a target is unreachable.
+- Add-to-cart uses Space; resend and download use Enter.
+- Acceptance observations are schema-validated and provider evidence is scenario-validated.
+- Five isolated sessions, a grace attempt, signing-failure comparison, and sixth attempt are encoded.
+- Replacement captures prior version/content, verifies a distinct catalog version, and proves a new checkout snapshots the replacement.
+- Resend, checkout, refund, dispute, and delivery evidence is more tightly correlated with provider and application identifiers.
+
+### Round 8 release disposition
+
+Do not approve the UX/accessibility gate. One P1 remains in the executable accessibility contract; provider unavailability should become the only blocker only after these repository-side assertions are complete.
