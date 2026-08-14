@@ -391,3 +391,46 @@ The grace ID is merely the last grant after a repeated click and is never compar
 - **Dispute opened:** Resolved structurally. A distinct opened order/provider scenario, processed webhook, UI suspension assertion, schema case, and required verifier entry now exist.
 - **Duplicate scenarios:** Resolved; the verifier rejects duplicate named artifacts.
 - **Evidence secret redaction:** Improved with independent HMAC session hashes and recursive forbidden-material checks.
+
+---
+
+## Round 10 Re-review — commit `e9a77f8`
+
+### Verdict
+
+**FAIL** — final storage bytes are now captured correctly, but the grant assertions conflict with the reserve/release data model and the signed artifact/standalone verifier still do not preserve or canonically validate the actual before/after evidence.
+
+### P1 — Signing-failure acceptance rejects the correct released-grant audit behavior
+
+**Evidence:** The implementation deliberately reserves a grant before storage signing and releases that reservation on signing failure. Released grant rows are retained for auditability; unit/migration tests elsewhere exercise `release_digital_download_grant`. The E2E now requires the complete grant ID arrays to be byte-for-byte identical before and after the injected signing failure (`apps/web/e2e/digital-products.spec.ts:67-79`), and both the scenario schema and standalone verifier impose the same equality (`apps/web/lib/digital-products/acceptance-evidence.ts`, `grantsEvidence`; `scripts/verify-digital-products-acceptance.mjs:77-78`). A correct run may add a grant row with status `released` while leaving `download_grants_used` unchanged.
+
+**Impact:** The strict gate can reject the correct reserve → sign failure → release implementation, or pressure the implementation to erase audit history. It also fails to prove the actual invariant: no successful grant is consumed.
+
+**Remediation:** Observe entitlement `download_grants_used` and grant statuses. Require the counter and set of `issued` grants to remain unchanged, while requiring one newly correlated `released`/failed reservation for the injected fault with its safe error. Do not require all audit-row IDs to remain identical. Add a realistic full artifact test containing the released row.
+
+### P1 — Grace and replacement evidence written to the signed artifact is not the evidence actually observed
+
+**Evidence:** The test correctly captures `beforeGrace` and `grace` and asserts same ID/count at runtime (`apps/web/e2e/digital-products.spec.ts:72-80`). But the final artifact sets both `graceCountBefore` and `graceCountAfter` to `five.observation.grants.length` (`:112`), a later unrelated snapshot. The artifact therefore cannot independently prove grace did not increment.
+
+For replacement, the browser now correctly follows the redirect chain, checks `Content-Disposition`, and hashes final HTTP 200 storage bytes before and after (`:129-177`). However, `replacementEvidence` stores only `priorContentSha256`; it omits `oldAfterHash` and `replacementContentSha256`. The standalone verifier consequently validates only version IDs and the format of the single prior hash, not immutable byte equality/difference (`scripts/verify-digital-products-acceptance.mjs:82-86`).
+
+**Impact:** The in-process Playwright assertions are improved, but the signed release artifact—the object persisted/digested for approval—does not contain the before/after proof it claims. A replayed or independently reviewed artifact cannot establish grace or content immutability.
+
+**Remediation:** Persist the actual grace before/after grant IDs and counters captured at the retry point. Expand replacement evidence with prior-before hash/size, prior-after hash/size, replacement hash/size, and filenames; refine the schema and verifier to require old-before equals old-after and differs from replacement, with version/manifest linkage.
+
+### P1 — Standalone verification still does not execute the canonical scenario schema and lacks verifier regression tests
+
+**Status:** Unresolved.
+
+**Evidence:** `verify-digital-products-acceptance.mjs` still parses evidence as untyped JSON and implements selected manual predicates. It does not import or execute `digitalAcceptanceObservationSchema` or `digitalAcceptanceScenarioEvidenceSchema`. No tests invoke the standalone verifier with valid and adversarial signed evidence; the added tests cover only the library schema. Important gaps remain: observed grant statuses need not be `issued`; provider unique grant IDs need not equal observed IDs; delivery artifact attempts need not match observed `deliveryAttempts`/job ID or have increasing attempt numbers/timestamps; financial provider rows/outcomes remain only partially tied to observed refund/dispute state; Resend message IDs remain uncorrelated with observed notifications.
+
+**Impact:** Schema evolution can diverge from promotion logic—as already happened with the inaccurate grace/replacement artifacts—and HMAC-valid internally inconsistent evidence can pass selected manual checks.
+
+**Remediation:** Extract verification into an importable/tested module and validate a canonical full-document schema shared by writer and gate. Add cross-record refinements plus fixture tests for a valid complete document and negative cases for every mismatch, duplicate, missing scenario, wrong status/order/version/session, and leaked secret. Keep the CLI as a thin wrapper.
+
+### Previous findings disposition
+
+- **Final downloaded bytes:** Resolved in the live Playwright flow. `waitForFinalDownload()` follows the redirect ancestry to a non-API HTTP 200 response, checks filename disposition, and hashes storage bytes.
+- **Immediate signing-failure comparison bug:** The previous later-five-state comparison is removed, but replaced by the incorrect all-audit-row identity requirement above.
+- **Grace runtime assertion:** Improved and correct in-process; signed artifact fields remain inaccurate.
+- **Duplicate/opened dispute checks:** Remain resolved.
