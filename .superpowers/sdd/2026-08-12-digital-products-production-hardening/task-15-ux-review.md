@@ -589,3 +589,23 @@ The provider journey waits for eventual content, which verifies final semantics,
 ### Round 12 release disposition
 
 Do not approve the UX/accessibility gate. The remaining gap is now narrower: dynamic states are scanned, but their screen-reader/focus/responsive behavior and actual zoom/dialog operation are not verified.
+
+---
+
+## Round 13 re-review — commit `8a95daf`
+
+### Verdict
+
+**FAIL** — this commit changes evidence cross-linking only and does not modify either browser spec or affected UI. The P1 from round 12 therefore remains unchanged.
+
+### P1 — Requested live/focus/responsive dynamic-state and action coverage is still absent
+
+**Evidence:** `apps/web/e2e/digital-products-accessibility.spec.ts:27-52`, `:106-118`, and `:128-159`.
+
+No new assertions were added for financial/failure live regions, focus behavior, keyboard recovery, or mobile/desktop dynamic states. Named zoom actions are still only focused and measured, not activated. The replacement dialog is still only tested through one Shift+Tab and Escape cancellation; confirmation and its result/focus destination are not exercised. Provider-backed dynamic axe scans remain confined to the functional project's default viewport without exact announcement/focus assertions.
+
+**Required remediation:** The round-12 remediation remains required: put refund/dispute/delivery/signing/limit/timeout states in the mobile and desktop accessibility projects, assert exact live/status/alert semantics and focus, keyboard-operate available actions, activate named zoom actions, and complete both dialog cancellation and confirmation paths with trap/return-focus validation.
+
+### Round 13 release disposition
+
+Do not approve the UX/accessibility gate. Evidence cross-linking does not address the outstanding user-facing accessibility contract.
