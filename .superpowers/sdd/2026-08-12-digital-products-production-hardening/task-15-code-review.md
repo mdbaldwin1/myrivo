@@ -293,3 +293,50 @@ Additionally, one static `customerOrder` route is reused for two distinct refund
 - **Real refund path:** Improved to real Stripe test refunds, pending exact webhook/event and state evidence as described above.
 - **Dispute fail-closed preflight:** Implemented correctly in the verifier, but not operationally wired in CI.
 - **Canonical schema use:** Resolved mechanically end to end; semantic completeness remains P1.
+
+---
+
+## Round 8 Re-review — commit `5f73e6a`
+
+### Verdict
+
+**FAIL** — scenario-specific artifacts and CI helper wiring are meaningful improvements, but three required invariants are still falsely represented or omitted, and the final verifier does not enforce the canonical scenario schema.
+
+### P1 — “Signing failure consumes none” is not tested; a malformed access bearer is substituted
+
+**Evidence:** After five session downloads, the spec changes the last character of the emailed access link and navigates to it (`apps/web/e2e/digital-products.spec.ts:70-74`). That exercises invalid bearer authorization before a download reservation/storage signing attempt. It does not inject a failure from `createSignedUrl` after grant reservation, which is the invariant that must release the reservation without consuming a grant. The artifact nevertheless labels the length comparison `signingFailureConsumedGrant` (`:82`). The scenario schema accepts that caller-computed boolean and has no evidence tying it to a reserved/released grant or signing failure (`apps/web/lib/digital-products/acceptance-evidence.ts:42`).
+
+**Impact:** The release gate can certify signing-failure safety while never executing the reserve → storage-sign failure → release path. A regression that consumes grants on signing failure would pass acceptance.
+
+**Remediation:** Add a narrowly scoped acceptance injection that fails storage signing after a successful reservation, then independently observe the same entitlement counter plus a released/failed grant record and safe error. Bind the artifact to that grant/reservation ID and exact before/after count. Keep malformed-bearer coverage as a separate security scenario.
+
+### P1 — Replacement content proof hashes the API redirect response, not the purchased file
+
+**Evidence:** The replacement test waits for the response whose URL contains `/api/digital-downloads/file/` (`apps/web/e2e/digital-products.spec.ts:102`), then hashes `response.body()` (`:104`). That endpoint returns a 303 redirect to signed storage; the body is empty/redirect metadata, not the downloaded asset bytes. The resulting SHA can therefore be identical regardless of which immutable file storage serves. After replacement, the test never downloads the prior buyer file again and compares bytes. The artifact records the meaningless pre-replacement hash and version IDs (`:128`).
+
+**Impact:** Catalog/manifest IDs can look correct while prior buyers receive the replaced file, an empty file, or another object. The core immutable-delivery promise is not end-to-end verified.
+
+**Remediation:** Capture the final signed-storage response or use Playwright's download event and hash the saved payload. Download and hash the prior buyer's file both before and after replacement, require identical nonempty content hashes and filename/version, then independently download the new checkout's file and require the replacement hash/version.
+
+### P1 — Dispute-opened suspension is no longer covered
+
+**Evidence:** The financial loop explicitly skips `opened` (`apps/web/e2e/digital-products.spec.ts:153-155`). The scenario evidence union supports only dispute `won|lost`, and the verifier's required matrix likewise includes only `stripe-dispute-won` and `stripe-dispute-lost` (`apps/web/lib/digital-products/acceptance-evidence.ts:37,49`; `scripts/verify-digital-products-acceptance.mjs:48`). The approved contract requires an open dispute to suspend access before a win restores or a loss revokes it.
+
+**Impact:** Webhook processing can fail to suspend access during an open dispute while all release acceptance checks pass. This is a financial/access release blocker.
+
+**Remediation:** Require an opened/needs-response provider event and exact processed webhook evidence, independently observe suspended entitlements/tokens, and assert the bound order's download UI has no actionable grants. Then continue the same dispute to won on one order and lost on another, verifying source-attributed restoration/revocation.
+
+### P1 — The final release verifier does not parse or fully correlate canonical scenario artifacts
+
+**Evidence:** `digitalAcceptanceScenarioEvidenceSchema` is parsed only while Playwright writes each scenario (`apps/web/e2e/digital-products-fixture.ts:36`). The standalone promotion verifier reads arbitrary JSON and never imports/parses that schema; it performs partial manual checks (`scripts/verify-digital-products-acceptance.mjs:54-70`). It does not validate grant artifact IDs against observed grant rows/version/session identity, grace reuse against a before/after observation, replacement artifact IDs/hash against observed catalog/manifest history, delivery artifact ordering/status against observed attempts, Resend message ID against observed notifications, or exact refund/dispute application states. Extra/duplicate scenarios are also accepted.
+
+**Impact:** A modified or separately generated HMAC-valid artifact can satisfy promotion with internally inconsistent scenario evidence. More importantly, even the current Playwright writer creates several fields from assumptions rather than authoritative observations, and the final gate does not catch that.
+
+**Remediation:** Move canonical evidence schemas to a Node-importable module used by both the writer and verifier (or provide a dedicated compiled verifier). Validate the complete evidence document, require exactly one ordered artifact per scenario, and add cross-field refinements tying every provider artifact to the corresponding canonical observation and before/after records. Add negative verifier tests for each mismatch.
+
+### Previous findings disposition
+
+- **CI dispute helper configuration:** Resolved. URL, token, signing key, and allowlisted origin are now wired into the promotion job.
+- **Five distinct sessions and sixth attempt:** Substantially improved; five separate browser contexts are used and exact unique grant count is required. Grace evidence still needs explicit before/after identity correlation, and signing-failure coverage remains P1 above.
+- **Provider/observation enrichment:** Refund, dispute, webhook, delivery-attempt, catalog-version, Checkout, and Resend records are now collected and typed. Exact semantic/cross-record enforcement remains incomplete.
+- **Keyboard accessibility mechanics:** Improved to real Tab traversal and keyboard activation rather than programmatic focus.
