@@ -14,7 +14,11 @@ if (!evidencePath) fail("acceptance evidence output path is missing");
 for (const key of ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "RESEND_API_KEY", "MYRIVO_DIGITAL_TEST_RECIPIENT"]) {
   if (!process.env[key]?.trim()) fail(`${key} is missing`);
 }
-if (!process.env.MYRIVO_STRIPE_DISPUTE_HELPER_URL || !process.env.MYRIVO_STRIPE_DISPUTE_HELPER_TOKEN) fail("exact Stripe dispute won/lost scenarios are unsupported without the audited provider test helper");
+for (const key of ["MYRIVO_STRIPE_DISPUTE_HELPER_URL", "MYRIVO_STRIPE_DISPUTE_HELPER_TOKEN", "MYRIVO_STRIPE_DISPUTE_HELPER_SIGNING_KEY", "MYRIVO_STRIPE_DISPUTE_HELPER_ORIGIN"]) {
+  if (!process.env[key]?.trim()) fail(`exact Stripe dispute won/lost scenarios require ${key}`);
+}
+const disputeHelperUrl = new URL(process.env.MYRIVO_STRIPE_DISPUTE_HELPER_URL);
+if (disputeHelperUrl.protocol !== "https:" || disputeHelperUrl.origin !== process.env.MYRIVO_STRIPE_DISPUTE_HELPER_ORIGIN || new URL(process.env.MYRIVO_STRIPE_DISPUTE_HELPER_ORIGIN).origin !== process.env.MYRIVO_STRIPE_DISPUTE_HELPER_ORIGIN) fail("Stripe dispute helper URL must match the exact allowlisted HTTPS origin");
 const evidenceKey = process.env.MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_HMAC_KEY?.trim();
 if (process.env.STRIPE_STUB_MODE !== "false" || !process.env.STRIPE_SECRET_KEY.startsWith("sk_test_")) {
   fail("Stripe must be explicitly configured in test mode");
@@ -58,6 +62,11 @@ for (const item of evidence.observations) {
     const grants = item.observation.grants;
     if (grants.length !== 5 || new Set(grants.map((grant) => grant.id)).size !== 5) fail("five-grant evidence is not exact and unique");
   }
+  if (!item.providerEvidence?.kind) fail(`scenario ${item.scenario} has no typed provider evidence`);
+  if (["stripe-digital", "stripe-mixed"].includes(item.scenario) && (item.providerEvidence.kind !== "checkout" || item.providerEvidence.orderId !== item.subjectId || item.providerEvidence.paymentIntentId !== item.observation.providerPayment.id)) fail("checkout provider evidence is uncorrelated");
+  if (["stripe-partial-refund", "stripe-full-refund"].includes(item.scenario) && (item.providerEvidence.kind !== "refund" || item.providerEvidence.paymentIntentId !== item.observation.providerPayment.id || !item.providerEvidence.webhook?.signatureVerified || item.providerEvidence.webhook.status !== "processed")) fail("refund provider/webhook evidence is uncorrelated");
+  if (["stripe-dispute-won", "stripe-dispute-lost"].includes(item.scenario) && (item.providerEvidence.kind !== "dispute" || item.providerEvidence.paymentIntentId !== item.observation.providerPayment.id || !item.providerEvidence.webhook?.signatureVerified || item.providerEvidence.webhook.status !== "processed")) fail("dispute provider/webhook evidence is uncorrelated");
+  if (["resend-access", "merchant-resend"].includes(item.scenario) && (item.providerEvidence.kind !== "resend" || item.providerEvidence.orderId !== item.subjectId || item.providerEvidence.recipient !== fixture.customer.email)) fail("Resend provider evidence is uncorrelated");
   if (!item.observation.manifestItems?.length || item.observation.manifestItems.some((manifest) => !manifest.asset_version_id)) fail("manifest evidence is missing asset versions");
 }
 if (requiredActions.size) fail(`evidence is missing required actions: ${[...requiredActions].join(", ")}`);

@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 - Hardened digital-product acceptance with database-owned deployment configuration, canonical typed evidence, real Stripe test refunds, fail-closed dispute capability checks, and deeper keyboard/dynamic-state accessibility workflows.
+- Added signed scenario-specific provider evidence, mutually authenticated dispute-test helpers, exact webhook correlation, five-session grant-boundary checks, and immutable replacement buyer verification.
 
 - Bound acceptance observations to newly completed checkout orders, enabled tightly allowlisted preview builds, added Resend message/access-link retrieval, removed synthetic financial certification, and made unsupported provider scenarios fail the release gate.
 - Added a service-role-only, run/store/project-bound non-production acceptance controller with tamper-resistant audit, separate evidence signing credentials, valid image fixtures, and encoded Stripe-hosted digital/mixed checkout journeys.

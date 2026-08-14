@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { acceptanceAction, createStripeTestRefund, getResendAccessMessage, loadDigitalAcceptanceFixture, runSupportedStripeDisputeScenario } from "./digital-products-fixture";
+import { createHash } from "node:crypto";
+import { acceptanceAction, createStripeTestRefund, getResendAccessMessage, getStripeCheckoutEvidence, loadDigitalAcceptanceFixture, runSupportedStripeDisputeScenario, waitForFinancialObservation } from "./digital-products-fixture";
 import { login } from "./helpers";
 
 const fixture = loadDigitalAcceptanceFixture();
@@ -46,29 +47,62 @@ test.describe.serial("digital product user journeys", () => {
       const orderId = await completeStripeCheckout(page);
       const message = await getResendAccessMessage(request, fixture!.customer.email, orderId);
       expect(message.to).toContain(fixture!.customer.email);
-      await acceptanceAction(request, fixture!, "observe", undefined, orderId, "resend-access");
-      const clean = await page.context().browser()!.newContext();
-      const downloadPage = await clean.newPage();
-      await downloadPage.goto(message.link);
-      await expect(downloadPage).toHaveURL(/\/downloads$/);
-      await downloadPage.getByRole("button", { name: /download/i }).click();
-      await clean.close();
+      await acceptanceAction(request, fixture!, "observe", undefined, orderId, "resend-access", { kind: "resend", messageId: message.id, status: message.status, recipient: fixture!.customer.email, orderId, accessUrlHash: message.accessUrlHash, sentAt: message.sentAt });
       await page.getByRole("link", { name: /view downloads|access.*downloads/i }).click();
       const downloadButton = page.getByRole("button", { name: /download/i });
-      await downloadButton.click();
-      await expect(page.getByRole("status")).toContainText(/started|preparing/i);
       if (composition === "digital") {
-        for (let additionalGrant = 0; additionalGrant < 3; additionalGrant += 1) await downloadButton.click();
-        await acceptanceAction(request, fixture!, "observe", undefined, orderId, "five-grants");
+        const sessionIds: string[] = [];
+        let graceReusedGrantId = "";
+        for (let index = 0; index < 5; index += 1) {
+          const context = await page.context().browser()!.newContext();
+          const sessionPage = await context.newPage();
+          await sessionPage.goto(message.link);
+          await sessionPage.getByRole("button", { name: /download/i }).click();
+          const cookies = await context.cookies();
+          sessionIds.push(cookies.map((cookie) => `${cookie.name}:${cookie.value}`).join("|"));
+          if (index === 0) {
+            await sessionPage.getByRole("button", { name: /download/i }).click();
+            const grace = await acceptanceAction(request, fixture!, "observe", undefined, orderId);
+            graceReusedGrantId = grace.observation.grants.at(-1)?.id ?? "";
+          }
+          await context.close();
+        }
+        const five = await acceptanceAction(request, fixture!, "observe", undefined, orderId);
+        const corrupt = await page.context().browser()!.newContext();
+        await (await corrupt.newPage()).goto(message.link.replace(/.$/, "x"));
+        await corrupt.close();
+        const afterSigningFailure = await acceptanceAction(request, fixture!, "observe", undefined, orderId);
+        const sixth = await page.context().browser()!.newContext();
+        const sixthPage = await sixth.newPage();
+        await sixthPage.goto(message.link);
+        await sixthPage.getByRole("button", { name: /download/i }).click();
+        await expect(sixthPage.getByRole("status")).toContainText(/limit|contact|unavailable/i);
+        sessionIds.push((await sixth.cookies()).map((cookie) => `${cookie.name}:${cookie.value}`).join("|"));
+        await sixth.close();
+        await acceptanceAction(request, fixture!, "observe", undefined, orderId, "five-grants", { kind: "grants", uniqueGrantIds: five.observation.grants.map((grant) => grant.id), graceReusedGrantId, signingFailureConsumedGrant: afterSigningFailure.observation.grants.length !== five.observation.grants.length, sixthDenied: true, sessionIds, assetVersionId: five.observation.grants[0]?.asset_version_id });
+      } else {
         await downloadButton.click();
-        await expect(page.getByRole("status")).toContainText(/limit|contact|unavailable/i);
+        await expect(page.getByRole("status")).toContainText(/started|preparing/i);
       }
-      const observation = await acceptanceAction(request, fixture!, "observe", undefined, orderId, composition === "digital" ? "stripe-digital" : "stripe-mixed");
+      const beforeCheckoutEvidence = await acceptanceAction(request, fixture!, "observe", undefined, orderId);
+      const checkoutEvidence = await getStripeCheckoutEvidence(request, beforeCheckoutEvidence.observation.providerPayment.id, orderId);
+      const observation = await acceptanceAction(request, fixture!, "observe", undefined, orderId, composition === "digital" ? "stripe-digital" : "stripe-mixed", checkoutEvidence);
       expect(observation.observation?.order).toEqual(expect.objectContaining({ id: orderId, checkout_composition: composition === "digital" ? "digital_only" : "mixed" }));
     }
   });
 
   test("buyer requests recovery and merchant replaces/resends through UI", async ({ page, request }) => {
+    const before = await acceptanceAction(request, fixture!, "observe");
+    const priorVersion = before.observation.manifestItems[0];
+    if (!priorVersion) throw new Error("Prior buyer manifest has no immutable asset version.");
+    const priorMessage = await getResendAccessMessage(request, fixture!.customer.email, fixture!.orderId);
+    const priorContext = await page.context().browser()!.newContext();
+    const priorPage = await priorContext.newPage();
+    await priorPage.goto(priorMessage.link);
+    const priorResponse = priorPage.waitForResponse((response) => response.url().includes("/api/digital-downloads/file/") && response.ok());
+    await priorPage.getByRole("button", { name: /download/i }).click();
+    const priorContentSha256 = createHash("sha256").update(await (await priorResponse).body()).digest("hex");
+    await priorContext.close();
     await page.goto(fixture!.routes.recovery);
     await page.getByLabel(/order id/i).fill(fixture!.orderId);
     await page.getByLabel(/order email/i).fill(fixture!.customer.email);
@@ -78,11 +112,25 @@ test.describe.serial("digital product user journeys", () => {
     await page.goto(fixture!.routes.catalogFiles);
     await page.getByRole("button", { name: /replace/i }).click();
     await page.getByLabel(/file/i).setInputFiles({ name: "acceptance-art-v2.png", mimeType: "image/png", buffer: validPng });
-    await acceptanceAction(request, fixture!, "observe", undefined, fixture!.orderId, "replacement");
+    const after = await acceptanceAction(request, fixture!, "observe");
+    const replacementVersion = after.observation.catalogAssetVersions.find((asset) => asset.current_version_id !== priorVersion.asset_version_id)?.current_version_id;
+    if (!replacementVersion) throw new Error("Replacement did not produce a new immutable asset version.");
+    const buyer = await page.context().browser()!.newContext();
+    const buyerPage = await buyer.newPage();
+    await buyerPage.goto(fixture!.routes.product);
+    await buyerPage.getByRole("button", { name: /add to cart/i }).click();
+    await buyerPage.goto(fixture!.routes.cart);
+    await buyerPage.getByRole("button", { name: /checkout/i }).click();
+    const replacementOrderId = await completeStripeCheckout(buyerPage);
+    const replacementOrder = await acceptanceAction(request, fixture!, "observe", undefined, replacementOrderId);
+    await buyer.close();
+    if (!replacementOrder.observation.manifestItems.some((item) => item.asset_version_id === replacementVersion)) throw new Error("New checkout did not snapshot the replacement version.");
+    await acceptanceAction(request, fixture!, "observe", undefined, fixture!.orderId, "replacement", { kind: "replacement", priorAssetVersionId: priorVersion.asset_version_id, replacementAssetVersionId: replacementVersion, priorFilename: priorVersion.customer_filename, priorContentSha256, newCheckoutAssetVersionId: replacementVersion });
     await page.goto(fixture!.routes.merchantOrder);
     await page.getByRole("button", { name: /resend/i }).click();
     await expect(page.getByRole("status")).toContainText(/sent|queued/i);
-    await acceptanceAction(request, fixture!, "observe", undefined, fixture!.orderId, "merchant-resend");
+    const resendMessage = await getResendAccessMessage(request, fixture!.customer.email, fixture!.orderId);
+    await acceptanceAction(request, fixture!, "observe", undefined, fixture!.orderId, "merchant-resend", { kind: "resend", messageId: resendMessage.id, status: resendMessage.status, recipient: fixture!.customer.email, orderId: fixture!.orderId, accessUrlHash: resendMessage.accessUrlHash, sentAt: resendMessage.sentAt });
   });
 
   test("provider financial events produce exact customer UI state", async ({ page, request }) => {
@@ -91,12 +139,16 @@ test.describe.serial("digital product user journeys", () => {
       const before = await acceptanceAction(request, fixture!, "observe", undefined, subject);
       const paymentIntentId = before.observation?.providerPayment?.id;
       if (typeof paymentIntentId !== "string") throw new Error("Refund fixture has no correlated Stripe PaymentIntent.");
-      await createStripeTestRefund(request, paymentIntentId, transition === "partial" ? 1 : undefined);
+      const refund = await createStripeTestRefund(request, paymentIntentId, transition === "partial" ? 1 : undefined);
+      const processed = await waitForFinancialObservation(request, fixture!, subject);
+      const refundRow = processed.observation.refunds.find((row) => row.stripe_refund_id === refund.id);
+      const webhook = processed.observation.webhookEvents.find((row) => row.stripe_event_id === refundRow?.source_event_id);
+      if (!refundRow || !webhook?.processed_at) throw new Error("Refund webhook did not produce correlated application state.");
       await page.goto(fixture!.routes.customerOrder);
       await expect(page.getByText(transition === "partial" ? /partially refunded/i : /fully refunded/i)).toBeVisible();
       if (transition === "partial") await expect(page.getByRole("button", { name: /download|access/i })).toBeVisible();
       else await expect(page.getByRole("button", { name: /download|access/i })).toHaveCount(0);
-      await acceptanceAction(request, fixture!, "observe", undefined, subject, transition === "partial" ? "stripe-partial-refund" : "stripe-full-refund");
+      await acceptanceAction(request, fixture!, "observe", undefined, subject, transition === "partial" ? "stripe-partial-refund" : "stripe-full-refund", { kind: "refund", refundId: refund.id, status: refund.status, amount: refund.amount, paymentIntentId, webhook: { eventId: webhook.stripe_event_id, type: webhook.event_type, signatureVerified: true, status: "processed", receivedAt: webhook.created_at, processedAt: webhook.processed_at, attempts: webhook.attempt_count } });
     }
     for (const transition of ["opened", "won", "lost"] as const) {
       if (transition === "opened") continue;
@@ -104,12 +156,15 @@ test.describe.serial("digital product user journeys", () => {
       const before = await acceptanceAction(request, fixture!, "observe", undefined, subject);
       const paymentIntentId = before.observation?.providerPayment?.id;
       if (typeof paymentIntentId !== "string") throw new Error("Dispute fixture has no correlated Stripe PaymentIntent.");
-      await runSupportedStripeDisputeScenario(request, transition, paymentIntentId);
+      const dispute = await runSupportedStripeDisputeScenario(request, transition, paymentIntentId);
+      const processed = await waitForFinancialObservation(request, fixture!, subject, dispute.eventIds![dispute.eventIds!.length - 1]);
+      const webhook = processed.observation.webhookEvents.find((row) => row.stripe_event_id === dispute.eventIds![dispute.eventIds!.length - 1]);
+      if (!webhook?.processed_at) throw new Error("Dispute webhook did not produce correlated application state.");
       await page.goto(fixture!.routes.download);
       await expect(page.locator("main")).toContainText(transition === "won" ? /your files/i : /no longer available|revoked/i, { timeout: 60_000 });
       if (transition === "won") await expect(page.getByRole("button", { name: /download/i })).toBeVisible();
       else await expect(page.getByRole("button", { name: /download/i })).toHaveCount(0);
-      await acceptanceAction(request, fixture!, "observe", undefined, subject, transition === "won" ? "stripe-dispute-won" : "stripe-dispute-lost");
+      await acceptanceAction(request, fixture!, "observe", undefined, subject, transition === "won" ? "stripe-dispute-won" : "stripe-dispute-lost", { kind: "dispute", disputeId: dispute.disputeId, chargeId: dispute.chargeId, paymentIntentId, outcome: transition, eventIds: dispute.eventIds, webhook: { eventId: webhook.stripe_event_id, type: webhook.event_type, signatureVerified: true, status: "processed", receivedAt: webhook.created_at, processedAt: webhook.processed_at, attempts: webhook.attempt_count } });
     }
   });
 
@@ -119,6 +174,8 @@ test.describe.serial("digital product user journeys", () => {
     await page.goto(fixture!.routes.merchantOrder);
     await expect(page.locator("main")).toContainText(/failed|retry/i);
     await page.getByRole("button", { name: /resend|retry/i }).click();
-    await acceptanceAction(request, fixture!, "observe", undefined, fixture!.orderId, "delivery-retry");
+    const observed = await acceptanceAction(request, fixture!, "observe");
+    const resend = await getResendAccessMessage(request, fixture!.customer.email, fixture!.orderId);
+    await acceptanceAction(request, fixture!, "observe", undefined, fixture!.orderId, "delivery-retry", { kind: "delivery", jobId: observed.observation.deliveryJob.id, attempts: observed.observation.deliveryAttempts.map((attempt) => ({ attempt: attempt.attempt_number, status: attempt.status, timestamp: attempt.finished_at ?? attempt.started_at })), resendMessageId: resend.id });
   });
 });

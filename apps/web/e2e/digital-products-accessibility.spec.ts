@@ -6,6 +6,14 @@ import { loadDigitalAcceptanceFixture } from "./digital-products-fixture";
 const acceptance = loadDigitalAcceptanceFixture();
 test.skip(!acceptance, "Digital accessibility acceptance requires a non-production seeded fixture.");
 
+async function tabTo(page: import("@playwright/test").Page, target: import("@playwright/test").Locator) {
+  for (let index = 0; index < 40; index += 1) {
+    await page.keyboard.press("Tab");
+    if (await target.evaluate((node) => node === document.activeElement).catch(() => false)) return;
+  }
+  throw new Error("Target was not reachable in the real keyboard tab order.");
+}
+
 for (const viewport of [
   { name: "mobile", width: 390, height: 844 },
   { name: "desktop", width: 1440, height: 900 },
@@ -29,7 +37,7 @@ for (const viewport of [
         const primaryAction = page.getByRole("button").or(page.getByRole("link")).last();
         if (await primaryAction.isVisible().catch(() => false)) {
           await primaryAction.scrollIntoViewIfNeeded();
-          await primaryAction.focus();
+          await tabTo(page, primaryAction);
           await expect(primaryAction).toBeFocused();
           const bounds = await primaryAction.boundingBox();
           expect(bounds).not.toBeNull();
@@ -80,16 +88,16 @@ for (const viewport of [
       await login(page, acceptance!.merchant.email, acceptance!.merchant.password);
       await page.goto(acceptance!.routes.catalogFiles);
       const fileInput = page.getByLabel(/file/i).first();
-      await fileInput.focus();
+      await tabTo(page, fileInput);
       await expect(fileInput).toBeFocused();
       const publish = page.getByRole("button", { name: /publish|activate/i });
-      await publish.focus();
+      await tabTo(page, publish);
       await expect(publish).toBeFocused();
       await expectNoSeriousAccessibilityViolations(page, `${viewport.name} catalog keyboard state`);
 
       await page.goto(acceptance!.routes.merchantOrder);
       const resend = page.getByRole("button", { name: /resend|retry/i });
-      await resend.focus();
+      await tabTo(page, resend);
       await resend.press("Enter");
       await expect(page.getByRole("status")).toContainText(/sent|queued/i);
       await expectNoSeriousAccessibilityViolations(page, `${viewport.name} merchant resend result`);
@@ -98,20 +106,20 @@ for (const viewport of [
     test("keyboard buyer workflow preserves focus order through cart and download", async ({ page }) => {
       await page.goto(acceptance!.routes.product);
       const add = page.getByRole("button", { name: /add to cart/i });
-      await add.focus();
-      await add.press("Enter");
+      await tabTo(page, add);
+      await page.keyboard.press("Space");
       await expectNoSeriousAccessibilityViolations(page, `${viewport.name} product added`);
       await page.goto(acceptance!.routes.cart);
       const checkout = page.getByRole("button", { name: /checkout/i });
-      await checkout.focus();
+      await tabTo(page, checkout);
       await expect(checkout).toBeFocused();
       await expectNoSeriousAccessibilityViolations(page, `${viewport.name} populated cart`);
 
       await page.goto(acceptance!.routes.download);
       const download = page.getByRole("button", { name: /download/i }).first();
       if (await download.isVisible().catch(() => false)) {
-        await download.focus();
-        await download.press("Enter");
+        await tabTo(page, download);
+        await page.keyboard.press("Enter");
         await expect(page.getByRole("status")).toContainText(/started|preparing/i);
         await expect(download).toBeFocused();
         await expectNoSeriousAccessibilityViolations(page, `${viewport.name} download result`);
