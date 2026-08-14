@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { digitalAcceptanceObservationSchema, digitalAcceptanceScenarioEvidenceSchema } from "../lib/digital-products/acceptance-evidence";
+import { assertNoAcceptanceSecrets, digitalAcceptanceObservationSchema, digitalAcceptanceScenarioEvidenceSchema, hashAcceptanceSession } from "../lib/digital-products/acceptance-evidence";
 
 const relativeRoute = z.string().startsWith("/").refine((value) => !value.startsWith("//") && !value.includes("#token="));
 const identity = z.object({ email: z.string().email(), password: z.string().min(12) }).strict();
@@ -9,7 +9,7 @@ const schema = z.object({
   baseUrl: z.string().url(), runId: z.string().uuid(), controlSecret: z.string().min(32),
   merchant: identity, customer: identity, storeSlug: z.string().min(1), productSlug: z.string().min(1),
   orderId: z.string().uuid(), productId: z.string().uuid(),
-  financialOrders: z.object({ partialRefund: z.string().uuid(), fullRefund: z.string().uuid(), disputeWon: z.string().uuid(), disputeLost: z.string().uuid() }).strict(),
+  financialOrders: z.object({ partialRefund: z.string().uuid(), fullRefund: z.string().uuid(), disputeOpened: z.string().uuid(), disputeWon: z.string().uuid(), disputeLost: z.string().uuid() }).strict(),
   controlUrl: relativeRoute,
   routes: z.object({ catalogFiles: relativeRoute, product: relativeRoute, physicalProduct: relativeRoute, cart: relativeRoute, checkoutReturn: relativeRoute, download: relativeRoute, recovery: relativeRoute, customerOrder: relativeRoute, merchantOrder: relativeRoute }).strict(),
 }).strict();
@@ -28,7 +28,7 @@ export function loadDigitalAcceptanceFixture(): DigitalAcceptanceFixture | null 
   return fixture;
 }
 
-export async function acceptanceAction(request: import("@playwright/test").APIRequestContext, fixture: DigitalAcceptanceFixture, action: "observe" | "expire-access" | "inject-delivery-failure" | "inject-refund" | "inject-dispute", transition?: "partial" | "full" | "opened" | "won" | "lost", subjectId = fixture.orderId, scenario?: string, providerEvidence?: unknown) {
+export async function acceptanceAction(request: import("@playwright/test").APIRequestContext, fixture: DigitalAcceptanceFixture, action: "observe" | "expire-access" | "inject-delivery-failure" | "inject-signing-failure" | "inject-refund" | "inject-dispute", transition?: "partial" | "full" | "opened" | "won" | "lost", subjectId = fixture.orderId, scenario?: string, providerEvidence?: unknown) {
   const response = await request.post(fixture.controlUrl, { headers: { authorization: `Bearer ${fixture.controlSecret}` }, data: { version: 1, action, runId: fixture.runId, subjectId, idempotencyKey: crypto.randomUUID(), ...(transition ? { transition } : {}) } });
   if (!response.ok()) throw new Error(`Acceptance action ${action} failed with ${response.status()}`);
   const body = digitalAcceptanceObservationSchema.parse(await response.json());
@@ -40,10 +40,17 @@ export async function acceptanceAction(request: import("@playwright/test").APIRe
     delete existing.signature; existing.observations.push({ action, transition, scenario, providerEvidence, ...body }); existing.completedAt = new Date().toISOString();
     const signingKey = process.env.MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_HMAC_KEY;
     if (!signingKey || signingKey.length < 32 || signingKey === fixture.controlSecret) throw new Error("A separate evidence HMAC key is required.");
+    assertNoAcceptanceSecrets(existing);
     const unsigned = JSON.stringify(existing); existing.signature = createHmac("sha256", signingKey).update(unsigned).digest("hex");
     fs.writeFileSync(output, JSON.stringify(existing));
   }
   return body;
+}
+
+export function acceptanceSessionHash(value: string) {
+  const key = process.env.MYRIVO_DIGITAL_ACCEPTANCE_REDACTION_KEY;
+  if (!key) throw new Error("A separate acceptance evidence redaction key is required.");
+  return hashAcceptanceSession(value, key);
 }
 
 export async function getResendAccessMessage(request: import("@playwright/test").APIRequestContext, recipient: string, orderId: string) {
@@ -97,7 +104,7 @@ export async function getStripeCheckoutEvidence(request: import("@playwright/tes
   return { kind: "checkout" as const, sessionId: session.id, paymentIntentId, orderId };
 }
 
-export async function runSupportedStripeDisputeScenario(request: import("@playwright/test").APIRequestContext, scenario: "won" | "lost", paymentIntentId: string) {
+export async function runSupportedStripeDisputeScenario(request: import("@playwright/test").APIRequestContext, scenario: "opened" | "won" | "lost", paymentIntentId: string) {
   const helperUrl = process.env.MYRIVO_STRIPE_DISPUTE_HELPER_URL;
   const helperToken = process.env.MYRIVO_STRIPE_DISPUTE_HELPER_TOKEN;
   const signingKey = process.env.MYRIVO_STRIPE_DISPUTE_HELPER_SIGNING_KEY;

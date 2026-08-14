@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { createHash } from "node:crypto";
-import { acceptanceAction, createStripeTestRefund, getResendAccessMessage, getStripeCheckoutEvidence, loadDigitalAcceptanceFixture, runSupportedStripeDisputeScenario, waitForFinancialObservation } from "./digital-products-fixture";
+import { acceptanceAction, acceptanceSessionHash, createStripeTestRefund, getResendAccessMessage, getStripeCheckoutEvidence, loadDigitalAcceptanceFixture, runSupportedStripeDisputeScenario, waitForFinancialObservation } from "./digital-products-fixture";
 import { login } from "./helpers";
 
 const fixture = loadDigitalAcceptanceFixture();
@@ -53,13 +53,23 @@ test.describe.serial("digital product user journeys", () => {
       if (composition === "digital") {
         const sessionIds: string[] = [];
         let graceReusedGrantId = "";
+        const beforeSigningFailure = await acceptanceAction(request, fixture!, "observe", undefined, orderId);
+        await acceptanceAction(request, fixture!, "inject-signing-failure", undefined, orderId);
+        const failureContext = await page.context().browser()!.newContext();
+        const failurePage = await failureContext.newPage();
+        await failurePage.goto(message.link);
+        await failurePage.getByRole("button", { name: /download/i }).click();
+        await expect(failurePage.getByRole("status")).toContainText(/unable|retry/i);
+        await failureContext.close();
+        const afterInjectedFailure = await acceptanceAction(request, fixture!, "observe", undefined, orderId);
+        if (afterInjectedFailure.observation.grants.length !== beforeSigningFailure.observation.grants.length) throw new Error("Signing failure consumed a download grant.");
         for (let index = 0; index < 5; index += 1) {
           const context = await page.context().browser()!.newContext();
           const sessionPage = await context.newPage();
           await sessionPage.goto(message.link);
           await sessionPage.getByRole("button", { name: /download/i }).click();
           const cookies = await context.cookies();
-          sessionIds.push(cookies.map((cookie) => `${cookie.name}:${cookie.value}`).join("|"));
+          sessionIds.push(acceptanceSessionHash(cookies.map((cookie) => `${cookie.name}:${cookie.value}`).join("|")));
           if (index === 0) {
             await sessionPage.getByRole("button", { name: /download/i }).click();
             const grace = await acceptanceAction(request, fixture!, "observe", undefined, orderId);
@@ -77,9 +87,9 @@ test.describe.serial("digital product user journeys", () => {
         await sixthPage.goto(message.link);
         await sixthPage.getByRole("button", { name: /download/i }).click();
         await expect(sixthPage.getByRole("status")).toContainText(/limit|contact|unavailable/i);
-        sessionIds.push((await sixth.cookies()).map((cookie) => `${cookie.name}:${cookie.value}`).join("|"));
+        sessionIds.push(acceptanceSessionHash((await sixth.cookies()).map((cookie) => `${cookie.name}:${cookie.value}`).join("|")));
         await sixth.close();
-        await acceptanceAction(request, fixture!, "observe", undefined, orderId, "five-grants", { kind: "grants", uniqueGrantIds: five.observation.grants.map((grant) => grant.id), graceReusedGrantId, signingFailureConsumedGrant: afterSigningFailure.observation.grants.length !== five.observation.grants.length, sixthDenied: true, sessionIds, assetVersionId: five.observation.grants[0]?.asset_version_id });
+        await acceptanceAction(request, fixture!, "observe", undefined, orderId, "five-grants", { kind: "grants", uniqueGrantIds: five.observation.grants.map((grant) => grant.id), graceReusedGrantId, signingFailureConsumedGrant: afterSigningFailure.observation.grants.length !== five.observation.grants.length, sixthDenied: true, sessionHashes: sessionIds, assetVersionId: five.observation.grants[0]?.asset_version_id });
       } else {
         await downloadButton.click();
         await expect(page.getByRole("status")).toContainText(/started|preparing/i);
@@ -123,6 +133,23 @@ test.describe.serial("digital product user journeys", () => {
     await buyerPage.getByRole("button", { name: /checkout/i }).click();
     const replacementOrderId = await completeStripeCheckout(buyerPage);
     const replacementOrder = await acceptanceAction(request, fixture!, "observe", undefined, replacementOrderId);
+    const oldAfterContext = await page.context().browser()!.newContext();
+    const oldAfterPage = await oldAfterContext.newPage();
+    await oldAfterPage.goto(priorMessage.link);
+    const oldAfterResponse = oldAfterPage.waitForResponse((response) => response.url().includes("/api/digital-downloads/file/") && response.ok());
+    await oldAfterPage.getByRole("button", { name: /download/i }).click();
+    const oldAfterHash = createHash("sha256").update(await (await oldAfterResponse).body()).digest("hex");
+    await oldAfterContext.close();
+    if (oldAfterHash !== priorContentSha256) throw new Error("Replacement changed the prior buyer's immutable file bytes.");
+    const newMessage = await getResendAccessMessage(request, fixture!.customer.email, replacementOrderId);
+    const newContext = await page.context().browser()!.newContext();
+    const newPage = await newContext.newPage();
+    await newPage.goto(newMessage.link);
+    const newResponse = newPage.waitForResponse((response) => response.url().includes("/api/digital-downloads/file/") && response.ok());
+    await newPage.getByRole("button", { name: /download/i }).click();
+    const replacementContentSha256 = createHash("sha256").update(await (await newResponse).body()).digest("hex");
+    await newContext.close();
+    if (replacementContentSha256 === priorContentSha256) throw new Error("Replacement checkout served the prior file bytes.");
     await buyer.close();
     if (!replacementOrder.observation.manifestItems.some((item) => item.asset_version_id === replacementVersion)) throw new Error("New checkout did not snapshot the replacement version.");
     await acceptanceAction(request, fixture!, "observe", undefined, fixture!.orderId, "replacement", { kind: "replacement", priorAssetVersionId: priorVersion.asset_version_id, replacementAssetVersionId: replacementVersion, priorFilename: priorVersion.customer_filename, priorContentSha256, newCheckoutAssetVersionId: replacementVersion });
@@ -148,11 +175,10 @@ test.describe.serial("digital product user journeys", () => {
       await expect(page.getByText(transition === "partial" ? /partially refunded/i : /fully refunded/i)).toBeVisible();
       if (transition === "partial") await expect(page.getByRole("button", { name: /download|access/i })).toBeVisible();
       else await expect(page.getByRole("button", { name: /download|access/i })).toHaveCount(0);
-      await acceptanceAction(request, fixture!, "observe", undefined, subject, transition === "partial" ? "stripe-partial-refund" : "stripe-full-refund", { kind: "refund", refundId: refund.id, status: refund.status, amount: refund.amount, paymentIntentId, webhook: { eventId: webhook.stripe_event_id, type: webhook.event_type, signatureVerified: true, status: "processed", receivedAt: webhook.created_at, processedAt: webhook.processed_at, attempts: webhook.attempt_count } });
+      await acceptanceAction(request, fixture!, "observe", undefined, subject, transition === "partial" ? "stripe-partial-refund" : "stripe-full-refund", { kind: "refund", refundId: refund.id, status: refund.status, amount: refund.amount, paymentIntentId, webhook: { eventId: webhook.stripe_event_id, type: webhook.event_type, signatureVerified: webhook.signature_verified, status: "processed", receivedAt: webhook.created_at, processedAt: webhook.processed_at, attempts: webhook.attempt_count } });
     }
     for (const transition of ["opened", "won", "lost"] as const) {
-      if (transition === "opened") continue;
-      const subject = transition === "lost" ? fixture!.financialOrders.disputeLost : fixture!.financialOrders.disputeWon;
+      const subject = transition === "opened" ? fixture!.financialOrders.disputeOpened : transition === "lost" ? fixture!.financialOrders.disputeLost : fixture!.financialOrders.disputeWon;
       const before = await acceptanceAction(request, fixture!, "observe", undefined, subject);
       const paymentIntentId = before.observation?.providerPayment?.id;
       if (typeof paymentIntentId !== "string") throw new Error("Dispute fixture has no correlated Stripe PaymentIntent.");
@@ -161,10 +187,10 @@ test.describe.serial("digital product user journeys", () => {
       const webhook = processed.observation.webhookEvents.find((row) => row.stripe_event_id === dispute.eventIds![dispute.eventIds!.length - 1]);
       if (!webhook?.processed_at) throw new Error("Dispute webhook did not produce correlated application state.");
       await page.goto(fixture!.routes.download);
-      await expect(page.locator("main")).toContainText(transition === "won" ? /your files/i : /no longer available|revoked/i, { timeout: 60_000 });
+      await expect(page.locator("main")).toContainText(transition === "opened" ? /temporarily unavailable/i : transition === "won" ? /your files/i : /no longer available|revoked/i, { timeout: 60_000 });
       if (transition === "won") await expect(page.getByRole("button", { name: /download/i })).toBeVisible();
       else await expect(page.getByRole("button", { name: /download/i })).toHaveCount(0);
-      await acceptanceAction(request, fixture!, "observe", undefined, subject, transition === "won" ? "stripe-dispute-won" : "stripe-dispute-lost", { kind: "dispute", disputeId: dispute.disputeId, chargeId: dispute.chargeId, paymentIntentId, outcome: transition, eventIds: dispute.eventIds, webhook: { eventId: webhook.stripe_event_id, type: webhook.event_type, signatureVerified: true, status: "processed", receivedAt: webhook.created_at, processedAt: webhook.processed_at, attempts: webhook.attempt_count } });
+      await acceptanceAction(request, fixture!, "observe", undefined, subject, transition === "opened" ? "stripe-dispute-opened" : transition === "won" ? "stripe-dispute-won" : "stripe-dispute-lost", { kind: "dispute", disputeId: dispute.disputeId, chargeId: dispute.chargeId, paymentIntentId, outcome: transition, eventIds: dispute.eventIds, webhook: { eventId: webhook.stripe_event_id, type: webhook.event_type, signatureVerified: webhook.signature_verified, status: "processed", receivedAt: webhook.created_at, processedAt: webhook.processed_at, attempts: webhook.attempt_count } });
     }
   });
 

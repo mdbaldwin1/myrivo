@@ -5,7 +5,7 @@ import { digitalAcceptanceObservationSchema } from "@/lib/digital-products/accep
 
 export const digitalAcceptanceControlSchema = z.object({
   version: z.literal(1),
-  action: z.enum(["observe", "expire-access", "inject-delivery-failure", "inject-refund", "inject-dispute"]),
+  action: z.enum(["observe", "expire-access", "inject-delivery-failure", "inject-signing-failure", "inject-refund", "inject-dispute"]),
   runId: z.string().uuid(),
   subjectId: z.string().uuid(),
   idempotencyKey: z.string().uuid(),
@@ -36,7 +36,7 @@ export async function executeDigitalAcceptanceControl(input: DigitalAcceptanceCo
     supabase.from("order_items").select("product_id").eq("order_id", input.subjectId).not("product_id", "is", null),
   ]);
   const eventIds = [...(refunds ?? []), ...(disputes ?? [])].map((row) => row.source_event_id).filter((value): value is string => typeof value === "string");
-  const { data: webhookEvents } = eventIds.length ? await supabase.from("stripe_webhook_events").select("stripe_event_id,event_type,status,attempt_count,last_attempt_at,processed_at,created_at").in("stripe_event_id", eventIds) : { data: [] };
+  const { data: webhookEvents } = eventIds.length ? await supabase.from("stripe_webhook_events").select("stripe_event_id,event_type,status,signature_verified,attempt_count,last_attempt_at,processed_at,created_at").in("stripe_event_id", eventIds) : { data: [] };
   const productIds = [...new Set((orderItems ?? []).map((item) => item.product_id).filter((value): value is string => typeof value === "string"))];
   const { data: catalogAssetVersions } = productIds.length ? await supabase.from("digital_assets").select("id,current_version_id,customer_filename").in("product_id", productIds).eq("is_active", true).not("current_version_id", "is", null) : { data: [] };
   const paymentIntentId = order && "stripe_payment_intent_id" in order ? order.stripe_payment_intent_id : null;

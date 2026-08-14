@@ -20,11 +20,13 @@ for (const key of ["MYRIVO_STRIPE_DISPUTE_HELPER_URL", "MYRIVO_STRIPE_DISPUTE_HE
 const disputeHelperUrl = new URL(process.env.MYRIVO_STRIPE_DISPUTE_HELPER_URL);
 if (disputeHelperUrl.protocol !== "https:" || disputeHelperUrl.origin !== process.env.MYRIVO_STRIPE_DISPUTE_HELPER_ORIGIN || new URL(process.env.MYRIVO_STRIPE_DISPUTE_HELPER_ORIGIN).origin !== process.env.MYRIVO_STRIPE_DISPUTE_HELPER_ORIGIN) fail("Stripe dispute helper URL must match the exact allowlisted HTTPS origin");
 const evidenceKey = process.env.MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_HMAC_KEY?.trim();
+const redactionKey = process.env.MYRIVO_DIGITAL_ACCEPTANCE_REDACTION_KEY?.trim();
 if (process.env.STRIPE_STUB_MODE !== "false" || !process.env.STRIPE_SECRET_KEY.startsWith("sk_test_")) {
   fail("Stripe must be explicitly configured in test mode");
 }
 const fixture = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
 if (!evidenceKey || evidenceKey.length < 32 || evidenceKey === fixture.controlSecret) fail("a separate evidence HMAC key is required");
+if (!redactionKey || redactionKey.length < 32 || redactionKey === evidenceKey || redactionKey === fixture.controlSecret) fail("a separate evidence redaction key is required");
 const baseUrl = new URL(fixture.baseUrl);
 const approvedHost = process.env.MYRIVO_DIGITAL_APPROVED_NONPROD_HOST?.trim().toLowerCase();
 const loopback = ["127.0.0.1", "localhost", "::1"].includes(baseUrl.hostname);
@@ -41,17 +43,25 @@ const result = spawnSync("npm", ["run", "-w", "@myrivo/web", "e2e", "--", "digit
 if (result.status !== 0) process.exit(result.status ?? 1);
 if (!fs.existsSync(evidencePath)) fail("acceptance run did not generate evidence");
 const evidence = JSON.parse(fs.readFileSync(evidencePath, "utf8"));
+const serializedEvidence = JSON.stringify(evidence);
+for (const forbidden of [/(^|[?&#])token=/i, /cookie[^\n]{0,64}[=:]/i, /[?&](signature|x-amz-signature)=/i, /(^|["'/:])private\//i, /digital_download_session/i]) {
+  if (forbidden.test(serializedEvidence)) fail("evidence contains bearer or private-path material");
+}
 const signature = evidence.signature; delete evidence.signature;
 const expectedSignature = createHmac("sha256", evidenceKey).update(JSON.stringify(evidence)).digest("hex");
 if (typeof signature !== "string" || !timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) fail("evidence signature is invalid");
 if (evidence.schemaVersion !== 3 || evidence.runId !== fixture.runId || evidence.origin !== baseUrl.origin || evidence.releaseVersion !== (process.env.GITHUB_HEAD_SHA || process.env.GITHUB_SHA) || !Array.isArray(evidence.observations)) fail("evidence is incomplete or not run-bound");
-const requiredActions = new Set(["observe:stripe-digital", "observe:stripe-mixed", "observe:resend-access", "observe:five-grants", "observe:replacement", "observe:stripe-partial-refund", "observe:stripe-full-refund", "observe:stripe-dispute-won", "observe:stripe-dispute-lost", "observe:delivery-retry", "observe:merchant-resend"]);
+const requiredActions = new Set(["observe:stripe-digital", "observe:stripe-mixed", "observe:resend-access", "observe:five-grants", "observe:replacement", "observe:stripe-partial-refund", "observe:stripe-full-refund", "observe:stripe-dispute-opened", "observe:stripe-dispute-won", "observe:stripe-dispute-lost", "observe:delivery-retry", "observe:merchant-resend"]);
 const fixedScenarioSubjects = new Map([
   ["replacement", fixture.orderId], ["delivery-retry", fixture.orderId], ["merchant-resend", fixture.orderId],
   ["stripe-partial-refund", fixture.financialOrders?.partialRefund], ["stripe-full-refund", fixture.financialOrders?.fullRefund],
+  ["stripe-dispute-opened", fixture.financialOrders?.disputeOpened],
   ["stripe-dispute-won", fixture.financialOrders?.disputeWon], ["stripe-dispute-lost", fixture.financialOrders?.disputeLost],
 ]);
+const seenScenarios = new Set();
 for (const item of evidence.observations) {
+  if (item.scenario && seenScenarios.has(item.scenario)) fail(`duplicate scenario evidence: ${item.scenario}`);
+  if (item.scenario) seenScenarios.add(item.scenario);
   requiredActions.delete(`${item.action}:${item.scenario ?? ""}`);
   const expectedSubject = fixedScenarioSubjects.get(item.scenario);
   if (item.runId !== fixture.runId || !item.observedAt || !item.subjectId || !item.observation?.order || item.observation.order.id !== item.subjectId || (expectedSubject && item.subjectId !== expectedSubject)) fail("an observation is null, stale, or unlinked");
@@ -65,7 +75,7 @@ for (const item of evidence.observations) {
   if (!item.providerEvidence?.kind) fail(`scenario ${item.scenario} has no typed provider evidence`);
   if (["stripe-digital", "stripe-mixed"].includes(item.scenario) && (item.providerEvidence.kind !== "checkout" || item.providerEvidence.orderId !== item.subjectId || item.providerEvidence.paymentIntentId !== item.observation.providerPayment.id)) fail("checkout provider evidence is uncorrelated");
   if (["stripe-partial-refund", "stripe-full-refund"].includes(item.scenario) && (item.providerEvidence.kind !== "refund" || item.providerEvidence.paymentIntentId !== item.observation.providerPayment.id || !item.providerEvidence.webhook?.signatureVerified || item.providerEvidence.webhook.status !== "processed")) fail("refund provider/webhook evidence is uncorrelated");
-  if (["stripe-dispute-won", "stripe-dispute-lost"].includes(item.scenario) && (item.providerEvidence.kind !== "dispute" || item.providerEvidence.paymentIntentId !== item.observation.providerPayment.id || !item.providerEvidence.webhook?.signatureVerified || item.providerEvidence.webhook.status !== "processed")) fail("dispute provider/webhook evidence is uncorrelated");
+  if (["stripe-dispute-opened", "stripe-dispute-won", "stripe-dispute-lost"].includes(item.scenario) && (item.providerEvidence.kind !== "dispute" || item.providerEvidence.paymentIntentId !== item.observation.providerPayment.id || !item.providerEvidence.webhook?.signatureVerified || item.providerEvidence.webhook.status !== "processed")) fail("dispute provider/webhook evidence is uncorrelated");
   if (["resend-access", "merchant-resend"].includes(item.scenario) && (item.providerEvidence.kind !== "resend" || item.providerEvidence.orderId !== item.subjectId || item.providerEvidence.recipient !== fixture.customer.email)) fail("Resend provider evidence is uncorrelated");
   if (!item.observation.manifestItems?.length || item.observation.manifestItems.some((manifest) => !manifest.asset_version_id)) fail("manifest evidence is missing asset versions");
 }

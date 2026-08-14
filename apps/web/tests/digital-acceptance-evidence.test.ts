@@ -1,10 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { digitalAcceptanceObservationSchema, digitalAcceptanceScenarioEvidenceSchema } from "@/lib/digital-products/acceptance-evidence";
+import { assertNoAcceptanceSecrets, digitalAcceptanceObservationSchema, digitalAcceptanceScenarioEvidenceSchema, hashAcceptanceSession } from "@/lib/digital-products/acceptance-evidence";
 
 describe("digital acceptance evidence", () => {
   it("rejects null, live-mode, unlinked, or unexpected observations", () => {
     expect(() => digitalAcceptanceObservationSchema.parse({ action: "observe", order: null })).toThrow();
     expect(() => digitalAcceptanceObservationSchema.parse({ action: "observe", orderId: crypto.randomUUID(), storeId: crypto.randomUUID(), payment: { id: "pi_1", status: "succeeded", livemode: true }, delivery: { id: crypto.randomUUID(), status: "succeeded", attemptCount: 1 }, manifestVersionIds: [], grants: [] })).toThrow();
+  });
+
+  it("hashes sessions with a domain-separated redaction key and rejects serialized secrets recursively", () => {
+    const key = "r".repeat(32);
+    expect(hashAcceptanceSession("cookie=value", key)).toMatch(/^[a-f0-9]{64}$/);
+    expect(hashAcceptanceSession("cookie=value", key)).not.toBe(hashAcceptanceSession("cookie=value", "s".repeat(32)));
+    for (const leaked of [
+      { nested: { cookie: "session=secret" } }, { token: "#token=abc" },
+      { url: "https://example.test/file?signature=secret" }, { path: "private/store/file.png" },
+    ]) expect(() => assertNoAcceptanceSecrets(leaked)).toThrow();
   });
 
   it("requires correlated checkout, manifest, delivery, and provider identifiers", () => {

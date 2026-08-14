@@ -25,7 +25,7 @@ create table public.digital_acceptance_actions (
   run_id uuid not null,
   store_id uuid not null,
   order_id uuid not null,
-  action text not null check (action in ('expire-access','inject-delivery-failure','inject-refund','inject-dispute')),
+  action text not null check (action in ('expire-access','inject-delivery-failure','inject-signing-failure','inject-refund','inject-dispute')),
   transition text,
   idempotency_key uuid not null,
   result jsonb not null,
@@ -37,13 +37,21 @@ create table public.digital_acceptance_actions (
 alter table public.digital_acceptance_actions enable row level security;
 revoke all on table public.digital_acceptance_actions from public, anon, authenticated;
 
+create table public.digital_acceptance_signing_faults (
+  run_id uuid primary key references public.digital_acceptance_targets(run_id) on delete cascade,
+  order_id uuid not null references public.orders(id) on delete cascade,
+  remaining integer not null default 1 check (remaining between 0 and 1)
+);
+alter table public.digital_acceptance_signing_faults enable row level security;
+revoke all on table public.digital_acceptance_signing_faults from public,anon,authenticated,service_role;
+
 create or replace function public.acceptance_control_digital_products(
   p_version integer, p_action text, p_run_id uuid, p_subject_id uuid,
   p_transition text, p_idempotency_key uuid
 ) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
 declare v_target public.digital_acceptance_targets%rowtype; v_config public.digital_acceptance_configuration%rowtype; v_order public.orders%rowtype; v_store uuid; v_result jsonb;
 begin
-  if p_version <> 1 or p_action not in ('observe','expire-access','inject-delivery-failure','inject-refund','inject-dispute')
+  if p_version <> 1 or p_action not in ('observe','expire-access','inject-delivery-failure','inject-signing-failure','inject-refund','inject-dispute')
     or p_idempotency_key is null then raise exception 'acceptance_control_invalid'; end if;
   if (p_action='inject-refund' and p_transition not in ('partial','full'))
     or (p_action='inject-dispute' and p_transition not in ('opened','won','lost'))
@@ -67,6 +75,9 @@ begin
     update public.digital_delivery_jobs set status='failed', lease_expires_at=null, lease_token=null,
       completed_at=now(), last_safe_error='Acceptance-injected retryable provider failure', updated_at=now()
       where order_id=p_subject_id and store_id=v_store and job_type='purchase_delivery';
+  elsif p_action='inject-signing-failure' then
+    insert into public.digital_acceptance_signing_faults(run_id,order_id,remaining) values(p_run_id,p_subject_id,1)
+    on conflict(run_id) do update set order_id=excluded.order_id,remaining=1;
   elsif p_action in ('inject-refund','inject-dispute') then
     raise exception 'acceptance_control_provider_event_required';
   end if;
@@ -79,3 +90,21 @@ begin
 end $$;
 revoke all on function public.acceptance_control_digital_products(integer,text,uuid,uuid,text,uuid) from public,anon,authenticated;
 grant execute on function public.acceptance_control_digital_products(integer,text,uuid,uuid,text,uuid) to service_role;
+
+create or replace function public.consume_digital_acceptance_signing_fault(p_run_id uuid,p_entitlement_id uuid)
+returns boolean language plpgsql security definer set search_path=public,pg_temp as $$
+declare v_fault public.digital_acceptance_signing_faults%rowtype;
+begin
+  select fault.* into v_fault from public.digital_acceptance_signing_faults fault
+  join public.digital_acceptance_targets target on target.run_id=fault.run_id and target.active and target.expires_at>now()
+  join public.digital_acceptance_configuration config on config.singleton and config.active
+    and config.environment=target.environment and config.project_ref=target.project_ref
+  join public.digital_order_entitlements entitlement on entitlement.order_id=fault.order_id
+  where fault.run_id=p_run_id and entitlement.id=p_entitlement_id and entitlement.store_id=target.store_id
+    and fault.order_id=entitlement.order_id and fault.remaining=1 for update of fault;
+  if not found then return false; end if;
+  update public.digital_acceptance_signing_faults set remaining=0 where run_id=p_run_id;
+  return true;
+end $$;
+revoke all on function public.consume_digital_acceptance_signing_fault(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.consume_digital_acceptance_signing_fault(uuid,uuid) to service_role;
