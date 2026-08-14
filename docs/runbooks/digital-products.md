@@ -73,6 +73,8 @@ File integrity evidence must come from the final storage response after the appl
 
 The observer reports entitlement `download_grants_used`, issued grant IDs, and released reservation audit rows separately. A signing-fault scenario is valid only when used count and issued IDs are unchanged, exactly one new reservation is released with safe audit metadata, and a later retry becomes issued. Replacement evidence includes old-before, old-after, and new byte hashes and filenames; old values must remain identical and the new file must differ.
 
+The release command imports the same canonical signed-envelope and semantic verifier used by the application tests. It validates every full observation record and provider artifact before applying release-specific signature, freshness, target, and scenario requirements.
+
 Deployed acceptance is permitted only on an explicitly enabled Vercel preview build with the exact allowlisted origin and project; ordinary production and unknown/self-hosted tiers return 404. Each checkout's newly returned order ID—not a seeded order—is the observation subject. The run must retrieve the matching Resend message, verify recipient/order/provider identity and its single fragment link, and open that link in a clean browser context. Synthetic database refund/dispute actions intentionally fail with `acceptance_control_provider_event_required` and cannot satisfy production acceptance. If Stripe's supported test environment cannot produce a required dispute outcome, the evidence matrix remains incomplete and rollout stays blocked.
 
 Record timestamps and safe IDs (store/order/job/manifest IDs are acceptable internally), Stripe test event IDs, Resend delivery IDs, screenshots, and observed states for:

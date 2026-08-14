@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertNoAcceptanceSecrets, digitalAcceptanceObservationSchema, digitalAcceptanceScenarioEvidenceSchema, digitalAcceptanceSignedEvidenceSchema, hashAcceptanceSession } from "@/lib/digital-products/acceptance-evidence";
+import { assertNoAcceptanceSecrets, digitalAcceptanceObservationSchema, digitalAcceptanceScenarioEvidenceSchema, digitalAcceptanceSignedEvidenceSchema, hashAcceptanceSession, verifyDigitalAcceptanceEvidence } from "@/lib/digital-products/acceptance-evidence";
 
 describe("digital acceptance evidence", () => {
   it("rejects null, live-mode, unlinked, or unexpected observations", () => {
@@ -9,6 +9,16 @@ describe("digital acceptance evidence", () => {
 
   it("rejects duplicate or partially shaped records in the canonical signed envelope", () => {
     expect(() => digitalAcceptanceSignedEvidenceSchema.parse({ schemaVersion: 3, runId: crypto.randomUUID(), origin: "https://preview.example.test", releaseVersion: "sha", environment: "preview", startedAt: new Date().toISOString(), completedAt: new Date().toISOString(), observations: [{ action: "observe", scenario: "five-grants", providerEvidence: {} }], signature: "a".repeat(64) })).toThrow();
+  });
+
+  it("accepts and semantically verifies a complete canonical signed envelope", () => {
+    const id = (prefix: string) => `${prefix.padEnd(8, "0")}-0000-4000-8000-000000000001`;
+    const orderId = id("10000000"), storeId = id("20000000"), entitlementId = id("30000000"), versionId = id("40000000"), jobId = id("50000000");
+    const observation = { order: { id: orderId, store_id: storeId, status: "paid", payment_status: "paid", refund_status: null, dispute_status: null, stripe_payment_intent_id: "pi_1", checkout_composition: "digital_only" }, deliveryJob: { id: jobId, status: "succeeded", attempt_count: 2, last_safe_error: null }, grants: [], entitlements: [{ id: entitlementId, asset_version_id: versionId, download_grants_used: 0, customer_filename: "art.png", status: "active" }], notifications: [], manifestItems: [{ asset_version_id: versionId, customer_filename: "art.png" }], providerPayment: { id: "pi_1", status: "succeeded", livemode: false }, refunds: [], disputes: [], webhookEvents: [], deliveryAttempts: [], catalogAssetVersions: [{ id: id("60000000"), current_version_id: versionId, customer_filename: "art.png" }] };
+    const record = { action: "observe" as const, scenario: "stripe-digital" as const, providerEvidence: { kind: "checkout" as const, sessionId: "cs_test_1", paymentIntentId: "pi_1", orderId }, version: 1 as const, runId: id("70000000"), subjectId: orderId, observedAt: new Date().toISOString(), observation };
+    const envelope = { schemaVersion: 3 as const, runId: record.runId, origin: "https://preview.example.test", releaseVersion: "sha", environment: "preview" as const, startedAt: new Date().toISOString(), completedAt: new Date().toISOString(), observations: [record], signature: "a".repeat(64) };
+    expect(digitalAcceptanceSignedEvidenceSchema.parse(envelope).observations).toHaveLength(1);
+    expect(verifyDigitalAcceptanceEvidence(envelope, { requiredScenarios: ["stripe-digital"] }).observations).toHaveLength(1);
   });
 
   it("hashes sessions with a domain-separated redaction key and rejects serialized secrets recursively", () => {

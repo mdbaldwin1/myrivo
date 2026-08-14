@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { acceptanceAction, acceptanceSessionHash, createStripeTestRefund, getResendAccessMessage, getStripeCheckoutEvidence, loadDigitalAcceptanceFixture, runSupportedStripeDisputeScenario, waitForFinancialObservation } from "./digital-products-fixture";
 import { login } from "./helpers";
+import { expectNoSeriousAccessibilityViolations } from "./accessibility-helpers";
 
 const fixture = loadDigitalAcceptanceFixture();
 const validPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
@@ -76,6 +77,7 @@ test.describe.serial("digital product user journeys", () => {
         await failurePage.goto(message.link);
         await failurePage.getByRole("button", { name: /download/i }).click();
         await expect(failurePage.getByRole("status")).toContainText(/unable|retry/i);
+        await expectNoSeriousAccessibilityViolations(failurePage, "signing failure dynamic state");
         await failureContext.close();
         const afterInjectedFailure = await acceptanceAction(request, fixture!, "observe", undefined, orderId);
         const signingFailureIssuedIdsAfter = afterInjectedFailure.observation.grants.filter((grant) => grant.status === "issued").map((grant) => grant.id);
@@ -114,6 +116,7 @@ test.describe.serial("digital product user journeys", () => {
         const denied = await sixthResponse;
         const sixthDeniedMessage = "Download limit reached";
         await expect(sixthPage.getByText(sixthDeniedMessage, { exact: true })).toBeVisible();
+        await expectNoSeriousAccessibilityViolations(sixthPage, "grant limit dynamic state");
         sessionHashes.push(acceptanceSessionHash((await sixth.cookies()).map((cookie) => `${cookie.name}:${cookie.value}`).join("|")));
         await sixth.close();
         const issued = five.observation.grants.filter((grant) => grant.status === "issued");
@@ -213,6 +216,7 @@ test.describe.serial("digital product user journeys", () => {
       await expect(page.getByText(transition === "partial" ? /partially refunded/i : /fully refunded/i)).toBeVisible();
       if (transition === "partial") await expect(page.getByRole("button", { name: /download|access/i })).toBeVisible();
       else await expect(page.getByRole("button", { name: /download|access/i })).toHaveCount(0);
+      await expectNoSeriousAccessibilityViolations(page, `${transition} refund dynamic state`);
       await acceptanceAction(request, fixture!, "observe", undefined, subject, transition === "partial" ? "stripe-partial-refund" : "stripe-full-refund", { kind: "refund", refundId: refund.id, status: refund.status, amount: refund.amount, paymentIntentId, webhook: { eventId: webhook.stripe_event_id, type: webhook.event_type, signatureVerified: webhook.signature_verified, status: "processed", receivedAt: webhook.created_at, processedAt: webhook.processed_at, attempts: webhook.attempt_count } });
     }
     for (const transition of ["opened", "won", "lost"] as const) {
@@ -228,6 +232,7 @@ test.describe.serial("digital product user journeys", () => {
       await expect(page.locator("main")).toContainText(transition === "opened" ? /temporarily unavailable/i : transition === "won" ? /your files/i : /no longer available|revoked/i, { timeout: 60_000 });
       if (transition === "won") await expect(page.getByRole("button", { name: /download/i })).toBeVisible();
       else await expect(page.getByRole("button", { name: /download/i })).toHaveCount(0);
+      await expectNoSeriousAccessibilityViolations(page, `${transition} dispute dynamic state`);
       await acceptanceAction(request, fixture!, "observe", undefined, subject, transition === "opened" ? "stripe-dispute-opened" : transition === "won" ? "stripe-dispute-won" : "stripe-dispute-lost", { kind: "dispute", disputeId: dispute.disputeId, chargeId: dispute.chargeId, paymentIntentId, outcome: transition, eventIds: dispute.eventIds, webhook: { eventId: webhook.stripe_event_id, type: webhook.event_type, signatureVerified: webhook.signature_verified, status: "processed", receivedAt: webhook.created_at, processedAt: webhook.processed_at, attempts: webhook.attempt_count } });
     }
   });
@@ -237,8 +242,10 @@ test.describe.serial("digital product user journeys", () => {
     await login(page, fixture!.merchant.email, fixture!.merchant.password);
     await page.goto(fixture!.routes.merchantOrder);
     await expect(page.locator("main")).toContainText(/failed|retry/i);
+    await expectNoSeriousAccessibilityViolations(page, "delivery failure dynamic state");
     await page.getByRole("button", { name: /resend|retry/i }).click();
     const observed = await acceptanceAction(request, fixture!, "observe");
+    await expectNoSeriousAccessibilityViolations(page, "delivery retry dynamic state");
     const resend = await getResendAccessMessage(request, fixture!.customer.email, fixture!.orderId);
     await acceptanceAction(request, fixture!, "observe", undefined, fixture!.orderId, "delivery-retry", { kind: "delivery", jobId: observed.observation.deliveryJob.id, attempts: observed.observation.deliveryAttempts.map((attempt) => ({ attempt: attempt.attempt_number, status: attempt.status, timestamp: attempt.finished_at ?? attempt.started_at })), resendMessageId: resend.id });
   });

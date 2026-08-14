@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { verifyDigitalAcceptanceEvidence } from "../apps/web/lib/digital-products/acceptance-evidence.ts";
 
 function fail(message) {
   console.error(`Digital products release gate failed: ${message}`);
@@ -50,6 +51,13 @@ for (const forbidden of [/(^|[?&#])token=/i, /cookie[^\n]{0,64}[=:]/i, /[?&](sig
 const signature = evidence.signature; delete evidence.signature;
 const expectedSignature = createHmac("sha256", evidenceKey).update(JSON.stringify(evidence)).digest("hex");
 if (typeof signature !== "string" || !timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) fail("evidence signature is invalid");
+evidence.signature = signature;
+try {
+  verifyDigitalAcceptanceEvidence(evidence, { requiredScenarios: ["stripe-digital", "stripe-mixed", "resend-access", "five-grants", "replacement", "stripe-partial-refund", "stripe-full-refund", "stripe-dispute-opened", "stripe-dispute-won", "stripe-dispute-lost", "delivery-retry", "merchant-resend"] });
+} catch (error) {
+  fail(`canonical evidence validation failed: ${error instanceof Error ? error.message : "invalid evidence"}`);
+}
+delete evidence.signature;
 if (evidence.schemaVersion !== 3 || evidence.runId !== fixture.runId || evidence.origin !== baseUrl.origin || evidence.releaseVersion !== (process.env.GITHUB_HEAD_SHA || process.env.GITHUB_SHA) || !Array.isArray(evidence.observations)) fail("evidence is incomplete or not run-bound");
 const requiredActions = new Set(["observe:stripe-digital", "observe:stripe-mixed", "observe:resend-access", "observe:five-grants", "observe:replacement", "observe:stripe-partial-refund", "observe:stripe-full-refund", "observe:stripe-dispute-opened", "observe:stripe-dispute-won", "observe:stripe-dispute-lost", "observe:delivery-retry", "observe:merchant-resend"]);
 const fixedScenarioSubjects = new Map([

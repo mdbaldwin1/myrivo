@@ -78,10 +78,33 @@ export const digitalAcceptanceSignedEvidenceSchema = z.object({
 }).strict().superRefine((value, context) => {
   const scenarios = new Set<string>();
   value.observations.forEach((record, index) => {
-    const parsed = digitalAcceptanceScenarioEvidenceSchema.safeParse(record);
-    const observation = digitalAcceptanceObservationSchema.safeParse(record);
+    const parsed = digitalAcceptanceScenarioEvidenceSchema.safeParse({ scenario: record.scenario, providerEvidence: record.providerEvidence });
+    const observation = digitalAcceptanceObservationSchema.safeParse({ version: record.version, runId: record.runId, subjectId: record.subjectId, observedAt: record.observedAt, observation: record.observation });
     if (!parsed.success || !observation.success) context.addIssue({ code: "custom", path: ["observations", index], message: "Invalid canonical scenario observation." });
     else if (scenarios.has(parsed.data.scenario)) context.addIssue({ code: "custom", path: ["observations", index], message: "Duplicate scenario." });
     else scenarios.add(parsed.data.scenario);
   });
 });
+
+export function verifyDigitalAcceptanceEvidence(input: unknown, options: { requiredScenarios?: string[] } = {}) {
+  const evidence = digitalAcceptanceSignedEvidenceSchema.parse(input);
+  const records = evidence.observations as Array<Record<string, unknown>>;
+  const byScenario = new Map(records.map((record) => [String(record.scenario), record]));
+  for (const scenario of options.requiredScenarios ?? []) if (!byScenario.has(scenario)) throw new Error(`Missing required scenario: ${scenario}`);
+  for (const record of records) {
+    const provider = record.providerEvidence as Record<string, unknown>;
+    const observed = (record.observation as Record<string, unknown>);
+    const order = observed.order as Record<string, unknown>;
+    const payment = observed.providerPayment as Record<string, unknown>;
+    if (record.subjectId !== order.id) throw new Error(`Scenario ${record.scenario} order mismatch.`);
+    if (["checkout", "refund", "dispute"].includes(String(provider.kind)) && provider.paymentIntentId !== payment.id) throw new Error(`Scenario ${record.scenario} payment mismatch.`);
+    if (provider.kind === "checkout" && provider.orderId !== order.id) throw new Error(`Scenario ${record.scenario} checkout order mismatch.`);
+    if (provider.kind === "resend" && provider.orderId !== order.id) throw new Error(`Scenario ${record.scenario} Resend order mismatch.`);
+    if (provider.kind === "delivery") {
+      const job = observed.deliveryJob as Record<string, unknown>;
+      const attempts = provider.attempts as Array<Record<string, unknown>>;
+      if (provider.jobId !== job.id || attempts[0]?.status !== "failed" || attempts.at(-1)?.status !== "succeeded") throw new Error("Delivery chronology mismatch.");
+    }
+  }
+  return evidence;
+}

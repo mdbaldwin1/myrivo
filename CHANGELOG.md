@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - Redacted acceptance sessions with independent HMAC digests, added recursive evidence leak rejection, ledger-backed webhook signature proof, isolated dispute-opened coverage, and a nonproduction one-shot post-reservation signing fault.
 - Corrected grant-boundary evidence to compare exact IDs, verified final storage bytes and filenames beyond the 303 redirect, and expanded keyboard upload/publish/checkout and replacement-dialog accessibility coverage.
 - Separated issued download usage from released reservation audits, required successful post-fault retry evidence, and made zoom/download accessibility actions mandatory rather than conditional.
+- Unified the release CLI and application tests on one canonical signed-evidence verifier and added dynamic axe checks for signing, limit, delivery, refund, and dispute transitions.
 
 - Bound acceptance observations to newly completed checkout orders, enabled tightly allowlisted preview builds, added Resend message/access-link retrieval, removed synthetic financial certification, and made unsupported provider scenarios fail the release gate.
 - Added a service-role-only, run/store/project-bound non-production acceptance controller with tamper-resistant audit, separate evidence signing credentials, valid image fixtures, and encoded Stripe-hosted digital/mixed checkout journeys.
