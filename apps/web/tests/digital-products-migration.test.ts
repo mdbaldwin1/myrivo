@@ -1958,6 +1958,24 @@ describe("durable digital delivery", () => {
     return { materialized, notification };
   }
 
+  it("persists and reads the exact unique Resend message ID on successful delivery", () => {
+    retireClaimableJobs();
+    finalizeDeliveryCheckout("000000000099");
+    const job = claimDelivery();
+    const materialized = JSON.parse(runSql("full_chain", materializeUniqueStatement(job, "provider-message-id"))) as { access_token_id: string };
+    const notificationId = JSON.parse(runSql("full_chain", `select row_to_json(prepared) from public.prepare_purchase_digital_delivery_notification('${job.id}', '${job.lease_token}', '${materialized.access_token_id}') prepared`)).notification_id as string;
+    const claimed = JSON.parse(runSql("full_chain", `select row_to_json(claimed) from public.claim_digital_delivery_notification('${notificationId}', 120, 3) claimed`)) as { id: string; lease_token: string };
+    runSql("full_chain", `select public.complete_digital_delivery_notification('${claimed.id}', '${claimed.lease_token}', 'succeeded', 'resend', 'email_exact_099', null, 3, 10, 30)`);
+    expect(runSql("full_chain", `select provider || ':' || provider_message_id from public.digital_delivery_notifications where id = '${notificationId}'`)).toBe("resend:email_exact_099");
+    expect(runSql("full_chain", `select count(*) from pg_indexes where schemaname = 'public' and indexname = 'digital_delivery_notifications_provider_message_key' and indexdef ilike '%unique%' and indexdef ilike '%provider_message_id%'`)).toBe("1");
+    finalizeDeliveryCheckout("000000000100");
+    const duplicateJob = claimDelivery();
+    const duplicateMaterialized = JSON.parse(runSql("full_chain", materializeUniqueStatement(duplicateJob, "provider-message-id-duplicate"))) as { access_token_id: string };
+    const duplicateNotificationId = JSON.parse(runSql("full_chain", `select row_to_json(prepared) from public.prepare_purchase_digital_delivery_notification('${duplicateJob.id}', '${duplicateJob.lease_token}', '${duplicateMaterialized.access_token_id}') prepared`)).notification_id as string;
+    const duplicateClaim = JSON.parse(runSql("full_chain", `select row_to_json(claimed) from public.claim_digital_delivery_notification('${duplicateNotificationId}', 120, 3) claimed`)) as { id: string; lease_token: string };
+    expectRejected("full_chain", `select public.complete_digital_delivery_notification('${duplicateClaim.id}', '${duplicateClaim.lease_token}', 'succeeded', 'resend', 'email_exact_099', null, 3, 10, 30)`);
+  });
+
   it("rolls the paid order back when its durable job cannot be inserted", () => {
     retireClaimableJobs();
     const fixture = prepareDeliveryCheckout("000000000071");
@@ -3206,9 +3224,10 @@ describe("durable digital delivery", () => {
           has_function_privilege('service_role', 'public.prepare_merchant_digital_delivery_resend(uuid,uuid,uuid,text,uuid,uuid,uuid,text,integer)', 'execute')::text || ':' ||
           has_function_privilege('service_role', 'public.prepare_merchant_digital_delivery_resend_unchecked(uuid,uuid,uuid,text,uuid,uuid,uuid,text,integer)', 'execute')::text || ':' ||
           has_function_privilege('service_role', 'public.prepare_purchase_digital_delivery_notification(uuid,uuid,uuid)', 'execute')::text || ':' ||
-          has_function_privilege('service_role', 'public.complete_digital_delivery_notification(uuid,uuid,text,text,text,integer,integer,integer)', 'execute')::text`,
+          has_function_privilege('service_role', 'public.complete_digital_delivery_notification(uuid,uuid,text,text,text,integer,integer,integer)', 'execute')::text || ':' ||
+          has_function_privilege('service_role', 'public.complete_digital_delivery_notification(uuid,uuid,text,text,text,text,integer,integer,integer)', 'execute')::text`,
       ),
-    ).toBe("false:false:true:false:true:true");
+    ).toBe("false:false:true:false:true:false:true");
     expect(
       runSql(
         "full_chain",

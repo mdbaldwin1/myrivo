@@ -42,7 +42,7 @@ function makeDependencies(
       html: "<p>Safe customer message</p>",
       replyTo: "support@example.test",
     }),
-    sendEmail: async () => ({ ok: true, provider: "resend", error: null }),
+    sendEmail: async () => ({ ok: true, provider: "resend", error: null, messageId: "email_default" }),
     completeNotification: async ({ outcome }) => ({
       status: outcome === "succeeded" ? "succeeded" : "pending",
       nextAttemptAt:
@@ -155,7 +155,7 @@ describe("digital delivery notification processor", () => {
     const dependencies = makeDependencies({
       sendEmail: async (_message, idempotencyKey) => {
         sentKeys.push(idempotencyKey);
-        return { ok: true, provider: "resend", error: null };
+        return { ok: true, provider: "resend", error: null, messageId: "email_delivery_123" };
       },
       completeNotification: async (input) => {
         completions.push(input);
@@ -173,6 +173,7 @@ describe("digital delivery notification processor", () => {
       expect.objectContaining({
         outcome: "succeeded",
         provider: "resend",
+        providerMessageId: "email_delivery_123",
         safeError: null,
       }),
     ]);
@@ -238,7 +239,7 @@ describe("digital delivery notification processor", () => {
       claimNotification: async () => (claims++ === 0 ? claim : null),
       sendEmail: async () => {
         sends += 1;
-        return { ok: true, provider: "resend", error: null };
+        return { ok: true, provider: "resend", error: null, messageId: "email_financial" };
       },
     });
 
@@ -281,7 +282,7 @@ describe("digital delivery notification processor", () => {
         }
         return attempt === 1
           ? { ok: false, provider: "resend", error: "provider unavailable" }
-          : { ok: true, provider: "resend", error: null };
+          : { ok: true, provider: "resend", error: null, messageId: "email_retry" };
       },
       completeNotification: async ({ outcome }) => ({
         status: outcome === "succeeded" ? "succeeded" : "pending",

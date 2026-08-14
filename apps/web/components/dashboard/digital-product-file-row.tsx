@@ -22,7 +22,7 @@ type DigitalProductFileRowProps = {
   onRename: (label: string) => void | Promise<void>;
   onAssign: (productVariantId: string | null) => void | Promise<void>;
   onMove: (direction: -1 | 1) => void | Promise<void>;
-  onReplace: (file: File) => void;
+  onReplace: (file: File, returnFocus: HTMLButtonElement | null) => void;
   onRemove: () => void;
 };
 
@@ -66,6 +66,7 @@ export function DigitalProductFileRow({
   const [renaming, setRenaming] = useState(false);
   const [draftLabel, setDraftLabel] = useState(asset.label);
   const replacementRef = useRef<HTMLInputElement | null>(null);
+  const actionsRef = useRef<HTMLButtonElement | null>(null);
   return (
     <li
       aria-label={asset.label}
@@ -201,13 +202,13 @@ export function DigitalProductFileRow({
               aria-label={`Choose a replacement for ${asset.label}`}
               onChange={(event) => {
                 const file = event.target.files?.[0];
-                if (file) onReplace(file);
+                if (file) onReplace(file, actionsRef.current);
                 event.target.value = "";
               }}
             />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button type="button" size="sm" variant="outline" disabled={busy} aria-label={`Manage ${asset.label}`}>
+                <Button ref={actionsRef} type="button" size="sm" variant="outline" disabled={busy} aria-label={`Manage ${asset.label}`}>
                   Actions
                   <MoreHorizontal className="ml-1.5 h-4 w-4" aria-hidden="true" />
                 </Button>

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createHmac } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 
 export function hashAcceptanceSession(value: string, key: string) {
   if (key.length < 32) throw new Error("Acceptance evidence redaction key must be at least 32 characters.");
@@ -19,7 +19,7 @@ const order = z.object({
   stripe_payment_intent_id: z.string().startsWith("pi_"), checkout_composition: z.enum(["digital_only", "mixed"]),
 }).strict();
 const grant = z.object({ id: uuid, entitlement_id: uuid, status: z.enum(["reserved", "issued", "released", "failed"]), asset_version_id: uuid, created_at: z.string(), released_at: z.string().nullable(), last_safe_error: z.string().nullable() }).strict();
-const notification = z.object({ id: uuid, notification_type: z.string().min(1), status: z.string().min(1), provider: z.string().min(1), attempt_count: z.number().int().nonnegative(), sent_at: z.string().nullable() }).strict();
+const notification = z.object({ id: uuid, notification_type: z.string().min(1), status: z.string().min(1), provider: z.string().min(1), provider_message_id: z.string().nullable(), attempt_count: z.number().int().nonnegative(), sent_at: z.string().nullable() }).strict();
 
 export const digitalAcceptanceObservationSchema = z.object({
   version: z.literal(1), runId: uuid, subjectId: uuid, observedAt: z.string().datetime(),
@@ -57,8 +57,12 @@ const grantsEvidence = z.object({ kind: z.literal("grants"), uniqueGrantIds: gra
   if (value.graceCountBefore !== value.graceCountAfter || !value.uniqueGrantIds.includes(value.graceReusedGrantId)) context.addIssue({ code: "custom", message: "Grace reuse consumed a grant or changed identity." });
   if (JSON.stringify(value.signingFailureIssuedIdsBefore) !== JSON.stringify(value.signingFailureIssuedIdsAfter) || value.signingFailureUsedBefore !== value.signingFailureUsedAfter) context.addIssue({ code: "custom", message: "Signing failure changed issued usage." });
 });
-const replacementEvidence = z.object({ kind: z.literal("replacement"), priorAssetVersionId: uuid, replacementAssetVersionId: uuid, oldBeforeFilename: z.string().min(1), oldAfterFilename: z.string().min(1), newFilename: z.string().min(1), oldBeforeHash: z.string().regex(/^[a-f0-9]{64}$/), oldAfterHash: z.string().regex(/^[a-f0-9]{64}$/), newHash: z.string().regex(/^[a-f0-9]{64}$/), newCheckoutAssetVersionId: uuid }).strict().refine((value) => value.priorAssetVersionId !== value.replacementAssetVersionId && value.newCheckoutAssetVersionId === value.replacementAssetVersionId && value.oldBeforeHash === value.oldAfterHash && value.oldBeforeHash !== value.newHash && value.oldBeforeFilename === value.oldAfterFilename);
-const deliveryEvidence = z.object({ kind: z.literal("delivery"), jobId: uuid, attempts: z.array(z.object({ attempt: z.number().int().positive(), status: z.enum(["failed", "succeeded"]), timestamp: z.string().datetime() }).strict()).min(2), resendMessageId: z.string().min(1) }).strict();
+const replacementEvidence = z.object({ kind: z.literal("replacement"), priorAssetVersionId: uuid, replacementAssetVersionId: uuid, oldBeforeFilename: z.string().min(1), oldAfterFilename: z.string().min(1), newFilename: z.string().min(1), oldBeforeHash: z.string().regex(/^[a-f0-9]{64}$/), oldAfterHash: z.string().regex(/^[a-f0-9]{64}$/), newHash: z.string().regex(/^[a-f0-9]{64}$/), newCheckoutAssetVersionId: uuid, newCheckoutOrderId: uuid }).strict().refine((value) => value.priorAssetVersionId !== value.replacementAssetVersionId && value.newCheckoutAssetVersionId === value.replacementAssetVersionId && value.oldBeforeHash === value.oldAfterHash && value.oldBeforeHash !== value.newHash && value.oldBeforeFilename === value.oldAfterFilename);
+const deliveryEvidence = z.object({ kind: z.literal("delivery"), jobId: uuid, attempts: z.array(z.object({ attempt: z.number().int().positive(), status: z.enum(["failed", "succeeded"]), startedAt: z.string().datetime(), finishedAt: z.string().datetime() }).strict()).min(2), resendMessageId: z.string().min(1) }).strict().superRefine((value, context) => {
+  value.attempts.forEach((attempt, index) => {
+    if (attempt.attempt !== index + 1 || Date.parse(attempt.finishedAt) < Date.parse(attempt.startedAt) || (index > 0 && Date.parse(attempt.startedAt) < Date.parse(value.attempts[index - 1]!.finishedAt))) context.addIssue({ code: "custom", message: "Delivery attempts are not an ordered chronology." });
+  });
+});
 
 export const digitalAcceptanceScenarioEvidenceSchema = z.discriminatedUnion("scenario", [
   z.object({ scenario: z.enum(["stripe-digital", "stripe-mixed"]), providerEvidence: checkoutEvidence }).strict(),
@@ -80,7 +84,8 @@ export const digitalAcceptanceSignedEvidenceSchema = z.object({
   value.observations.forEach((record, index) => {
     const parsed = digitalAcceptanceScenarioEvidenceSchema.safeParse({ scenario: record.scenario, providerEvidence: record.providerEvidence });
     const observation = digitalAcceptanceObservationSchema.safeParse({ version: record.version, runId: record.runId, subjectId: record.subjectId, observedAt: record.observedAt, observation: record.observation });
-    if (!parsed.success || !observation.success) context.addIssue({ code: "custom", path: ["observations", index], message: "Invalid canonical scenario observation." });
+    const newObservation = record.scenario === "replacement" ? digitalAcceptanceObservationSchema.safeParse(record.newObservation) : null;
+    if (!parsed.success || !observation.success || (newObservation && !newObservation.success)) context.addIssue({ code: "custom", path: ["observations", index], message: "Invalid canonical scenario observation." });
     else if (scenarios.has(parsed.data.scenario)) context.addIssue({ code: "custom", path: ["observations", index], message: "Duplicate scenario." });
     else scenarios.add(parsed.data.scenario);
   });
@@ -105,7 +110,7 @@ export function verifyDigitalAcceptanceEvidence(input: unknown, options: { requi
     }
     if (provider.kind === "resend") {
       const notifications = observed.notifications as Array<Record<string, unknown>>;
-      if (provider.orderId !== order.id || !notifications.some((notification) => notification.provider === "resend" && notification.status === "succeeded" && notification.sent_at === provider.sentAt)) throw new Error(`Scenario ${record.scenario} Resend evidence mismatch.`);
+      if (provider.orderId !== order.id || !notifications.some((notification) => notification.provider === "resend" && notification.provider_message_id === provider.messageId && notification.status === "succeeded" && notification.sent_at === provider.sentAt)) throw new Error(`Scenario ${record.scenario} Resend evidence mismatch.`);
     }
     if (provider.kind === "refund") {
       const refunds = observed.refunds as Array<Record<string, unknown>>;
@@ -122,7 +127,9 @@ export function verifyDigitalAcceptanceEvidence(input: unknown, options: { requi
       const row = disputes.find((dispute) => dispute.stripe_dispute_id === provider.disputeId);
       const webhook = provider.webhook as Record<string, unknown>;
       const events = observed.webhookEvents as Array<Record<string, unknown>>;
-      if (!row || row.stripe_charge_id !== provider.chargeId || row.stripe_payment_intent_id !== provider.paymentIntentId || row.status !== provider.outcome || row.source_event_id !== webhook.eventId || !(provider.eventIds as string[]).includes(String(webhook.eventId)) || !events.some((event) => event.stripe_event_id === webhook.eventId && event.event_type === webhook.type && event.status === webhook.status && event.signature_verified === webhook.signatureVerified && event.attempt_count === webhook.attempts)) throw new Error(`Scenario ${record.scenario} dispute mismatch.`);
+      const expectedStatus = provider.outcome === "opened" ? "needs_response" : provider.outcome;
+      const expectedAccess = provider.outcome === "opened" ? "suspended" : provider.outcome === "won" ? "active" : "revoked";
+      if (!row || row.stripe_charge_id !== provider.chargeId || row.stripe_payment_intent_id !== provider.paymentIntentId || row.status !== expectedStatus || row.source_event_id !== webhook.eventId || !(provider.eventIds as string[]).includes(String(webhook.eventId)) || !events.some((event) => event.stripe_event_id === webhook.eventId && event.event_type === webhook.type && event.status === webhook.status && event.signature_verified === webhook.signatureVerified && event.attempt_count === webhook.attempts) || (observed.entitlements as Array<Record<string, unknown>>).some((entitlement) => entitlement.status !== expectedAccess)) throw new Error(`Scenario ${record.scenario} dispute mismatch.`);
     }
     if (provider.kind === "grants") {
       const grants = observed.grants as Array<Record<string, unknown>>;
@@ -134,14 +141,34 @@ export function verifyDigitalAcceptanceEvidence(input: unknown, options: { requi
       const entitlements = observed.entitlements as Array<Record<string, unknown>>;
       const manifest = observed.manifestItems as Array<Record<string, unknown>>;
       const catalog = observed.catalogAssetVersions as Array<Record<string, unknown>>;
-      if (!entitlements.some((entitlement) => entitlement.asset_version_id === provider.priorAssetVersionId && entitlement.customer_filename === provider.oldAfterFilename) || !manifest.some((item) => item.asset_version_id === provider.newCheckoutAssetVersionId && item.customer_filename === provider.newFilename) || !catalog.some((asset) => asset.current_version_id === provider.replacementAssetVersionId && asset.customer_filename === provider.newFilename)) throw new Error("Replacement evidence mismatch.");
+      const next = (record.newObservation as Record<string, unknown>)?.observation as Record<string, unknown>;
+      const nextOrder = next?.order as Record<string, unknown>;
+      const nextManifest = next?.manifestItems as Array<Record<string, unknown>>;
+      if (!entitlements.some((entitlement) => entitlement.asset_version_id === provider.priorAssetVersionId && entitlement.customer_filename === provider.oldAfterFilename) || !manifest.some((item) => item.asset_version_id === provider.priorAssetVersionId && item.customer_filename === provider.oldBeforeFilename) || manifest.some((item) => item.asset_version_id === provider.replacementAssetVersionId) || nextOrder?.id !== provider.newCheckoutOrderId || !nextManifest?.some((item) => item.asset_version_id === provider.newCheckoutAssetVersionId && item.customer_filename === provider.newFilename) || !catalog.some((asset) => asset.current_version_id === provider.replacementAssetVersionId && asset.customer_filename === provider.newFilename)) throw new Error("Replacement evidence mismatch.");
     }
     if (provider.kind === "delivery") {
       const job = observed.deliveryJob as Record<string, unknown>;
       const attempts = provider.attempts as Array<Record<string, unknown>>;
       const observedAttempts = observed.deliveryAttempts as Array<Record<string, unknown>>;
-      if (provider.jobId !== job.id || attempts[0]?.status !== "failed" || attempts.at(-1)?.status !== "succeeded" || attempts.length !== observedAttempts.length || attempts.some((attempt, index) => observedAttempts[index]?.job_id !== provider.jobId || attempt.attempt !== observedAttempts[index]?.attempt_number || attempt.status !== observedAttempts[index]?.status || attempt.timestamp !== observedAttempts[index]?.started_at)) throw new Error("Delivery chronology mismatch.");
+      if (provider.jobId !== job.id || attempts[0]?.status !== "failed" || attempts.at(-1)?.status !== "succeeded" || attempts.length !== observedAttempts.length || attempts.some((attempt, index) => observedAttempts[index]?.job_id !== provider.jobId || attempt.attempt !== observedAttempts[index]?.attempt_number || attempt.status !== observedAttempts[index]?.status || attempt.startedAt !== observedAttempts[index]?.started_at || attempt.finishedAt !== observedAttempts[index]?.finished_at)) throw new Error("Delivery chronology mismatch.");
     }
   }
   return evidence;
+}
+
+export function verifyDigitalAcceptanceArtifact(input: unknown, options: { key: string; now?: number; maxAgeMs?: number; requiredScenarios?: string[] }) {
+  if (options.key.length < 32) throw new Error("Acceptance evidence signing key is invalid.");
+  const candidate = digitalAcceptanceSignedEvidenceSchema.parse(input);
+  const unsigned = { ...candidate } as Record<string, unknown>;
+  const signature = String(unsigned.signature);
+  delete unsigned.signature;
+  const expected = createHmac("sha256", options.key).update(JSON.stringify(unsigned)).digest("hex");
+  const suppliedBytes = Buffer.from(signature, "hex");
+  const expectedBytes = Buffer.from(expected, "hex");
+  if (suppliedBytes.length !== expectedBytes.length || !timingSafeEqual(suppliedBytes, expectedBytes)) throw new Error("Acceptance evidence signature is invalid.");
+  const now = options.now ?? Date.now();
+  const completedAt = Date.parse(candidate.completedAt);
+  const startedAt = Date.parse(candidate.startedAt);
+  if (completedAt < startedAt || completedAt > now + 5 * 60_000 || now - completedAt > (options.maxAgeMs ?? 60 * 60_000)) throw new Error("Acceptance evidence is stale or has invalid chronology.");
+  return verifyDigitalAcceptanceEvidence(candidate, { requiredScenarios: options.requiredScenarios });
 }

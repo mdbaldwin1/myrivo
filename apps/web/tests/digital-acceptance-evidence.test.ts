@@ -1,7 +1,31 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- mutation matrix exercises intentionally malformed nested evidence */
 import { describe, expect, it } from "vitest";
 import { assertNoAcceptanceSecrets, digitalAcceptanceObservationSchema, digitalAcceptanceScenarioEvidenceSchema, digitalAcceptanceSignedEvidenceSchema, hashAcceptanceSession, verifyDigitalAcceptanceEvidence } from "@/lib/digital-products/acceptance-evidence";
+import { buildDigitalAcceptanceEvidenceFixture, requiredDigitalAcceptanceScenarios } from "./fixtures/digital-acceptance-evidence";
 
 describe("digital acceptance evidence", () => {
+  it("accepts a deterministic envelope containing every release scenario", () => {
+    const evidence = buildDigitalAcceptanceEvidenceFixture();
+    expect(verifyDigitalAcceptanceEvidence(evidence, { requiredScenarios: [...requiredDigitalAcceptanceScenarios] }).observations).toHaveLength(12);
+  });
+
+  it.each([
+    ["replacement old manifest", "replacement", (record: any) => { record.observation.manifestItems[0].asset_version_id = record.providerEvidence.replacementAssetVersionId; }],
+    ["replacement new order", "replacement", (record: any) => { record.newObservation.subjectId = crypto.randomUUID(); }],
+    ["delivery ownership", "delivery-retry", (record: any) => { record.observation.deliveryAttempts[0].job_id = crypto.randomUUID(); }],
+    ["delivery time", "delivery-retry", (record: any) => { record.providerEvidence.attempts[0].finishedAt = new Date().toISOString(); }],
+    ["opened dispute mapping", "stripe-dispute-opened", (record: any) => { record.observation.disputes[0].status = "opened"; }],
+    ["won dispute access", "stripe-dispute-won", (record: any) => { record.observation.entitlements[0].status = "suspended"; }],
+    ["lost dispute access", "stripe-dispute-lost", (record: any) => { record.observation.entitlements[0].status = "active"; }],
+    ["Resend message ID", "resend-access", (record: any) => { record.observation.notifications[0].provider_message_id = "email_other"; }],
+    ["refund webhook", "stripe-full-refund", (record: any) => { record.observation.webhookEvents[0].signature_verified = false; }],
+    ["grant identity", "five-grants", (record: any) => { record.providerEvidence.uniqueGrantIds[0] = crypto.randomUUID(); }],
+    ["checkout composition", "stripe-mixed", (record: any) => { record.observation.order.checkout_composition = "digital_only"; }],
+  ])("rejects adversarial %s evidence", (_label, scenario, mutate) => {
+    const evidence: any = buildDigitalAcceptanceEvidenceFixture();
+    mutate(evidence.observations.find((record: any) => record.scenario === scenario));
+    expect(() => verifyDigitalAcceptanceEvidence(evidence, { requiredScenarios: [...requiredDigitalAcceptanceScenarios] })).toThrow();
+  });
   it("rejects null, live-mode, unlinked, or unexpected observations", () => {
     expect(() => digitalAcceptanceObservationSchema.parse({ action: "observe", order: null })).toThrow();
     expect(() => digitalAcceptanceObservationSchema.parse({ action: "observe", orderId: crypto.randomUUID(), storeId: crypto.randomUUID(), payment: { id: "pi_1", status: "succeeded", livemode: true }, delivery: { id: crypto.randomUUID(), status: "succeeded", attemptCount: 1 }, manifestVersionIds: [], grants: [] })).toThrow();

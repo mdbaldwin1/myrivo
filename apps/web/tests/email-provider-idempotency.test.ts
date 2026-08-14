@@ -19,7 +19,7 @@ describe("transactional email provider idempotency", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       void input;
       void init;
-      return new Response("{}", { status: 200 });
+      return Response.json({ id: "email_resend_123" });
     });
     vi.stubGlobal("fetch", fetchMock);
     const { sendTransactionalEmail } = await import("@/lib/notifications/email-provider");
@@ -30,7 +30,7 @@ describe("transactional email provider idempotency", () => {
       subject: "Downloads ready",
       text: "Your files are ready.",
       idempotencyKey: "digital-delivery:job-123"
-    })).resolves.toMatchObject({ ok: true });
+    })).resolves.toMatchObject({ ok: true, messageId: "email_resend_123" });
 
     const request = fetchMock.mock.calls[0]?.[1];
     if (!request) throw new Error("Expected Resend request options");

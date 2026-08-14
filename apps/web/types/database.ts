@@ -1018,6 +1018,7 @@ export type DigitalDeliveryNotificationRecord = {
   lease_token: string | null;
   lease_expires_at: string | null;
   provider: "resend" | null;
+  provider_message_id: string | null;
   last_safe_error: string | null;
   sent_at: string | null;
   created_at: string;

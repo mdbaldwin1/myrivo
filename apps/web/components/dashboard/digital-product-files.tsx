@@ -66,7 +66,7 @@ type UploadJob = {
 };
 
 type PendingConfirmation =
-  | { type: "replace"; asset: DigitalProductAsset; file: File }
+  | { type: "replace"; asset: DigitalProductAsset; file: File; returnFocus: HTMLButtonElement | null }
   | { type: "remove"; asset: DigitalProductAsset }
   | null;
 
@@ -804,7 +804,7 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
               onRename={(label) => updateAsset(asset.id, { label })}
               onAssign={(productVariantId) => updateAsset(asset.id, { productVariantId })}
               onMove={(direction) => moveAsset(asset.id, direction)}
-              onReplace={(file) => setPendingConfirmation({ type: "replace", asset, file })}
+              onReplace={(file, returnFocus) => setPendingConfirmation({ type: "replace", asset, file, returnFocus })}
               onRemove={() => setPendingConfirmation({ type: "remove", asset })}
             />
           ))}
@@ -817,11 +817,17 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
           title={`Replace ${pendingConfirmation.asset.label}?`}
           description="This creates a new version for future purchases. Existing customers keep the exact version they bought."
           confirmLabel="Replace file"
-          onCancel={() => setPendingConfirmation(null)}
+          onCancel={() => {
+            const returnFocus = pendingConfirmation.returnFocus;
+            setPendingConfirmation(null);
+            queueMicrotask(() => returnFocus?.focus());
+          }}
           onConfirm={() => {
             const pending = pendingConfirmation;
             setPendingConfirmation(null);
-            void replaceAsset(pending.asset, pending.file);
+            void replaceAsset(pending.asset, pending.file).finally(() => {
+              queueMicrotask(() => pending.returnFocus?.focus());
+            });
           }}
         />
       ) : null}

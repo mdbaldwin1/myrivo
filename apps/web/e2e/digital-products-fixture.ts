@@ -28,7 +28,7 @@ export function loadDigitalAcceptanceFixture(): DigitalAcceptanceFixture | null 
   return fixture;
 }
 
-export async function acceptanceAction(request: import("@playwright/test").APIRequestContext, fixture: DigitalAcceptanceFixture, action: "observe" | "expire-access" | "inject-delivery-failure" | "inject-signing-failure" | "inject-refund" | "inject-dispute", transition?: "partial" | "full" | "opened" | "won" | "lost", subjectId = fixture.orderId, scenario?: string, providerEvidence?: unknown) {
+export async function acceptanceAction(request: import("@playwright/test").APIRequestContext, fixture: DigitalAcceptanceFixture, action: "observe" | "expire-access" | "inject-delivery-failure" | "inject-signing-failure" | "inject-refund" | "inject-dispute", transition?: "partial" | "full" | "opened" | "won" | "lost", subjectId = fixture.orderId, scenario?: string, providerEvidence?: unknown, newObservation?: unknown) {
   const response = await request.post(fixture.controlUrl, { headers: { authorization: `Bearer ${fixture.controlSecret}` }, data: { version: 1, action, runId: fixture.runId, subjectId, idempotencyKey: crypto.randomUUID(), ...(transition ? { transition } : {}) } });
   if (!response.ok()) throw new Error(`Acceptance action ${action} failed with ${response.status()}`);
   const body = digitalAcceptanceObservationSchema.parse(await response.json());
@@ -37,7 +37,7 @@ export async function acceptanceAction(request: import("@playwright/test").APIRe
   const output = process.env.MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_OUTPUT;
   if (output) {
     const existing = fs.existsSync(output) ? JSON.parse(fs.readFileSync(output, "utf8")) : { schemaVersion: 3, runId: fixture.runId, origin: new URL(fixture.baseUrl).origin, releaseVersion: process.env.MYRIVO_DIGITAL_RELEASE_SHA, environment: process.env.MYRIVO_DIGITAL_ACCEPTANCE_ENVIRONMENT, startedAt: new Date().toISOString(), observations: [] };
-    delete existing.signature; existing.observations.push({ action, transition, scenario, providerEvidence, ...body }); existing.completedAt = new Date().toISOString();
+    delete existing.signature; existing.observations.push({ action, transition, scenario, providerEvidence, ...(newObservation ? { newObservation } : {}), ...body }); existing.completedAt = new Date().toISOString();
     const signingKey = process.env.MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_HMAC_KEY;
     if (!signingKey || signingKey.length < 32 || signingKey === fixture.controlSecret) throw new Error("A separate evidence HMAC key is required.");
     assertNoAcceptanceSecrets(existing);

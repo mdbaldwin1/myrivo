@@ -83,7 +83,7 @@ export function DigitalOrderDownloads({
             </div>
             <div>
               <h2 className="text-lg font-semibold">Digital downloads</h2>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              <p className="mt-1 text-sm leading-6 text-muted-foreground" role="status" aria-live="polite">
                 {description}
               </p>
             </div>

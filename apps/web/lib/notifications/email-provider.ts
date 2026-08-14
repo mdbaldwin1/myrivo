@@ -14,6 +14,7 @@ export type SendTransactionalEmailResult = {
   ok: boolean;
   provider: "resend";
   error: string | null;
+  messageId?: string | null;
 };
 
 async function sendWithResend(input: SendTransactionalEmailInput): Promise<SendTransactionalEmailResult> {
@@ -57,7 +58,11 @@ async function sendWithResend(input: SendTransactionalEmailInput): Promise<SendT
     };
   }
 
-  return { ok: true, provider: "resend", error: null };
+  const body = await response.json().catch(() => null) as { id?: unknown } | null;
+  if (typeof body?.id !== "string" || !body.id.trim()) {
+    return { ok: false, provider: "resend", error: "Resend send returned no message ID.", messageId: null };
+  }
+  return { ok: true, provider: "resend", error: null, messageId: body.id };
 }
 
 export async function sendTransactionalEmail(input: SendTransactionalEmailInput): Promise<SendTransactionalEmailResult> {

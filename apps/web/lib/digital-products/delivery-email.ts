@@ -68,6 +68,7 @@ export type DigitalDeliveryNotificationProcessorDependencies = {
     claim: DigitalDeliveryNotificationClaim;
     outcome: "succeeded" | "failed";
     provider: "resend";
+    providerMessageId: string | null;
     safeError: string | null;
   }) => Promise<NotificationCompletion>;
 };
@@ -340,11 +341,13 @@ export async function completeDigitalDeliveryNotification(
     claim,
     outcome,
     provider,
+    providerMessageId,
     safeError,
   }: {
     claim: DigitalDeliveryNotificationClaim;
     outcome: "succeeded" | "failed";
     provider: "resend";
+    providerMessageId: string | null;
     safeError: string | null;
   },
   client: DigitalDeliveryNotificationRpcClient = createSupabaseAdminClient(),
@@ -354,6 +357,7 @@ export async function completeDigitalDeliveryNotification(
     p_lease_token: claim.leaseToken,
     p_outcome: outcome,
     p_provider: provider,
+    p_provider_message_id: providerMessageId,
     p_safe_error: safeError,
     p_max_attempts: DIGITAL_PRODUCT_CONFIG.deliveryMaxAttempts,
     p_retry_base_seconds: DIGITAL_PRODUCT_CONFIG.deliveryRetryBaseSeconds,
@@ -406,10 +410,14 @@ export async function processNextDigitalDeliveryNotification(
     if (!result.ok) {
       throw new Error("Digital delivery email provider failed");
     }
+    if (!result.messageId) {
+      throw new Error("Digital delivery email provider returned no message ID");
+    }
     const completion = await dependencies.completeNotification({
       claim,
       outcome: "succeeded",
       provider,
+      providerMessageId: result.messageId,
       safeError: null,
     });
     return { ...completion, notificationId: claim.id };
@@ -418,6 +426,7 @@ export async function processNextDigitalDeliveryNotification(
       claim,
       outcome: "failed",
       provider,
+      providerMessageId: null,
       safeError: sanitizeDigitalDeliveryNotificationError(error),
     });
     return { ...completion, notificationId: claim.id };

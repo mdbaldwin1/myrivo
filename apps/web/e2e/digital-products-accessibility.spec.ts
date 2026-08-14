@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { expectNoSeriousAccessibilityViolations } from "./accessibility-helpers";
 import { login } from "./helpers";
-import { loadDigitalAcceptanceFixture } from "./digital-products-fixture";
+import { acceptanceAction, loadDigitalAcceptanceFixture } from "./digital-products-fixture";
 
 const acceptance = loadDigitalAcceptanceFixture();
 test.skip(!acceptance, "Digital accessibility acceptance requires a non-production seeded fixture.");
@@ -47,6 +47,19 @@ for (const viewport of [
         expect(bounds).not.toBeNull();
         expect(bounds!.x).toBeGreaterThanOrEqual(0);
         expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
+        if (label === "product") {
+          await page.keyboard.press("Space");
+          await expect(page.getByText(/added to cart|view cart/i).first()).toBeVisible();
+        } else if (label === "recovery") {
+          await page.getByLabel("Order ID").fill(acceptance!.orderId);
+          await page.getByLabel("Order email").fill(acceptance!.customer.email);
+          await primaryAction.focus();
+          await page.keyboard.press("Enter");
+          await expect(page.getByRole("status")).toContainText("Check your email");
+        } else if (label === "download") {
+          await page.keyboard.press("Enter");
+          await expect(page.getByRole("status")).toContainText(/Download started|Preparing your download/);
+        }
         await page.evaluate(() => { document.documentElement.style.zoom = "1"; });
       }
     });
@@ -75,17 +88,24 @@ for (const viewport of [
       expect(new Set(order).size).toBe(order.length);
       await page.getByLabel("Order ID").fill("invalid");
       await page.getByLabel("Order email").fill("invalid");
-      await page.getByRole("button", { name: "Email me a fresh link" }).press("Enter");
+      await page.getByLabel("Order email").press("Tab");
+      const recoveryButton = page.getByRole("button", { name: "Email me a fresh link" });
+      await expect(recoveryButton).toBeFocused();
+      await page.keyboard.press("Enter");
       const alert = page.getByRole("alert");
       await expect(alert).toContainText("Enter the full order ID");
       await expect(alert).toBeFocused();
+      await page.keyboard.press("Shift+Tab");
+      await expect(page.getByLabel("Order email")).toBeFocused();
+      await page.keyboard.press("Tab");
+      await expect(recoveryButton).toBeFocused();
       await expectNoSeriousAccessibilityViolations(page, `${viewport.name} recovery dynamic error`);
 
       await page.getByLabel("Order ID").fill(acceptance!.orderId);
       await page.getByLabel("Order email").fill(acceptance!.customer.email);
-      await page.getByRole("button", { name: "Email me a fresh link" }).press("Enter");
+      await recoveryButton.press("Enter");
       const recoveryStatus = page.getByRole("status");
-      await expect(recoveryStatus).toContainText(/check your email/i);
+      await expect(recoveryStatus).toContainText("Check your email");
       await expectNoSeriousAccessibilityViolations(page, `${viewport.name} recovery success`);
 
       await login(page, acceptance!.merchant.email, acceptance!.merchant.password);
@@ -103,19 +123,30 @@ for (const viewport of [
       await expect(page.getByText("Ready to sell", { exact: true })).toBeVisible();
       await expectNoSeriousAccessibilityViolations(page, `${viewport.name} catalog keyboard state`);
 
-      const replace = page.getByRole("button", { name: /replace/i }).first();
-      await tabTo(page, replace);
+      const actions = page.getByRole("button", { name: /manage/i }).first();
+      await tabTo(page, actions);
       await page.keyboard.press("Enter");
+      await page.getByRole("menuitem", { name: "Replace file" }).click();
+      await page.getByLabel(/choose a replacement/i).first().setInputFiles({ name: "replacement-keyboard.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") });
       const dialog = page.getByRole("dialog");
       await expect(dialog).toBeVisible();
-      const focusedBefore = await page.locator(":focus").evaluate((node) => node.outerHTML);
+      const cancel = dialog.getByRole("button", { name: "Cancel" });
+      const confirm = dialog.getByRole("button", { name: /replace/i });
+      await expect(cancel).toBeFocused();
       await page.keyboard.press("Shift+Tab");
-      await expect(page.locator(":focus")).toBeVisible();
-      expect(await page.evaluate(() => document.querySelector('[role="dialog"]')?.contains(document.activeElement))).toBe(true);
+      await expect(confirm).toBeFocused();
+      await page.keyboard.press("Tab");
+      await expect(cancel).toBeFocused();
       await page.keyboard.press("Escape");
       await expect(dialog).toBeHidden();
-      await expect(replace).toBeFocused();
-      expect(focusedBefore).toBeTruthy();
+      await expect(actions).toBeFocused();
+      await actions.press("Enter");
+      await page.getByRole("menuitem", { name: "Replace file" }).click();
+      await page.getByLabel(/choose a replacement/i).first().setInputFiles({ name: "replacement-confirm.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") });
+      await dialog.getByRole("button", { name: /replace/i }).press("Enter");
+      await expect(dialog).toBeHidden();
+      await expect(page.getByRole("status")).toContainText(/upload|processing|ready/i);
+      await expect(actions).toBeFocused();
 
       await page.goto(acceptance!.routes.merchantOrder);
       const resend = page.getByRole("button", { name: /resend|retry/i });
@@ -123,6 +154,21 @@ for (const viewport of [
       await resend.press("Enter");
       await expect(page.getByRole("status")).toContainText(/sent|queued/i);
       await expectNoSeriousAccessibilityViolations(page, `${viewport.name} merchant resend result`);
+    });
+
+    test("financial access states expose exact live status under guarded provisioning", async ({ page, request }) => {
+      await login(page, acceptance!.customer.email, acceptance!.customer.password);
+      for (const state of [
+        { orderId: acceptance!.financialOrders.disputeOpened, action: "inject-dispute" as const, transition: "opened" as const, text: "Downloads are temporarily unavailable while a payment dispute is reviewed. Your download grants are preserved." },
+        { orderId: acceptance!.financialOrders.disputeWon, action: "inject-dispute" as const, transition: "won" as const, text: "Digital downloads" },
+        { orderId: acceptance!.financialOrders.disputeLost, action: "inject-dispute" as const, transition: "lost" as const, text: "Download access was removed after this order was fully refunded. Contact the store if you believe this is a mistake." },
+        { orderId: acceptance!.financialOrders.fullRefund, action: "inject-refund" as const, transition: "full" as const, text: "Download access was removed after this order was fully refunded. Contact the store if you believe this is a mistake." },
+      ]) {
+        await acceptanceAction(request, acceptance!, state.action, state.transition, state.orderId);
+        await page.goto(acceptance!.routes.customerOrder.replace(acceptance!.orderId, state.orderId));
+        await expect(page.locator('[role="status"][aria-live="polite"]').filter({ hasText: state.text }).first()).toHaveText(state.text);
+        await expectNoSeriousAccessibilityViolations(page, `${viewport.name} ${state.transition} financial state`);
+      }
     });
 
     test("keyboard buyer workflow preserves focus order through cart and download", async ({ page }) => {

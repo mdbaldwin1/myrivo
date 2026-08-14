@@ -193,7 +193,7 @@ test.describe.serial("digital product user journeys", () => {
     if (replacementContentSha256 === priorContentSha256) throw new Error("Replacement checkout served the prior file bytes.");
     await buyer.close();
     if (!replacementOrder.observation.manifestItems.some((item) => item.asset_version_id === replacementVersion)) throw new Error("New checkout did not snapshot the replacement version.");
-    await acceptanceAction(request, fixture!, "observe", undefined, fixture!.orderId, "replacement", { kind: "replacement", priorAssetVersionId: priorVersion.asset_version_id, replacementAssetVersionId: replacementVersion, oldBeforeFilename: priorVersion.customer_filename, oldAfterFilename: priorVersion.customer_filename, newFilename: replacementFilename, oldBeforeHash: priorContentSha256, oldAfterHash, newHash: replacementContentSha256, newCheckoutAssetVersionId: replacementVersion });
+    await acceptanceAction(request, fixture!, "observe", undefined, fixture!.orderId, "replacement", { kind: "replacement", priorAssetVersionId: priorVersion.asset_version_id, replacementAssetVersionId: replacementVersion, oldBeforeFilename: priorVersion.customer_filename, oldAfterFilename: priorVersion.customer_filename, newFilename: replacementFilename, oldBeforeHash: priorContentSha256, oldAfterHash, newHash: replacementContentSha256, newCheckoutAssetVersionId: replacementVersion, newCheckoutOrderId: replacementOrderId }, replacementOrder);
     await page.goto(fixture!.routes.merchantOrder);
     await page.getByRole("button", { name: /resend/i }).click();
     await expect(page.getByRole("status")).toContainText(/sent|queued/i);
@@ -247,6 +247,6 @@ test.describe.serial("digital product user journeys", () => {
     const observed = await acceptanceAction(request, fixture!, "observe");
     await expectNoSeriousAccessibilityViolations(page, "delivery retry dynamic state");
     const resend = await getResendAccessMessage(request, fixture!.customer.email, fixture!.orderId);
-    await acceptanceAction(request, fixture!, "observe", undefined, fixture!.orderId, "delivery-retry", { kind: "delivery", jobId: observed.observation.deliveryJob.id, attempts: observed.observation.deliveryAttempts.map((attempt) => ({ attempt: attempt.attempt_number, status: attempt.status, timestamp: attempt.finished_at ?? attempt.started_at })), resendMessageId: resend.id });
+    await acceptanceAction(request, fixture!, "observe", undefined, fixture!.orderId, "delivery-retry", { kind: "delivery", jobId: observed.observation.deliveryJob.id, attempts: observed.observation.deliveryAttempts.map((attempt) => ({ attempt: attempt.attempt_number, status: attempt.status, startedAt: attempt.started_at, finishedAt: attempt.finished_at })), resendMessageId: resend.id });
   });
 });

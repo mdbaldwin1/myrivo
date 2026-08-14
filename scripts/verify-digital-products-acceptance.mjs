@@ -1,7 +1,7 @@
 import fs from "node:fs";
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { verifyDigitalAcceptanceEvidence } from "../apps/web/lib/digital-products/acceptance-evidence.ts";
+import { verifyDigitalAcceptanceArtifact } from "../apps/web/lib/digital-products/acceptance-evidence.ts";
 
 function fail(message) {
   console.error(`Digital products release gate failed: ${message}`);
@@ -48,12 +48,8 @@ const serializedEvidence = JSON.stringify(evidence);
 for (const forbidden of [/(^|[?&#])token=/i, /cookie[^\n]{0,64}[=:]/i, /[?&](signature|x-amz-signature)=/i, /(^|["'/:])private\//i, /digital_download_session/i]) {
   if (forbidden.test(serializedEvidence)) fail("evidence contains bearer or private-path material");
 }
-const signature = evidence.signature; delete evidence.signature;
-const expectedSignature = createHmac("sha256", evidenceKey).update(JSON.stringify(evidence)).digest("hex");
-if (typeof signature !== "string" || !timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) fail("evidence signature is invalid");
-evidence.signature = signature;
 try {
-  verifyDigitalAcceptanceEvidence(evidence, { requiredScenarios: ["stripe-digital", "stripe-mixed", "resend-access", "five-grants", "replacement", "stripe-partial-refund", "stripe-full-refund", "stripe-dispute-opened", "stripe-dispute-won", "stripe-dispute-lost", "delivery-retry", "merchant-resend"] });
+  verifyDigitalAcceptanceArtifact(evidence, { key: evidenceKey, requiredScenarios: ["stripe-digital", "stripe-mixed", "resend-access", "five-grants", "replacement", "stripe-partial-refund", "stripe-full-refund", "stripe-dispute-opened", "stripe-dispute-won", "stripe-dispute-lost", "delivery-retry", "merchant-resend"] });
 } catch (error) {
   fail(`canonical evidence validation failed: ${error instanceof Error ? error.message : "invalid evidence"}`);
 }
@@ -105,6 +101,5 @@ for (const item of evidence.observations) {
   if (!item.observation.manifestItems?.length || item.observation.manifestItems.some((manifest) => !manifest.asset_version_id)) fail("manifest evidence is missing asset versions");
 }
 if (requiredActions.size) fail(`evidence is missing required actions: ${[...requiredActions].join(", ")}`);
-if (!evidence.completedAt || Date.now() - Date.parse(evidence.completedAt) > 60 * 60 * 1000) fail("evidence is stale");
 const digest = createHash("sha256").update(fs.readFileSync(evidencePath)).digest("hex");
 console.log(`Validated current-run acceptance evidence sha256=${digest}`);
