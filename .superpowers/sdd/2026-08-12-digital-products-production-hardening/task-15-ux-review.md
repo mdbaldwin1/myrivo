@@ -316,3 +316,59 @@ The merchant replaces the asset and records an observation, but the observation 
 ### Round 6 release disposition
 
 Do not approve the UX/accessibility gate until the remaining P1 is resolved. The real-provider run may still be externally blocked, but repository-side dynamic accessibility assertions must exist and compile before provider availability can be the only outstanding acceptance dependency.
+
+---
+
+## Round 7 re-review — commit `39eb128`
+
+### Verdict
+
+**FAIL** — accessibility coverage now includes recovery success, merchant resend, populated cart, product-add, and download-result axe scans, but the core keyboard/focus and dynamic-state requirements are still not substantively verified. Exact grant/grace/version assertions also remain unresolved from round 6.
+
+### P1 — The accessibility suite still substitutes programmatic focus for keyboard navigation and omits critical dynamic states
+
+**Evidence:** `apps/web/e2e/digital-products-accessibility.spec.ts:55-96` and `:98-119`.
+
+Round 7 adds useful dynamic axe scans and Enter activation. However, nearly every workflow control is reached with `locator.focus()`, which bypasses the browser's tab order and cannot detect unreachable controls, incorrect ordering, focus loss, or hidden focus targets. The only Tab-based check remains four unique values on recovery; it still does not assert the expected sequence. The suite does not test Shift+Tab, replacement/confirmation dialog trapping, Escape/cancel behavior, or restoration to the invoking control.
+
+Feature-critical state coverage remains incomplete:
+
+- Catalog upload is not performed, so upload progress/failure, preview readiness, publish completion, and their live announcements/axe states are not tested.
+- The publish button is focused but never keyboard-activated.
+- Checkout is focused but never activated; checkout polling/delivery announcements are absent.
+- Download is conditionally skipped when invisible, allowing the test to pass without validating it; only `/started|preparing/` is accepted and failure/timeout announcements are absent.
+- Refund/dispute suspended/revoked states and delivery failure are not axe-scanned.
+- Resend checks a result but not focus preservation or error behavior.
+- Zoom still selects the last generic button/link and focuses it without activating a named primary action.
+
+These gaps mean the suite can remain green when a keyboard user cannot naturally reach or complete the main workflows, or when critical asynchronous/financial states introduce accessibility violations.
+
+**Required remediation:** Navigate exact expected sequences using Tab and Shift+Tab, activate with Enter/Space without calling `.focus()`, and fail—not skip—when required controls are absent. Upload a valid file, publish, replace through the confirmation dialog, checkout, download, and resend while asserting precise live-region messages and running axe after each dynamic success/error state. Verify modal trap/Escape/return focus. Add financial suspended/revoked and delivery-failure scans. At 200% zoom, locate each surface's named primary action, activate it, and verify the resulting state.
+
+### P2 — Five grants, grace reuse, and sixth rejection remain unasserted
+
+**Evidence:** `apps/web/e2e/digital-products.spec.ts:50-67`.
+
+The `five-grants` observation is recorded but its parsed grant fields are never asserted. There is no deliberate within-grace repeat proving reuse without increment, and the sixth-click assertion still expects `/limit|contact|unavailable/`, which does not match the download component's JSON-error message (“could not be downloaded. Please try again”). Thus the suite neither proves the five-grant policy nor reliably verifies the limit UX.
+
+**Remediation:** Assert exact parsed grant rows/counts after each stage, explicitly perform grace reuse in the same session, verify five committed grants with zero remaining, and assert the exact accessible sixth-rejection message/button state.
+
+### P2 — Replacement still does not prove immutable prior-buyer version access
+
+**Evidence:** `apps/web/e2e/digital-products.spec.ts:71-85`.
+
+The replacement observation is parsed by a stronger schema but its manifest/version fields are not compared before and after replacement. The prior buyer session/link is not reopened and no subsequent purchase is checked, so preservation of the purchased version remains assumed.
+
+**Remediation:** Capture and assert the prior entitlement's asset-version ID and filename, replace through UI, reopen the prior buyer access and verify they are unchanged, then verify a later purchase receives the new version.
+
+### Resolved/improved from round 6
+
+- The accessibility suite now axe-scans dynamic recovery success, resend result, product-added, populated-cart, and download-result states.
+- Recovery success and merchant resend live-region messages are asserted.
+- Acceptance observations are parsed through the shared schema and bound to run/subject IDs.
+- Provider financial actions now use Stripe test APIs/helpers rather than the application injection control.
+- Email retrieval, clean-context fragment exchange, order/composition binding, valid image upload, exact financial UI states, reduced motion, and stalled-download recovery remain represented.
+
+### Round 7 release disposition
+
+Do not approve the UX/accessibility gate. The new scans are meaningful progress, but the remaining P1 concerns natural keyboard reachability, focus behavior, and required dynamic states—not merely additional test quantity.
