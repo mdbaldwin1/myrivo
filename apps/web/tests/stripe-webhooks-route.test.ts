@@ -7,6 +7,7 @@ const beginStripeWebhookEventProcessingMock = vi.fn();
 const markStripeWebhookEventProcessedMock = vi.fn();
 const markStripeWebhookEventFailedMock = vi.fn();
 const finalizeStorefrontCheckoutMock = vi.fn();
+const bindStorefrontCheckoutStripeSessionMock = vi.fn();
 const markStorefrontCheckoutFailedMock = vi.fn();
 const syncStripeRefundRecordMock = vi.fn();
 const syncStripeDisputeRecordMock = vi.fn();
@@ -41,6 +42,7 @@ vi.mock("@/lib/stripe/webhook-events", () => ({
 
 vi.mock("@/lib/storefront/checkout-finalization", () => ({
   finalizeStorefrontCheckout: (...args: unknown[]) => finalizeStorefrontCheckoutMock(...args),
+  bindStorefrontCheckoutStripeSession: (...args: unknown[]) => bindStorefrontCheckoutStripeSessionMock(...args),
   markStorefrontCheckoutFailed: (...args: unknown[]) => markStorefrontCheckoutFailedMock(...args)
 }));
 
@@ -59,9 +61,11 @@ describe("Stripe webhooks route", () => {
     markStripeWebhookEventProcessedMock.mockReset();
     markStripeWebhookEventFailedMock.mockReset();
     finalizeStorefrontCheckoutMock.mockReset();
+    bindStorefrontCheckoutStripeSessionMock.mockReset();
     markStorefrontCheckoutFailedMock.mockReset();
     syncStripeRefundRecordMock.mockReset();
     syncStripeDisputeRecordMock.mockReset();
+    bindStorefrontCheckoutStripeSessionMock.mockResolvedValue(undefined);
 
     headersMock.mockResolvedValue({
       get: vi.fn(() => "sig_test")
@@ -109,9 +113,11 @@ describe("Stripe webhooks route", () => {
       type: "checkout.session.completed",
       data: {
         object: {
+          id: "cs_test_finalize_failure",
           metadata: {
             checkout_kind: "storefront_order",
-            storefront_checkout_id: "checkout-2"
+            storefront_checkout_id: "checkout-2",
+            store_id: "store-2"
           },
           payment_intent: "pi_456",
           payment_status: "paid"
@@ -134,5 +140,89 @@ describe("Stripe webhooks route", () => {
       error: "Checkout finalization failed."
     });
     expect(markStripeWebhookEventFailedMock).toHaveBeenCalledWith("evt_456", "Checkout finalization failed.");
+  });
+
+  test("binds an accepted Stripe session before finalizing so success polling can find it", async () => {
+    constructEventMock.mockReturnValue({
+      id: "evt_789",
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_test_accepted_before_db_write",
+          url: null,
+          metadata: {
+            checkout_kind: "storefront_order",
+            storefront_checkout_id: "40000000-0000-4000-8000-000000000001",
+            store_id: "10000000-0000-4000-8000-000000000001"
+          },
+          payment_intent: "pi_789",
+          payment_status: "paid"
+        }
+      }
+    });
+    beginStripeWebhookEventProcessingMock.mockResolvedValue({ shouldProcess: true });
+    finalizeStorefrontCheckoutMock.mockResolvedValue({ status: "completed", orderId: "order-789" });
+
+    const route = await import("@/app/api/stripe/webhooks/route");
+    const response = await route.POST(
+      new Request("http://localhost:3000/api/stripe/webhooks", {
+        method: "POST",
+        body: JSON.stringify({ id: "evt_789" })
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(bindStorefrontCheckoutStripeSessionMock).toHaveBeenCalledWith({
+      checkoutSessionId: "40000000-0000-4000-8000-000000000001",
+      storeId: "10000000-0000-4000-8000-000000000001",
+      stripeCheckoutSessionId: "cs_test_accepted_before_db_write",
+      stripeCheckoutUrl: null
+    });
+    expect(bindStorefrontCheckoutStripeSessionMock.mock.invocationCallOrder[0]).toBeLessThan(
+      finalizeStorefrontCheckoutMock.mock.invocationCallOrder[0]!
+    );
+    expect(markStripeWebhookEventProcessedMock).toHaveBeenCalledWith("evt_789");
+  });
+
+  test("passes immutable source ordering to refund sync and leaves an RPC failure retryable", async () => {
+    constructEventMock.mockReturnValue({
+      id: "evt_refund_failure",
+      type: "refund.updated",
+      created: 1_786_640_400,
+      data: {
+        object: {
+          id: "re_failure",
+          object: "refund",
+          created: 1_786_639_000,
+          status: "succeeded",
+        },
+      },
+    });
+    beginStripeWebhookEventProcessingMock.mockResolvedValue({ shouldProcess: true });
+    syncStripeRefundRecordMock.mockRejectedValue(
+      new Error("Injected digital access RPC failure"),
+    );
+
+    const route = await import("@/app/api/stripe/webhooks/route");
+    const response = await route.POST(
+      new Request("http://localhost:3000/api/stripe/webhooks", {
+        method: "POST",
+        body: JSON.stringify({ id: "evt_refund_failure" }),
+      }),
+    );
+
+    expect(syncStripeRefundRecordMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "re_failure" }),
+      {
+        sourceEventId: "evt_refund_failure",
+        sourceEventCreatedAt: "2026-08-13T17:00:00.000Z",
+      },
+    );
+    expect(response.status).toBe(500);
+    expect(markStripeWebhookEventProcessedMock).not.toHaveBeenCalled();
+    expect(markStripeWebhookEventFailedMock).toHaveBeenCalledWith(
+      "evt_refund_failure",
+      "Injected digital access RPC failure",
+    );
   });
 });

@@ -19,3 +19,18 @@ export function buildStubCheckoutRpcPayload(input: StubCheckoutRpcInput) {
     p_promo_code: input.promoCode ?? null
   };
 }
+
+export type StubCheckoutWithManifestRpcInput = StubCheckoutRpcInput & {
+  checkoutSessionId: string;
+  digitalManifestId: string | null;
+};
+
+export function buildStubCheckoutWithManifestRpcPayload(
+  input: StubCheckoutWithManifestRpcInput
+) {
+  return {
+    ...buildStubCheckoutRpcPayload(input),
+    p_checkout_session_id: input.checkoutSessionId,
+    p_digital_manifest_id: input.digitalManifestId
+  };
+}

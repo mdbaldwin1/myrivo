@@ -5,6 +5,7 @@ const authGetUserMock = vi.fn();
 const getOwnedStoreBundleMock = vi.fn();
 const serverFromMock = vi.fn();
 const adminFromMock = vi.fn();
+const loadMerchantDigitalOrderSummaryMock = vi.fn();
 
 vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient: vi.fn(async () => ({
@@ -23,6 +24,10 @@ vi.mock("@/lib/stores/owner-store", () => ({
   getOwnedStoreBundle: (...args: unknown[]) => getOwnedStoreBundleMock(...args)
 }));
 
+vi.mock("@/lib/digital-products/order-summary", () => ({
+  loadMerchantDigitalOrderSummary: (...args: unknown[]) => loadMerchantDigitalOrderSummaryMock(...args)
+}));
+
 const ORDER_ID = "99999999-9999-4999-8999-999999999999";
 
 beforeEach(() => {
@@ -31,9 +36,23 @@ beforeEach(() => {
   getOwnedStoreBundleMock.mockReset();
   serverFromMock.mockReset();
   adminFromMock.mockReset();
+  loadMerchantDigitalOrderSummaryMock.mockReset();
 
   authGetUserMock.mockResolvedValue({ data: { user: { id: "user-1" } } });
   getOwnedStoreBundleMock.mockResolvedValue({ store: { id: "store-1", slug: "at-home-apothecary" } });
+  loadMerchantDigitalOrderSummaryMock.mockResolvedValue({
+    fileCount: 1,
+    deliveryStatus: "succeeded",
+    initialDeliveryEmailStatus: "succeeded",
+    accessStatus: "active",
+    firstAccessedAt: null,
+    lastAccessedAt: null,
+    attempts: [],
+    initialDeliveryEmailAttempts: [],
+    files: [{ label: "Printable", filename: "print.pdf", format: "PDF", grantsRemaining: 5, status: "active" }],
+    activeLinkExpiresAt: "2099-08-15T00:00:00.000Z",
+    activeDisputeStatus: null
+  });
 });
 
 describe("order detail route", () => {
@@ -95,7 +114,16 @@ describe("order detail route", () => {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
               order: vi.fn(async () => ({
-                data: [],
+                data: [{
+                  id: "item-1",
+                  product_id: "product-1",
+                  product_variant_id: "variant-1",
+                  variant_label: "PDF",
+                  variant_snapshot: {},
+                  quantity: 1,
+                  unit_price_cents: 3000,
+                  products: { title: "Printable", product_type: "digital" }
+                }],
                 error: null
               }))
             }))
@@ -259,6 +287,7 @@ describe("order detail route", () => {
       disputes?: Array<{ id: string; status: string }>;
       shippingDelays?: Array<{ id: string; status: string; customer_path: string }>;
       timelineEvents?: Array<{ id: string; action: string }>;
+      digitalDelivery?: { fileCount: number; accessStatus: string };
     };
 
     expect(response.status).toBe(200);
@@ -283,5 +312,11 @@ describe("order detail route", () => {
       id: "audit-1",
       action: "shipping_delay_recorded"
     });
+    expect(payload.digitalDelivery).toMatchObject({ fileCount: 1, accessStatus: "active" });
+    expect(loadMerchantDigitalOrderSummaryMock).toHaveBeenCalledWith(expect.objectContaining({
+      orderId: ORDER_ID,
+      storeId: "store-1",
+      activeDisputeStatus: "needs_response"
+    }));
   });
 });

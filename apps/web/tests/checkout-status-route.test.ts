@@ -6,6 +6,8 @@ const resolveStoreSlugFromRequestAsyncMock = vi.fn();
 const getStorefrontCheckoutBySessionIdMock = vi.fn();
 const finalizeStorefrontCheckoutMock = vi.fn();
 const retrieveCheckoutSessionMock = vi.fn();
+const enqueueDigitalDeliveryMock = vi.fn();
+const loadCheckoutDigitalAccessUrlMock = vi.fn();
 
 vi.mock("@/lib/security/rate-limit", () => ({
   checkRateLimit: (...args: unknown[]) => checkRateLimitMock(...args)
@@ -20,8 +22,17 @@ vi.mock("@/lib/storefront/checkout-finalization", () => ({
   finalizeStorefrontCheckout: (...args: unknown[]) => finalizeStorefrontCheckoutMock(...args)
 }));
 
+vi.mock("@/lib/digital-products/delivery-jobs", () => ({
+  enqueueDigitalDelivery: (...args: unknown[]) => enqueueDigitalDeliveryMock(...args)
+}));
+
+vi.mock("@/lib/digital-products/checkout-access", () => ({
+  loadCheckoutDigitalAccessUrl: (...args: unknown[]) => loadCheckoutDigitalAccessUrlMock(...args)
+}));
+
 vi.mock("@/lib/env", () => ({
-  isStripeStubMode: () => false
+  isStripeStubMode: () => false,
+  getServerEnv: () => ({ DIGITAL_DELIVERY_TOKEN_SECRET: "s".repeat(32), DIGITAL_DOWNLOAD_SESSION_SECRET: "d".repeat(32) })
 }));
 
 vi.mock("@/lib/stripe/server", () => ({
@@ -41,6 +52,8 @@ beforeEach(() => {
   getStorefrontCheckoutBySessionIdMock.mockReset();
   finalizeStorefrontCheckoutMock.mockReset();
   retrieveCheckoutSessionMock.mockReset();
+  enqueueDigitalDeliveryMock.mockReset();
+  loadCheckoutDigitalAccessUrlMock.mockReset();
 
   checkRateLimitMock.mockResolvedValue(null);
   resolveStoreSlugFromRequestAsyncMock.mockResolvedValue("demo-store");
@@ -49,8 +62,11 @@ beforeEach(() => {
     status: "pending",
     order_id: null,
     error_message: null,
-    stripe_payment_intent_id: "pi_123"
+    stripe_payment_intent_id: "pi_123",
+    digital_manifest_id: null
   });
+  enqueueDigitalDeliveryMock.mockResolvedValue({ id: "delivery-job-1", status: "pending" });
+  loadCheckoutDigitalAccessUrlMock.mockResolvedValue(null);
   retrieveCheckoutSessionMock.mockResolvedValue({
     payment_status: "paid",
     payment_intent: "pi_123"
@@ -58,11 +74,10 @@ beforeEach(() => {
 });
 
 describe("checkout status route", () => {
-  test("returns failed when finalization refuses a non-live store", async () => {
+  test("returns the completed order after a paid-session finalization", async () => {
     finalizeStorefrontCheckoutMock.mockResolvedValue({
-      status: "failed",
-      orderId: null,
-      errorMessage: "Store is no longer live. Checkout cannot be completed."
+      status: "completed",
+      orderId: "order-1"
     });
 
     const route = await import("@/app/api/orders/checkout-status/route");
@@ -70,10 +85,250 @@ describe("checkout status route", () => {
 
     const response = await route.GET(request);
 
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
-      status: "failed",
-      error: "Store is no longer live. Checkout cannot be completed."
+      status: "completed",
+      orderId: "order-1"
     });
+  });
+
+  test("reports terminal digital delivery failure after paid-session finalization", async () => {
+    getStorefrontCheckoutBySessionIdMock.mockResolvedValue({
+      id: "checkout-1",
+      status: "pending",
+      order_id: null,
+      error_message: null,
+      stripe_payment_intent_id: "pi_123",
+      digital_manifest_id: "manifest-1",
+      checkout_composition: "mixed"
+    });
+    finalizeStorefrontCheckoutMock.mockResolvedValue({
+      status: "completed",
+      orderId: "order-1"
+    });
+    enqueueDigitalDeliveryMock.mockResolvedValue({
+      id: "delivery-job-1",
+      status: "failed"
+    });
+
+    const route = await import("@/app/api/orders/checkout-status/route");
+    const request = new NextRequest(
+      "http://localhost:3000/api/orders/checkout-status?sessionId=cs_test_paid_terminal_delivery"
+    );
+
+    const response = await route.GET(request);
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      status: "delivery_failed",
+      orderId: "order-1",
+      checkoutComposition: "mixed",
+      digitalDeliveryStatus: "failed"
+    });
+  });
+
+  test("returns the paid order by the webhook-bound session id without another Stripe lookup", async () => {
+    getStorefrontCheckoutBySessionIdMock.mockResolvedValue({
+      id: "checkout-1",
+      status: "completed",
+      order_id: "order-1",
+      error_message: null,
+      stripe_payment_intent_id: "pi_123",
+      digital_manifest_id: null
+    });
+    const route = await import("@/app/api/orders/checkout-status/route");
+    const request = new NextRequest("http://localhost:3000/api/orders/checkout-status?sessionId=cs_test_webhook_bound");
+
+    const response = await route.GET(request);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ status: "completed", orderId: "order-1" });
+    expect(getStorefrontCheckoutBySessionIdMock).toHaveBeenCalledWith("demo-store", "cs_test_webhook_bound");
+    expect(retrieveCheckoutSessionMock).not.toHaveBeenCalled();
+    expect(finalizeStorefrontCheckoutMock).not.toHaveBeenCalled();
+    expect(enqueueDigitalDeliveryMock).not.toHaveBeenCalled();
+  });
+
+  test("repairs a completed digital checkout before reporting completion", async () => {
+    getStorefrontCheckoutBySessionIdMock.mockResolvedValue({
+      id: "checkout-1",
+      status: "completed",
+      order_id: "order-1",
+      error_message: null,
+      stripe_payment_intent_id: "pi_123",
+      digital_manifest_id: "manifest-1"
+    });
+    const route = await import("@/app/api/orders/checkout-status/route");
+    const request = new NextRequest("http://localhost:3000/api/orders/checkout-status?sessionId=cs_test_digital_recovery");
+
+    const response = await route.GET(request);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      status: "completed",
+      orderId: "order-1",
+      digitalDeliveryStatus: "pending"
+    });
+    expect(enqueueDigitalDeliveryMock).toHaveBeenCalledWith("order-1", "manifest-1");
+    expect(retrieveCheckoutSessionMock).not.toHaveBeenCalled();
+    expect(finalizeStorefrontCheckoutMock).not.toHaveBeenCalled();
+  });
+
+  test.each(["processing", "succeeded"] as const)(
+    "reports completed payment with %s digital delivery state",
+    async (digitalDeliveryStatus) => {
+      getStorefrontCheckoutBySessionIdMock.mockResolvedValue({
+        id: "checkout-1",
+        status: "completed",
+        order_id: "order-1",
+        error_message: null,
+        stripe_payment_intent_id: "pi_123",
+        digital_manifest_id: "manifest-1"
+      });
+      enqueueDigitalDeliveryMock.mockResolvedValue({
+        id: "delivery-job-1",
+        status: digitalDeliveryStatus
+      });
+      const route = await import("@/app/api/orders/checkout-status/route");
+      const request = new NextRequest(
+        `http://localhost:3000/api/orders/checkout-status?sessionId=cs_test_digital_${digitalDeliveryStatus}`
+      );
+
+      const response = await route.GET(request);
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({
+        status: "completed",
+        orderId: "order-1",
+        digitalDeliveryStatus
+      });
+    }
+  );
+
+  test("returns the reconstructed access path and composition only after delivery succeeds", async () => {
+    getStorefrontCheckoutBySessionIdMock.mockResolvedValue({
+      id: "checkout-1",
+      status: "completed",
+      order_id: "11111111-1111-4111-8111-111111111111",
+      error_message: null,
+      stripe_payment_intent_id: "pi_123",
+      digital_manifest_id: "22222222-2222-4222-8222-222222222222",
+      checkout_composition: "mixed"
+    });
+    enqueueDigitalDeliveryMock.mockResolvedValue({
+      id: "33333333-3333-4333-8333-333333333333",
+      status: "succeeded"
+    });
+    loadCheckoutDigitalAccessUrlMock.mockResolvedValue({ accessToken: "a".repeat(43), accessTokenId: "44444444-4444-4444-8444-444444444444" });
+
+    const route = await import("@/app/api/orders/checkout-status/route");
+    const request = new NextRequest("http://localhost:3000/api/orders/checkout-status?sessionId=cs_test_ready_access");
+    const response = await route.GET(request);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      status: "completed",
+      orderId: "11111111-1111-4111-8111-111111111111",
+      checkoutComposition: "mixed",
+      digitalDeliveryStatus: "succeeded",
+      digitalAccessUrl: "/downloads"
+    });
+    expect(response.headers.get("set-cookie")).not.toContain("a".repeat(43));
+    expect(loadCheckoutDigitalAccessUrlMock).toHaveBeenCalledWith(expect.objectContaining({
+      orderId: "11111111-1111-4111-8111-111111111111",
+      jobId: "33333333-3333-4333-8333-333333333333",
+      secret: "s".repeat(32)
+    }));
+  });
+
+  test("never reconstructs or returns access while delivery is pending", async () => {
+    getStorefrontCheckoutBySessionIdMock.mockResolvedValue({
+      id: "checkout-1",
+      status: "completed",
+      order_id: "11111111-1111-4111-8111-111111111111",
+      error_message: null,
+      stripe_payment_intent_id: "pi_123",
+      digital_manifest_id: "22222222-2222-4222-8222-222222222222",
+      checkout_composition: "digital_only"
+    });
+    enqueueDigitalDeliveryMock.mockResolvedValue({
+      id: "33333333-3333-4333-8333-333333333333",
+      status: "pending"
+    });
+
+    const route = await import("@/app/api/orders/checkout-status/route");
+    const response = await route.GET(new NextRequest(
+      "http://localhost:3000/api/orders/checkout-status?sessionId=cs_test_pending_no_access"
+    ));
+    const body = await response.json();
+
+    expect(body).toMatchObject({
+      status: "completed",
+      checkoutComposition: "digital_only",
+      digitalDeliveryStatus: "pending"
+    });
+    expect(body).not.toHaveProperty("digitalAccessUrl");
+    expect(loadCheckoutDigitalAccessUrlMock).not.toHaveBeenCalled();
+  });
+
+  test("reports terminal digital delivery failure without exposing internal detail", async () => {
+    getStorefrontCheckoutBySessionIdMock.mockResolvedValue({
+      id: "checkout-1",
+      status: "completed",
+      order_id: "order-1",
+      error_message: null,
+      stripe_payment_intent_id: "pi_123",
+      digital_manifest_id: "manifest-1",
+      checkout_composition: "mixed"
+    });
+    enqueueDigitalDeliveryMock.mockResolvedValue({
+      id: "delivery-job-1",
+      status: "failed",
+      lastSafeError: "Authorization: Bearer do-not-return-this"
+    });
+    const route = await import("@/app/api/orders/checkout-status/route");
+    const request = new NextRequest(
+      "http://localhost:3000/api/orders/checkout-status?sessionId=cs_test_digital_terminal_failure"
+    );
+
+    const response = await route.GET(request);
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(response.headers.get("retry-after")).toBeNull();
+    expect(payload).toEqual({
+      status: "delivery_failed",
+      orderId: "order-1",
+      checkoutComposition: "mixed",
+      digitalDeliveryStatus: "failed",
+      error:
+        "Payment was received, but the digital downloads could not be prepared. Contact the store for help with this order."
+    });
+    expect(JSON.stringify(payload)).not.toContain("do-not-return-this");
+  });
+
+  test("keeps completed digital checkout recovery pollable when ensuring delivery fails", async () => {
+    getStorefrontCheckoutBySessionIdMock.mockResolvedValue({
+      id: "checkout-1",
+      status: "completed",
+      order_id: "order-1",
+      error_message: null,
+      stripe_payment_intent_id: "pi_123",
+      digital_manifest_id: "manifest-1"
+    });
+    enqueueDigitalDeliveryMock.mockRejectedValue(new Error("database unavailable"));
+    const route = await import("@/app/api/orders/checkout-status/route");
+    const request = new NextRequest("http://localhost:3000/api/orders/checkout-status?sessionId=cs_test_digital_recovery_failure");
+
+    const response = await route.GET(request);
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("retry-after")).toBe("2");
+    await expect(response.json()).resolves.toEqual({
+      status: "pending",
+      error: "Digital delivery is still being prepared."
+    });
+    expect(retrieveCheckoutSessionMock).not.toHaveBeenCalled();
+    expect(finalizeStorefrontCheckoutMock).not.toHaveBeenCalled();
   });
 });

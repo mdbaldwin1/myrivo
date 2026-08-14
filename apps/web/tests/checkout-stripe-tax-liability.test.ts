@@ -14,8 +14,31 @@ const getAppUrlMock = vi.fn();
 const getStoreStripePaymentsReadinessMock = vi.fn();
 const getStripeClientMock = vi.fn();
 const adminFromMock = vi.fn();
+const adminRpcMock = vi.fn();
 const serverFromMock = vi.fn();
 const stripeCheckoutCreateMock = vi.fn();
+const createOrReuseCheckoutManifestMock = vi.fn();
+const issueDigitalEntitlementsMock = vi.fn();
+const checkoutSessionUpdatePayloads: Array<Record<string, unknown>> = [];
+let checkoutProductType: "physical" | "digital";
+let checkoutStoreId: string;
+let pendingCheckoutId: string;
+let authenticatedUserId: string | null;
+
+class TestDigitalPurchaseManifestError extends Error {}
+
+vi.mock("@/lib/digital-products/feature-gating", () => ({
+  resolveStoreDigitalProductsAccess: vi.fn(async () => ({ enabled: true, planEligible: true, storeEnabled: true, planKey: "test" }))
+}));
+
+vi.mock("@/lib/digital-products/manifest-service", () => ({
+  createOrReuseCheckoutManifest: (...args: unknown[]) =>
+    createOrReuseCheckoutManifestMock(...args),
+  buildDigitalManifestStripeMetadata: (manifestId: string) => ({
+    digital_manifest_id: manifestId
+  }),
+  DigitalPurchaseManifestError: TestDigitalPurchaseManifestError
+}));
 
 vi.mock("@/lib/security/request-origin", () => ({
   enforceTrustedOrigin: (...args: unknown[]) => enforceTrustedOriginMock(...args)
@@ -43,6 +66,10 @@ vi.mock("@/lib/notifications/order-emails", () => ({
   sendOrderCreatedNotifications: (...args: unknown[]) => sendOrderCreatedNotificationsMock(...args)
 }));
 
+vi.mock("@/lib/digital-products/entitlements", () => ({
+  issueDigitalEntitlements: (...args: unknown[]) => issueDigitalEntitlementsMock(...args)
+}));
+
 vi.mock("@/lib/env", () => ({
   getAppUrl: (...args: unknown[]) => getAppUrlMock(...args),
   isStripeStubMode: (...args: unknown[]) => isStripeStubModeMock(...args)
@@ -58,14 +85,17 @@ vi.mock("@/lib/stripe/server", () => ({
 
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: vi.fn(() => ({
-    from: (...args: unknown[]) => adminFromMock(...args)
+    from: (...args: unknown[]) => adminFromMock(...args),
+    rpc: (...args: unknown[]) => adminRpcMock(...args)
   }))
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient: vi.fn(async () => ({
     auth: {
-      getUser: vi.fn(async () => ({ data: { user: null } }))
+      getUser: vi.fn(async () => ({
+        data: { user: authenticatedUserId ? { id: authenticatedUserId } : null }
+      }))
     },
     from: (...args: unknown[]) => serverFromMock(...args)
   }))
@@ -100,8 +130,16 @@ describe("checkout Stripe tax liability", () => {
     getStoreStripePaymentsReadinessMock.mockReset();
     getStripeClientMock.mockReset();
     adminFromMock.mockReset();
+    adminRpcMock.mockReset();
     serverFromMock.mockReset();
     stripeCheckoutCreateMock.mockReset();
+    createOrReuseCheckoutManifestMock.mockReset();
+    issueDigitalEntitlementsMock.mockReset();
+    checkoutSessionUpdatePayloads.length = 0;
+    checkoutProductType = "physical";
+    checkoutStoreId = "store-1";
+    pendingCheckoutId = "checkout-1";
+    authenticatedUserId = null;
 
     enforceTrustedOriginMock.mockReturnValue(null);
     checkRateLimitMock.mockResolvedValue(null);
@@ -115,6 +153,7 @@ describe("checkout Stripe tax liability", () => {
     calculatePlatformFeeCentsMock.mockReturnValue(125);
     writeOrderFeeBreakdownMock.mockResolvedValue(undefined);
     sendOrderCreatedNotificationsMock.mockResolvedValue(undefined);
+    issueDigitalEntitlementsMock.mockResolvedValue(null);
     isStripeStubModeMock.mockReturnValue(false);
     getAppUrlMock.mockReturnValue("https://www.myrivo.app");
     getStoreStripePaymentsReadinessMock.mockResolvedValue({
@@ -139,6 +178,39 @@ describe("checkout Stripe tax liability", () => {
         }
       }
     });
+    adminRpcMock.mockImplementation(async (name: string, args: Record<string, unknown>) => {
+      if (name === "get_storefront_checkout_attempt") {
+        return { data: null, error: null };
+      }
+      if (name === "create_or_reuse_storefront_checkout_attempt") {
+        return {
+          data: {
+            ...(args.p_checkout as Record<string, unknown>),
+            id: pendingCheckoutId,
+            order_id: null,
+            digital_manifest_id: null,
+            stripe_checkout_session_id: null,
+            stripe_checkout_url: null,
+            checkout_attempt_key: args.p_checkout_attempt_key,
+            checkout_request_fingerprint_sha256: args.p_request_fingerprint_sha256,
+            created: true
+          },
+          error: null
+        };
+      }
+      if (name === "bind_storefront_checkout_stripe_session") {
+        return {
+          data: {
+            id: pendingCheckoutId,
+            status: "pending",
+            stripe_checkout_session_id: args.p_stripe_checkout_session_id,
+            stripe_checkout_url: args.p_stripe_checkout_url
+          },
+          error: null
+        };
+      }
+      throw new Error(`Unexpected RPC ${name}`);
+    });
 
     serverFromMock.mockReturnValue({
       select: vi.fn(() => ({
@@ -161,7 +233,7 @@ describe("checkout Stripe tax liability", () => {
             eq: vi.fn(() => ({
               maybeSingle: vi.fn(async () => ({
                 data: {
-                  id: "store-1",
+                  id: checkoutStoreId,
                   name: "Stripe Shop",
                   slug: "stripe-shop",
                   status: "live",
@@ -251,7 +323,8 @@ describe("checkout Stripe tax liability", () => {
                         id: "11111111-1111-4111-8111-111111111111",
                         title: "Starter Kit",
                         status: "active",
-                        store_id: "store-1"
+                        store_id: checkoutStoreId,
+                        product_type: checkoutProductType
                       }
                     }
                   ],
@@ -267,12 +340,15 @@ describe("checkout Stripe tax liability", () => {
         return {
           insert: vi.fn(() => ({
             select: vi.fn(() => ({
-              single: vi.fn(async () => ({ data: { id: "checkout-1" }, error: null }))
+              single: vi.fn(async () => ({ data: { id: pendingCheckoutId }, error: null }))
             }))
           })),
-          update: vi.fn(() => ({
-            eq: vi.fn(async () => ({ error: null }))
-          }))
+          update: vi.fn((values: Record<string, unknown>) => {
+            checkoutSessionUpdatePayloads.push(values);
+            return {
+              eq: vi.fn(async () => ({ error: null }))
+            };
+          })
         };
       }
 
@@ -334,7 +410,8 @@ describe("checkout Stripe tax liability", () => {
           },
           application_fee_amount: 125
         })
-      })
+      }),
+      { idempotencyKey: "storefront-checkout:checkout-1" }
     );
   });
 
@@ -366,6 +443,76 @@ describe("checkout Stripe tax liability", () => {
     expect(response.status).toBe(409);
     expect(payload.error).toBe("This store's Stripe tax setup is not complete yet.");
     expect(stripeCheckoutCreateMock).not.toHaveBeenCalled();
+  });
+
+  test("snapshots digital files before Stripe and sends only the opaque manifest id", async () => {
+    checkoutProductType = "digital";
+    checkoutStoreId = "10000000-0000-4000-8000-000000000001";
+    pendingCheckoutId = "40000000-0000-4000-8000-000000000001";
+    createOrReuseCheckoutManifestMock.mockResolvedValue({
+      manifestId: "b0000000-0000-4000-8000-000000000001",
+      items: [
+        {
+          customerFilename: "private-original.zip",
+          assetVersionId: "70000000-0000-4000-8000-000000000001"
+        }
+      ]
+    });
+
+    const route = await import("@/app/api/orders/checkout/route");
+    const response = await route.POST(
+      buildRequest({
+        firstName: "Alice",
+        lastName: "Buyer",
+        phone: "",
+        email: "alice@example.com",
+        digitalDeliveryConsent: true,
+        items: [
+          {
+            variantId: "33333333-3333-4333-8333-333333333333",
+            quantity: 1
+          }
+        ]
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(createOrReuseCheckoutManifestMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        checkoutSessionId: pendingCheckoutId,
+        storeId: checkoutStoreId,
+        items: [
+          expect.objectContaining({
+            productId: "11111111-1111-4111-8111-111111111111",
+            variantId: "33333333-3333-4333-8333-333333333333",
+            quantity: 1
+          })
+        ]
+      })
+    );
+    expect(
+      createOrReuseCheckoutManifestMock.mock.invocationCallOrder[0]
+    ).toBeLessThan(stripeCheckoutCreateMock.mock.invocationCallOrder[0]!);
+
+    const [stripeRequest, stripeOptions] = stripeCheckoutCreateMock.mock.calls[0]!;
+    expect(stripeOptions).toEqual({
+      idempotencyKey: `storefront-checkout:${pendingCheckoutId}`
+    });
+    expect(stripeRequest.metadata).toEqual(
+      expect.objectContaining({
+        digital_manifest_id: "b0000000-0000-4000-8000-000000000001"
+      })
+    );
+    expect(stripeRequest.payment_intent_data.metadata).toEqual(
+      expect.objectContaining({
+        digital_manifest_id: "b0000000-0000-4000-8000-000000000001"
+      })
+    );
+    expect(JSON.stringify(stripeRequest.metadata)).not.toContain(
+      "private-original.zip"
+    );
+    expect(JSON.stringify(stripeRequest.metadata)).not.toContain("assetVersionId");
+    expect(stripeRequest).not.toHaveProperty("shipping_options");
   });
 
   test("allows checkout for seller-attested no-tax stores when Stripe is operationally ready", async () => {
@@ -478,7 +625,8 @@ describe("checkout Stripe tax liability", () => {
                         id: "11111111-1111-4111-8111-111111111111",
                         title: "Starter Kit",
                         status: "active",
-                        store_id: "store-1"
+                        store_id: "store-1",
+                        product_type: "physical"
                       }
                     }
                   ],
@@ -541,8 +689,609 @@ describe("checkout Stripe tax liability", () => {
             })
           })
         ]
-      })
+      }),
+      { idempotencyKey: "storefront-checkout:checkout-1" }
     );
     expect(stripeCheckoutCreateMock.mock.calls[0]?.[0]).not.toHaveProperty("automatic_tax");
+  });
+
+  test("recovers when Stripe accepted the session but persisting its binding failed", async () => {
+    checkoutProductType = "digital";
+    checkoutStoreId = "10000000-0000-4000-8000-000000000001";
+    pendingCheckoutId = "40000000-0000-4000-8000-000000000001";
+    createOrReuseCheckoutManifestMock.mockResolvedValue({
+      manifestId: "b0000000-0000-4000-8000-000000000001",
+      items: []
+    });
+    let createAttemptCalls = 0;
+    let bindCalls = 0;
+    let persistedCheckout: Record<string, unknown> | null = null;
+    adminRpcMock.mockImplementation(async (name: string, args: Record<string, unknown>) => {
+      if (name === "get_storefront_checkout_attempt") {
+        return { data: persistedCheckout, error: null };
+      }
+      if (name === "create_or_reuse_storefront_checkout_attempt") {
+        createAttemptCalls += 1;
+        persistedCheckout = {
+          ...(args.p_checkout as Record<string, unknown>),
+          id: pendingCheckoutId,
+          order_id: null,
+          digital_manifest_id: "b0000000-0000-4000-8000-000000000001",
+          stripe_checkout_session_id: null,
+          stripe_checkout_url: null,
+          created: createAttemptCalls === 1
+        };
+        return {
+          data: {
+            ...(args.p_checkout as Record<string, unknown>),
+            id: pendingCheckoutId,
+            order_id: null,
+            digital_manifest_id: createAttemptCalls === 1 ? null : "b0000000-0000-4000-8000-000000000001",
+            stripe_checkout_session_id: null,
+            stripe_checkout_url: null,
+            created: createAttemptCalls === 1
+          },
+          error: null
+        };
+      }
+      if (name === "bind_storefront_checkout_stripe_session") {
+        bindCalls += 1;
+        return bindCalls === 1
+          ? { data: null, error: { message: "Injected checkout binding write failure" } }
+          : { data: { id: pendingCheckoutId }, error: null };
+      }
+      throw new Error(`Unexpected RPC ${name}`);
+    });
+    const requestBody = {
+      checkoutAttemptId: "018f6fc1-8adc-7f43-8000-000000000001",
+      firstName: "Alice",
+      lastName: "Buyer",
+      phone: "",
+      email: "alice@example.com",
+      digitalDeliveryConsent: true,
+      items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
+    };
+    const route = await import("@/app/api/orders/checkout/route");
+
+    const first = await route.POST(buildRequest(requestBody));
+    const second = await route.POST(buildRequest(requestBody));
+
+    expect(first.status).toBe(503);
+    expect(second.status).toBe(200);
+    expect(stripeCheckoutCreateMock).toHaveBeenCalledTimes(2);
+    expect(stripeCheckoutCreateMock.mock.calls.map((call) => call[1])).toEqual([
+      { idempotencyKey: `storefront-checkout:${pendingCheckoutId}` },
+      { idempotencyKey: `storefront-checkout:${pendingCheckoutId}` }
+    ]);
+    expect(checkoutSessionUpdatePayloads).not.toContainEqual(expect.objectContaining({ status: "failed" }));
+  });
+
+  test("keeps an ambiguous Stripe timeout pending and safely resumes the same attempt", async () => {
+    stripeCheckoutCreateMock
+      .mockRejectedValueOnce(new Error("Stripe request timed out after write"))
+      .mockResolvedValueOnce({
+        id: "cs_test_123",
+        url: "https://checkout.stripe.com/pay/cs_test_123"
+      });
+    const requestBody = {
+      checkoutAttemptId: "018f6fc1-8adc-7f43-8000-000000000002",
+      firstName: "Alice",
+      lastName: "Buyer",
+      phone: "555-0100",
+      email: "alice@example.com",
+      items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
+    };
+    const route = await import("@/app/api/orders/checkout/route");
+
+    const first = await route.POST(buildRequest(requestBody));
+    const second = await route.POST(buildRequest(requestBody));
+
+    expect(first.status).toBe(503);
+    expect(second.status).toBe(200);
+    expect(stripeCheckoutCreateMock).toHaveBeenCalledTimes(2);
+    expect(stripeCheckoutCreateMock.mock.calls.map((call) => call[1])).toEqual([
+      { idempotencyKey: `storefront-checkout:${pendingCheckoutId}` },
+      { idempotencyKey: `storefront-checkout:${pendingCheckoutId}` }
+    ]);
+    expect(checkoutSessionUpdatePayloads).not.toContainEqual(expect.objectContaining({ status: "failed" }));
+  });
+
+  test("binds a Stripe session id even when Stripe returns no redirect URL", async () => {
+    stripeCheckoutCreateMock.mockResolvedValue({
+      id: "cs_test_no_redirect_yet",
+      url: null
+    });
+    const route = await import("@/app/api/orders/checkout/route");
+    const response = await route.POST(
+      buildRequest({
+        checkoutAttemptId: "018f6fc1-8adc-7f43-8000-000000000006",
+        firstName: "Alice",
+        lastName: "Buyer",
+        phone: "555-0100",
+        email: "alice@example.com",
+        items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
+      })
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringContaining("try again")
+    });
+    expect(adminRpcMock).toHaveBeenCalledWith(
+      "bind_storefront_checkout_stripe_session",
+      {
+        p_checkout_session_id: pendingCheckoutId,
+        p_store_id: checkoutStoreId,
+        p_stripe_checkout_session_id: "cs_test_no_redirect_yet",
+        p_stripe_checkout_url: null
+      }
+    );
+  });
+
+  test("reuses completed legacy checkout A without consuming a newer active cart B", async () => {
+    authenticatedUserId = "20000000-0000-4000-8000-000000000001";
+    isStripeStubModeMock.mockReturnValue(true);
+    const completedCartId = "30000000-0000-4000-8000-000000000001";
+    const activeCartId = "30000000-0000-4000-8000-000000000002";
+    const orderId = "50000000-0000-4000-8000-000000000001";
+    const carts = [{ id: completedCartId, status: "active" as "active" | "ordered" }];
+    serverFromMock.mockImplementation(() => ({
+      select: vi.fn(() => {
+        let requestedStatus: string | null = null;
+        let requestedLimit = Number.POSITIVE_INFINITY;
+        const query = {
+          eq: vi.fn((column: string, value: string) => {
+            if (column === "status") requestedStatus = value;
+            return query;
+          }),
+          order: vi.fn(() => query),
+          limit: vi.fn((value: number) => {
+            requestedLimit = value;
+            return query;
+          }),
+          maybeSingle: vi.fn(async () => ({
+            data: carts.find((cart) => cart.status === requestedStatus) ?? null,
+            error: null
+          })),
+          returns: vi.fn(async () => ({
+            data: carts
+              .filter((cart) => cart.status === requestedStatus)
+              .slice(0, requestedLimit),
+            count: carts.filter((cart) => cart.status === requestedStatus).length,
+            error: null
+          }))
+        };
+        return query;
+      })
+    }));
+
+    const attempts = new Map<string, Record<string, unknown>>();
+    let checkoutCreates = 0;
+    let orderEffects = 0;
+    adminRpcMock.mockImplementation(async (name: string, args: Record<string, unknown>) => {
+      const attemptKey = String(args.p_checkout_attempt_key ?? "");
+      if (name === "get_storefront_checkout_attempt") {
+        return { data: attempts.get(attemptKey) ?? null, error: null };
+      }
+      if (name === "create_or_reuse_storefront_checkout_attempt") {
+        checkoutCreates += 1;
+        const checkout = {
+          ...(args.p_checkout as Record<string, unknown>),
+          id: `40000000-0000-4000-8000-${String(checkoutCreates).padStart(12, "0")}`,
+          status: "pending",
+          order_id: null,
+          digital_manifest_id: null,
+          stripe_checkout_session_id: null,
+          stripe_checkout_url: null,
+          checkout_attempt_key: attemptKey,
+          checkout_request_fingerprint_sha256: args.p_request_fingerprint_sha256,
+          created: true
+        };
+        attempts.set(attemptKey, checkout);
+        return { data: checkout, error: null };
+      }
+      if (name === "stub_checkout_create_paid_order_with_manifest") {
+        const checkout = [...attempts.values()].find(
+          (candidate) => candidate.id === args.p_checkout_session_id
+        );
+        if (!checkout) throw new Error("Checkout fixture missing");
+        if (checkout.status !== "completed") {
+          orderEffects += 1;
+          checkout.status = "completed";
+          checkout.order_id = orderId;
+          const sourceCart = carts.find((cart) => cart.id === checkout.source_cart_id);
+          if (sourceCart) sourceCart.status = "ordered";
+        }
+        return {
+          data: {
+            order_id: checkout.order_id,
+            total_cents: 2500,
+            discount_cents: 0,
+            promo_code: null
+          },
+          error: null
+        };
+      }
+      throw new Error(`Unexpected RPC ${name}`);
+    });
+    const requestBody = {
+      firstName: "Legacy",
+      lastName: "Buyer",
+      phone: "555-0100",
+      email: "legacy@example.com",
+      items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
+    };
+    const route = await import("@/app/api/orders/checkout/route");
+
+    const first = await route.POST(buildRequest(requestBody));
+    carts.push({ id: activeCartId, status: "active" });
+    isStripeStubModeMock.mockReturnValue(false);
+    const second = await route.POST(buildRequest(requestBody));
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    await expect(first.json()).resolves.toMatchObject({ orderId, status: "paid" });
+    await expect(second.json()).resolves.toMatchObject({ orderId, status: "paid" });
+    expect(checkoutCreates).toBe(1);
+    expect(attempts).toHaveLength(1);
+    expect(orderEffects).toBe(1);
+    expect(carts.find((cart) => cart.id === activeCartId)?.status).toBe("active");
+    expect(stripeCheckoutCreateMock).not.toHaveBeenCalled();
+  });
+
+  test("rejects an authenticated legacy retry when multiple ordered carts match", async () => {
+    authenticatedUserId = "20000000-0000-4000-8000-000000000001";
+    const carts = [
+      { id: "30000000-0000-4000-8000-000000000011", status: "ordered" as const },
+      { id: "30000000-0000-4000-8000-000000000012", status: "ordered" as const },
+      { id: "30000000-0000-4000-8000-000000000013", status: "ordered" as const }
+    ];
+    serverFromMock.mockImplementation(() => ({
+      select: vi.fn(() => {
+        let requestedStatus: string | null = null;
+        let requestedLimit = Number.POSITIVE_INFINITY;
+        const query = {
+          eq: vi.fn((column: string, value: string) => {
+            if (column === "status") requestedStatus = value;
+            return query;
+          }),
+          order: vi.fn(() => query),
+          limit: vi.fn((value: number) => {
+            requestedLimit = value;
+            return query;
+          }),
+          returns: vi.fn(async () => ({
+            data: carts
+              .filter((cart) => cart.status === requestedStatus)
+              .slice(0, requestedLimit),
+            count: carts.filter((cart) => cart.status === requestedStatus).length,
+            error: null
+          }))
+        };
+        return query;
+      })
+    }));
+    let lookupIndex = 0;
+    adminRpcMock.mockImplementation(async (name: string) => {
+      if (name !== "get_storefront_checkout_attempt") {
+        throw new Error(`Unexpected mutation RPC ${name}`);
+      }
+      lookupIndex += 1;
+      return {
+        data: lookupIndex === 2
+          ? null
+          : {
+              id: `40000000-0000-4000-8000-${String(lookupIndex).padStart(12, "0")}`,
+              checkout_mode: "stripe",
+              status: "completed",
+              order_id: `50000000-0000-4000-8000-${String(lookupIndex).padStart(12, "0")}`
+            },
+        error: null
+      };
+    });
+    const route = await import("@/app/api/orders/checkout/route");
+
+    const response = await route.POST(buildRequest({
+      firstName: "Legacy",
+      lastName: "Buyer",
+      phone: "555-0100",
+      email: "legacy@example.com",
+      items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
+    }));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringContaining("safely identify")
+    });
+    expect(stripeCheckoutCreateMock).not.toHaveBeenCalled();
+  });
+
+  test("fails closed when a capped legacy cart response has no exact count", async () => {
+    authenticatedUserId = "20000000-0000-4000-8000-000000000001";
+    const orderedCarts = Array.from({ length: 100 }, (_, index) => ({
+      id: `30000000-0000-4000-8000-${String(index + 100).padStart(12, "0")}`,
+      status: "ordered" as const
+    }));
+    serverFromMock.mockImplementation(() => ({
+      select: vi.fn(() => {
+        let requestedStatus: string | null = null;
+        let requestedLimit = Number.POSITIVE_INFINITY;
+        const query = {
+          eq: vi.fn((column: string, value: string) => {
+            if (column === "status") requestedStatus = value;
+            return query;
+          }),
+          order: vi.fn(() => query),
+          limit: vi.fn((value: number) => {
+            requestedLimit = value;
+            return query;
+          }),
+          returns: vi.fn(async () => ({
+            data: orderedCarts
+              .filter((cart) => cart.status === requestedStatus)
+              .slice(0, requestedLimit),
+            count: requestedStatus === "ordered" ? null : 0,
+            error: null
+          }))
+        };
+        return query;
+      })
+    }));
+    let checkoutLookupCount = 0;
+    adminRpcMock.mockImplementation(async (name: string) => {
+      if (name !== "get_storefront_checkout_attempt") {
+        throw new Error(`Unexpected mutation RPC ${name}`);
+      }
+      checkoutLookupCount += 1;
+      return {
+        data: checkoutLookupCount === 1
+          ? {
+              id: "40000000-0000-4000-8000-000000000001",
+              checkout_mode: "stripe",
+              status: "completed",
+              order_id: "50000000-0000-4000-8000-000000000001"
+            }
+          : null,
+        error: null
+      };
+    });
+    const route = await import("@/app/api/orders/checkout/route");
+
+    const response = await route.POST(buildRequest({
+      firstName: "Legacy",
+      lastName: "Buyer",
+      phone: "555-0100",
+      email: "legacy@example.com",
+      items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
+    }));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: "We could not safely identify which checkout to resume. Please refresh your cart and try again."
+    });
+    expect(adminRpcMock).not.toHaveBeenCalled();
+    expect(stripeCheckoutCreateMock).not.toHaveBeenCalled();
+    expect(sendOrderCreatedNotificationsMock).not.toHaveBeenCalled();
+    expect(issueDigitalEntitlementsMock).not.toHaveBeenCalled();
+  });
+
+  test("returns an already-bound Stripe session without creating another", async () => {
+    adminRpcMock.mockImplementation(async (name: string, args: Record<string, unknown>) => {
+      if (name === "get_storefront_checkout_attempt") {
+        return { data: null, error: null };
+      }
+      if (name === "create_or_reuse_storefront_checkout_attempt") {
+        return {
+          data: {
+            ...(args.p_checkout as Record<string, unknown>),
+            id: pendingCheckoutId,
+            order_id: null,
+            digital_manifest_id: null,
+            stripe_checkout_session_id: "cs_test_existing",
+            stripe_checkout_url: "https://checkout.stripe.com/pay/cs_test_existing",
+            created: false
+          },
+          error: null
+        };
+      }
+      throw new Error(`Unexpected RPC ${name}`);
+    });
+    const route = await import("@/app/api/orders/checkout/route");
+    const response = await route.POST(
+      buildRequest({
+        checkoutAttemptId: "018f6fc1-8adc-7f43-8000-000000000003",
+        firstName: "Alice",
+        lastName: "Buyer",
+        phone: "555-0100",
+        email: "alice@example.com",
+        items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
+      })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      mode: "checkout",
+      sessionId: "cs_test_existing",
+      checkoutUrl: "https://checkout.stripe.com/pay/cs_test_existing"
+    });
+    expect(stripeCheckoutCreateMock).not.toHaveBeenCalled();
+  });
+
+  test("resolves a matching bound attempt before mutable catalog, promo, or Stripe readiness checks", async () => {
+    adminRpcMock.mockImplementation(async (name: string) => {
+      if (name === "get_storefront_checkout_attempt") {
+        return {
+          data: {
+            id: pendingCheckoutId,
+            store_id: checkoutStoreId,
+            store_slug: "stripe-shop",
+            customer_email: "alice@example.com",
+            customer_first_name: "Alice",
+            customer_last_name: "Buyer",
+            customer_phone: "555-0100",
+            customer_note: null,
+            fulfillment_method: "shipping",
+            fulfillment_label: "Shipping snapshot",
+            shipping_fee_cents: 0,
+            pickup_location_id: null,
+            pickup_location_snapshot_json: null,
+            pickup_window_start_at: null,
+            pickup_window_end_at: null,
+            pickup_timezone: null,
+            promo_code: "OLDPROMO",
+            promo_codes_json: ["OLDPROMO"],
+            applied_promotions_json: [],
+            analytics_session_key: null,
+            analytics_session_id: null,
+            source_cart_id: null,
+            fee_plan_key: "standard",
+            fee_bps: 500,
+            fee_fixed_cents: 0,
+            item_total_cents: 2500,
+            platform_fee_cents: 125,
+            attribution_json: {},
+            digital_consent_version: null,
+            digital_consent_accepted_at: null,
+            digital_license_version: null,
+            digital_manifest_id: null,
+            items: [{
+              productId: "11111111-1111-4111-8111-111111111111",
+              variantId: "33333333-3333-4333-8333-333333333333",
+              quantity: 1,
+              variantLabel: "Standard snapshot",
+              productTitle: "Starter Kit snapshot",
+              productType: "physical",
+              unitPriceCents: 2500
+            }],
+            order_id: null,
+            status: "pending",
+            stripe_checkout_session_id: "cs_test_existing",
+            stripe_checkout_url: "https://checkout.stripe.com/pay/cs_test_existing",
+            checkout_mode: "stripe",
+            stripe_account_id_snapshot: "acct_123",
+            tax_collection_mode_snapshot: "stripe_tax"
+          },
+          error: null
+        };
+      }
+      throw new Error(`Unexpected RPC ${name}`);
+    });
+    getStoreStripePaymentsReadinessMock.mockRejectedValue(new Error("Readiness changed"));
+    const route = await import("@/app/api/orders/checkout/route");
+    const response = await route.POST(
+      buildRequest({
+        checkoutAttemptId: "018f6fc1-8adc-7f43-8000-000000000004",
+        firstName: "Alice",
+        lastName: "Buyer",
+        phone: "555-0100",
+        email: "alice@example.com",
+        items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
+      })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      sessionId: "cs_test_existing",
+      checkoutUrl: "https://checkout.stripe.com/pay/cs_test_existing"
+    });
+    expect(getStoreStripePaymentsReadinessMock).not.toHaveBeenCalled();
+    expect(stripeCheckoutCreateMock).not.toHaveBeenCalled();
+  });
+
+  test("resumes an unbound attempt from its persisted snapshot after catalog and readiness change", async () => {
+    adminRpcMock.mockImplementation(async (name: string) => {
+      if (name === "get_storefront_checkout_attempt") {
+        return {
+          data: {
+            id: pendingCheckoutId,
+            store_id: checkoutStoreId,
+            store_slug: "stripe-shop",
+            customer_email: "snapshot@example.com",
+            customer_first_name: "Snapshot",
+            customer_last_name: "Buyer",
+            customer_phone: "555-0100",
+            customer_note: null,
+            fulfillment_method: "shipping",
+            fulfillment_label: "Shipping snapshot",
+            shipping_fee_cents: 321,
+            pickup_location_id: null,
+            pickup_location_snapshot_json: null,
+            pickup_window_start_at: null,
+            pickup_window_end_at: null,
+            pickup_timezone: null,
+            promo_code: "OLDPROMO",
+            promo_codes_json: ["OLDPROMO"],
+            applied_promotions_json: [],
+            analytics_session_key: null,
+            analytics_session_id: null,
+            source_cart_id: null,
+            fee_plan_key: "standard",
+            fee_bps: 500,
+            fee_fixed_cents: 0,
+            item_total_cents: 2000,
+            platform_fee_cents: 125,
+            attribution_json: {},
+            digital_consent_version: null,
+            digital_consent_accepted_at: null,
+            digital_license_version: null,
+            digital_manifest_id: null,
+            items: [{
+              productId: "11111111-1111-4111-8111-111111111111",
+              variantId: "33333333-3333-4333-8333-333333333333",
+              quantity: 1,
+              variantLabel: "Archived variant snapshot",
+              productTitle: "Archived product snapshot",
+              productType: "physical",
+              unitPriceCents: 2500
+            }],
+            order_id: null,
+            status: "pending",
+            stripe_checkout_session_id: null,
+            stripe_checkout_url: null,
+            checkout_mode: "stripe",
+            stripe_account_id_snapshot: "acct_123",
+            tax_collection_mode_snapshot: "seller_attested_no_tax"
+          },
+          error: null
+        };
+      }
+      if (name === "bind_storefront_checkout_stripe_session") {
+        return { data: { id: pendingCheckoutId }, error: null };
+      }
+      throw new Error(`Unexpected RPC ${name}`);
+    });
+    getStoreStripePaymentsReadinessMock.mockRejectedValue(new Error("Readiness changed"));
+    const route = await import("@/app/api/orders/checkout/route");
+    const response = await route.POST(
+      buildRequest({
+        checkoutAttemptId: "018f6fc1-8adc-7f43-8000-000000000005",
+        firstName: "Alice",
+        lastName: "Buyer",
+        phone: "555-0100",
+        email: "alice@example.com",
+        promoCode: "OLDPROMO",
+        items: [{ variantId: "33333333-3333-4333-8333-333333333333", quantity: 1 }]
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(getStoreStripePaymentsReadinessMock).not.toHaveBeenCalled();
+    expect(stripeCheckoutCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customer_email: "snapshot@example.com",
+        shipping_options: [expect.objectContaining({
+          shipping_rate_data: expect.objectContaining({
+            display_name: "Shipping snapshot",
+            fixed_amount: { amount: 321, currency: "usd" }
+          })
+        })],
+        line_items: expect.arrayContaining([
+          expect.objectContaining({
+            price_data: expect.objectContaining({ unit_amount: 2000 })
+          })
+        ])
+      }),
+      { idempotencyKey: `storefront-checkout:${pendingCheckoutId}` }
+    );
   });
 });

@@ -6,9 +6,13 @@ import {
   persistPromotionRedemptions,
   type PromotionRedemptionPersistenceClient
 } from "@/lib/promotions/persist-redemptions";
-import { buildStubCheckoutRpcPayload } from "@/lib/storefront/stub-checkout";
-import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
+import {
+  buildStubCheckoutWithManifestRpcPayload
+} from "@/lib/storefront/stub-checkout";
 import { getStripeClient } from "@/lib/stripe/server";
+import { enqueueDigitalDelivery } from "@/lib/digital-products/delivery-jobs";
+import { lockManifestToOrder } from "@/lib/digital-products/manifest-service";
+import type { CheckoutComposition } from "@/lib/storefront/checkout-composition";
 
 type ShippingAddressSnapshot = {
   recipientName?: string;
@@ -71,7 +75,7 @@ type StorefrontCheckoutRecord = {
   customer_phone: string | null;
   customer_note: string | null;
   shipping_address_json: ShippingAddressSnapshot | null;
-  fulfillment_method: "pickup" | "shipping" | null;
+  fulfillment_method: "pickup" | "shipping" | "digital_delivery" | null;
   fulfillment_label: string | null;
   pickup_location_id: string | null;
   pickup_location_snapshot_json: Record<string, unknown> | null;
@@ -86,6 +90,11 @@ type StorefrontCheckoutRecord = {
   fee_fixed_cents: number | null;
   item_total_cents: number | null;
   platform_fee_cents: number | null;
+  digital_consent_version: string | null;
+  digital_consent_accepted_at: string | null;
+  digital_license_version: string | null;
+  digital_manifest_id: string | null;
+  checkout_composition: CheckoutComposition | null;
   items: Array<{ productId?: string; variantId?: string; quantity?: number; unitPriceCents?: number }> | unknown;
   order_id: string | null;
   status: "pending" | "completed" | "failed";
@@ -94,6 +103,42 @@ type StorefrontCheckoutRecord = {
 function normalizeAddressField(value: string | null | undefined) {
   const next = value?.trim();
   return next ? next : undefined;
+}
+
+export function resolveCheckoutShippingAddressSnapshot(
+  composition: CheckoutComposition | null,
+  persistedAddress: ShippingAddressSnapshot | null,
+  providerAddress: ShippingAddressSnapshot | null
+) {
+  if (composition === "digital_only") {
+    return null;
+  }
+
+  return persistedAddress ?? providerAddress;
+}
+
+export async function bindStorefrontCheckoutStripeSession({
+  checkoutSessionId,
+  storeId,
+  stripeCheckoutSessionId,
+  stripeCheckoutUrl
+}: {
+  checkoutSessionId: string;
+  storeId: string;
+  stripeCheckoutSessionId: string;
+  stripeCheckoutUrl: string | null;
+}) {
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase.rpc("bind_storefront_checkout_stripe_session", {
+    p_checkout_session_id: checkoutSessionId,
+    p_store_id: storeId,
+    p_stripe_checkout_session_id: stripeCheckoutSessionId,
+    p_stripe_checkout_url: stripeCheckoutUrl
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
 }
 
 export function extractShippingAddressSnapshot(
@@ -226,7 +271,7 @@ export async function finalizeStorefrontCheckout(
   const { data: checkout, error: checkoutError } = await supabase
     .from("storefront_checkout_sessions")
     .select(
-      "id,store_id,store_slug,analytics_session_id,analytics_session_key,source_cart_id,customer_email,customer_first_name,customer_last_name,customer_phone,customer_note,shipping_address_json,fulfillment_method,fulfillment_label,pickup_location_id,pickup_location_snapshot_json,pickup_window_start_at,pickup_window_end_at,pickup_timezone,shipping_fee_cents,promo_code,promo_codes_json,fee_plan_key,fee_bps,fee_fixed_cents,item_total_cents,platform_fee_cents,items,order_id,status"
+      "id,store_id,store_slug,analytics_session_id,analytics_session_key,source_cart_id,customer_email,customer_first_name,customer_last_name,customer_phone,customer_note,shipping_address_json,fulfillment_method,fulfillment_label,pickup_location_id,pickup_location_snapshot_json,pickup_window_start_at,pickup_window_end_at,pickup_timezone,shipping_fee_cents,promo_code,promo_codes_json,fee_plan_key,fee_bps,fee_fixed_cents,item_total_cents,platform_fee_cents,digital_consent_version,digital_consent_accepted_at,digital_license_version,digital_manifest_id,checkout_composition,items,order_id,status"
     )
     .eq("id", checkoutId)
     .maybeSingle<StorefrontCheckoutRecord>();
@@ -239,27 +284,18 @@ export async function finalizeStorefrontCheckout(
     return { status: "missing" as const, orderId: null };
   }
 
-  const resolvedShippingAddressSnapshot = checkout.shipping_address_json ?? shippingAddressSnapshot;
+  const resolvedShippingAddressSnapshot = resolveCheckoutShippingAddressSnapshot(
+    checkout.checkout_composition,
+    checkout.shipping_address_json,
+    shippingAddressSnapshot
+  );
 
   if (checkout.status === "completed" && checkout.order_id) {
+    if (checkout.digital_manifest_id) {
+      await lockManifestToOrder(checkout.digital_manifest_id, checkout.order_id);
+      await enqueueDigitalDelivery(checkout.order_id, checkout.digital_manifest_id);
+    }
     return { status: "completed" as const, orderId: checkout.order_id };
-  }
-
-  const { data: store, error: storeError } = await supabase
-    .from("stores")
-    .select("status")
-    .eq("id", checkout.store_id)
-    .maybeSingle<{
-      status: "draft" | "pending_review" | "changes_requested" | "rejected" | "suspended" | "live" | "offline" | "removed";
-    }>();
-
-  if (storeError) {
-    throw new Error(storeError.message);
-  }
-
-  if (!store || (!isStorePubliclyAccessibleStatus(store.status) && store.status !== "offline")) {
-    await markStorefrontCheckoutFailed(checkout.id, "Store is no longer live. Checkout cannot be completed.", paymentIntentId);
-    return { status: "failed" as const, orderId: null, errorMessage: "Store is no longer live. Checkout cannot be completed." };
   }
 
   if (paymentIntentId) {
@@ -267,6 +303,7 @@ export async function finalizeStorefrontCheckout(
       .from("orders")
       .select("id")
       .eq("stripe_payment_intent_id", paymentIntentId)
+      .eq("store_id", checkout.store_id)
       .maybeSingle<{ id: string }>();
 
     if (existingOrderError) {
@@ -274,6 +311,10 @@ export async function finalizeStorefrontCheckout(
     }
 
     if (existingOrder) {
+      if (checkout.digital_manifest_id) {
+        await lockManifestToOrder(checkout.digital_manifest_id, existingOrder.id);
+        await enqueueDigitalDelivery(existingOrder.id, checkout.digital_manifest_id);
+      }
       const { data: existingOrderRow, error: existingOrderFetchError } = await supabase
         .from("orders")
         .select("subtotal_cents,discount_cents")
@@ -367,29 +408,41 @@ export async function finalizeStorefrontCheckout(
   }
 
   const { data: rpcResult, error: rpcError } = await supabase.rpc(
-    "stub_checkout_create_paid_order",
-      buildStubCheckoutRpcPayload({
-        storeSlug: checkout.store_slug,
-        customerEmail: checkout.customer_email,
-        customerUserId: await resolveCheckoutCustomerUserId(supabase, checkout.source_cart_id),
-        items: checkout.items,
-        stubPaymentRef: paymentIntentId,
-        discountCents: resolveCheckoutDiscountCents(checkout),
-        promoCode: null
-      })
-    );
+    "stub_checkout_create_paid_order_with_manifest",
+    buildStubCheckoutWithManifestRpcPayload({
+      storeSlug: checkout.store_slug,
+      customerEmail: checkout.customer_email,
+      customerUserId: null,
+      items: checkout.items,
+      stubPaymentRef: paymentIntentId,
+      discountCents: resolveCheckoutDiscountCents(checkout),
+      promoCode: checkout.promo_code,
+      checkoutSessionId: checkout.id,
+      digitalManifestId: checkout.digital_manifest_id
+    })
+  );
 
   if (rpcError) {
+    // The persisted error_message is returned verbatim to unauthenticated
+    // customers by the checkout-status route, so only customer-safe copy may
+    // be stored here — never raw database error text.
+    const safeFinalizationError = rpcError.message.includes(
+      "Digital checkout settlement is unavailable",
+    )
+      ? "This paid digital checkout cannot be fulfilled because digital sales are unavailable. Please contact support for refund assistance."
+      : "Checkout could not be completed after payment. Please contact support with your order confirmation email.";
     const { error: markFailedError } = await supabase
       .from("storefront_checkout_sessions")
-      .update({ status: "failed", error_message: rpcError.message, stripe_payment_intent_id: paymentIntentId })
+      .update({ status: "failed", error_message: safeFinalizationError, stripe_payment_intent_id: paymentIntentId })
       .eq("id", checkout.id);
 
     if (markFailedError) {
-      throw new Error(`${rpcError.message} | Failed to mark checkout as failed: ${markFailedError.message}`);
+      throw new Error(`${safeFinalizationError} | Failed to mark checkout as failed: ${markFailedError.message}`);
     }
 
-    throw new Error(rpcError.message);
+    // The thrown message stays internal (webhook failure ledger); customer
+    // responses are sanitized at the route boundary.
+    throw new Error(`${safeFinalizationError} | ${rpcError.message}`);
   }
 
   const finalized = Array.isArray(rpcResult) ? rpcResult[0] : rpcResult;
@@ -411,11 +464,6 @@ export async function finalizeStorefrontCheckout(
 
   const shippingFeeCents = Math.max(0, checkout.shipping_fee_cents ?? 0);
   const computedTotalCents = Math.max(0, createdOrderRow.subtotal_cents - createdOrderRow.discount_cents) + shippingFeeCents;
-  const fallbackFeeProfile = await resolveStoreFeeProfile(checkout.store_id);
-  const feeProfile = resolveCheckoutFeeSnapshot(checkout, fallbackFeeProfile);
-  const platformFeeCents =
-    checkout.platform_fee_cents ??
-    calculatePlatformFeeCents(computedTotalCents, feeProfile);
 
   const { error: orderSyncError } = await supabase
     .from("orders")
@@ -439,26 +487,14 @@ export async function finalizeStorefrontCheckout(
       promo_code: checkout.promo_code,
       shipping_fee_cents: shippingFeeCents,
       total_cents: computedTotalCents
+      ,digital_consent_version: checkout.digital_consent_version
+      ,digital_consent_accepted_at: checkout.digital_consent_accepted_at
+      ,digital_license_version: checkout.digital_license_version
     })
     .eq("id", orderId);
 
   if (orderSyncError) {
     throw new Error(orderSyncError.message);
-  }
-
-  const promotionPersistenceClient = supabase as unknown as PromotionRedemptionPersistenceClient;
-
-  await persistPromotionRedemptions({
-    supabase: promotionPersistenceClient,
-    appliedPromotions: await resolveAppliedCheckoutPromotions(supabase, checkout),
-    storeId: checkout.store_id,
-    orderId,
-    customerEmail: checkout.customer_email,
-    customerUserId: await resolveCheckoutCustomerUserId(supabase, checkout.source_cart_id)
-  });
-
-  if (checkout.source_cart_id) {
-    await supabase.from("customer_carts").update({ status: "ordered" }).eq("id", checkout.source_cart_id);
   }
 
   const { error: updateError } = await supabase
@@ -476,16 +512,10 @@ export async function finalizeStorefrontCheckout(
     throw new Error(updateError.message);
   }
 
-  await writeOrderFeeBreakdown({
-    orderId,
-    storeId: checkout.store_id,
-    feeBaseCents: computedTotalCents,
-    feeProfile,
-    platformFeeCents,
-    netPayoutCents: Math.max(0, computedTotalCents - platformFeeCents)
-  });
-
   await sendOrderCreatedNotifications(orderId);
+  if (checkout.digital_manifest_id) {
+    await enqueueDigitalDelivery(orderId, checkout.digital_manifest_id);
+  }
 
   return { status: "completed" as const, orderId };
 }
@@ -535,7 +565,7 @@ export async function getStorefrontCheckoutBySessionId(storeSlug: string, sessio
 
   const { data, error } = await supabase
     .from("storefront_checkout_sessions")
-    .select("id,status,order_id,error_message,stripe_payment_intent_id")
+    .select("id,status,order_id,error_message,stripe_payment_intent_id,digital_manifest_id,checkout_composition")
     .eq("store_slug", storeSlug)
     .eq("stripe_checkout_session_id", sessionId)
     .maybeSingle<{
@@ -544,6 +574,8 @@ export async function getStorefrontCheckoutBySessionId(storeSlug: string, sessio
       order_id: string | null;
       error_message: string | null;
       stripe_payment_intent_id: string | null;
+      digital_manifest_id: string | null;
+      checkout_composition: CheckoutComposition | null;
     }>();
 
   if (error) {

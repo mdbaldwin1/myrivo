@@ -1,5 +1,6 @@
 import { ProductManager, type ProductListItem } from "@/components/dashboard/product-manager";
 import { DashboardPageScaffold } from "@/components/dashboard/dashboard-page-scaffold";
+import { enrichDigitalCatalogProducts } from "@/lib/digital-products/catalog-state";
 import { getOwnedStoreBundleForSlug } from "@/lib/stores/owner-store";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
@@ -16,6 +17,8 @@ function normalizeProducts(products: ProductListItem[] | null): ProductListItem[
     image_alt_text: product.image_alt_text ?? null,
     seo_title: product.seo_title ?? null,
     seo_description: product.seo_description ?? null,
+    product_type: product.product_type ?? "physical",
+    digital_rights_affirmed_at: product.digital_rights_affirmed_at ?? null,
     image_urls: product.image_urls ?? [],
     product_variants: (product.product_variants ?? []).map((variant) => ({
       ...variant,
@@ -45,7 +48,7 @@ export default async function StoreWorkspaceCatalogPage({ params }: PageProps) {
   const admin = createSupabaseAdminClient();
 
   const selectWithVariantImages =
-    "id,title,description,slug,sku,image_urls,image_alt_text,seo_title,seo_description,is_featured,price_cents,inventory_qty,status,created_at,product_variants(id,title,sku,sku_mode,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_made_to_order,is_default,status,sort_order,created_at),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))";
+    "id,title,description,slug,sku,image_urls,image_alt_text,seo_title,seo_description,is_featured,price_cents,inventory_qty,status,product_type,digital_rights_affirmed_at,created_at,product_variants(id,title,sku,sku_mode,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_made_to_order,is_default,status,sort_order,created_at),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))";
   const selectWithVariantImagesLegacy =
     "id,title,description,sku,image_urls,is_featured,price_cents,inventory_qty,status,created_at,product_variants(id,title,sku,sku_mode,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_default,status,sort_order,created_at),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))";
 
@@ -76,6 +79,8 @@ export default async function StoreWorkspaceCatalogPage({ params }: PageProps) {
       image_alt_text: null,
       seo_title: null,
       seo_description: null
+      ,product_type: "physical"
+      ,digital_rights_affirmed_at: null
     })) as ProductListItem[] | null;
     productsError = legacy.error;
   }
@@ -84,9 +89,15 @@ export default async function StoreWorkspaceCatalogPage({ params }: PageProps) {
     throw new Error(productsError.message);
   }
 
+  const initialProducts = await enrichDigitalCatalogProducts({
+    admin,
+    storeId: bundle.store.id,
+    products: normalizeProducts(products),
+  });
+
   return (
-    <DashboardPageScaffold title="Catalog" description="Manage products, stock, and publishing status." className="p-3">
-      <ProductManager initialProducts={normalizeProducts(products)} />
+    <DashboardPageScaffold title="Catalog" description="Manage products, fulfillment, and publishing status." className="p-3">
+      <ProductManager initialProducts={initialProducts} />
     </DashboardPageScaffold>
   );
 }

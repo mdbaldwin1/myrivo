@@ -16,6 +16,9 @@ import { normalizeHost } from "@/lib/stores/domain-utils";
 import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
 import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
 import { getSingleStoreSlug } from "@/lib/stores/single-store";
+import { enrichStorefrontDigitalProducts } from "@/lib/digital-products/storefront-summary";
+import { resolveStoreDigitalProductsAccess } from "@/lib/digital-products/feature-gating";
+import { filterProductsForDigitalProductsRollout } from "@/lib/digital-products/rollout-policy";
 
 type SupabaseSchemaCacheError = {
   code?: string;
@@ -222,7 +225,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
     admin
       .from("products")
       .select(
-        "id,title,description,slug,image_urls,image_alt_text,seo_title,seo_description,is_featured,created_at,price_cents,inventory_qty,product_variants(id,title,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_made_to_order,is_default,status,sort_order,created_at),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))"
+        "id,title,description,slug,image_urls,image_alt_text,seo_title,seo_description,is_featured,created_at,price_cents,inventory_qty,product_type,product_variants(id,title,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_made_to_order,is_default,status,sort_order,created_at),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))"
       )
       .eq("store_id", store.id)
       .in("status", [...visibleProductStatuses])
@@ -268,6 +271,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
 
     resolvedProducts = (standaloneProducts.data ?? []).map((product) => ({
       ...product,
+      product_type: "physical",
       product_variants: [],
       product_option_axes: []
     }));
@@ -293,6 +297,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
       image_alt_text: null,
       seo_title: null,
       seo_description: null
+      ,product_type: "physical"
     }));
     resolvedProductsError = legacyProducts.error;
   }
@@ -300,6 +305,18 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
   if (resolvedProductsError) {
     throw new Error(resolvedProductsError.message);
   }
+
+  const digitalProductsAccess = await resolveStoreDigitalProductsAccess(admin, store.id)
+    .catch(() => ({ enabled: false }));
+  const rolloutProducts = filterProductsForDigitalProductsRollout(
+    resolvedProducts ?? [],
+    digitalProductsAccess.enabled,
+  );
+  const storefrontProducts = await enrichStorefrontDigitalProducts({
+    admin,
+    storeId: store.id,
+    products: rolloutProducts
+  });
 
   if (
     isMissingColumnInSchemaCache(settingsError, "seo_title") ||
@@ -515,7 +532,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
     contentBlocks:
       normalizedSectionedBlocks ??
       (contentBlocksError ? [] : (contentBlocks ?? [])),
-    products: resolvedProducts ?? [],
+    products: storefrontProducts,
     routeBasePath
   };
 }

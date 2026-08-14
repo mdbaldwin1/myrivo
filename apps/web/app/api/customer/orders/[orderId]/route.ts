@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAuthenticatedCustomerUser } from "@/lib/customer/account";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { OrderShippingDelayRecord } from "@/types/database";
+import type { DigitalEntitlementStatus, OrderShippingDelayRecord } from "@/types/database";
 
 const paramsSchema = z.object({
   orderId: z.string().uuid()
@@ -43,7 +44,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       customer_first_name: string | null;
       customer_last_name: string | null;
       customer_note: string | null;
-      fulfillment_method: "pickup" | "shipping" | null;
+      fulfillment_method: "pickup" | "shipping" | "digital_delivery" | null;
       fulfillment_label: string | null;
       pickup_location_snapshot_json: Record<string, unknown> | null;
       pickup_window_start_at: string | null;
@@ -68,7 +69,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }>();
 
   if (orderError) {
-    return NextResponse.json({ error: orderError.message }, { status: 500 });
+    return NextResponse.json({ error: "Unable to load this order. Please retry shortly." }, { status: 500 });
   }
 
   if (!order) {
@@ -91,7 +92,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     >();
 
   if (itemsError) {
-    return NextResponse.json({ error: itemsError.message }, { status: 500 });
+    return NextResponse.json({ error: "Unable to load this order. Please retry shortly." }, { status: 500 });
   }
 
   const { data: shippingDelays, error: shippingDelaysError } = await supabase
@@ -103,12 +104,48 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     .returns<OrderShippingDelayRecord[]>();
 
   if (shippingDelaysError) {
-    return NextResponse.json({ error: shippingDelaysError.message }, { status: 500 });
+    return NextResponse.json({ error: "Unable to load this order. Please retry shortly." }, { status: 500 });
   }
+
+  // Ownership is established above before the service-role client reads any
+  // entitlement metadata. Only aggregate availability is exposed here.
+  const { data: digitalEntitlements, error: digitalEntitlementsError } = await createSupabaseAdminClient()
+    .from("digital_order_entitlements")
+    .select("id,status,status_source_dispute_id")
+    .eq("order_id", order.id)
+    .returns<Array<{ id: string; status: DigitalEntitlementStatus; status_source_dispute_id: string | null }>>();
+
+  if (digitalEntitlementsError) {
+    return NextResponse.json(
+      { error: "Unable to load digital downloads." },
+      { status: 500 },
+    );
+  }
+
+  const fileCount = digitalEntitlements?.length ?? 0;
+  const activeFileCount = digitalEntitlements?.filter(({ status }) => status === "active").length ?? 0;
+  const digitalDownloadStatus = activeFileCount === fileCount
+    ? "available"
+    : activeFileCount > 0
+      ? "partially_available"
+      : "unavailable";
+  const accessStatus = activeFileCount > 0
+    ? "active"
+    : digitalEntitlements?.some(({ status }) => status === "suspended")
+      ? "suspended"
+      : "revoked";
+  const accessReason = accessStatus === "suspended"
+    ? "dispute_open"
+    : accessStatus === "revoked"
+      ? digitalEntitlements?.some(({ status_source_dispute_id }) => status_source_dispute_id !== null) ? "dispute_lost" : "full_refund"
+      : null;
 
   return NextResponse.json({
     order,
     items: items ?? [],
-    shippingDelays: shippingDelays ?? []
+    shippingDelays: shippingDelays ?? [],
+    digitalDownloads: fileCount > 0
+      ? { fileCount, activeFileCount, status: digitalDownloadStatus, accessStatus, accessReason }
+      : null,
   });
 }

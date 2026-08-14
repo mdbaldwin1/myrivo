@@ -56,7 +56,7 @@ The MVP uses one versioned platform-wide personal-use license:
 - Copyright remains with the creator.
 - Purchase grants a non-exclusive, non-transferable license rather than ownership.
 
-Merchants must affirm that they own or control the rights necessary to distribute uploaded files. The accepted license version is snapshotted on purchase. Final license, consent, refund, privacy, and cross-border tax language requires legal review before launch.
+Merchants must affirm that they own or control the rights necessary to distribute uploaded files. The accepted license version is snapshotted on purchase. Final license, consent, refund, privacy, and cross-border tax language requires legal review before launch. Legal review of the license, consent, refund, and privacy language was approved by Michael Baldwin (mbaldwin@vso-inc.com) on 2026-08-14.
 
 ## Existing UX Fit
 
@@ -261,6 +261,8 @@ Preview processing is asynchronous and idempotent. Originals never become public
 
 ## Checkout and Entitlement Finalization
 
+Before creating a Stripe Checkout Session, Myrivo captures an immutable purchase manifest containing the exact applicable asset versions and accepted consent/license versions. Stripe metadata carries only the opaque manifest ID; later catalog edits cannot change what the buyer purchased.
+
 Stripe payment confirmation remains the source of truth. The idempotent checkout-finalization path must:
 
 1. Finalize the paid order.
@@ -270,7 +272,7 @@ Stripe payment confirmation remains the source of truth. The idempotent checkout
 5. Mark digital delivery ready.
 6. Enqueue or attempt the customer delivery email.
 
-Retries must not duplicate entitlements, grant counts, or notification audit entries. Physical inventory changes only for physical order items. Digital items have no inventory constraint.
+Retries must not duplicate entitlements, grant counts, or notification audit entries. Physical inventory changes only for physical order items. Digital items have no inventory constraint. Finalization creates a durable delivery job before returning success; email or entitlement-processing failures remain retryable after the request or webhook ends.
 
 ## Download Authorization
 
@@ -287,6 +289,8 @@ For every Download action, the server must atomically:
 7. Record the event without logging the token or signed URL.
 
 Concurrent requests must not exceed five grants. A page refresh does not consume a grant; only requesting a file URL does.
+
+A storage-signing failure does not consume a grant. The reservation must be released safely unless a private signed URL was issued successfully.
 
 ## Email and Studio Integration
 
@@ -363,6 +367,6 @@ All required repository gates must pass: lint, typecheck, tests, and build.
 
 ## Rollout
 
-Gate the capability behind a configurable feature flag. Launch with internal/test stores, validate real Stripe test-mode delivery and refund behavior, then enable selected merchants. Monitor upload failures, entitlement-finalization failures, email delivery, regenerated-link rates, download errors, refund rates, and disputes before general availability.
+Gate the capability behind a configurable, store-scoped feature flag that defaults off. Launch with internal/test stores, validate real Stripe test-mode delivery and refund behavior, then enable selected merchants store by store. Monitor upload failures, entitlement-finalization failures, email delivery, regenerated-link rates, download errors, refund rates, and disputes before general availability.
 
 Update the user-facing legal documents, help content, operations runbooks, environment documentation, and `[Unreleased]` changelog before launch.
