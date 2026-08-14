@@ -340,3 +340,54 @@ Additionally, one static `customerOrder` route is reused for two distinct refund
 - **Five distinct sessions and sixth attempt:** Substantially improved; five separate browser contexts are used and exact unique grant count is required. Grace evidence still needs explicit before/after identity correlation, and signing-failure coverage remains P1 above.
 - **Provider/observation enrichment:** Refund, dispute, webhook, delivery-attempt, catalog-version, Checkout, and Resend records are now collected and typed. Exact semantic/cross-record enforcement remains incomplete.
 - **Keyboard accessibility mechanics:** Improved to real Tab traversal and keyboard activation rather than programmatic focus.
+
+---
+
+## Round 9 Re-review — commit `6e8dc70`
+
+### Verdict
+
+**FAIL** — a real post-reservation fault and opened-dispute scenario now exist, but the grant artifact contains a deterministic comparison bug, replacement still hashes redirect responses rather than file bytes, and the standalone verifier remains only partially canonical/correlated.
+
+### P1 — The signing-failure artifact is computed against the wrong observation and always fails the strict schema
+
+**Evidence:** The spec correctly captures `beforeSigningFailure`, injects a one-shot fault, performs a real download action, captures `afterInjectedFailure`, and immediately verifies equal grant counts (`apps/web/e2e/digital-products.spec.ts:56-66`). That is the correct runtime test. But when writing the final grant artifact, it sets `signingFailureConsumedGrant` to `afterSigningFailure.observation.grants.length !== five.observation.grants.length` (`:92`), comparing the post-fault pre-success state with the later state after five successful grants. This evaluates `true` by design. The canonical grants schema requires literal `false` (`apps/web/lib/digital-products/acceptance-evidence.ts`, `grantsEvidence`).
+
+**Impact:** Every otherwise successful provider acceptance run fails while writing `five-grants`. The release gate remains operationally impossible.
+
+**Remediation:** Set the field from the actual before/after fault observations, and include the fault's reserved/released grant ID plus entitlement counter before/after in canonical evidence. Add a focused test that constructs the full successful signing-fault artifact from realistic observations and proves it parses.
+
+### P1 — Replacement still hashes the 303 application response, not final storage bytes
+
+**Status:** Unresolved.
+
+**Evidence:** Both pre- and post-replacement code wait for a response URL containing `/api/digital-downloads/file/` and hash `response.body()` (`apps/web/e2e/digital-products.spec.ts:112-114,143-153`). That route is the application POST endpoint returning a 303 signed-storage redirect. The matching response body is not the final downloaded asset. Repeating the same flawed method before/after can produce equal hashes regardless of storage content, while the “new” endpoint response can differ for unrelated metadata/error reasons.
+
+**Impact:** The gate still cannot prove that old buyers receive identical purchased bytes after replacement or that new buyers receive the new bytes.
+
+**Remediation:** Observe the final signed-storage response after redirects or use Playwright's download event and hash the saved file. Assert a nonzero expected MIME/size, identical old-buyer hashes before/after, and a distinct new-buyer hash. Include all three hashes/byte sizes in canonical evidence and cross-check versions.
+
+### P1 — The final verifier still does not apply full canonical scenario validation or semantic cross-correlation
+
+**Status:** Partially improved, unresolved.
+
+**Evidence:** Duplicate scenario rejection and opened-dispute requirements were added (`scripts/verify-digital-products-acceptance.mjs:51-64`), but the verifier still does not parse `digitalAcceptanceScenarioEvidenceSchema`; it performs a subset of hand-written checks. Consequently it does not verify:
+
+- `five-grants` artifact session hashes, grace ID, signing-failure flag, sixth denial, asset version, and equality with observed issued grants;
+- `replacement` artifact version/hash relationships against manifest/catalog observations;
+- `delivery-retry` failed→succeeded ordered attempts, job ID, and Resend linkage;
+- exact refund/dispute row status/source-event/outcome and application access status;
+- Resend message ID/status/time against independently observed notifications.
+
+The grace ID is merely the last grant after a repeated click and is never compared with the first-click grant ID (`apps/web/e2e/digital-products.spec.ts:73-77`), so even Playwright does not prove reuse identity.
+
+**Impact:** Aside from the deterministic artifact failure above, an HMAC-valid evidence file can still pass with internally contradictory critical artifacts. The grant/replacement/retry/financial invariants are not fully release-enforced.
+
+**Remediation:** Use a shared executable verifier that imports the canonical full-document/scenario schemas. Add cross-record refinements and explicit before/after artifacts. Require exact one-per-scenario semantics and negative tests for every mismatch, including grace ID inequality, non-issued grants, version/hash mismatch, unordered retry attempts, wrong financial access state, and unmatched Resend notification.
+
+### Previous findings disposition
+
+- **Real signing fault plumbing:** Resolved architecturally. The run-bound one-shot fault is consumed inside `prepareDigitalDownload` after reservation and before signing, and the ordinary error path can release it. The evidence-computation bug above still blocks certification.
+- **Dispute opened:** Resolved structurally. A distinct opened order/provider scenario, processed webhook, UI suspension assertion, schema case, and required verifier entry now exist.
+- **Duplicate scenarios:** Resolved; the verifier rejects duplicate named artifacts.
+- **Evidence secret redaction:** Improved with independent HMAC session hashes and recursive forbidden-material checks.
