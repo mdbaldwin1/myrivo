@@ -99,11 +99,48 @@ export function verifyDigitalAcceptanceEvidence(input: unknown, options: { requi
     if (record.subjectId !== order.id) throw new Error(`Scenario ${record.scenario} order mismatch.`);
     if (["checkout", "refund", "dispute"].includes(String(provider.kind)) && provider.paymentIntentId !== payment.id) throw new Error(`Scenario ${record.scenario} payment mismatch.`);
     if (provider.kind === "checkout" && provider.orderId !== order.id) throw new Error(`Scenario ${record.scenario} checkout order mismatch.`);
-    if (provider.kind === "resend" && provider.orderId !== order.id) throw new Error(`Scenario ${record.scenario} Resend order mismatch.`);
+    if (provider.kind === "checkout") {
+      const expectedComposition = record.scenario === "stripe-digital" ? "digital_only" : "mixed";
+      if (order.checkout_composition !== expectedComposition || !(observed.manifestItems as unknown[])?.length) throw new Error(`Scenario ${record.scenario} checkout composition or manifest mismatch.`);
+    }
+    if (provider.kind === "resend") {
+      const notifications = observed.notifications as Array<Record<string, unknown>>;
+      if (provider.orderId !== order.id || !notifications.some((notification) => notification.provider === "resend" && notification.status === "succeeded" && notification.sent_at === provider.sentAt)) throw new Error(`Scenario ${record.scenario} Resend evidence mismatch.`);
+    }
+    if (provider.kind === "refund") {
+      const refunds = observed.refunds as Array<Record<string, unknown>>;
+      const row = refunds.find((refund) => refund.stripe_refund_id === provider.refundId);
+      const webhook = provider.webhook as Record<string, unknown>;
+      const events = observed.webhookEvents as Array<Record<string, unknown>>;
+      if (!row || row.amount_cents !== provider.amount || row.status !== provider.status || row.source_event_id !== webhook.eventId || !events.some((event) => event.stripe_event_id === webhook.eventId && event.event_type === webhook.type && event.status === webhook.status && event.signature_verified === webhook.signatureVerified && event.attempt_count === webhook.attempts)) throw new Error(`Scenario ${record.scenario} refund mismatch.`);
+      const entitlements = observed.entitlements as Array<Record<string, unknown>>;
+      if (record.scenario === "stripe-full-refund" && entitlements.some((entitlement) => entitlement.status !== "revoked")) throw new Error("Full refund access was not revoked.");
+      if (record.scenario === "stripe-partial-refund" && entitlements.some((entitlement) => entitlement.status !== "active")) throw new Error("Partial refund access was not retained.");
+    }
+    if (provider.kind === "dispute") {
+      const disputes = observed.disputes as Array<Record<string, unknown>>;
+      const row = disputes.find((dispute) => dispute.stripe_dispute_id === provider.disputeId);
+      const webhook = provider.webhook as Record<string, unknown>;
+      const events = observed.webhookEvents as Array<Record<string, unknown>>;
+      if (!row || row.stripe_charge_id !== provider.chargeId || row.stripe_payment_intent_id !== provider.paymentIntentId || row.status !== provider.outcome || row.source_event_id !== webhook.eventId || !(provider.eventIds as string[]).includes(String(webhook.eventId)) || !events.some((event) => event.stripe_event_id === webhook.eventId && event.event_type === webhook.type && event.status === webhook.status && event.signature_verified === webhook.signatureVerified && event.attempt_count === webhook.attempts)) throw new Error(`Scenario ${record.scenario} dispute mismatch.`);
+    }
+    if (provider.kind === "grants") {
+      const grants = observed.grants as Array<Record<string, unknown>>;
+      const issued = grants.filter((grant) => grant.status === "issued").map((grant) => String(grant.id)).sort();
+      const claimed = (provider.uniqueGrantIds as string[]).slice().sort();
+      if (JSON.stringify(issued) !== JSON.stringify(claimed) || provider.sessionHashes instanceof Array === false || new Set(provider.sessionHashes as string[]).size !== 6 || grants.filter((grant) => grant.status === "issued").some((grant) => grant.asset_version_id !== provider.assetVersionId)) throw new Error("Grant evidence mismatch.");
+    }
+    if (provider.kind === "replacement") {
+      const entitlements = observed.entitlements as Array<Record<string, unknown>>;
+      const manifest = observed.manifestItems as Array<Record<string, unknown>>;
+      const catalog = observed.catalogAssetVersions as Array<Record<string, unknown>>;
+      if (!entitlements.some((entitlement) => entitlement.asset_version_id === provider.priorAssetVersionId && entitlement.customer_filename === provider.oldAfterFilename) || !manifest.some((item) => item.asset_version_id === provider.newCheckoutAssetVersionId && item.customer_filename === provider.newFilename) || !catalog.some((asset) => asset.current_version_id === provider.replacementAssetVersionId && asset.customer_filename === provider.newFilename)) throw new Error("Replacement evidence mismatch.");
+    }
     if (provider.kind === "delivery") {
       const job = observed.deliveryJob as Record<string, unknown>;
       const attempts = provider.attempts as Array<Record<string, unknown>>;
-      if (provider.jobId !== job.id || attempts[0]?.status !== "failed" || attempts.at(-1)?.status !== "succeeded") throw new Error("Delivery chronology mismatch.");
+      const observedAttempts = observed.deliveryAttempts as Array<Record<string, unknown>>;
+      if (provider.jobId !== job.id || attempts[0]?.status !== "failed" || attempts.at(-1)?.status !== "succeeded" || attempts.length !== observedAttempts.length || attempts.some((attempt, index) => observedAttempts[index]?.job_id !== provider.jobId || attempt.attempt !== observedAttempts[index]?.attempt_number || attempt.status !== observedAttempts[index]?.status || attempt.timestamp !== observedAttempts[index]?.started_at)) throw new Error("Delivery chronology mismatch.");
     }
   }
   return evidence;
