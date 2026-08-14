@@ -620,3 +620,26 @@ The delivery branch now exactly correlates message ID, provider, success status,
 - **Released signing-fault and successful retry correlation:** Resolved. The fixture contains the released row, safe metadata, and a later issued retry; the canonical verifier enforces them.
 - **Delivery resend persistence:** Resolved for provider message ID/status/provider/timestamp correlation; the P2 hardening above remains.
 - **Actual CLI coverage:** Resolved. Tests spawn the command with a stubbed successful test runner and exercise valid, signed-semantic-invalid, and invalid-signature artifacts.
+
+---
+
+## Round 16 Final Re-review — commit `700b869`
+
+### Verdict
+
+**PASS** — no P0 or P1 findings remain.
+
+### Review results
+
+- **Exact terminal grant contract:** Resolved. The acceptance schema and semantic verifier share the dedicated digital-product configuration and require HTTP `409`, code `download_limit_reached`, and message `Download limit reached`. The browser journey asserts the complete response body before recording it. Both canonical-verifier and actual spawned-CLI tests reject signed 401, 403, 404, 429, wrong-code, and wrong-message artifacts.
+- **Production response behavior:** Resolved. The download service maps only the recognized exhausted-grant database result to `download_limit_reached`; the route emits the shared configured contract, while unrelated reservation failures retain the generic response.
+- **Delivery terminal semantics:** Resolved. Canonical evidence now requires the observed job to be `succeeded`, its `attempt_count` to equal the exact ordered attempt history, and the correlated persisted notification to be a successful Resend `merchant_resend` with the claimed provider message ID and sent timestamp. Negative tests cover wrong notification type, failed terminal job, and incorrect terminal attempt count.
+- **Earlier release-gate findings:** Remain resolved: one canonical verifier owns CLI semantics; the full fixture contains a released signing-fault grant and later issued retry; issued grants and asset versions are exact; replacement old/new observations are distinct and correlated; refund/dispute webhook and entitlement transitions are checked; envelope run/origin/release/recipient binding, signature, freshness, and secret rejection remain enforced; the actual subprocess command is covered.
+
+### Validation performed
+
+- `npm run -w @myrivo/web test -- --run tests/digital-acceptance-evidence.test.ts tests/digital-acceptance-cli.test.ts tests/digital-download-route.test.ts` — **PASS** (3 files, 63 tests).
+
+### Non-blocking observation
+
+The persisted succeeded delivery notification schema permits `attempt_count: 0`, and the terminal verifier does not inspect that field. The provider/status/type/message-ID/timestamp and delivery-attempt correlations already establish the required recovery event, so this is not release-blocking; requiring a positive notification attempt count would be a small future hardening improvement.
