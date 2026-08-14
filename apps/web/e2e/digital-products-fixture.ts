@@ -59,15 +59,18 @@ export async function getResendAccessMessage(request: import("@playwright/test")
   const list = await request.get("https://api.resend.com/emails?limit=100", { headers: { authorization: `Bearer ${key}` } });
   if (!list.ok()) throw new Error("The configured Resend account does not support acceptance message retrieval.");
   const rows = (await list.json() as { data?: Array<{ id: string; to: string[]; subject: string }> }).data ?? [];
-  const match = rows.find((row) => row.to.includes(recipient) && row.subject.includes(orderId));
-  if (!match) throw new Error("No Resend message matched the completed order and recipient.");
-  const detail = await request.get(`https://api.resend.com/emails/${match.id}`, { headers: { authorization: `Bearer ${key}` } });
-  if (!detail.ok()) throw new Error("The matching Resend message could not be retrieved.");
-  const message = await detail.json() as { id: string; to: string[]; subject: string; html?: string; text?: string };
-  const content = `${message.html ?? ""}\n${message.text ?? ""}`;
-  const link = content.match(/https?:\/\/[^\s"'<>]+\/downloads#token=[A-Za-z0-9_-]+/)?.[0];
-  if (!link || content.includes("storage_path")) throw new Error("Resend message did not contain one safe fragment access link.");
-  return { ...message, status: "sent" as const, sentAt: (message as { created_at?: string }).created_at, link, accessUrlHash: createHash("sha256").update(link).digest("hex") };
+  const candidates = rows.filter((row) => row.to.includes(recipient)).slice(0, 25);
+  for (const candidate of candidates) {
+    const detail = await request.get(`https://api.resend.com/emails/${candidate.id}`, { headers: { authorization: `Bearer ${key}` } });
+    if (!detail.ok()) continue;
+    const message = await detail.json() as { id: string; to: string[]; subject: string; html?: string; text?: string };
+    const content = `${message.html ?? ""}\n${message.text ?? ""}`;
+    if (!candidate.subject.includes(orderId) && !content.includes(orderId)) continue;
+    const link = content.match(/https?:\/\/[^\s"'<>]+\/downloads#token=[A-Za-z0-9_-]+/)?.[0];
+    if (!link || content.includes("storage_path")) throw new Error("Resend message did not contain one safe fragment access link.");
+    return { ...message, status: "sent" as const, sentAt: (message as { created_at?: string }).created_at, link, accessUrlHash: createHash("sha256").update(link).digest("hex") };
+  }
+  throw new Error("No Resend message matched the completed order and recipient.");
 }
 
 export async function createStripeTestRefund(request: import("@playwright/test").APIRequestContext, paymentIntentId: string, amount?: number) {
@@ -96,10 +99,16 @@ export async function waitForFinancialObservation(request: import("@playwright/t
 export async function getStripeCheckoutEvidence(request: import("@playwright/test").APIRequestContext, paymentIntentId: string, orderId: string) {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key?.startsWith("sk_test_")) throw new Error("Stripe checkout evidence requires an explicit test-mode secret.");
+  const intentResponse = await request.get(`https://api.stripe.com/v1/payment_intents/${encodeURIComponent(paymentIntentId)}`, { headers: { authorization: `Bearer ${key}` }, timeout: 15_000 });
+  if (!intentResponse.ok()) throw new Error("Stripe payment intent retrieval failed.");
+  const intent = await intentResponse.json() as { id?: string; livemode?: boolean; metadata?: { order_id?: string } };
+  if (intent.id !== paymentIntentId || intent.livemode !== false || intent.metadata?.order_id !== orderId) {
+    throw new Error("Stripe PaymentIntent does not carry the finalized order identity.");
+  }
   const response = await request.get(`https://api.stripe.com/v1/checkout/sessions?payment_intent=${encodeURIComponent(paymentIntentId)}&limit=2`, { headers: { authorization: `Bearer ${key}` }, timeout: 15_000 });
   if (!response.ok()) throw new Error("Stripe checkout session retrieval failed.");
-  const sessions = (await response.json() as { data?: Array<{ id: string; payment_intent: string; metadata?: { order_id?: string } }> }).data ?? [];
-  const session = sessions.find((item) => item.payment_intent === paymentIntentId && item.metadata?.order_id === orderId);
+  const sessions = (await response.json() as { data?: Array<{ id: string; payment_intent: string }> }).data ?? [];
+  const session = sessions.find((item) => item.payment_intent === paymentIntentId);
   if (!session?.id.startsWith("cs_test_")) throw new Error("No Stripe Checkout Session correlated the payment and order.");
   return { kind: "checkout" as const, sessionId: session.id, paymentIntentId, orderId };
 }

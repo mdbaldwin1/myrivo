@@ -97,7 +97,7 @@ export function buildDigitalAccessRecoveryEmailContent({
   const text = [
     `Your fresh download link from ${storeName}`,
     "",
-    `Order ${orderId.slice(0, 8)}`,
+    `Order ${orderId}`,
     `This secure link expires in ${DIGITAL_PRODUCT_CONFIG.accessLinkTtlHours} hours. Your remaining download grants are unchanged.`,
     "The platform personal-use license applies.",
     "",
@@ -111,7 +111,7 @@ export function buildDigitalAccessRecoveryEmailContent({
     '<table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center" style="padding:32px 16px;">',
     '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;">',
     '<tr><td style="padding:32px;">',
-    `<p style="margin:0 0 8px;color:#64748b;font-size:13px;">Order ${escapeEmailHtml(orderId.slice(0, 8))}</p>`,
+    `<p style="margin:0 0 8px;color:#64748b;font-size:13px;">Order ${escapeEmailHtml(orderId)}</p>`,
     `<h1 style="margin:0 0 16px;font-size:24px;line-height:32px;">Your fresh download link from ${escapeEmailHtml(storeName)}</h1>`,
     `<p style="margin:0 0 12px;line-height:24px;">This secure link expires in ${DIGITAL_PRODUCT_CONFIG.accessLinkTtlHours} hours. Your remaining download grants are unchanged.</p>`,
     '<p style="margin:0 0 20px;line-height:24px;">The platform personal-use license applies.</p>',
