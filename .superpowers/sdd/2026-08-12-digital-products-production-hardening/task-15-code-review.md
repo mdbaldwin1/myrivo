@@ -499,3 +499,55 @@ These are precisely the durable cross-correlations needed to prevent an HMAC-val
 - **Canonical valid envelope parsing:** Resolved. Full records are projected into the strict scenario and observation schemas correctly.
 - **Shared verifier used by CLI:** Resolved. The promotion script imports and calls `verifyDigitalAcceptanceEvidence()` before release-specific checks.
 - **Grant release/grace/replacement evidence:** Live-flow and artifact-shape fixes remain resolved; exact observed/artifact set correlation is part of the remaining verifier P1.
+
+---
+
+## Round 13 Re-review — commit `8a95daf`
+
+### Verdict
+
+**FAIL** — the verifier adds many requested cross-links, but three of them reject correct artifacts deterministically, and the required full-matrix/adversarial tests were not added.
+
+### P1 — Replacement correlation requires the old buyer's manifest to contain the new buyer's version
+
+**Evidence:** The replacement scenario is written with `subjectId: fixture.orderId`, the prior buyer's order (`apps/web/e2e/digital-products.spec.ts:200` from the existing flow). Its canonical observation therefore contains the immutable prior buyer manifest, as intended. The provider artifact separately records `newCheckoutAssetVersionId` from the new replacement checkout. The new verifier requires `observed.manifestItems` to contain `provider.newCheckoutAssetVersionId` (`apps/web/lib/digital-products/acceptance-evidence.ts:139-143`). That is the opposite of the invariant: the old buyer manifest must retain `priorAssetVersionId`, while a separate observation for `replacementOrderId` must contain the new version.
+
+**Impact:** Correct immutable replacement behavior fails canonical verification. An incorrect old manifest mutated to the replacement version is what this predicate would accept.
+
+**Remediation:** Preserve both correlated observations in the replacement artifact/document: old order before/after with prior version, and new checkout order with replacement version. Require the old subject manifest/entitlement to remain prior and the distinct new subject manifest to equal replacement. Do not test the new version against the old order observation.
+
+### P1 — Delivery chronology compares artifact completion timestamps to observed start timestamps
+
+**Evidence:** Playwright constructs each delivery artifact timestamp as `finished_at ?? started_at` (`apps/web/e2e/digital-products.spec.ts:251` in the current file). The verifier requires `attempt.timestamp === observedAttempts[index].started_at` for every attempt (`apps/web/lib/digital-products/acceptance-evidence.ts:145-150`). Completed failed/succeeded attempts normally have `finished_at`, so the artifact contains that later timestamp and fails the comparison.
+
+**Impact:** A correct failed→succeeded delivery history cannot pass the shared verifier.
+
+**Remediation:** Give the artifact explicit `startedAt` and `finishedAt` fields and compare both exactly, or use the same documented timestamp derivation on both sides. Also require strictly increasing attempt numbers/times and correlate the resend message ID with the succeeded notification.
+
+### P1 — Opened dispute provider outcome is compared to the wrong persisted status vocabulary
+
+**Evidence:** Provider evidence models outcome as `opened|won|lost`. Persisted Stripe dispute status uses values such as `needs_response` for an open dispute. The new verifier requires `row.status === provider.outcome` (`apps/web/lib/digital-products/acceptance-evidence.ts:125-131`), so the required `stripe-dispute-opened` artifact compares `needs_response` to `opened` and fails. The verifier also still omits dispute entitlement-state checks, despite requiring those for refunds.
+
+**Impact:** Correct open-dispute suspension cannot pass, and won/lost artifacts are not independently required to restore/revoke access.
+
+**Remediation:** Map the acceptance outcome to the authoritative persisted status set (`opened` → open statuses such as `needs_response`/`warning_needs_response`; `won` → won/prevented/closed-warning as designed; `lost` → lost), then require all relevant entitlements to be suspended/active/revoked for each scenario.
+
+### P1 — Complete/adversarial verifier coverage remains absent
+
+**Status:** Unresolved.
+
+**Evidence:** Commit `8a95daf` changes only the verifier module and documentation; it does not modify `apps/web/tests/digital-acceptance-evidence.test.ts` or add a CLI test. The existing “complete” test still contains one `stripe-digital` record, not the twelve-scenario matrix. No test executes the new replacement, delivery, refund, dispute, Resend, or grant cross-link branches, which is why the deterministic contradictions above pass CI. There is still no table-driven adversarial mutation coverage or CLI signature/freshness integration test.
+
+**Impact:** The release gate remains unable to demonstrate that a valid production-shaped document passes and each incoherent mutation fails.
+
+**Remediation:** Add the previously requested realistic twelve-scenario valid fixture and mutate each correlation independently. Run it through `verifyDigitalAcceptanceEvidence` and an extracted pure CLI core. A full valid fixture would immediately expose the three defects above.
+
+### Additional P2 correlation gap
+
+Resend verification matches provider/status/sent timestamp but not `providerEvidence.messageId` to a persisted provider message ID; the observed notification query/schema currently does not expose that field. Persist/select it and require exact message correlation.
+
+### Previous findings disposition
+
+- **Exact issued grant-set/version correlation:** Added and directionally correct.
+- **Refund row/webhook/access correlation:** Added and directionally correct, subject to full fixture tests.
+- **Canonical CLI integration:** Remains resolved.
