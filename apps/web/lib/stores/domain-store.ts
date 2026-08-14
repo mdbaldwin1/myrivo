@@ -74,7 +74,7 @@ export async function resolveStoreSlugFromDomain(
     return lookupStoreSlugForDomain(normalizedHost.slice(4), options);
   }
 
-  return null;
+  return lookupStoreSlugForDomain(`www.${normalizedHost}`, options);
 }
 
 export async function resolvePrimaryDomainForStoreSlug(storeSlug: string): Promise<string | null> {

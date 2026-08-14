@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { getPlatformStorefrontPrivacySettings } from "@/lib/privacy/platform-storefront-privacy";
 import { resolveStoreAnalyticsAccessByStoreId } from "@/lib/analytics/access";
 import { resolveStorePrivacyProfile } from "@/lib/privacy/store-privacy";
+import { getAppUrl } from "@/lib/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isMissingColumnInSchemaCache, isMissingRelationInSchemaCache } from "@/lib/supabase/error-classifiers";
@@ -11,8 +12,15 @@ import type { StorefrontData } from "@/lib/storefront/runtime";
 import { resolveStorefrontRouteBasePath } from "@/lib/storefront/paths";
 import { buildMergedStorefrontThemeJson } from "@/lib/storefront/theme-overrides";
 import { resolveStoreSlugForServerRender, resolveStorefrontServerRenderHint } from "@/lib/stores/active-store";
+import { normalizeHost } from "@/lib/stores/domain-utils";
 import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
 import { isStorePubliclyAccessibleStatus } from "@/lib/stores/lifecycle";
+import { getSingleStoreSlug } from "@/lib/stores/single-store";
+
+type SupabaseSchemaCacheError = {
+  code?: string;
+  message?: string;
+} | null;
 
 function getValueAtPath(record: Record<string, unknown>, key: string): unknown {
   return key.split(".").reduce<unknown>((current, part) => {
@@ -67,18 +75,60 @@ export function resolveStorefrontRenderRouteBasePath(input: {
   return "";
 }
 
+export function resolveSingleStoreCustomHostFallback(input: {
+  host?: string | null;
+  appUrl?: string | null;
+  singleStoreSlug?: string | null;
+}) {
+  const normalizedHost = normalizeHost(input.host);
+  const singleStoreSlug = input.singleStoreSlug?.trim().toLowerCase();
+  if (!normalizedHost || !singleStoreSlug) {
+    return null;
+  }
+
+  try {
+    const appHost = normalizeHost(new URL(input.appUrl ?? "").hostname);
+    const bareHost = normalizedHost.startsWith("www.") ? normalizedHost.slice(4) : normalizedHost;
+    const bareAppHost = appHost?.startsWith("www.") ? appHost.slice(4) : appHost;
+    if (!bareAppHost || bareHost === bareAppHost) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  return singleStoreSlug;
+}
+
+export function shouldUseLegacyStoreBrandingQuery(error: SupabaseSchemaCacheError) {
+  return (
+    isMissingColumnInSchemaCache(error, "favicon_path") ||
+    isMissingColumnInSchemaCache(error, "apple_touch_icon_path") ||
+    isMissingColumnInSchemaCache(error, "og_image_path") ||
+    isMissingColumnInSchemaCache(error, "twitter_image_path")
+  );
+}
+
 export async function loadStorefrontData(explicitStoreSlug?: string | null): Promise<StorefrontData | null> {
   const supabase = await createSupabaseServerClient();
   const admin = createSupabaseAdminClient();
   const requestHeaders = await headers();
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+  const host = requestHeaders.get("host") ?? requestHeaders.get("x-forwarded-host");
   const currentPath = requestHeaders.get("x-pathname") ?? requestHeaders.get("next-url") ?? "";
   const whiteLabelStoreSlug = await resolveStoreSlugFromDomain(host);
+  const singleStoreCustomHostFallback =
+    !explicitStoreSlug && !whiteLabelStoreSlug
+      ? resolveSingleStoreCustomHostFallback({
+          host,
+          appUrl: getAppUrl(),
+          singleStoreSlug: getSingleStoreSlug()
+        })
+      : null;
   // When there is no explicit store slug and the domain is not a custom
   // storefront domain, skip the cookie-based fallback so the app's own
   // domain (myrivo.app) renders the marketing homepage instead of a
   // storefront the user previously visited from the dashboard.
-  const resolvedStoreHint = resolveStorefrontServerRenderHint(explicitStoreSlug, whiteLabelStoreSlug);
+  const resolvedStoreHint = resolveStorefrontServerRenderHint(explicitStoreSlug, whiteLabelStoreSlug ?? singleStoreCustomHostFallback);
   const singleStoreSlug = resolvedStoreHint
     ? await resolveStoreSlugForServerRender(resolvedStoreHint)
     : null;
@@ -179,15 +229,50 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
       .order("created_at", { ascending: false })
   ]);
 
-  if (brandingError) {
-    throw new Error(brandingError.message);
+  let resolvedBranding = branding;
+  let resolvedBrandingError = brandingError;
+  if (brandingError && shouldUseLegacyStoreBrandingQuery(brandingError)) {
+    const legacyBranding = await admin
+      .from("store_branding")
+      .select("logo_path,primary_color,accent_color,theme_json")
+      .eq("store_id", store.id)
+      .maybeSingle();
+
+    resolvedBranding = legacyBranding.data
+      ? {
+          ...legacyBranding.data,
+          favicon_path: null,
+          apple_touch_icon_path: null,
+          og_image_path: null,
+          twitter_image_path: null
+        }
+      : null;
+    resolvedBrandingError = legacyBranding.error;
+  }
+
+  if (resolvedBrandingError) {
+    throw new Error(resolvedBrandingError.message);
   }
 
   let resolvedProducts = products;
   let resolvedProductsError = productsError;
   let resolvedSettings = settings;
   let resolvedSettingsError = settingsError;
-  if (
+  if (isMissingRelationInSchemaCache(productsError)) {
+    const standaloneProducts = await admin
+      .from("products")
+      .select("id,title,description,slug,image_urls,image_alt_text,seo_title,seo_description,is_featured,created_at,price_cents,inventory_qty")
+      .eq("store_id", store.id)
+      .in("status", [...visibleProductStatuses])
+      .order("created_at", { ascending: false });
+
+    resolvedProducts = (standaloneProducts.data ?? []).map((product) => ({
+      ...product,
+      product_variants: [],
+      product_option_axes: []
+    }));
+    resolvedProductsError = standaloneProducts.error;
+  } else if (
     isMissingColumnInSchemaCache(productsError, "slug") ||
     isMissingColumnInSchemaCache(productsError, "image_alt_text") ||
     isMissingColumnInSchemaCache(productsError, "seo_title") ||
@@ -298,7 +383,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
   const cartSection = sectionedContent.cartPage;
   const orderSummarySection = sectionedContent.orderSummaryPage;
   const emailsSection = sectionedContent.emails;
-  const brandingThemeJson = isRecord(branding?.theme_json) ? branding.theme_json : {};
+  const brandingThemeJson = isRecord(resolvedBranding?.theme_json) ? resolvedBranding.theme_json : {};
 
   const mergedTheme = buildMergedStorefrontThemeJson(brandingThemeJson, sectionedContent);
 
@@ -420,12 +505,12 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
     analytics,
     privacyProfile: resolveStorePrivacyProfile(privacyProfileError ? null : privacyProfile, platformPrivacySettings, finalSettings),
     experienceContent: sectionedContent,
-    branding: branding
+    branding: resolvedBranding
       ? {
-          ...branding,
+          ...resolvedBranding,
           theme_json: mergedTheme
         }
-      : branding,
+      : resolvedBranding,
     settings: finalSettings,
     contentBlocks:
       normalizedSectionedBlocks ??

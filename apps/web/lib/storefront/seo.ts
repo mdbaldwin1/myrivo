@@ -21,14 +21,14 @@ function isLocalHost(host: string) {
 
 export async function getRequestOrigin() {
   const requestHeaders = await headers();
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
+  const host = requestHeaders.get("host") ?? requestHeaders.get("x-forwarded-host") ?? "localhost:3000";
   const proto = normalizeProto(requestHeaders.get("x-forwarded-proto"));
   return `${proto}://${host}`;
 }
 
 export async function getRequestHost() {
   const requestHeaders = await headers();
-  return requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+  return requestHeaders.get("host") ?? requestHeaders.get("x-forwarded-host");
 }
 
 export async function buildStorefrontCanonicalUrl(pathname: string, requestedStoreSlug?: string | null) {

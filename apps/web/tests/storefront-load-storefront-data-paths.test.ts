@@ -1,5 +1,12 @@
 import { describe, expect, test } from "vitest";
-import { getBoolean, getNumber, getString, resolveStorefrontProductStatuses } from "@/lib/storefront/load-storefront-data";
+import {
+  getBoolean,
+  getNumber,
+  getString,
+  resolveSingleStoreCustomHostFallback,
+  resolveStorefrontProductStatuses,
+  shouldUseLegacyStoreBrandingQuery
+} from "@/lib/storefront/load-storefront-data";
 
 describe("loadStorefrontData nested path helpers", () => {
   test("reads nested boolean/string/number values by dotted path", () => {
@@ -41,5 +48,58 @@ describe("loadStorefrontData nested path helpers", () => {
   test("includes draft products for owner and manager preview mode", () => {
     expect(resolveStorefrontProductStatuses(true)).toEqual(["active", "draft"]);
     expect(resolveStorefrontProductStatuses(false)).toEqual(["active"]);
+  });
+
+  test("uses the configured single store slug for non-platform custom hosts", () => {
+    expect(
+      resolveSingleStoreCustomHostFallback({
+        host: "athomeapothecary.com",
+        appUrl: "https://www.myrivo.app",
+        singleStoreSlug: "At-Home-Apothecary"
+      })
+    ).toBe("at-home-apothecary");
+  });
+
+  test("does not use the single-store fallback for the platform host", () => {
+    expect(
+      resolveSingleStoreCustomHostFallback({
+        host: "myrivo.app",
+        appUrl: "https://www.myrivo.app",
+        singleStoreSlug: "at-home-apothecary"
+      })
+    ).toBeNull();
+  });
+
+  test("does not use the single-store fallback for local or preview hosts", () => {
+    expect(
+      resolveSingleStoreCustomHostFallback({
+        host: "localhost:3000",
+        appUrl: "https://www.myrivo.app",
+        singleStoreSlug: "at-home-apothecary"
+      })
+    ).toBeNull();
+    expect(
+      resolveSingleStoreCustomHostFallback({
+        host: "myrivo-git-main.vercel.app",
+        appUrl: "https://www.myrivo.app",
+        singleStoreSlug: "at-home-apothecary"
+      })
+    ).toBeNull();
+  });
+
+  test("falls back to the legacy branding query when Supabase has stale asset columns", () => {
+    expect(
+      shouldUseLegacyStoreBrandingQuery({
+        code: "PGRST204",
+        message: "Could not find the 'favicon_path' column of 'store_branding' in the schema cache"
+      })
+    ).toBe(true);
+
+    expect(
+      shouldUseLegacyStoreBrandingQuery({
+        code: "PGRST204",
+        message: "Could not find the 'support_email' column of 'store_settings' in the schema cache"
+      })
+    ).toBe(false);
   });
 });

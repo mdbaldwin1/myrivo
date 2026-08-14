@@ -9,6 +9,14 @@ type StorefrontUnavailablePageProps = {
 };
 
 function copyForState(kind: StorefrontUnavailableKind) {
+  if (kind === "service_unavailable") {
+    return {
+      eyebrow: "Temporarily Unavailable",
+      title: "This storefront is temporarily unavailable",
+      body: "The storefront is having trouble loading right now. Please check back again soon."
+    };
+  }
+
   if (kind === "offline") {
     return {
       eyebrow: "Temporarily Offline",

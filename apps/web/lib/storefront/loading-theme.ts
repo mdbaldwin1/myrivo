@@ -166,7 +166,7 @@ export async function resolveStorefrontLoadingContext(explicitSlug?: string | nu
       requestHeaders.get("x-matched-path"),
       requestHeaders.get("referer")
     ];
-    host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+    host = requestHeaders.get("host") ?? requestHeaders.get("x-forwarded-host");
   } catch {
     routeCandidates = [];
     host = null;
