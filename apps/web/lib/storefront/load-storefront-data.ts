@@ -51,6 +51,30 @@ export function resolveStorefrontProductStatuses(canManageStore: boolean) {
   return canManageStore ? (["active", "draft"] as const) : (["active"] as const);
 }
 
+export function resolveStorefrontRenderRouteBasePath(input: {
+  currentPath?: string | null;
+  explicitStoreSlug?: string | null;
+  singleStoreSlug: string;
+}) {
+  const storeRoutePrefix = `/s/${encodeURIComponent(input.singleStoreSlug)}`;
+  const currentPath = input.currentPath?.trim() ?? "";
+  const explicitStoreSlug = input.explicitStoreSlug?.trim() ?? "";
+
+  if (currentPath === storeRoutePrefix || currentPath.startsWith(`${storeRoutePrefix}/`)) {
+    return resolveStorefrontRouteBasePath(input.singleStoreSlug, storeRoutePrefix);
+  }
+
+  if (!explicitStoreSlug) {
+    return "";
+  }
+
+  if (!currentPath || currentPath.startsWith("/dashboard/")) {
+    return resolveStorefrontRouteBasePath(input.singleStoreSlug, storeRoutePrefix);
+  }
+
+  return "";
+}
+
 export function resolveSingleStoreCustomHostFallback(input: {
   host?: string | null;
   appUrl?: string | null;
@@ -111,11 +135,11 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
   if (!singleStoreSlug) {
     return null;
   }
-  const storeRoutePrefix = `/s/${encodeURIComponent(singleStoreSlug)}`;
-  const routeBasePath =
-    currentPath === storeRoutePrefix || currentPath.startsWith(`${storeRoutePrefix}/`)
-      ? resolveStorefrontRouteBasePath(singleStoreSlug, storeRoutePrefix)
-      : "";
+  const routeBasePath = resolveStorefrontRenderRouteBasePath({
+    currentPath,
+    explicitStoreSlug,
+    singleStoreSlug
+  });
   const {
     data: { user }
   } = await supabase.auth.getUser();
