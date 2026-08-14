@@ -434,3 +434,32 @@ For replacement, the browser now correctly follows the redirect chain, checks `C
 - **Immediate signing-failure comparison bug:** The previous later-five-state comparison is removed, but replaced by the incorrect all-audit-row identity requirement above.
 - **Grace runtime assertion:** Improved and correct in-process; signed artifact fields remain inaccurate.
 - **Duplicate/opened dispute checks:** Remain resolved.
+
+---
+
+## Round 11 Re-review — commit `cdf280e`
+
+### Verdict
+
+**FAIL** — grant/release semantics and replacement artifacts are corrected, but the canonical full-document verifier is both unused by the release command and internally incapable of accepting a valid evidence record.
+
+### P1 — The canonical signed-envelope schema rejects valid records and is not used by promotion
+
+**Evidence:** `digitalAcceptanceSignedEvidenceSchema` was added in `apps/web/lib/digital-products/acceptance-evidence.ts:72-87`. Each observation record contains `action`, `scenario`, `providerEvidence`, and the full canonical observation (`version`, `runId`, `subjectId`, `observedAt`, `observation`). In `superRefine`, the code passes that entire record to `digitalAcceptanceScenarioEvidenceSchema.safeParse(record)`. Every scenario union member is `.strict()` and permits only `scenario` and `providerEvidence`; therefore the extra observation fields make every otherwise valid record fail. The observation parser can accept the record because its root is strict only after the envelope's passthrough wrapper, but the scenario parse cannot.
+
+The standalone CLI still does not import or call `digitalAcceptanceSignedEvidenceSchema`; `scripts/verify-digital-products-acceptance.mjs` continues with independent hand-written JSON checks. The sole envelope test supplies a malformed record and expects rejection (`apps/web/tests/digital-acceptance-evidence.test.ts:10-12`). There is no complete valid-envelope test, no CLI verifier test, and no adversarial mutation matrix.
+
+**Impact:** The claimed canonical verifier cannot validate a successful artifact, while the real promotion path can drift from the canonical schemas and still accepts only the subset of relationships manually encoded in the script. This leaves the final release evidence gate unverified and internally inconsistent.
+
+**Remediation:** In the envelope refinement, parse `{ scenario: record.scenario, providerEvidence: record.providerEvidence }` separately from the canonical observation fields, or define one composed record schema with `.and()`/`.merge()` semantics that intentionally accepts both. Extract the complete verification—including signature/run/origin/release checks and cross-correlations—into an importable Node-compatible module used by the CLI. Add a realistic complete valid document test and table-driven negative tests covering every scenario mismatch, duplicates/missing scenarios, observation/provider ID mismatch, financial state, notification linkage, retry ordering, grant/release/grace semantics, replacement hashes, and secret leakage.
+
+### P2 — Some final cross-correlations remain only in hand-written CLI logic
+
+Even after the canonical-envelope defect is fixed, the current manual CLI does not prove that `uniqueGrantIds` exactly equals the set of five observed `issued` grant IDs, that `successfulRetryGrantId` is one of those five and postdates the released fault, or that delivery artifact attempts exactly match observed attempts/job ID rather than merely beginning failed and ending succeeded. Refund/dispute application-state and Resend notification/message linkage also remain weaker than the artifact types imply. These should be folded into the canonical verifier refinements and negative matrix above; they are P2 because the live Playwright flow now performs meaningful correlated provider/UI checks, but they matter for durable artifact review.
+
+### Previous findings disposition
+
+- **Signing-failure reserve/release semantics:** Resolved in the live flow and manual verifier. Evidence now separates unchanged entitlement usage/issued IDs from one new released audit row and requires a later issued retry.
+- **Actual grace artifact:** Resolved. The artifact now carries the captured immediate before/after issued counts and reused grant ID rather than later snapshots.
+- **Replacement artifact:** Resolved in the live flow and artifact. It carries old-before, old-after, and new final-storage hashes/filenames with equality/difference refinements and retained manifest version linkage.
+- **Final-storage byte hashing:** Remains resolved.
