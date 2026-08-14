@@ -144,7 +144,9 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({ status: "pending" });
-  } catch (error) {
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  } catch {
+    // Raw exception text can carry database or provider detail; this route is
+    // unauthenticated, so only a fixed customer-safe message may be returned.
+    return NextResponse.json({ error: "Unable to load checkout status. Please retry shortly." }, { status: 500 });
   }
 }

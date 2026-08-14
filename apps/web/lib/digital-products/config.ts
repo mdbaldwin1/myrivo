@@ -9,6 +9,7 @@ const digitalProductConfigSchema = z
     downloadInitiationTimeoutMs: z.number().int().positive(),
     downloadGrantRateLimitPerMinute: z.number().int().positive(),
     downloadListRateLimitPerMinute: z.number().int().positive(),
+    downloadSessionExchangeRateLimitPerMinute: z.number().int().positive(),
     downloadLimitResponse: z.object({
       status: z.literal(409),
       code: z.literal("download_limit_reached"),
@@ -78,6 +79,7 @@ const parsedDigitalProductConfig = digitalProductConfigSchema.parse({
   downloadInitiationTimeoutMs: 15_000,
   downloadGrantRateLimitPerMinute: 90,
   downloadListRateLimitPerMinute: 30,
+  downloadSessionExchangeRateLimitPerMinute: 20,
   downloadLimitResponse: {
     status: 409,
     code: "download_limit_reached",

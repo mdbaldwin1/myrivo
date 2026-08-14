@@ -69,7 +69,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }>();
 
   if (orderError) {
-    return NextResponse.json({ error: orderError.message }, { status: 500 });
+    return NextResponse.json({ error: "Unable to load this order. Please retry shortly." }, { status: 500 });
   }
 
   if (!order) {
@@ -92,7 +92,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     >();
 
   if (itemsError) {
-    return NextResponse.json({ error: itemsError.message }, { status: 500 });
+    return NextResponse.json({ error: "Unable to load this order. Please retry shortly." }, { status: 500 });
   }
 
   const { data: shippingDelays, error: shippingDelaysError } = await supabase
@@ -104,7 +104,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     .returns<OrderShippingDelayRecord[]>();
 
   if (shippingDelaysError) {
-    return NextResponse.json({ error: shippingDelaysError.message }, { status: 500 });
+    return NextResponse.json({ error: "Unable to load this order. Please retry shortly." }, { status: 500 });
   }
 
   // Ownership is established above before the service-role client reads any

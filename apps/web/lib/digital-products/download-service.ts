@@ -260,7 +260,7 @@ async function enforceDigitalDownloadRateLimit({
   client = defaultClient(),
 }: {
   rateLimitSubjectHash: string;
-  action: "grant" | "list";
+  action: "grant" | "list" | "exchange";
   client?: DigitalDownloadClient;
 }) {
   if (!SHA_256_PATTERN.test(rateLimitSubjectHash)) {
@@ -272,7 +272,9 @@ async function enforceDigitalDownloadRateLimit({
   const limit =
     action === "grant"
       ? DIGITAL_PRODUCT_CONFIG.downloadGrantRateLimitPerMinute
-      : DIGITAL_PRODUCT_CONFIG.downloadListRateLimitPerMinute;
+      : action === "list"
+        ? DIGITAL_PRODUCT_CONFIG.downloadListRateLimitPerMinute
+        : DIGITAL_PRODUCT_CONFIG.downloadSessionExchangeRateLimitPerMinute;
   let result: RpcResult;
   try {
     result = await client.rpc("check_api_rate_limit", {
@@ -326,6 +328,20 @@ export async function enforceDigitalDownloadRateLimits({
       client,
     });
   }
+}
+
+export async function enforceDigitalDownloadExchangeRateLimit({
+  rateLimitSubjectHash,
+  client = defaultClient(),
+}: {
+  rateLimitSubjectHash: string;
+  client?: DigitalDownloadClient;
+}) {
+  await enforceDigitalDownloadRateLimit({
+    rateLimitSubjectHash,
+    action: "exchange",
+    client,
+  });
 }
 
 export async function authorizeAccessToken({

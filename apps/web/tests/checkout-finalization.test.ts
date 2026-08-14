@@ -174,11 +174,11 @@ describe("finalizeStorefrontCheckout", () => {
         };
       }
       if (table === "orders") {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({ maybeSingle: vi.fn(async () => ({ data: null, error: null })) }))
-          }))
+        const chain = {
+          eq: vi.fn(() => chain),
+          maybeSingle: vi.fn(async () => ({ data: null, error: null }))
         };
+        return { select: vi.fn(() => chain) };
       }
       throw new Error(`Unexpected table ${table}`);
     });
@@ -370,14 +370,14 @@ describe("finalizeStorefrontCheckout", () => {
         return {
           select: vi.fn((columns: string) => {
             if (columns === "id") {
-              return {
-                eq: vi.fn(() => ({
-                  maybeSingle: vi.fn(async () => ({
-                    data: { id: "order-1" },
-                    error: null
-                  }))
+              const chain = {
+                eq: vi.fn(() => chain),
+                maybeSingle: vi.fn(async () => ({
+                  data: { id: "order-1" },
+                  error: null
                 }))
               };
+              return chain;
             }
 
             if (columns === "subtotal_cents,discount_cents") {
@@ -510,11 +510,11 @@ describe("finalizeStorefrontCheckout", () => {
           return {
             select: vi.fn((columns: string) => {
               if (columns === "id") {
-                return {
-                  eq: vi.fn(() => ({
-                    maybeSingle: vi.fn(async () => ({ data: { id: "order-paid" }, error: null }))
-                  }))
+                const chain = {
+                  eq: vi.fn(() => chain),
+                  maybeSingle: vi.fn(async () => ({ data: { id: "order-paid" }, error: null }))
                 };
+                return chain;
               }
               return {
                 eq: vi.fn(() => ({

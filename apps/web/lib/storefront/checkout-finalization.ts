@@ -303,6 +303,7 @@ export async function finalizeStorefrontCheckout(
       .from("orders")
       .select("id")
       .eq("stripe_payment_intent_id", paymentIntentId)
+      .eq("store_id", checkout.store_id)
       .maybeSingle<{ id: string }>();
 
     if (existingOrderError) {
@@ -422,11 +423,14 @@ export async function finalizeStorefrontCheckout(
   );
 
   if (rpcError) {
+    // The persisted error_message is returned verbatim to unauthenticated
+    // customers by the checkout-status route, so only customer-safe copy may
+    // be stored here — never raw database error text.
     const safeFinalizationError = rpcError.message.includes(
       "Digital checkout settlement is unavailable",
     )
       ? "This paid digital checkout cannot be fulfilled because digital sales are unavailable. Please contact support for refund assistance."
-      : rpcError.message;
+      : "Checkout could not be completed after payment. Please contact support with your order confirmation email.";
     const { error: markFailedError } = await supabase
       .from("storefront_checkout_sessions")
       .update({ status: "failed", error_message: safeFinalizationError, stripe_payment_intent_id: paymentIntentId })
@@ -436,7 +440,9 @@ export async function finalizeStorefrontCheckout(
       throw new Error(`${safeFinalizationError} | Failed to mark checkout as failed: ${markFailedError.message}`);
     }
 
-    throw new Error(safeFinalizationError);
+    // The thrown message stays internal (webhook failure ledger); customer
+    // responses are sanitized at the route boundary.
+    throw new Error(`${safeFinalizationError} | ${rpcError.message}`);
   }
 
   const finalized = Array.isArray(rpcResult) ? rpcResult[0] : rpcResult;

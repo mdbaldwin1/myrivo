@@ -3,15 +3,29 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const admin = { rpc: vi.fn() };
 vi.mock("@/lib/supabase/admin", () => ({ createSupabaseAdminClient: () => admin }));
-vi.mock("@/lib/env", () => ({ getServerEnv: () => ({ DIGITAL_DOWNLOAD_SESSION_SECRET: "session-secret-at-least-thirty-two-characters" }) }));
+vi.mock("@/lib/env", () => ({ getServerEnv: () => ({
+  DIGITAL_DOWNLOAD_SESSION_SECRET: "session-secret-at-least-thirty-two-characters",
+  DIGITAL_RECOVERY_TRUSTED_IP_HEADER: "x-real-client-ip",
+}) }));
 
 const TOKEN = "a".repeat(43);
 const ACCESS_ID = "90000000-0000-4000-8000-000000000001";
 
-function request(body: unknown, origin = "https://app.myrivo.test") {
+function request(body: unknown, origin = "https://app.myrivo.test", clientIp: string | null = "203.0.113.7") {
   return new NextRequest("https://app.myrivo.test/api/digital-downloads/session", {
-    method: "POST", headers: { origin, host: "app.myrivo.test", "content-type": "application/json" }, body: JSON.stringify(body),
+    method: "POST",
+    headers: {
+      origin,
+      host: "app.myrivo.test",
+      "content-type": "application/json",
+      ...(clientIp ? { "x-real-client-ip": clientIp } : {}),
+    },
+    body: JSON.stringify(body),
   });
+}
+
+function allowRateLimit() {
+  admin.rpc.mockResolvedValueOnce({ data: [{ allowed: true }], error: null });
 }
 
 describe("digital download bearer exchange", () => {
@@ -24,8 +38,28 @@ describe("digital download bearer exchange", () => {
     expect(admin.rpc).not.toHaveBeenCalled();
   });
 
+  test("fails closed without a trusted client identity", async () => {
+    const { POST } = await import("@/app/api/digital-downloads/session/route");
+    const response = await POST(request({ token: TOKEN }, "https://app.myrivo.test", null));
+    expect(response.status).toBe(503);
+    expect(admin.rpc).not.toHaveBeenCalled();
+  });
+
+  test("rate limits exchanges per trusted client before touching the token", async () => {
+    admin.rpc.mockResolvedValueOnce({ data: [{ allowed: false, retry_after_seconds: 7 }], error: null });
+    const { POST } = await import("@/app/api/digital-downloads/session/route");
+    const response = await POST(request({ token: TOKEN }));
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("7");
+    expect(admin.rpc).toHaveBeenCalledTimes(1);
+    expect(admin.rpc).toHaveBeenCalledWith("check_api_rate_limit", expect.objectContaining({
+      p_bucket_key: expect.stringMatching(/^digital-download-exchange:[a-f0-9]{64}$/),
+    }));
+  });
+
   test("exchanges the body-only bearer for a secure opaque HttpOnly session without echoing it", async () => {
-    admin.rpc.mockResolvedValue({ data: [{ access_token_id: ACCESS_ID, order_id: "40000000-0000-4000-8000-000000000001", store_id: "10000000-0000-4000-8000-000000000001", expires_at: "2099-08-12T12:00:00.000Z", store_name: "Studio", store_slug: "studio", license_version: "personal-use-v1" }], error: null });
+    allowRateLimit();
+    admin.rpc.mockResolvedValueOnce({ data: [{ access_token_id: ACCESS_ID, order_id: "40000000-0000-4000-8000-000000000001", store_id: "10000000-0000-4000-8000-000000000001", expires_at: "2099-08-12T12:00:00.000Z", store_name: "Studio", store_slug: "studio", license_version: "personal-use-v1" }], error: null });
     const { POST } = await import("@/app/api/digital-downloads/session/route");
     const response = await POST(request({ token: TOKEN }));
     expect(response.status).toBe(201);
@@ -36,7 +70,8 @@ describe("digital download bearer exchange", () => {
   });
 
   test("returns the same neutral unavailable response for unknown and expired credentials", async () => {
-    admin.rpc.mockResolvedValue({ data: [], error: null });
+    allowRateLimit();
+    admin.rpc.mockResolvedValueOnce({ data: [], error: null });
     const { POST } = await import("@/app/api/digital-downloads/session/route");
     const response = await POST(request({ token: TOKEN }));
     expect(response.status).toBe(410);
