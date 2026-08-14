@@ -271,6 +271,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
 
     resolvedProducts = (standaloneProducts.data ?? []).map((product) => ({
       ...product,
+      product_type: "physical",
       product_variants: [],
       product_option_axes: []
     }));
