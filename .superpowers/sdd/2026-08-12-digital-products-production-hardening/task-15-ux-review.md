@@ -609,3 +609,51 @@ No new assertions were added for financial/failure live regions, focus behavior,
 ### Round 13 release disposition
 
 Do not approve the UX/accessibility gate. Evidence cross-linking does not address the outstanding user-facing accessibility contract.
+
+---
+
+## Round 14 re-review — commit `b48e406`
+
+### Verdict
+
+**FAIL** — mobile/desktop financial live-region scans, dialog trap/cancel/confirm behavior, and several zoom activations are now implemented. Two P1 issues remain: lost-dispute messaging incorrectly attributes revocation to a full refund, and dynamic delivery/download failure accessibility plus complete zoom activation are still missing. The dispute-won accessibility assertion also appears inconsistent with the actual live-region content.
+
+### P1 — Lost disputes tell buyers their order was fully refunded
+
+**Evidence:** `apps/web/components/customer/digital-order-downloads.tsx:68-74`; `apps/web/e2e/digital-products-accessibility.spec.ts:161-170`.
+
+`DigitalOrderDownloads` uses one generic `accessStatus === "revoked"` description: “Download access was removed after this order was fully refunded.” A lost dispute also produces revoked access, so the customer is shown a false refund explanation. The new accessibility test codifies that incorrect copy for `disputeLost` at line 164 rather than catching it.
+
+This is materially misleading financial/support UX: a buyer who lost a charge dispute was not necessarily refunded by the merchant, and the merchant/support path differs from a full refund.
+
+**Required remediation:** Carry a revocation reason (for example `full_refund` versus `dispute_lost`) into the customer summary and render exact reason-specific copy. Assert the lost-dispute explanation separately from full-refund copy in customer UI, live-region, and provider-backed journeys.
+
+### P1 — Required failure-state accessibility and complete zoom activation remain absent
+
+**Evidence:** `apps/web/e2e/digital-products-accessibility.spec.ts:27-64`, `:159-172`, and `:199-205`.
+
+The dedicated mobile/desktop suite now provisions and axe-scans dispute opened/won/lost and full refund with live status. It still omits partial refund, delivery failure/retry, resend error, signing failure, grant limit, and stalled-download timeout from responsive live/focus/keyboard coverage. Reduced-motion loading is the only failure-adjacent state after the financial loop.
+
+At zoom, only product, recovery, and download actions are activated. Cart checkout and checkout-return access are mapped and focused but have no activation branch, despite the explicit requirement to verify zoom activation for the named actions. The financial state loop asserts live content but not a meaningful focus location/action path after status/action removal.
+
+**Required remediation:** Add both-viewports cases for partial refund, delivery failure/retry, resend error, signing failure, grant exhaustion, and timeout with exact status/alert content, keyboard retry/action behavior, focus outcome, and axe. Activate cart Checkout and checkout-return Access Downloads at 200% and assert the resulting navigation/state.
+
+### P2 — Dispute-won live-region expectation likely cannot match the rendered status
+
+**Evidence:** `apps/web/e2e/digital-products-accessibility.spec.ts:163` and `apps/web/components/customer/digital-order-downloads.tsx:83-88`.
+
+The won case looks for exact text `Digital downloads` inside `[role="status"][aria-live="polite"]`. The role/status is attached to the description paragraph, while “Digital downloads” is the sibling heading. For active access the description begins with the purchased-file/session explanation, so this exact live-region assertion should fail against the component as written.
+
+**Remediation:** Assert the exact active/restored description in the live region, and separately assert the heading. A transition announcement such as “Download access restored” would be clearer when the state changes in place.
+
+### Resolved from round 13
+
+- Financial guarded states now run inside both mobile and desktop accessibility projects with axe and live-region checks.
+- Recovery keyboard order includes reverse/forward traversal around the submit action.
+- Replacement dialog verifies two-end focus wrapping, Escape cancellation/trigger restoration, keyboard confirmation, result status, and trigger restoration after completion.
+- Product, recovery, and download actions are activated at 200% zoom.
+- UI now returns replacement focus to the Actions trigger after cancel and completion.
+
+### Round 14 release disposition
+
+Do not approve the UX/accessibility gate. The remaining gaps include a real buyer-facing financial misstatement and still-uncovered required failure/zoom interactions.
