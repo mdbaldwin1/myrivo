@@ -114,7 +114,11 @@ test.describe.serial("digital product user journeys", () => {
         const sixthResponse = sixthPage.waitForResponse((response) => response.url().includes("/api/digital-downloads/file/"));
         await sixthPage.getByRole("button", { name: /download/i }).click();
         const denied = await sixthResponse;
+        const deniedBody = await denied.json() as { code?: string; error?: string };
+        const sixthDeniedCode = "download_limit_reached";
         const sixthDeniedMessage = "Download limit reached";
+        expect(denied.status()).toBe(409);
+        expect(deniedBody).toEqual({ code: sixthDeniedCode, error: sixthDeniedMessage });
         await expect(sixthPage.getByText(sixthDeniedMessage, { exact: true })).toBeVisible();
         await expectNoSeriousAccessibilityViolations(sixthPage, "grant limit dynamic state");
         sessionHashes.push(acceptanceSessionHash((await sixth.cookies()).map((cookie) => `${cookie.name}:${cookie.value}`).join("|")));
@@ -122,7 +126,7 @@ test.describe.serial("digital product user journeys", () => {
         const issued = five.observation.grants.filter((grant) => grant.status === "issued");
         const successfulRetryGrantId = issued.find((grant) => !signingFailureIssuedIdsAfter.includes(grant.id))?.id;
         if (!successfulRetryGrantId) throw new Error("No successful issued retry followed the released signing fault.");
-        await acceptanceAction(request, fixture!, "observe", undefined, orderId, "five-grants", { kind: "grants", uniqueGrantIds: issued.map((grant) => grant.id), graceReusedGrantId, graceCountBefore, graceCountAfter, signingFailureIssuedIdsBefore, signingFailureIssuedIdsAfter, signingFailureUsedBefore, signingFailureUsedAfter, releasedFaultGrantId: releasedFaults[0]!.id, successfulRetryGrantId, sixthDeniedStatus: denied.status(), sixthDeniedMessage, sessionHashes, assetVersionId: issued[0]?.asset_version_id });
+        await acceptanceAction(request, fixture!, "observe", undefined, orderId, "five-grants", { kind: "grants", uniqueGrantIds: issued.map((grant) => grant.id), graceReusedGrantId, graceCountBefore, graceCountAfter, signingFailureIssuedIdsBefore, signingFailureIssuedIdsAfter, signingFailureUsedBefore, signingFailureUsedAfter, releasedFaultGrantId: releasedFaults[0]!.id, successfulRetryGrantId, sixthDeniedStatus: denied.status(), sixthDeniedCode, sixthDeniedMessage, sessionHashes, assetVersionId: issued[0]?.asset_version_id });
       } else {
         await downloadButton.click();
         await expect(page.getByRole("status")).toContainText(/started|preparing/i);

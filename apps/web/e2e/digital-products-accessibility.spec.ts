@@ -207,7 +207,7 @@ for (const viewport of [
       await expect(download).toBeEnabled();
       await expectNoSeriousAccessibilityViolations(page, `${viewport.name} signing failure`);
 
-      await page.route("**/api/digital-downloads/file/**", (route) => route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "Download limit reached" }) }));
+      await page.route("**/api/digital-downloads/file/**", (route) => route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ code: "download_limit_reached", error: "Download limit reached" }) }));
       await download.press("Space");
       await expect(page.getByRole("status")).toContainText("Download limit reached");
       await expect(download).toBeEnabled();

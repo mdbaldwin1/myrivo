@@ -23,6 +23,15 @@ describe("digital acceptance evidence", () => {
     ["released grant proof", "five-grants", (record: any) => { record.observation.grants = record.observation.grants.filter((grant: any) => grant.status !== "released"); }],
     ["post-fault retry order", "five-grants", (record: any) => { record.observation.grants.find((grant: any) => grant.id === record.providerEvidence.successfulRetryGrantId).created_at = record.observation.grants.find((grant: any) => grant.id === record.providerEvidence.releasedFaultGrantId).created_at; }],
     ["delivery resend persistence", "delivery-retry", (record: any) => { record.observation.notifications.find((notification: any) => notification.provider_message_id === record.providerEvidence.resendMessageId).status = "failed"; }],
+    ["delivery resend type", "delivery-retry", (record: any) => { record.observation.notifications.find((notification: any) => notification.provider_message_id === record.providerEvidence.resendMessageId).notification_type = "purchase"; }],
+    ["delivery terminal job status", "delivery-retry", (record: any) => { record.observation.deliveryJob.status = "failed"; }],
+    ["delivery terminal attempt count", "delivery-retry", (record: any) => { record.observation.deliveryJob.attempt_count = 1; }],
+    ["sixth denial status 401", "five-grants", (record: any) => { record.providerEvidence.sixthDeniedStatus = 401; }],
+    ["sixth denial status 403", "five-grants", (record: any) => { record.providerEvidence.sixthDeniedStatus = 403; }],
+    ["sixth denial status 404", "five-grants", (record: any) => { record.providerEvidence.sixthDeniedStatus = 404; }],
+    ["sixth denial status 429", "five-grants", (record: any) => { record.providerEvidence.sixthDeniedStatus = 429; }],
+    ["sixth denial code", "five-grants", (record: any) => { record.providerEvidence.sixthDeniedCode = "download_unavailable"; }],
+    ["sixth denial message", "five-grants", (record: any) => { record.providerEvidence.sixthDeniedMessage = "Download unavailable."; }],
     ["checkout composition", "stripe-mixed", (record: any) => { record.observation.order.checkout_composition = "digital_only"; }],
     ["record run binding", "stripe-digital", (record: any) => { record.runId = crypto.randomUUID(); record.observation.runId = record.runId; }],
   ])("rejects adversarial %s evidence", (_label, scenario, mutate) => {
@@ -70,7 +79,7 @@ describe("digital acceptance evidence", () => {
 
   it("requires exact grace, signing-failure, and sixth-denial grant state", () => {
     const ids = Array.from({ length: 5 }, () => crypto.randomUUID());
-    const base = { kind: "grants", uniqueGrantIds: ids, graceReusedGrantId: ids[0], graceCountBefore: 1, graceCountAfter: 1, signingFailureIssuedIdsBefore: [], signingFailureIssuedIdsAfter: [], signingFailureUsedBefore: 0, signingFailureUsedAfter: 0, releasedFaultGrantId: crypto.randomUUID(), successfulRetryGrantId: ids[0], sixthDeniedStatus: 409, sixthDeniedMessage: "Download limit reached", sessionHashes: Array.from({ length: 6 }, (_, index) => index.toString(16).padStart(64, "0")), assetVersionId: crypto.randomUUID() };
+    const base = { kind: "grants", uniqueGrantIds: ids, graceReusedGrantId: ids[0], graceCountBefore: 1, graceCountAfter: 1, signingFailureIssuedIdsBefore: [], signingFailureIssuedIdsAfter: [], signingFailureUsedBefore: 0, signingFailureUsedAfter: 0, releasedFaultGrantId: crypto.randomUUID(), successfulRetryGrantId: ids[0], sixthDeniedStatus: 409, sixthDeniedCode: "download_limit_reached", sixthDeniedMessage: "Download limit reached", sessionHashes: Array.from({ length: 6 }, (_, index) => index.toString(16).padStart(64, "0")), assetVersionId: crypto.randomUUID() };
     expect(digitalAcceptanceScenarioEvidenceSchema.parse({ scenario: "five-grants", providerEvidence: base }).scenario).toBe("five-grants");
     expect(() => digitalAcceptanceScenarioEvidenceSchema.parse({ scenario: "five-grants", providerEvidence: { ...base, graceCountAfter: 2 } })).toThrow();
     expect(() => digitalAcceptanceScenarioEvidenceSchema.parse({ scenario: "five-grants", providerEvidence: { ...base, signingFailureUsedAfter: 1 } })).toThrow();

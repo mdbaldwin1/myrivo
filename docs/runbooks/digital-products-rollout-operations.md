@@ -54,3 +54,9 @@ All controls require a platform admin, trusted origin, actor identity, and idemp
 4. Requeue once and observe the next durable attempt.
 5. Reconcile only when an access mismatch is present.
 6. Escalate repeated failures without copying raw provider errors or customer/access data into tickets.
+
+## Acceptance evidence terminal contracts
+
+The release gate reads the download-limit contract from the shared digital-product configuration. After exactly five issued grants, the next independent session must receive HTTP `409` with JSON code `download_limit_reached` and the customer-safe message `Download limit reached`. Authentication, authorization, missing-resource, throttling, or generic conflict responses do not prove grant exhaustion.
+
+Delivery-retry evidence is valid only when the observed durable job is `succeeded`, its persisted attempt count exactly matches the ordered attempt ledger, the first recorded attempt failed, the final attempt succeeded, and the correlated notification is a successful `merchant_resend` sent through Resend with the exact provider message ID and timestamp in the provider evidence.

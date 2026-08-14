@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - Strengthened canonical verification across checkout manifests, issued grants, financial webhook/access state, Resend delivery timestamps, and exact delivery-attempt chronology.
 - Added full-scenario adversarial release evidence, immutable old/new replacement observations, normalized dispute access proofs, ordered delivery timestamps, persisted unique Resend message IDs, and mandatory mobile/desktop keyboard and live-region acceptance coverage.
 - Made the shared verifier the sole release semantic authority with actual CLI pass/fail integration, required released-grant/retry and persisted delivery-resend proof, corrected refund-versus-lost-dispute buyer copy, and expanded responsive failure/recovery accessibility coverage.
+- Pinned the five-grant acceptance boundary to the production `409 download_limit_reached` response and required delivery-retry evidence to prove a succeeded final job, exact attempt count, and persisted merchant-resend notification.
 
 - Bound acceptance observations to newly completed checkout orders, enabled tightly allowlisted preview builds, added Resend message/access-link retrieval, removed synthetic financial certification, and made unsupported provider scenarios fail the release gate.
 - Added a service-role-only, run/store/project-bound non-production acceptance controller with tamper-resistant audit, separate evidence signing credentials, valid image fixtures, and encoded Stripe-hosted digital/mixed checkout journeys.

@@ -110,6 +110,7 @@ export type DigitalDownloadFailureCode =
   | "rate_limit_unavailable"
   | "service_unavailable"
   | "access_unavailable"
+  | "download_limit_reached"
   | "download_unavailable"
   | "preparation_failed"
   | "commit_failed";
@@ -438,7 +439,11 @@ export async function reserveDownloadGrant({
       eventType: "grant_exhausted",
       dimensions: { stage: "reservation", outcome: "denied" },
     });
-    throw new DigitalDownloadError("download_unavailable");
+    throw new DigitalDownloadError(
+      result.error.message === "Download limit reached"
+        ? "download_limit_reached"
+        : "download_unavailable",
+    );
   }
   const row = unwrapRpcRow(result.data);
   const parsed = reservationSchema.safeParse(row);

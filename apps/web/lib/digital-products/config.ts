@@ -9,6 +9,11 @@ const digitalProductConfigSchema = z
     downloadInitiationTimeoutMs: z.number().int().positive(),
     downloadGrantRateLimitPerMinute: z.number().int().positive(),
     downloadListRateLimitPerMinute: z.number().int().positive(),
+    downloadLimitResponse: z.object({
+      status: z.literal(409),
+      code: z.literal("download_limit_reached"),
+      message: z.literal("Download limit reached"),
+    }).strict(),
     recoveryClientRateLimitPerHour: z.number().int().positive(),
     recoveryPairRateLimitPerHour: z.number().int().positive(),
     recoveryResponseBaseMs: z.number().int().positive(),
@@ -73,6 +78,11 @@ const parsedDigitalProductConfig = digitalProductConfigSchema.parse({
   downloadInitiationTimeoutMs: 15_000,
   downloadGrantRateLimitPerMinute: 90,
   downloadListRateLimitPerMinute: 30,
+  downloadLimitResponse: {
+    status: 409,
+    code: "download_limit_reached",
+    message: "Download limit reached",
+  },
   recoveryClientRateLimitPerHour: 20,
   recoveryPairRateLimitPerHour: 5,
   recoveryResponseBaseMs: 2_000,
@@ -112,6 +122,7 @@ const parsedDigitalProductConfig = digitalProductConfigSchema.parse({
 export const DIGITAL_PRODUCT_CONFIG: DigitalProductConfig = Object.freeze({
   ...parsedDigitalProductConfig,
   acceptedFiles: Object.freeze(parsedDigitalProductConfig.acceptedFiles),
+  downloadLimitResponse: Object.freeze(parsedDigitalProductConfig.downloadLimitResponse),
 });
 
 export const DIGITAL_PERSONAL_USE_LICENSE_VERSION =

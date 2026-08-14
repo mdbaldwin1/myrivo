@@ -74,6 +74,18 @@ describe("digital acceptance CLI artifact verification", () => {
       const semanticMutation = structuredClone(evidence);
       semanticMutation.observations.find((record: any) => record.scenario === "delivery-retry").observation.notifications.find((notification: any) => notification.provider_message_id === "email_retry").status = "failed";
       expect(run(sign(semanticMutation, key)).status).not.toBe(0);
+      for (const mutate of [
+        (record: any) => { record.providerEvidence.sixthDeniedStatus = 401; },
+        (record: any) => { record.providerEvidence.sixthDeniedStatus = 403; },
+        (record: any) => { record.providerEvidence.sixthDeniedStatus = 404; },
+        (record: any) => { record.providerEvidence.sixthDeniedStatus = 429; },
+        (record: any) => { record.providerEvidence.sixthDeniedCode = "download_unavailable"; },
+        (record: any) => { record.providerEvidence.sixthDeniedMessage = "Download unavailable."; },
+      ]) {
+        const denialMutation = structuredClone(evidence);
+        mutate(denialMutation.observations.find((record: any) => record.scenario === "five-grants"));
+        expect(run(sign(denialMutation, key)).status).not.toBe(0);
+      }
       expect(run({ ...sign(evidence, key), signature: "0".repeat(64) }).status).not.toBe(0);
     } finally {
       rmSync(directory, { recursive: true, force: true });

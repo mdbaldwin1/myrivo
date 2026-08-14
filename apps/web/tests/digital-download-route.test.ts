@@ -597,6 +597,20 @@ describe("digital download grant route", () => {
     expect(state.events).toEqual(["rate-limit", "authorize", "reserve"]);
   });
 
+  test("returns the stable download-limit contract when all grants are consumed", async () => {
+    const state = buildAdmin({ reserveError: { message: "Download limit reached" } });
+    createSupabaseAdminClientMock.mockReturnValue(state.admin);
+
+    const response = await invokeDownload();
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      code: "download_limit_reached",
+      error: "Download limit reached",
+    });
+    expect(state.events).toEqual(["rate-limit", "authorize", "reserve"]);
+  });
+
   test("a swapped malformed response cleans up only the caller-known reservation identity", async () => {
     const state = buildAdmin({
       reserveData: {
