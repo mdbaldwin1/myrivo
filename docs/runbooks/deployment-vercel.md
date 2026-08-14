@@ -28,6 +28,17 @@ Add these when the corresponding production features are enabled:
   - `MYRIVO_EMAIL_FROM`
   - `MYRIVO_EMAIL_PLATFORM_FROM`
   - `MYRIVO_EMAIL_REPLY_TO`
+- Digital-product delivery worker
+  - `DIGITAL_DELIVERY_PROCESS_SECRET`
+  - `DIGITAL_DELIVERY_TOKEN_SECRET`
+  - `DIGITAL_DOWNLOAD_SESSION_SECRET`
+  - `DIGITAL_RECOVERY_TRUSTED_IP_HEADER` (non-Vercel deployments only)
+  - Configure the scheduler to `POST /api/internal/digital-delivery/process` with `Authorization: Bearer <DIGITAL_DELIVERY_PROCESS_SECRET>` only after the digital-product release gate is enabled.
+  - The processor drains purchase-finalization and delivery-notification jobs, including customer recovery. Monitor `digital_delivery_jobs`, `digital_delivery_notifications`, their attempt tables, and `digital_access_recovery_failures` for terminal or transactional failures; these records contain bounded safe errors and never bearer links or storage URLs.
+  - Keep `DIGITAL_DELIVERY_TOKEN_SECRET` stable. Merchant resend and verified customer recovery intentionally rotate only their own active token and queue a new 48-hour message; neither operation resets entitlement grant counters.
+  - Keep `DIGITAL_DOWNLOAD_SESSION_SECRET` stable and separate from delivery-token credentials. It signs opaque download-session cookies used for grace reuse and guest-recovery throttling; rotation invalidates only those browser sessions.
+  - Guest recovery aggregates distributed limits by a keyed client-IP digest, signed session, and keyed order/email pair. On Vercel, the application accepts only `X-Vercel-Forwarded-For`, which Vercel supplies independently of proxy-overwritable forwarding headers. Outside Vercel, configure `DIGITAL_RECOVERY_TRUSTED_IP_HEADER` only after the ingress boundary strips every client-supplied copy and writes one validated IP. Recovery fails closed when that trusted identity is absent or malformed; raw IP values must never be logged or persisted.
+  - Recovery responses use a server-controlled, keyed 2.0–2.25 second envelope and bound recovery database work to 750 ms. The recovery RPC performs a fixed bucketed decoy lock/write before customer lookup; the decoy table contains only aggregate counters, never pair hashes, order IDs, emails, or bearer values.
 - Onboarding AI
   - `MYRIVO_ONBOARDING_AI_PROVIDER`
   - `MYRIVO_ONBOARDING_AI_MODEL`

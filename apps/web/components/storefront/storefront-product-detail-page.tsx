@@ -13,7 +13,14 @@ import { buildStorefrontThemeStyle, resolveStorefrontThemeConfig } from "@/lib/t
 import { sanitizeRichTextHtml } from "@/lib/rich-text";
 import { formatVariantLabel } from "@/lib/products/variants";
 import { setEditorValueAtPath } from "@/lib/store-editor/object-path";
-import { readStorefrontCart, syncStorefrontCart, writeStorefrontCart } from "@/lib/storefront/cart";
+import {
+  normalizeStorefrontCart,
+  readStorefrontCart,
+  syncStorefrontCart,
+  writeStorefrontCart,
+  type StorefrontCartEntry,
+  type StorefrontCartProduct
+} from "@/lib/storefront/cart";
 import { cn } from "@/lib/utils";
 import { StorefrontHeader } from "@/components/storefront/storefront-header";
 import { StorefrontImageCarousel } from "@/components/storefront/storefront-image-carousel";
@@ -59,6 +66,15 @@ type StorefrontProduct = {
   seo_title: string | null;
   seo_description: string | null;
   is_featured: boolean;
+  product_type?: "physical" | "digital";
+  digital_summary?: {
+    publicPreviewUrl: string | null;
+    files: Array<{
+      variantId: string | null;
+      label: string;
+      format: string;
+    }>;
+  } | null;
   created_at: string;
   product_variants: StorefrontVariant[];
   product_option_axes?: Array<{
@@ -131,6 +147,27 @@ export function getProductDetailDisplayPrice(unitPriceCents: number, quantity: n
     quantity: normalizedQuantity,
     totalPriceCents: normalizedUnitPriceCents * normalizedQuantity
   };
+}
+
+export function isStorefrontVariantPurchasable(
+  productType: "physical" | "digital",
+  variant: Pick<StorefrontVariant, "inventory_qty" | "is_made_to_order"> | null
+) {
+  return Boolean(
+    variant && (
+      productType === "digital" ||
+      variant.is_made_to_order ||
+      variant.inventory_qty > 0
+    )
+  );
+}
+
+export function buildNormalizedProductDetailCart(
+  current: readonly StorefrontCartEntry[],
+  addition: StorefrontCartEntry,
+  products: readonly StorefrontCartProduct[]
+) {
+  return normalizeStorefrontCart([...current, addition], products);
 }
 
 function getVariantOptionNames(product: StorefrontProduct, variants: StorefrontVariant[]) {
@@ -234,6 +271,12 @@ function resolveVariantLabel(variant: StorefrontVariant) {
 }
 
 function getVariantImages(variant: StorefrontVariant | null, product: StorefrontProduct) {
+  if ((product.product_type ?? "physical") === "digital") {
+    return product.digital_summary?.publicPreviewUrl
+      ? [product.digital_summary.publicPreviewUrl]
+      : [];
+  }
+
   const ordered = [...(variant?.image_urls ?? []), ...(variant?.group_image_urls ?? []), ...(product.image_urls ?? [])].filter(
     (image): image is string => Boolean(image)
   );
@@ -315,14 +358,26 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
   const addToCartResetTimeoutRef = useRef<number | null>(null);
 
   const selectedVariant = variants.find((variant) => variant.id === selectedVariantId) ?? defaultVariant;
-  const displayPrice = getProductDetailDisplayPrice(selectedVariant?.price_cents ?? 0, quantity);
+  const productType = resolvedProduct.product_type ?? "physical";
+  const isDigital = productType === "digital";
+  const displayPrice = getProductDetailDisplayPrice(selectedVariant?.price_cents ?? 0, isDigital ? 1 : quantity);
   const selectedOptionValues = selectedVariant?.option_values ?? {};
   const images = getVariantImages(selectedVariant, resolvedProduct);
-  const canPurchaseSelectedVariant = Boolean(selectedVariant && (selectedVariant.is_made_to_order || selectedVariant.inventory_qty > 0));
+  const selectedDigitalFiles = isDigital
+    ? (resolvedProduct.digital_summary?.files ?? []).filter(
+        (file) => file.variantId === null || file.variantId === selectedVariant?.id
+      )
+    : [];
+  const selectedDigitalFormats = [...new Set(selectedDigitalFiles.map((file) => file.format))];
+  const canPurchaseSelectedVariant = isStorefrontVariantPurchasable(productType, selectedVariant ?? null);
   const studioEnabledWithDocument = studioEnabled && Boolean(studioDocument);
   const availabilityField = getAvailabilityCopyField(selectedVariant ?? null);
-  const availabilityLabel = getAvailabilityLabel(selectedVariant ?? null, resolvedSettings?.fulfillment_message ?? null, copy);
-  const baseAddToCartLabel = !selectedVariant
+  const availabilityLabel = isDigital
+    ? "Available for instant download"
+    : getAvailabilityLabel(selectedVariant ?? null, resolvedSettings?.fulfillment_message ?? null, copy);
+  const baseAddToCartLabel = isDigital && selectedVariant
+    ? copy.productDetail.addToCart
+    : !selectedVariant
     ? copy.productDetail.outOfStockButton
     : selectedVariant.is_made_to_order && selectedVariant.inventory_qty < 1
       ? copy.productDetail.addToCartMadeToOrder
@@ -373,19 +428,21 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
     }
     setAddToCartState("adding");
     const current = readStorefrontCart();
-    const key = `${resolvedProduct.id}:${selectedVariant.id}`;
-    const existing = current.find((item) => `${item.productId}:${item.variantId}` === key);
-    const next = existing
-      ? current.map((item) =>
-          `${item.productId}:${item.variantId}` === key ? { ...item, quantity: Math.min(item.quantity + quantity, 99) } : item
-        )
-      : [...current, { productId: resolvedProduct.id, variantId: selectedVariant.id, quantity }];
+    const next = buildNormalizedProductDetailCart(
+      current,
+      {
+        productId: resolvedProduct.id,
+        variantId: selectedVariant.id,
+        quantity: isDigital ? 1 : quantity
+      },
+      runtime?.products ?? [resolvedProduct]
+    );
     analytics?.track({
       eventType: "add_to_cart",
       productId: resolvedProduct.id,
       value: buildStorefrontAddToCartValue({
         variantId: selectedVariant.id,
-        quantity,
+        quantity: isDigital ? 1 : quantity,
         unitPriceCents: selectedVariant.price_cents,
         source: "product_detail"
       })
@@ -535,13 +592,16 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
 
           <div className={cn("space-y-4 p-4 sm:p-5", radiusClass, cardClass, isIntegrated ? "border border-border/60 bg-[color:var(--storefront-surface)] shadow-sm" : "")}>
             <div className="space-y-2">
+              {isDigital ? <p className="inline-flex rounded-full bg-muted px-2.5 py-1 text-xs font-medium">Digital download</p> : null}
               <p className="text-2xl font-semibold sm:text-[1.8rem]">${(displayPrice.totalPriceCents / 100).toFixed(2)}</p>
               {displayPrice.quantity > 1 ? (
                 <p className="text-sm text-muted-foreground">
                   {displayPrice.quantity} x ${(displayPrice.unitPriceCents / 100).toFixed(2)} each
                 </p>
               ) : null}
-              {studioEnabledWithDocument ? (
+              {isDigital ? (
+                <p className="text-sm text-muted-foreground">{availabilityLabel}</p>
+              ) : studioEnabledWithDocument ? (
                 availabilityField === "madeToOrderWithFulfillmentTemplate" ? (
                   <StorefrontStudioEditableTemplateText
                     renderedValue={availabilityLabel}
@@ -582,7 +642,30 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
               )}
             </div>
 
-            <div className="space-y-2">
+            {isDigital ? (
+              <div className="space-y-3 rounded-md border border-border/60 bg-muted/20 p-3 text-sm text-muted-foreground">
+                <div>
+                  <p className="font-medium text-foreground">
+                    {selectedDigitalFiles.length} {selectedDigitalFiles.length === 1 ? "file" : "files"} included
+                    {selectedDigitalFormats.length > 0 ? ` · ${selectedDigitalFormats.join(", ")}` : ""}
+                  </p>
+                  {selectedDigitalFiles.length > 0 ? (
+                    <ul className="mt-2 list-inside list-disc space-y-1">
+                      {selectedDigitalFiles.map((file, index) => (
+                        <li key={`${file.variantId ?? "all"}:${file.label}:${index}`}>{file.label}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+                <p>Ready immediately after payment. A secure access link is also emailed and remains valid for 48 hours.</p>
+                <Link
+                  href="/legal/digital-personal-use-license"
+                  className={cn("font-medium text-foreground", STOREFRONT_TEXT_LINK_EFFECT_CLASS)}
+                >
+                  Personal-use license
+                </Link>
+              </div>
+            ) : <div className="space-y-2">
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Quantity</p>
               <div className={cn("inline-flex w-fit items-center overflow-hidden border border-border/60 bg-[color:var(--storefront-surface)]", buttonRadiusClass)}>
                 <button
@@ -620,7 +703,7 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
                   +
                 </button>
               </div>
-            </div>
+            </div>}
 
             <div className="relative">
               <Button
@@ -643,6 +726,11 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
                   labelClassName="inline-flex items-center justify-center text-sm font-medium text-[color:var(--storefront-primary-foreground)]"
                   panelClassName="left-1/2 top-[calc(100%+0.5rem)] -translate-x-1/2"
                   onChange={(value) => {
+                    if (isDigital && selectedVariant) {
+                      updateProductsField("copy.productDetail.addToCart", value);
+                      return;
+                    }
+
                     if (!selectedVariant) {
                       updateProductsField("copy.productDetail.outOfStockButton", value);
                       return;
@@ -664,7 +752,7 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
               ) : null}
             </div>
 
-            {selectedVariant && !selectedVariant.is_made_to_order && selectedVariant.inventory_qty <= 0 ? (
+            {!isDigital && selectedVariant && !selectedVariant.is_made_to_order && selectedVariant.inventory_qty <= 0 ? (
               <StorefrontBackInStockAlertForm
                 storeSlug={resolvedStore.slug}
                 productId={resolvedProduct.id}

@@ -20,7 +20,8 @@ export async function beginStripeWebhookEventProcessing(eventId: string, eventTy
       event_type: eventType,
       status: "processing",
       attempt_count: 1,
-      last_attempt_at: now
+      last_attempt_at: now,
+      signature_verified: true
     })
     .select("stripe_event_id,event_type,status,attempt_count,last_attempt_at")
     .single<StripeWebhookEventRow>();
@@ -69,7 +70,8 @@ export async function beginStripeWebhookEventProcessing(eventId: string, eventTy
       status: "processing",
       attempt_count: existing.attempt_count + 1,
       last_attempt_at: now,
-      error_message: null
+      error_message: null,
+      signature_verified: true
     })
     .eq("stripe_event_id", eventId);
 

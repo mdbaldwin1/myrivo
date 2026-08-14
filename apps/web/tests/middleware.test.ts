@@ -15,4 +15,10 @@ describe("middleware", () => {
 
     expect(response.status).toBe(200);
   });
+
+  test("forwards the current pathname to server components", () => {
+    const response = middleware(new NextRequest("http://localhost:3000/s/margies-flower-shop/products"));
+
+    expect(response.headers.get("x-middleware-request-x-pathname")).toBe("/s/margies-flower-shop/products");
+  });
 });

@@ -18,12 +18,14 @@ import {
 } from "@/lib/notifications/owner-notifications";
 import { getDisputeStatusLabel, getRefundReasonLabel, type DisputeStatus, type MerchantRefundReason } from "@/lib/orders/refunds";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { DIGITAL_PRODUCT_CONFIG } from "@/lib/digital-products/config";
 
 type OrderEmailItem = {
   title: string;
   variantLabel: string | null;
   quantity: number;
   unitPriceCents: number;
+  productType: "physical" | "digital";
 };
 
 type OrderEmailContext = {
@@ -48,7 +50,7 @@ type OrderEmailContext = {
   trackingUrl: string | null;
   trackingNumber: string | null;
   carrier: string | null;
-  fulfillmentMethod: "pickup" | "shipping" | null;
+  fulfillmentMethod: "pickup" | "shipping" | "digital_delivery" | null;
   pickupLocationSnapshot: Record<string, unknown> | null;
   pickupWindowStartAt: string | null;
   pickupWindowEndAt: string | null;
@@ -56,7 +58,79 @@ type OrderEmailContext = {
   items: OrderEmailItem[];
   emailDocument: EmailStudioDocument;
   customerHasAccount: boolean;
+  hasDigitalItems: boolean;
 };
+
+export type PreparedOrderEmailMessage = {
+  from: string;
+  to: string[];
+  subject: string;
+  text: string;
+  html: string;
+  replyTo: string | null;
+};
+
+function escapeEmailHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+export function buildDigitalAccessRecoveryEmailContent({
+  storeName,
+  orderId,
+  accessUrl,
+  supportEmail,
+}: {
+  storeName: string;
+  orderId: string;
+  accessUrl: string;
+  supportEmail: string | null;
+}) {
+  const subject = `Your fresh download link from ${storeName}`;
+  const supportCopy = supportEmail
+    ? `Need help? Contact ${supportEmail}.`
+    : "Need help? Reply to this email and the store can assist you.";
+  const text = [
+    `Your fresh download link from ${storeName}`,
+    "",
+    `Order ${orderId.slice(0, 8)}`,
+    `This secure link expires in ${DIGITAL_PRODUCT_CONFIG.accessLinkTtlHours} hours. Your remaining download grants are unchanged.`,
+    "The platform personal-use license applies.",
+    "",
+    `Access your files: ${accessUrl}`,
+    "",
+    supportCopy,
+    "If you did not request this link, you can ignore this email.",
+  ].join("\n");
+  const html = [
+    '<!doctype html><html><body style="margin:0;background:#f8fafc;color:#0f172a;font-family:Arial,sans-serif;">',
+    '<table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center" style="padding:32px 16px;">',
+    '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;">',
+    '<tr><td style="padding:32px;">',
+    `<p style="margin:0 0 8px;color:#64748b;font-size:13px;">Order ${escapeEmailHtml(orderId.slice(0, 8))}</p>`,
+    `<h1 style="margin:0 0 16px;font-size:24px;line-height:32px;">Your fresh download link from ${escapeEmailHtml(storeName)}</h1>`,
+    `<p style="margin:0 0 12px;line-height:24px;">This secure link expires in ${DIGITAL_PRODUCT_CONFIG.accessLinkTtlHours} hours. Your remaining download grants are unchanged.</p>`,
+    '<p style="margin:0 0 20px;line-height:24px;">The platform personal-use license applies.</p>',
+    `<a href="${escapeEmailHtml(accessUrl)}" style="display:inline-block;padding:12px 18px;border-radius:10px;background:#0f172a;color:#ffffff;text-decoration:none;font-weight:600;">Access your files</a>`,
+    `<p style="margin:24px 0 0;color:#64748b;font-size:14px;line-height:22px;">${escapeEmailHtml(supportCopy)} If you did not request this link, you can ignore this email.</p>`,
+    "</td></tr></table></td></tr></table></body></html>",
+  ].join("");
+  return { subject, text, html };
+}
+
+export function shouldSendCustomerOrderConfirmation({
+  alreadySent,
+  hasDigitalItems,
+}: {
+  alreadySent: boolean;
+  hasDigitalItems: boolean;
+}) {
+  return !alreadySent && !hasDigitalItems;
+}
 
 type PickupSummaryInput = Pick<
   OrderEmailContext,
@@ -229,6 +303,16 @@ export function resolveCustomerName(firstName: string | null, lastName: string |
 }
 
 function resolvePickupTemplateFields(input: PickupSummaryInput): ResolvedPickupTemplateFields {
+  if (input.fulfillmentMethod === "digital_delivery") {
+    return {
+      locationName: "",
+      address: "",
+      cityRegion: "",
+      window: "",
+      instructions: "",
+      details: "Fulfillment: Digital delivery",
+    };
+  }
   if (input.fulfillmentMethod !== "pickup") {
     return {
       locationName: "",
@@ -442,7 +526,7 @@ async function loadOrderEmailContext(orderId: string): Promise<OrderEmailContext
       tracking_url: string | null;
       tracking_number: string | null;
       carrier: string | null;
-      fulfillment_method: "pickup" | "shipping" | null;
+      fulfillment_method: "pickup" | "shipping" | "digital_delivery" | null;
       pickup_location_snapshot_json: Record<string, unknown> | null;
       pickup_window_start_at: string | null;
       pickup_window_end_at: string | null;
@@ -466,9 +550,9 @@ async function loadOrderEmailContext(orderId: string): Promise<OrderEmailContext
       .maybeSingle<{ policies_page_json: Record<string, unknown> | null; emails_json: Record<string, unknown> | null }>(),
     supabase
       .from("order_items")
-      .select("quantity,unit_price_cents,variant_label,products(title)")
+      .select("quantity,unit_price_cents,variant_label,product_type,products(title)")
       .eq("order_id", order.id)
-      .returns<Array<{ quantity: number; unit_price_cents: number; variant_label: string | null; products: { title: string } | { title: string }[] | null }>>(),
+      .returns<Array<{ quantity: number; unit_price_cents: number; variant_label: string | null; product_type: "physical" | "digital"; products: { title: string } | { title: string }[] | null }>>(),
     supabase
       .from("store_domains")
       .select("domain,email_sender_enabled,email_status")
@@ -561,11 +645,82 @@ async function loadOrderEmailContext(orderId: string): Promise<OrderEmailContext
         title: product?.title ?? "Item",
         variantLabel: item.variant_label,
         quantity: item.quantity,
-        unitPriceCents: item.unit_price_cents
+        unitPriceCents: item.unit_price_cents,
+        productType: item.product_type,
       };
     }),
     emailDocument: createEmailStudioDocumentFromSection(emailsSection, store?.name ?? "Your store"),
-    customerHasAccount: Boolean(customerUserLookup?.id)
+    customerHasAccount: Boolean(customerUserLookup?.id),
+    hasDigitalItems: (items ?? []).some((item) => item.product_type === "digital"),
+  };
+}
+
+export async function prepareDigitalDeliveryOrderConfirmationEmail(
+  orderId: string,
+  digitalDelivery: {
+    fileCount: number;
+    accessWindowCopy: string;
+    accessPageUrl: string;
+  },
+): Promise<PreparedOrderEmailMessage | null> {
+  const context = await loadOrderEmailContext(orderId);
+  if (!context?.hasDigitalItems) return null;
+  const sender = resolveSenderConfig(context);
+  if (!sender.from) {
+    throw new Error("Digital delivery email configuration is unavailable");
+  }
+  const orderSummary = context.items
+    .map((item) => buildOrderLine(item, context.currency))
+    .join("\n");
+  const rendered = renderOrderEmailTemplate(
+    context,
+    "digitalDelivery",
+    {
+      ...buildTemplateValues(context, {
+        items: orderSummary,
+        dashboardUrl: `${getExternalAppUrl()}/dashboard/customer-orders/${context.orderId}`,
+        hasDigitalItems: "Yes",
+        digitalFileCount: String(digitalDelivery.fileCount),
+        digitalAccessWindow: digitalDelivery.accessWindowCopy,
+      }),
+      pickupDetails: buildPickupSummaryText(context),
+    },
+  );
+  return {
+    from: sender.senderName
+      ? `${sender.senderName} <${sender.from}>`
+      : sender.from,
+    to: [context.customerEmail],
+    subject: rendered.subject,
+    text: rendered.text,
+    html: rendered.html,
+    replyTo: sender.replyTo,
+  };
+}
+
+export async function prepareDigitalAccessRecoveryEmail(
+  orderId: string,
+  accessUrl: string,
+): Promise<PreparedOrderEmailMessage | null> {
+  const context = await loadOrderEmailContext(orderId);
+  if (!context?.hasDigitalItems) return null;
+  const sender = resolveSenderConfig(context);
+  if (!sender.from) {
+    throw new Error("Digital delivery email configuration is unavailable");
+  }
+  const content = buildDigitalAccessRecoveryEmailContent({
+    storeName: context.storeName,
+    orderId: context.orderId,
+    accessUrl,
+    supportEmail: context.supportEmail,
+  });
+  return {
+    from: sender.senderName
+      ? `${sender.senderName} <${sender.from}>`
+      : sender.from,
+    to: [context.customerEmail],
+    ...content,
+    replyTo: sender.replyTo,
   };
 }
 
@@ -841,6 +996,42 @@ function buildCustomerRefundEmail(
   return renderOrderEmailTemplate(context, "refundIssued", templateValues);
 }
 
+export async function prepareOrderRefundNotificationEmail(
+  orderId: string,
+  refundId: string,
+  expectedStatus: string,
+): Promise<PreparedOrderEmailMessage | null> {
+  const supabase = createSupabaseAdminClient();
+  const { data: refund, error } = await supabase
+    .from("order_refunds")
+    .select("amount_cents,reason_key,customer_message,status")
+    .eq("id", refundId)
+    .eq("order_id", orderId)
+    .maybeSingle<{
+      amount_cents: number;
+      reason_key: MerchantRefundReason;
+      customer_message: string | null;
+      status: string;
+    }>();
+  if (error) throw new Error(error.message);
+  if (!refund || refund.status !== expectedStatus || expectedStatus !== "succeeded") return null;
+  const context = await loadOrderEmailContext(orderId);
+  if (!context) return null;
+  const sender = resolveSenderConfig(context);
+  if (!sender.from) throw new Error("Refund email configuration is unavailable");
+  const rendered = buildCustomerRefundEmail(context, {
+    amountCents: refund.amount_cents,
+    reasonKey: refund.reason_key,
+    customerMessage: refund.customer_message,
+  });
+  return {
+    from: sender.senderName ? `${sender.senderName} <${sender.from}>` : sender.from,
+    to: [context.customerEmail],
+    ...rendered,
+    replyTo: sender.replyTo,
+  };
+}
+
 function describeShippingDelayPath(customerPath: OrderShippingDelayCustomerPath) {
   switch (customerPath) {
     case "notify_only":
@@ -1002,6 +1193,43 @@ function buildCustomerDisputeEmail(
   return renderOrderEmailTemplate(context, isResolvedDisputeStatus(options.status) ? "disputeResolved" : "disputeOpened", templateValues);
 }
 
+export async function prepareOrderDisputeNotificationEmail(
+  orderId: string,
+  disputeId: string,
+  expectedStatus: DisputeStatus,
+): Promise<PreparedOrderEmailMessage | null> {
+  const supabase = createSupabaseAdminClient();
+  const { data: dispute, error } = await supabase
+    .from("order_disputes")
+    .select("amount_cents,reason,status,response_due_by")
+    .eq("id", disputeId)
+    .eq("order_id", orderId)
+    .maybeSingle<{
+      amount_cents: number;
+      reason: string;
+      status: DisputeStatus;
+      response_due_by: string | null;
+    }>();
+  if (error) throw new Error(error.message);
+  if (!dispute || dispute.status !== expectedStatus) return null;
+  const context = await loadOrderEmailContext(orderId);
+  if (!context) return null;
+  const sender = resolveSenderConfig(context);
+  if (!sender.from) throw new Error("Dispute email configuration is unavailable");
+  const rendered = buildCustomerDisputeEmail(context, {
+    status: dispute.status,
+    amountCents: dispute.amount_cents,
+    reason: dispute.reason,
+    responseDueBy: dispute.response_due_by,
+  });
+  return {
+    from: sender.senderName ? `${sender.senderName} <${sender.from}>` : sender.from,
+    to: [context.customerEmail],
+    ...rendered,
+    replyTo: sender.replyTo,
+  };
+}
+
 export async function sendOrderDisputeNotification(
   orderId: string,
   options: {
@@ -1088,7 +1316,14 @@ export async function sendOrderCreatedNotifications(orderId: string) {
       dashboardUrl: customerDashboardLink
     });
 
-    if (!customerAlreadySent) {
+    // Digital confirmations are held until the durable worker has materialized
+    // the immutable entitlements and can include the short-lived access page.
+    if (
+      shouldSendCustomerOrderConfirmation({
+        alreadySent: customerAlreadySent,
+        hasDigitalItems: context.hasDigitalItems,
+      })
+    ) {
       const renderedCustomer = renderOrderEmailTemplate(context, "customerConfirmation", {
         ...customerTemplateValues,
         pickupDetails: pickupSummary

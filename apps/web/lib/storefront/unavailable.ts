@@ -5,7 +5,7 @@ import { resolveStoreSlugForServerRender, resolveStorefrontServerRenderHint } fr
 import { resolveStoreSlugFromDomain } from "@/lib/stores/domain-store";
 import type { StorefrontBranding, StorefrontSettings, StorefrontStore, StorefrontViewer } from "@/lib/storefront/runtime";
 
-export type StorefrontUnavailableKind = "coming_soon" | "offline";
+export type StorefrontUnavailableKind = "coming_soon" | "offline" | "service_unavailable";
 
 export type StorefrontUnavailableData = {
   kind: StorefrontUnavailableKind;

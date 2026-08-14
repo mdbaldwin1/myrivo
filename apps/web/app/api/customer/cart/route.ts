@@ -76,11 +76,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ items: [] });
   }
 
-  const { data: items, error: itemsError } = await supabase
-    .from("customer_cart_items")
-    .select("product_id,product_variant_id,quantity")
-    .eq("cart_id", cart.id)
-    .returns<Array<{ product_id: string | null; product_variant_id: string | null; quantity: number }>>();
+  const { data: items, error: itemsError } = await supabase.rpc(
+    "repair_authenticated_customer_cart",
+    { p_cart_id: cart.id }
+  ) as {
+    data: Array<{ product_id: string; product_variant_id: string; quantity: number }> | null;
+    error: { message: string } | null;
+  };
 
   if (itemsError) {
     return NextResponse.json({ error: itemsError.message }, { status: 500 });
@@ -88,10 +90,9 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     items: (items ?? [])
-      .filter((item) => Boolean(item.product_id))
       .map((item) => ({
-        productId: item.product_id!,
-        variantId: item.product_variant_id ?? undefined,
+        productId: item.product_id,
+        variantId: item.product_variant_id,
         quantity: item.quantity
       }))
   });
@@ -222,47 +223,54 @@ export async function PUT(request: NextRequest) {
       variantId: item.variantId
     });
     if (selectionLookup.response) {
-      return selectionLookup.response;
+      if (selectionLookup.response.status >= 500) {
+        return selectionLookup.response;
+      }
+      continue;
     }
 
     normalizedSelections.push({
       productId: selectionLookup.selection.productId,
       variantId: selectionLookup.selection.variantId,
-      quantity: item.quantity,
-      unitPriceSnapshotCents: selectionLookup.selection.unitPriceSnapshotCents
+      productType: selectionLookup.selection.productType,
+      quantity: selectionLookup.selection.productType === "digital" ? 1 : item.quantity
     });
   }
 
-  const mergedSelections = new Map<string, { productId: string | null; variantId: string | null; quantity: number; unitPriceSnapshotCents: number }>();
+  const mergedSelections = new Map<string, {
+    productId: string | null;
+    variantId: string | null;
+    productType: "physical" | "digital";
+    quantity: number;
+  }>();
   for (const selection of normalizedSelections) {
     const key = `${selection.productId ?? ""}::${selection.variantId ?? ""}`;
     const existing = mergedSelections.get(key);
     if (existing) {
-      existing.quantity = Math.min(99, existing.quantity + selection.quantity);
+      existing.quantity = selection.productType === "digital"
+        ? 1
+        : Math.min(99, existing.quantity + selection.quantity);
       continue;
     }
     mergedSelections.set(key, { ...selection });
   }
 
-  const { error: clearError } = await supabase.from("customer_cart_items").delete().eq("cart_id", cart.id);
-  if (clearError) {
-    return NextResponse.json({ error: clearError.message }, { status: 500 });
-  }
-
-  if (mergedSelections.size > 0) {
-    const { error: insertError } = await supabase.from("customer_cart_items").insert(
-      [...mergedSelections.values()].map((item) => ({
-        cart_id: cart.id,
+  const { data: replaced, error: replaceError } = await supabase.rpc(
+    "replace_authenticated_customer_cart_items",
+    {
+      p_cart_id: cart.id,
+      p_items: [...mergedSelections.values()].map((item) => ({
         product_id: item.productId,
-        product_variant_id: item.variantId ?? null,
-        quantity: item.quantity,
-        unit_price_snapshot_cents: item.unitPriceSnapshotCents
+        product_variant_id: item.variantId,
+        quantity: item.quantity
       }))
-    );
-
-    if (insertError) {
-      return NextResponse.json({ error: insertError.message }, { status: 500 });
     }
+  ) as { data: boolean | null; error: { message: string } | null };
+  if (replaceError) {
+    return NextResponse.json({ error: replaceError.message }, { status: 500 });
+  }
+  if (!replaced) {
+    return NextResponse.json({ error: "Active cart not found." }, { status: 409 });
   }
 
   return NextResponse.json({ ok: true });
@@ -288,38 +296,15 @@ export async function DELETE(request: NextRequest) {
     return auth.response;
   }
 
-  const { data: cart, error: cartError } = await supabase
-    .from("customer_carts")
-    .select("id")
-    .eq("id", query.data.cartId)
-    .eq("user_id", auth.user.id)
-    .eq("status", "active")
-    .maybeSingle<{ id: string }>();
-
-  if (cartError) {
-    return NextResponse.json({ error: cartError.message }, { status: 500 });
-  }
-
-  if (!cart) {
-    return NextResponse.json({ error: "Active cart not found." }, { status: 404 });
-  }
-
-  const { error: clearError } = await supabase.from("customer_cart_items").delete().eq("cart_id", cart.id);
+  const { data: cleared, error: clearError } = await supabase.rpc(
+    "clear_authenticated_customer_cart",
+    { p_cart_id: query.data.cartId }
+  ) as { data: boolean | null; error: { message: string } | null };
   if (clearError) {
     return NextResponse.json({ error: clearError.message }, { status: 500 });
   }
-
-  const { error: cartUpdateError } = await supabase
-    .from("customer_carts")
-    .update({
-      status: "abandoned",
-      metadata_json: {}
-    })
-    .eq("id", cart.id)
-    .eq("user_id", auth.user.id);
-
-  if (cartUpdateError) {
-    return NextResponse.json({ error: cartUpdateError.message }, { status: 500 });
+  if (!cleared) {
+    return NextResponse.json({ error: "Active cart not found." }, { status: 404 });
   }
 
   return NextResponse.json({ ok: true });

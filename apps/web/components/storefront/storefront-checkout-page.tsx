@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { StorefrontStudioCheckoutPreviewStatePicker, type StorefrontStudioCheckoutPreviewState } from "@/components/storefront/storefront-studio-checkout-preview-state-picker";
 import { StorefrontStudioEditableText } from "@/components/storefront/storefront-studio-editable-text";
 import { AppAlert } from "@/components/ui/app-alert";
+import { Button } from "@/components/ui/button";
 import { buildStorefrontThemeStyle, resolveStorefrontThemeConfig } from "@/lib/theme/storefront-theme";
 import { getStorefrontButtonRadiusClass, getStorefrontCardStyleClass, getStorefrontRadiusClass } from "@/lib/storefront/appearance";
 import { formatCopyTemplate, resolveStorefrontCopy } from "@/lib/storefront/copy";
@@ -21,14 +22,25 @@ import { useOptionalStorefrontAnalytics } from "@/components/storefront/storefro
 import { useStorefrontPageView } from "@/components/storefront/use-storefront-analytics-events";
 import { markStorefrontCheckoutCompletedTracked } from "@/lib/analytics/storefront-instrumentation";
 import { resolveStorefrontPresentation } from "@/lib/storefront/presentation";
-import { buildStorefrontCartPath, buildStorefrontProductsPath } from "@/lib/storefront/paths";
+import {
+  buildStorefrontCartPath,
+  buildStorefrontPoliciesPath,
+  buildStorefrontProductsPath
+} from "@/lib/storefront/paths";
 import { cn } from "@/lib/utils";
+import { CHECKOUT_RETURN_POLLING } from "@/lib/storefront/checkout-return-polling";
 
 type CheckoutStatusResponse = {
-  status?: "pending" | "completed" | "failed";
+  status?: "pending" | "completed" | "delivery_failed" | "failed";
   orderId?: string | null;
+  checkoutComposition?: "digital_only" | "physical_only" | "mixed";
+  digitalDeliveryStatus?: "pending" | "processing" | "succeeded" | "failed";
+  digitalAccessUrl?: string;
   error?: string;
 };
+
+const digitalDeliveryFailedFallback =
+  "Payment was received, but the digital downloads could not be prepared. Contact the store for help with this order.";
 
 type Props = {
   store: {
@@ -59,6 +71,7 @@ type Props = {
   } | null;
   studio?: {
     enabled: boolean;
+    previewComposition?: "digital_only" | "mixed";
     inlineValues?: Partial<Record<"title" | "cancelled" | "orderPlacedTemplate" | "finalizationFailed", string>>;
     onInlineChange?: (field: "title" | "cancelled" | "orderPlacedTemplate" | "finalizationFailed", value: string) => void;
   };
@@ -71,6 +84,12 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
   const status = searchParams.get("status");
   const sessionId = searchParams.get("session_id");
   const orderId = searchParams.get("orderId");
+  const checkoutCompositionParam = searchParams.get("checkoutComposition");
+  const initialCheckoutComposition = checkoutCompositionParam === "digital_only"
+    || checkoutCompositionParam === "physical_only"
+    || checkoutCompositionParam === "mixed"
+    ? checkoutCompositionParam
+    : null;
 
   const resolvedStore = runtime?.store ?? store;
   const resolvedViewer = runtime?.viewer ?? viewer;
@@ -111,6 +130,15 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
         : copy.checkout.returnToCartPrompt
   );
   const [error, setError] = useState<string | null>(null);
+  const [deliveryFailureOrderId, setDeliveryFailureOrderId] = useState<string | null>(null);
+  const [digitalDeliveryStatus, setDigitalDeliveryStatus] = useState<"pending" | "processing" | "succeeded" | "failed" | null>(null);
+  const [digitalAccessUrl, setDigitalAccessUrl] = useState<string | null>(null);
+  const [checkoutCompositionState, setCheckoutComposition] = useState<"digital_only" | "physical_only" | "mixed" | null>(initialCheckoutComposition);
+  const checkoutComposition = studio?.previewComposition ?? checkoutCompositionState;
+  const checkoutCompositionRef = useRef<"digital_only" | "physical_only" | "mixed" | null>(initialCheckoutComposition);
+  const [pollTimedOut, setPollTimedOut] = useState(false);
+  const [pollRequest, setPollRequest] = useState(0);
+  const isPollingDigitalDelivery = checkoutComposition === "digital_only" || checkoutComposition === "mixed";
 
   useStorefrontPageView("checkout", {
     status: status ?? "return",
@@ -124,21 +152,34 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
     }
     const safeSessionId = sessionId;
 
-    let cancelled = false;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      controller.abort();
+      setPollTimedOut(true);
+    }, CHECKOUT_RETURN_POLLING.timeoutMs);
 
     async function poll() {
       setMessage(checkoutPaymentReceivedFinalizing);
       setError(null);
+      setDeliveryFailureOrderId(null);
+      setPollTimedOut(false);
 
-      for (let attempt = 0; attempt < 8; attempt += 1) {
-        const response = await fetch(
-          `/api/orders/checkout-status?sessionId=${encodeURIComponent(safeSessionId)}&store=${encodeURIComponent(resolvedStore.slug)}`,
-          { cache: "no-store" }
-        );
-        const payload = (await response.json()) as CheckoutStatusResponse;
-        if (cancelled) return;
+      for (let attempt = 0; !controller.signal.aborted; attempt += 1) {
+        let response: Response | null = null;
+        let payload: CheckoutStatusResponse;
+        try {
+          response = await fetch(
+            `/api/orders/checkout-status?sessionId=${encodeURIComponent(safeSessionId)}&store=${encodeURIComponent(resolvedStore.slug)}`,
+            { cache: "no-store", signal: controller.signal }
+          );
+          payload = (await response.json()) as CheckoutStatusResponse;
+        } catch {
+          if (controller.signal.aborted) return;
+          payload = {};
+        }
+        if (controller.signal.aborted) return;
 
-        if (response.ok && payload.status === "completed" && payload.orderId) {
+        if (response?.ok && payload.status === "completed" && payload.orderId) {
           if (markStorefrontCheckoutCompletedTracked(payload.orderId)) {
             analytics?.track({
               eventType: "checkout_completed",
@@ -150,23 +191,86 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
             });
           }
           setMessage(formatCopyTemplate(orderPlacedTemplate, { orderId: payload.orderId }));
+          if (payload.checkoutComposition) {
+            checkoutCompositionRef.current = payload.checkoutComposition;
+            setCheckoutComposition(payload.checkoutComposition);
+          }
+          if (payload.digitalDeliveryStatus) {
+            setDigitalDeliveryStatus(payload.digitalDeliveryStatus);
+          }
+          if (
+            payload.digitalDeliveryStatus === "succeeded" &&
+            typeof payload.digitalAccessUrl === "string" &&
+            payload.digitalAccessUrl === "/downloads"
+          ) {
+            setDigitalAccessUrl(payload.digitalAccessUrl);
+            setPollTimedOut(false);
+            return;
+          }
+          if (!payload.digitalDeliveryStatus) {
+            if (checkoutCompositionRef.current === "digital_only" || checkoutCompositionRef.current === "mixed") {
+              continue;
+            }
+            setPollTimedOut(false);
+            return;
+          }
+        }
+
+        if (payload.status === "delivery_failed") {
+          if (payload.orderId) {
+            if (markStorefrontCheckoutCompletedTracked(payload.orderId)) {
+              analytics?.track({
+                eventType: "checkout_completed",
+                orderId: payload.orderId,
+                value: {
+                  status: "completed",
+                  source: "checkout_status_poll"
+                }
+              });
+            }
+            setMessage(formatCopyTemplate(orderPlacedTemplate, { orderId: payload.orderId }));
+            setDeliveryFailureOrderId(payload.orderId);
+          }
+          setError(payload.error ?? digitalDeliveryFailedFallback);
+          setDigitalDeliveryStatus("failed");
+          if (payload.checkoutComposition) {
+            checkoutCompositionRef.current = payload.checkoutComposition;
+            setCheckoutComposition(payload.checkoutComposition);
+          }
+          setPollTimedOut(false);
           return;
         }
 
         if (payload.status === "failed") {
           setError(payload.error ?? finalizationFailedMessage);
+          setPollTimedOut(false);
           return;
         }
 
-        await new Promise((resolve) => setTimeout(resolve, 1200));
+        const delayMs = Math.min(
+          CHECKOUT_RETURN_POLLING.initialDelayMs * CHECKOUT_RETURN_POLLING.backoffMultiplier ** attempt,
+          CHECKOUT_RETURN_POLLING.maximumDelayMs
+        );
+        await new Promise<void>((resolve) => {
+          let delay: ReturnType<typeof setTimeout> | null = null;
+          const finish = () => {
+            if (delay) clearTimeout(delay);
+            controller.signal.removeEventListener("abort", finish);
+            resolve();
+          };
+          delay = setTimeout(finish, delayMs);
+          controller.signal.addEventListener("abort", finish, { once: true });
+        });
+        if (controller.signal.aborted) return;
       }
     }
 
-    void poll();
+    void poll().finally(() => clearTimeout(timeout));
     return () => {
-      cancelled = true;
+      clearTimeout(timeout);
+      controller.abort();
     };
-  }, [analytics, checkoutPaymentReceivedFinalizing, finalizationFailedMessage, orderPlacedTemplate, resolvedStore.slug, sessionId, status, studioEnabled]);
+  }, [analytics, checkoutPaymentReceivedFinalizing, finalizationFailedMessage, orderPlacedTemplate, pollRequest, resolvedStore.slug, sessionId, status, studioEnabled]);
 
   useEffect(() => {
     if (studioEnabled || status !== "success" || !orderId) {
@@ -208,6 +312,24 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
   })();
 
   const previewError = studioEnabled && studioPreviewState === "failed" ? finalizationFailedMessage : error;
+  const supportEmail = resolvedSettings?.support_email?.trim();
+  const deliveryFailureSupportAction = deliveryFailureOrderId ? (
+    supportEmail ? (
+      <a
+        href={`mailto:${supportEmail}?subject=${encodeURIComponent(`Digital download help for order ${deliveryFailureOrderId}`)}`}
+        className={`font-medium ${STOREFRONT_TEXT_LINK_EFFECT_CLASS}`}
+      >
+        Contact store support
+      </a>
+    ) : (
+      <Link
+        href={buildStorefrontPoliciesPath(resolvedStore.slug, routeBasePath)}
+        className={`font-medium ${STOREFRONT_TEXT_LINK_EFFECT_CLASS}`}
+      >
+        View store support information
+      </Link>
+    )
+  ) : null;
 
   return (
     <div
@@ -302,6 +424,51 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
               {previewMessage}
             </p>
           )}
+          {!studioEnabled && isPollingDigitalDelivery && (digitalDeliveryStatus !== "failed" || checkoutComposition === "mixed") ? (
+            <section
+              aria-live="polite"
+              className={cn("space-y-3 border border-border/60 bg-muted/20 p-4", radiusClass)}
+            >
+              {digitalDeliveryStatus === "succeeded" && digitalAccessUrl ? (
+                <>
+                  <div>
+                    <h2 className="text-lg font-semibold">Downloads ready</h2>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                      Open your files now. A secure 48-hour access link was also emailed to you.
+                    </p>
+                  </div>
+                  <Link
+                    href={digitalAccessUrl}
+                    className={cn(
+                      "inline-flex min-h-11 items-center justify-center bg-[var(--storefront-accent)] px-5 text-sm font-semibold text-[color:var(--storefront-accent-foreground)] transition hover:opacity-90",
+                      buttonRadiusClass
+                    )}
+                  >
+                    View downloads
+                  </Link>
+                </>
+              ) : digitalDeliveryStatus !== "failed" ? (
+                <div role="status">
+                  <h2 className="text-lg font-semibold">{pollTimedOut ? "Still preparing files" : "Preparing files"}</h2>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    {pollTimedOut
+                      ? "Payment is complete, but file preparation is taking longer than expected. You can safely check the status again."
+                      : "Payment is complete. Keep this page open while secure access is finalized; retrying this page will not charge you again."}
+                  </p>
+                  {pollTimedOut ? (
+                    <Button type="button" variant="outline" className={cn("mt-3", buttonRadiusClass)} onClick={() => setPollRequest((value) => value + 1)}>
+                      Check again
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+              {checkoutComposition === "mixed" ? (
+                <p className="border-t border-border/60 pt-3 text-sm text-muted-foreground">
+                  Your physical items will continue through shipping or pickup separately.
+                </p>
+              ) : null}
+            </section>
+          ) : null}
           {studioEnabled && studioPreviewState === "failed" ? (
             <div className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-red-700">
               <StorefrontStudioEditableText
@@ -316,7 +483,12 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
               />
             </div>
           ) : (
-            <AppAlert variant="error" message={previewError} />
+            <AppAlert
+              variant="error"
+              title={deliveryFailureOrderId ? "Digital delivery needs help" : undefined}
+              message={previewError}
+              action={deliveryFailureSupportAction}
+            />
           )}
           <div className="flex flex-col gap-3 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
             <Link href={buildStorefrontCartPath(resolvedStore.slug, routeBasePath)} className={`font-medium ${STOREFRONT_TEXT_LINK_EFFECT_CLASS}`}>

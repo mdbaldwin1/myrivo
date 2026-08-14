@@ -1,12 +1,13 @@
 "use client";
 
-import { AlertCircle, CreditCard, Mail, MapPinned, PackageCheck, PackageOpen, Scale, Sparkles, Truck, UserRound, XCircle } from "lucide-react";
+import { AlertCircle, CreditCard, Download, Mail, MapPinned, PackageCheck, PackageOpen, Scale, Sparkles, Truck, UserRound, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { EmailStudioTemplateDocument, EmailStudioTemplateId } from "@/lib/email-studio/model";
 
 const templateIcons = {
   welcomeDiscount: Sparkles,
   customerConfirmation: PackageCheck,
+  digitalDelivery: Download,
   ownerNewOrder: UserRound,
   pickupUpdated: MapPinned,
   shippingDelay: Truck,

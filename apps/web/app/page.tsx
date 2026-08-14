@@ -11,6 +11,8 @@ import { StorefrontPage } from "@/components/storefront/storefront-page";
 import { StorefrontRuntimeProvider } from "@/components/storefront/storefront-runtime-provider";
 import { formatMoney, formatMoneyWithCents, formatPlatformFeePercent, resolvePricingPlans, type BillingPlanRow } from "@/lib/marketing/pricing";
 import { isReviewsEnabledForStoreSlug } from "@/lib/reviews/feature-gating";
+import { getSingleStoreSlug } from "@/lib/stores/single-store";
+import { buildCustomDomainUnavailableState, isNonPlatformCustomHost } from "@/lib/storefront/custom-domain-fallback";
 import { buildSearchSuffix } from "@/lib/storefront/legacy-query";
 import { buildStorefrontHomePath } from "@/lib/storefront/paths";
 import { loadStorefrontData } from "@/lib/storefront/load-storefront-data";
@@ -156,19 +158,44 @@ type HomePageProps = {
 export default async function HomePage({ searchParams }: HomePageProps) {
   const resolvedSearchParams = await searchParams;
   const requestHeaders = await headers();
+  const host = requestHeaders.get("host") ?? requestHeaders.get("x-forwarded-host");
   const currentPath = requestHeaders.get("x-pathname") ?? requestHeaders.get("next-url") ?? "";
   const disableStoreCanonicalRedirect = /^\/s\//.test(currentPath);
   const requestedStoreSlug = typeof resolvedSearchParams.store === "string" ? resolvedSearchParams.store : null;
+  const customHostFallback =
+    host && isNonPlatformCustomHost({ host, appUrl: getExternalAppUrl() })
+      ? buildCustomDomainUnavailableState({ host, storeSlug: getSingleStoreSlug() })
+      : null;
   if (requestedStoreSlug && !disableStoreCanonicalRedirect) {
     redirect(`${buildStorefrontHomePath(requestedStoreSlug)}${buildSearchSuffix(resolvedSearchParams, ["store"])}`);
   }
 
-  const redirectUrl = await resolveStorefrontCanonicalRedirect("/", requestedStoreSlug);
+  let redirectUrl: string | null = null;
+  try {
+    redirectUrl = await resolveStorefrontCanonicalRedirect("/", requestedStoreSlug);
+  } catch (error) {
+    if (customHostFallback) {
+      console.error("Unable to resolve storefront canonical redirect for custom host.", error);
+      return <StorefrontUnavailablePage state={customHostFallback} />;
+    }
+
+    throw error;
+  }
   if (redirectUrl) {
     redirect(redirectUrl);
   }
 
-  const storefrontData = await loadStorefrontData(requestedStoreSlug);
+  let storefrontData = null;
+  try {
+    storefrontData = await loadStorefrontData(requestedStoreSlug);
+  } catch (error) {
+    if (customHostFallback) {
+      console.error("Unable to load storefront data for custom host.", error);
+      return <StorefrontUnavailablePage state={customHostFallback} />;
+    }
+
+    throw error;
+  }
   if (storefrontData) {
     const runtime = createStorefrontRuntime({
       ...storefrontData,
@@ -192,9 +219,23 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     );
   }
 
-  const unavailable = await loadStorefrontUnavailableData(requestedStoreSlug);
+  let unavailable = null;
+  try {
+    unavailable = await loadStorefrontUnavailableData(requestedStoreSlug);
+  } catch (error) {
+    if (customHostFallback) {
+      console.error("Unable to load storefront unavailable state for custom host.", error);
+      return <StorefrontUnavailablePage state={customHostFallback} />;
+    }
+
+    throw error;
+  }
   if (unavailable) {
     return <StorefrontUnavailablePage state={unavailable} />;
+  }
+
+  if (customHostFallback) {
+    return <StorefrontUnavailablePage state={customHostFallback} />;
   }
 
   const supabase = await createSupabaseServerClient();

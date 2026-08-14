@@ -1,5 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { getProductDetailDisplayPrice, resolveAvailableValuesForOption } from "@/components/storefront/storefront-product-detail-page";
+import {
+  buildNormalizedProductDetailCart,
+  getProductDetailDisplayPrice,
+  isStorefrontVariantPurchasable,
+  resolveAvailableValuesForOption
+} from "@/components/storefront/storefront-product-detail-page";
 
 describe("storefront product detail option availability", () => {
   test("keeps top-level option values available even when a lower-level selection is archived away", () => {
@@ -45,5 +50,35 @@ describe("storefront product detail option availability", () => {
       quantity: 3,
       totalPriceCents: 3600
     });
+  });
+
+  test("allows an active digital variant regardless of inventory", () => {
+    expect(isStorefrontVariantPurchasable("digital", {
+      inventory_qty: 0,
+      is_made_to_order: false
+    })).toBe(true);
+  });
+
+  test("normalizes the full cart against authoritative runtime products before persistence", () => {
+    expect(buildNormalizedProductDetailCart(
+      [
+        { productId: "digital-product", variantId: "digital-variant", quantity: 9 },
+        { productId: "stale-product", variantId: "stale-variant", quantity: 2 }
+      ],
+      {
+        productId: "digital-product",
+        variantId: "digital-variant",
+        quantity: 8
+      },
+      [
+        {
+          id: "digital-product",
+          product_type: "digital",
+          product_variants: [{ id: "digital-variant", status: "active" }]
+        }
+      ]
+    )).toEqual([
+      { productId: "digital-product", variantId: "digital-variant", quantity: 1 }
+    ]);
   });
 });
