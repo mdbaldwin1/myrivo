@@ -245,3 +245,51 @@
 - **Separate financial branches:** Resolved in fixture modeling with distinct orders, but unusable until real provider actions replace rejected injections.
 - **Resend retrieval/link exchange:** Materially improved. The test retrieves a message matching recipient/order, validates a fragment link, and opens it in a clean context. Its delivery semantics still need inclusion in the strict evidence schema.
 - **Fail-closed unsupported provider behavior:** Correct principle, incorrect harness integration: unsupported actions are rejected, but the suite still requires and invokes them rather than using a supported provider path or prerequisite blocker.
+
+---
+
+## Round 7 Re-review — commit `39eb128`
+
+### Verdict
+
+**FAIL** — the database binding and canonical response parser are now callable, and refunds use Stripe's test API, but CI cannot satisfy the required dispute preflight and multiple release-critical scenarios remain semantically invalid or under-validated.
+
+### P1 — Required dispute-helper configuration is absent from the CI release job
+
+**Evidence:** The verifier now fails before Playwright unless both `MYRIVO_STRIPE_DISPUTE_HELPER_URL` and `MYRIVO_STRIPE_DISPUTE_HELPER_TOKEN` are present (`scripts/verify-digital-products-acceptance.mjs:17`). The promotion job does not set either variable (`.github/workflows/ci.yml:53-69`); it sets only the fixture, approved host, recipient, evidence key, Stripe keys, and Resend key. No alternate provider path exists.
+
+**Impact:** The required promotion check is guaranteed to fail in GitHub Actions even when every currently declared secret is configured. This is an implementation/configuration defect, not merely the acknowledged absence of credentials in the local review environment.
+
+**Remediation:** Add the audited helper URL as a protected environment variable and token as a protected secret to the promotion job, validate the helper origin/HTTPS allowlist and response linkage, and document/provision the helper. If no approved helper exists, leave rollout blocked but model the unavailable gate as an explicit deployment prerequisite rather than shipping an impossible required CI job.
+
+### P1 — The five-grant journey cannot establish five grants under the 60-second grace invariant
+
+**Evidence:** The test downloads once in a clean browser context, once in the original context, then rapidly clicks three additional times in that same original context (`apps/web/e2e/digital-products.spec.ts:50-64`). The approved invariant reuses a recent grant for the same access session for 60 seconds. Therefore those rapid same-session clicks should reuse one grant, not create three distinct grants. At most two sessions/grants are represented. There is no clock advance, >60-second interval, or five independent access sessions, and grace reuse itself is never observed before/after.
+
+**Impact:** A correct implementation cannot produce the verifier's required five unique grant rows at that point (`scripts/verify-digital-products-acceptance.mjs:57-60`). The sixth-denial assertion is unreachable or tests fewer than five consumed grants. Signing-failure non-consumption and deterministic grace behavior also remain uncertified.
+
+**Remediation:** Deliberately create five qualifying grants—prefer five separately established browser sessions/access sessions, or a supported test clock beyond each grace window—while capturing after each issuance. Separately perform an immediate same-session retry and assert the same grant ID/count, inject a signing failure and assert no consumption, then perform a sixth qualifying attempt and assert denial with the count fixed at five.
+
+### P1 — Scenario verification still checks labels/presence rather than exact financial, email, version, and retry semantics
+
+**Evidence:** The canonical Zod schema is now actually applied server-side and in the evidence writer (`apps/web/lib/digital-products/acceptance-control.ts:38`; `apps/web/e2e/digital-products-fixture.ts:33`), resolving the dead-schema defect. However, its status fields are arbitrary nonempty strings and its arrays may be empty except manifests (`apps/web/lib/digital-products/acceptance-evidence.ts:3-25`). The final verifier adds only checkout composition, five unique grant IDs, and nonempty manifest IDs (`scripts/verify-digital-products-acceptance.mjs:50-61`). It does not assert:
+
+- sent Resend notification/provider/message identity for `resend-access` or `merchant-resend`;
+- partial refund preserves access and full refund revokes it in the observation;
+- dispute won/lost authoritative access state or Stripe dispute/event IDs;
+- replacement's post-change catalog version differs while the purchased manifest version remains identical to a captured pre-change value;
+- delivery failure before retry and later succeeded job/notification with increased attempt history;
+- grant rows are `issued`, bound to expected versions/sessions, or a sixth attempt was denied.
+
+Additionally, one static `customerOrder` route is reused for two distinct refund fixture orders and one static `download` route for two dispute orders (`apps/web/e2e/digital-products.spec.ts:88-112`), without deriving or asserting that those pages correspond to each `subject`.
+
+**Impact:** Correct scenario names and correlated paid orders can pass while the actual access, delivery, email, immutable-version, and financial outcomes are wrong. This does not meet the Definition of Done.
+
+**Remediation:** Add scenario-specific discriminated schemas and exact predicates, with before/after observations linked to the same subject/provider event. Derive customer/download URLs from each subject or assert displayed order identity. Include Resend ID/status/recipient, access entitlement/token status, provider refund/dispute IDs and event timestamps, immutable version snapshots, delivery attempt sequence, and exact grant/grace/denial state.
+
+### Previous findings disposition
+
+- **Database configuration callability:** Resolved. The RPC reads a database-owned singleton and target binding; application roles cannot mutate configuration, and native PostgreSQL tests cover success and tampering.
+- **Real refund path:** Improved to real Stripe test refunds, pending exact webhook/event and state evidence as described above.
+- **Dispute fail-closed preflight:** Implemented correctly in the verifier, but not operationally wired in CI.
+- **Canonical schema use:** Resolved mechanically end to end; semantic completeness remains P1.
