@@ -176,6 +176,13 @@ async function contextSessionHash(context: BrowserContext) {
   return acceptanceSessionHash(cookies.map((cookie) => `${cookie.name}:${cookie.value}`).join("|"));
 }
 
+const beforeTypes = null as unknown as {
+  webhook: {
+    stripe_event_id: string; event_type: string; status: string; signature_verified: boolean;
+    attempt_count: number; last_attempt_at: string; processed_at: string | null; created_at: string;
+  };
+};
+
 test.skip(!fixture, "Digital acceptance requires an explicit non-production fixture.");
 
 test.describe.serial("digital product user journeys", () => {
@@ -426,10 +433,18 @@ test.describe.serial("digital product user journeys", () => {
         if (!processedRecord.refund?.stripe_refund_id) throw new Error("Processed refund has no provider identity.");
         refund = await getStripeRefund(request, processedRecord.refund.stripe_refund_id, paymentIntentId);
       }
-      const processed = await waitForFinancialObservation(request, fixture!, subject);
-      const refundRow = processed.observation.refunds.find((row) => row.stripe_refund_id === refund.id);
-      const webhook = processed.observation.webhookEvents.find((row) => row.stripe_event_id === refundRow?.source_event_id);
-      if (!refundRow || !webhook?.processed_at) throw new Error("Refund webhook did not produce correlated application state.");
+      // Wait for the provider webhook for THIS refund to land and correlate.
+      const refundDeadline = Date.now() + 90_000;
+      let refundRow: { stripe_refund_id: string; amount_cents: number; status: string; source_event_id: string } | undefined;
+      let webhook: (typeof beforeTypes)["webhook"] | undefined;
+      for (;;) {
+        const processed = await acceptanceAction(request, fixture!, "observe", undefined, subject);
+        refundRow = processed.observation.refunds.find((row) => row.stripe_refund_id === refund.id);
+        webhook = processed.observation.webhookEvents.find((row) => row.stripe_event_id === refundRow?.source_event_id);
+        if (refundRow && webhook?.processed_at) break;
+        if (Date.now() > refundDeadline) throw new Error("Refund webhook did not produce correlated application state.");
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+      }
       await page.goto(`/order/${subject}`);
       if (transition === "partial") {
         await expect(page.getByText(/Opening this order creates a private 15-minute access session/).first()).toBeVisible();
