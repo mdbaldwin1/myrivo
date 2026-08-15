@@ -5,7 +5,6 @@ import { deflateSync } from "node:zlib";
 import {
   acceptanceAction,
   acceptanceSessionHash,
-  createStripeTestRefund,
   dismissCookieBannerIfPresent,
   getDeliveredAccessMessage,
   getStripeCheckoutEvidence,
@@ -390,20 +389,43 @@ test.describe.serial("digital product user journeys", () => {
     test.setTimeout(900_000);
     await page.request.post("/api/auth/signout").catch(() => undefined);
     await signIn(page, fixture!.customer.email, fixture!.customer.password);
+    // Refunds are merchant-initiated in this product and provider-confirmed
+    // by webhook; drive the real refund flow with a merchant session.
+    const merchantContext = await page.context().browser()!.newContext();
+    const merchantPage = await merchantContext.newPage();
+    await signIn(merchantPage, fixture!.merchant.email, fixture!.merchant.password);
+    const origin = new URL(fixture!.baseUrl).origin;
     for (const transition of ["partial", "full"] as const) {
       const subject = transition === "partial" ? fixture!.financialOrders.partialRefund : fixture!.financialOrders.fullRefund;
       const before = await acceptanceAction(request, fixture!, "observe", undefined, subject);
       const paymentIntentId = before.observation?.providerPayment?.id;
       if (typeof paymentIntentId !== "string") throw new Error("Refund fixture has no correlated Stripe PaymentIntent.");
-      // A full refund can only be created once; on a rerun the provider
-      // refund already exists, so verify and reuse it instead of fabricating
-      // a second one.
+      // A full refund can only happen once; on a rerun the provider refund
+      // already exists, so verify and reuse it instead of fabricating a
+      // second one.
       const existingFullRefund = transition === "full" && before.observation.order.refund_status === "full"
         ? before.observation.refunds.find((row) => row.status === "succeeded")
         : undefined;
-      const refund = existingFullRefund
-        ? await getStripeRefund(request, existingFullRefund.stripe_refund_id, paymentIntentId)
-        : await createStripeTestRefund(request, paymentIntentId, transition === "partial" ? 1 : undefined);
+      let refund: { id?: string; status?: string; amount?: number };
+      if (existingFullRefund) {
+        refund = await getStripeRefund(request, existingFullRefund.stripe_refund_id, paymentIntentId);
+      } else {
+        const created = await merchantPage.request.post("/api/orders/refunds", {
+          headers: { origin },
+          data: { orderId: subject, mode: transition, ...(transition === "partial" ? { amountCents: 1 } : {}), reasonKey: "customer_request" },
+        });
+        if (!created.ok()) throw new Error(`Merchant refund request failed with ${created.status()}.`);
+        const requested = await created.json() as { refund?: { id?: string } };
+        if (!requested.refund?.id) throw new Error("Merchant refund request returned no record.");
+        const processedResponse = await merchantPage.request.patch(`/api/orders/refunds/${requested.refund.id}`, {
+          headers: { origin },
+          data: { action: "process" },
+        });
+        if (!processedResponse.ok()) throw new Error(`Merchant refund processing failed with ${processedResponse.status()}.`);
+        const processedRecord = await processedResponse.json() as { refund?: { stripe_refund_id?: string | null } };
+        if (!processedRecord.refund?.stripe_refund_id) throw new Error("Processed refund has no provider identity.");
+        refund = await getStripeRefund(request, processedRecord.refund.stripe_refund_id, paymentIntentId);
+      }
       const processed = await waitForFinancialObservation(request, fixture!, subject);
       const refundRow = processed.observation.refunds.find((row) => row.stripe_refund_id === refund.id);
       const webhook = processed.observation.webhookEvents.find((row) => row.stripe_event_id === refundRow?.source_event_id);
@@ -419,6 +441,7 @@ test.describe.serial("digital product user journeys", () => {
       await expectNoSeriousAccessibilityViolations(page, `${transition} refund dynamic state`);
       await acceptanceAction(request, fixture!, "observe", undefined, subject, transition === "partial" ? "stripe-partial-refund" : "stripe-full-refund", { kind: "refund", refundId: refund.id, status: refund.status, amount: refund.amount, paymentIntentId, webhook: { eventId: webhook.stripe_event_id, type: webhook.event_type, signatureVerified: webhook.signature_verified, status: "processed", receivedAt: webhook.created_at, processedAt: webhook.processed_at, attempts: webhook.attempt_count } });
     }
+    await merchantContext.close();
     for (const transition of ["opened", "won", "lost"] as const) {
       const subject = transition === "opened" ? fixture!.financialOrders.disputeOpened : transition === "lost" ? fixture!.financialOrders.disputeLost : fixture!.financialOrders.disputeWon;
       const before = await acceptanceAction(request, fixture!, "observe", undefined, subject);
