@@ -307,7 +307,11 @@ export function DigitalDownloadList() {
                     {available ? (
                       <Button
                         type="button"
-                        disabled={downloadingId !== null}
+                        // Keep the pressed control focusable while the download
+                        // initiates: hard-disabling it drops keyboard focus to
+                        // the body. beginDownload ignores re-entry while busy.
+                        disabled={downloadingId !== null && downloadingId !== file.id}
+                        aria-busy={downloadingId === file.id || undefined}
                         className={cn(buttonVariants(), "w-full shrink-0 sm:w-auto")}
                         aria-label={`Download ${file.label}`}
                         onClick={() => beginDownload(file.id, file.label)}
