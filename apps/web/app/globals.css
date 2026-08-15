@@ -230,3 +230,19 @@
     }
   }
 }
+
+/* Sonner's rich-color palette renders body-size toast copy below the WCAG AA
+   4.5:1 minimum (e.g. success #008a2e on #ecfdf3 at 4.25:1); darken the text
+   tones while keeping the tinted backgrounds. */
+[data-sonner-toast][data-type="success"] {
+  --success-text: #15803d;
+}
+[data-sonner-toast][data-type="error"] {
+  --error-text: #b91c1c;
+}
+[data-sonner-toast][data-type="warning"] {
+  --warning-text: #8a5300;
+}
+[data-sonner-toast][data-type="info"] {
+  --info-text: #1d4ed8;
+}
