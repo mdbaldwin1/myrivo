@@ -30,6 +30,8 @@ function getNodeText(node: React.ReactNode): string {
 
 type SelectProps = {
   id?: string;
+  "aria-label"?: string;
+  "aria-labelledby"?: string;
   className?: string;
   children?: React.ReactNode;
   value?: string;
@@ -68,7 +70,7 @@ function extractOptions(children: React.ReactNode) {
 }
 
 const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
-  ({ id, className, children, value, defaultValue, disabled, onOpenChange, onChange, placeholder, icon = "down" }, ref) => {
+  ({ id, className, children, value, defaultValue, disabled, onOpenChange, onChange, placeholder, icon = "down", "aria-label": ariaLabel, "aria-labelledby": ariaLabelledby }, ref) => {
     const options = React.useMemo(() => extractOptions(children), [children]);
     const portalContainer = useOptionalSurfacePortalContainer();
     const hasMounted = useHasMounted();
@@ -79,6 +81,8 @@ const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
       return (
         <select
           id={id}
+          aria-label={ariaLabel}
+          aria-labelledby={ariaLabelledby}
           value={selectedValue}
           disabled={disabled}
           className={cn(
@@ -121,6 +125,8 @@ const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
         <SelectPrimitive.Trigger
           ref={ref}
           id={id}
+          aria-label={ariaLabel}
+          aria-labelledby={ariaLabelledby}
           className={cn(
             "flex h-10 w-full items-center justify-between rounded-md border border-border bg-background px-3 py-2 text-sm whitespace-nowrap ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
             className

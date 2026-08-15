@@ -45,11 +45,18 @@ for (const viewport of [
         await dismissCookieBannerIfPresent(page);
         await expect(page.locator("body")).toBeVisible();
         await expectNoSeriousAccessibilityViolations(page, `${viewport.name} ${label}`);
-        await page.evaluate(() => { document.documentElement.style.zoom = "2"; });
+        // WCAG 1.4.10 requires reflow without horizontal scrolling down to a
+        // 320 CSS px equivalent viewport; below that (e.g. 390px at 200%) even
+        // compliant layouts may scroll. Check reflow at the standard's floor,
+        // then run the remaining functionality checks at a full 200% zoom.
+        const reflowZoom = Math.min(2, viewport.width / 320);
+        await page.evaluate((zoom) => { document.documentElement.style.zoom = String(zoom); }, reflowZoom);
         await expect(page.locator("body")).toBeVisible();
         await expect
           .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1), { timeout: 10_000 })
           .toBe(true);
+        await page.evaluate(() => { document.documentElement.style.zoom = "2"; });
+        await expect(page.locator("body")).toBeVisible();
         if (label === "cart") {
           // The checkout form requires buyer identity and digital-delivery
           // consent before the hosted payment redirect.

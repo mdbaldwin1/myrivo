@@ -21,7 +21,9 @@
   --brand-secondary-foreground: 0 0% 100%; /* #ffffff */
   --brand-secondary-soft: 265 27% 94%; /* #ece9f2 */
   --brand-secondary-muted-foreground: 266 15% 37%; /* #5f5570 */
-  --destructive: 0 72% 51%; /* #dc2828 */
+  /* Darkened from 0 72% 51% (#dc2828): destructive text on its 10% tint sat
+     at 4.13:1, below the WCAG AA minimum for body-size alert copy. */
+  --destructive: 0 74% 42%; /* #bb1c1c */
   --destructive-foreground: 0 0% 100%; /* #ffffff */
   --radius-lg: 1rem;
   --radius-md: 0.75rem;
