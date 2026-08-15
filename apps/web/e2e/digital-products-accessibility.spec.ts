@@ -73,14 +73,24 @@ for (const viewport of [
           await page.keyboard.press("Space");
           await expect(page.getByText(/added to cart|view cart/i).first()).toBeVisible();
         } else if (label === "recovery") {
-          await page.getByLabel("Order ID").fill(acceptance!.financialOrders.partialRefund);
+          // The recovery endpoint answers uniformly by design; use an order
+          // pair that no other surface exercises to stay inside its rate
+          // limits across repeated runs.
+          await page.getByLabel("Order ID").fill(acceptance!.financialOrders.disputeLost);
           await page.getByLabel("Order email").fill(acceptance!.customer.email);
           await primaryAction.focus();
           await page.keyboard.press("Enter");
           await expect(page.getByRole("status")).toContainText("Check your email", { timeout: 30_000 });
         } else if (label === "download") {
+          // One real grant-consuming press per suite run (mobile); the other
+          // viewport answers with the interstitial shape so repeated runs
+          // cannot exhaust the buyer's five lifetime grants.
+          if (viewport.name !== "mobile") {
+            await page.route("**/api/digital-downloads/file/**", (route) => route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: "<!doctype html><html><head><title>Download starting</title></head><body>Your download is starting.</body></html>" }));
+          }
           await page.keyboard.press("Enter");
           await expect(page.getByRole("status")).toContainText(/download started|Preparing/, { timeout: 30_000 });
+          if (viewport.name !== "mobile") await page.unroute("**/api/digital-downloads/file/**");
         } else if (label === "cart") {
           await page.keyboard.press("Enter");
           await expect(page).toHaveURL(/checkout\.stripe\.com/, { timeout: 60_000 });
