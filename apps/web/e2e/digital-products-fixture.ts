@@ -221,7 +221,7 @@ export async function runSupportedStripeDisputeScenario(request: import("@playwr
   const expected = createHmac("sha256", signingKey).update(responseText).digest("hex");
   if (!responseSignature || responseSignature.length !== expected.length || !timingSafeEqual(Buffer.from(responseSignature), Buffer.from(expected))) throw new Error("Stripe dispute helper response signature is invalid.");
   const result = JSON.parse(responseText) as { disputeId?: string; chargeId?: string; paymentIntentId?: string; eventIds?: string[]; outcome?: string };
-  if (!result.disputeId?.startsWith("dp_") || !result.chargeId?.startsWith("ch_") || result.paymentIntentId !== paymentIntentId || result.outcome !== scenario || !result.eventIds?.every((id) => id.startsWith("evt_"))) throw new Error("Stripe dispute helper returned uncorrelated evidence.");
+  if (!/^d[pu]_/.test(result.disputeId ?? "") || !result.chargeId?.startsWith("ch_") || result.paymentIntentId !== paymentIntentId || result.outcome !== scenario || !result.eventIds?.every((id) => id.startsWith("evt_"))) throw new Error("Stripe dispute helper returned uncorrelated evidence.");
   return result;
 }
 

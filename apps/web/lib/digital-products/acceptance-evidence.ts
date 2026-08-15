@@ -20,7 +20,7 @@ const order = z.object({
   stripe_payment_intent_id: z.string().startsWith("pi_"), checkout_composition: z.enum(["digital_only", "mixed"]),
 }).strict();
 const grant = z.object({ id: uuid, entitlement_id: uuid, status: z.enum(["reserved", "issued", "released", "failed"]), asset_version_id: uuid, created_at: z.string(), released_at: z.string().nullable(), last_safe_error: z.string().nullable() }).strict();
-const notification = z.object({ id: uuid, notification_type: z.string().min(1), status: z.string().min(1), provider: z.string().min(1), provider_message_id: z.string().nullable(), attempt_count: z.number().int().nonnegative(), sent_at: z.string().nullable() }).strict();
+const notification = z.object({ id: uuid, notification_type: z.string().min(1), status: z.string().min(1), provider: z.string().min(1).nullable(), provider_message_id: z.string().nullable(), attempt_count: z.number().int().nonnegative(), sent_at: z.string().nullable() }).strict();
 
 export const digitalAcceptanceObservationSchema = z.object({
   version: z.literal(1), runId: uuid, subjectId: uuid, observedAt: z.string().datetime(),
@@ -32,7 +32,7 @@ export const digitalAcceptanceObservationSchema = z.object({
     manifestItems: z.array(z.object({ asset_version_id: uuid, customer_filename: z.string().min(1) }).strict()).min(1),
     providerPayment: z.object({ id: z.string().startsWith("pi_"), status: z.literal("succeeded"), livemode: z.literal(false) }).strict(),
     refunds: z.array(z.object({ stripe_refund_id: z.string().startsWith("re_"), amount_cents: z.number().int().positive(), status: z.string(), source_event_id: z.string().startsWith("evt_") }).strict()),
-    disputes: z.array(z.object({ stripe_dispute_id: z.string().startsWith("dp_"), stripe_charge_id: z.string().startsWith("ch_"), stripe_payment_intent_id: z.string().startsWith("pi_"), status: z.string(), source_event_id: z.string().startsWith("evt_") }).strict()),
+    disputes: z.array(z.object({ stripe_dispute_id: z.string().regex(/^d[pu]_/), stripe_charge_id: z.string().startsWith("ch_"), stripe_payment_intent_id: z.string().startsWith("pi_"), status: z.string(), source_event_id: z.string().startsWith("evt_") }).strict()),
     webhookEvents: z.array(z.object({ stripe_event_id: z.string().startsWith("evt_"), event_type: z.string(), status: z.string(), signature_verified: z.boolean(), attempt_count: z.number().int().positive(), last_attempt_at: z.string(), processed_at: z.string().nullable(), created_at: z.string() }).strict()),
     deliveryAttempts: z.array(z.object({ job_id: uuid, attempt_number: z.number().int().positive(), status: z.string(), started_at: z.string(), finished_at: z.string().nullable() }).strict()),
     catalogAssetVersions: z.array(z.object({ id: uuid, current_version_id: uuid, customer_filename: z.string().min(1) }).strict()),
@@ -51,7 +51,7 @@ const webhook = z.object({
   status: z.literal("processed"), receivedAt: providerTimestamp, processedAt: providerTimestamp, attempts: z.number().int().positive(),
 }).strict();
 const refundEvidence = z.object({ kind: z.literal("refund"), refundId: z.string().startsWith("re_"), status: z.literal("succeeded"), amount: z.number().int().positive(), paymentIntentId: z.string().startsWith("pi_"), webhook }).strict();
-const disputeEvidence = z.object({ kind: z.literal("dispute"), disputeId: z.string().startsWith("dp_"), chargeId: z.string().startsWith("ch_"), paymentIntentId: z.string().startsWith("pi_"), outcome: z.enum(["opened", "won", "lost"]), eventIds: z.array(z.string().startsWith("evt_")).min(1), webhook }).strict();
+const disputeEvidence = z.object({ kind: z.literal("dispute"), disputeId: z.string().regex(/^d[pu]_/), chargeId: z.string().startsWith("ch_"), paymentIntentId: z.string().startsWith("pi_"), outcome: z.enum(["opened", "won", "lost"]), eventIds: z.array(z.string().startsWith("evt_")).min(1), webhook }).strict();
 const resendEvidence = z.object({ kind: z.literal("resend"), messageId: z.string().min(1), status: z.literal("sent"), recipient: z.string().email(), orderId: uuid, accessUrlHash: z.string().regex(/^[a-f0-9]{64}$/), sentAt: providerTimestamp }).strict();
 const checkoutEvidence = z.object({ kind: z.literal("checkout"), sessionId: z.string().startsWith("cs_test_"), paymentIntentId: z.string().startsWith("pi_"), orderId: uuid }).strict();
 const grantIds = z.array(uuid);
