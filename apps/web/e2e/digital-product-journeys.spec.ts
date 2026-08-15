@@ -499,8 +499,9 @@ test.describe.serial("digital product user journeys", () => {
     // The fixture order's first delivery attempt genuinely failed (worker
     // crash recovery) before the retry delivered; the merchant surface must
     // expose that failure history alongside the successful delivery.
-    await expect(page.locator("main").first()).toContainText(/Attempt 1 · Failed/i, { timeout: 30_000 });
-    await expect(page.locator("main").first()).toContainText(/Delivery succeeded/i);
+    // The order detail opens in a flyout portalled outside <main>.
+    await expect(page.getByText(/Attempt 1 · Failed/i)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/Delivery succeeded/i).first()).toBeVisible();
     await expectNoSeriousAccessibilityViolations(page, "delivery failure history state");
     const resendRequestedAt = Date.now();
     await page.getByRole("button", { name: /send fresh access link|resend|retry/i }).click();
