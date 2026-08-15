@@ -88,7 +88,7 @@ export function StorefrontBackInStockAlertForm({
         <Button
           type="submit"
           disabled={pending}
-          className={cn("h-11 bg-[var(--storefront-primary)] text-[color:var(--storefront-primary-foreground)] hover:brightness-95", buttonRadiusClass)}
+          className={cn("h-11 bg-[var(--storefront-primary)] text-[color:var(--storefront-primary-foreground)] hover:brightness-90", buttonRadiusClass)}
         >
           {pending ? "Saving..." : "Email me"}
         </Button>

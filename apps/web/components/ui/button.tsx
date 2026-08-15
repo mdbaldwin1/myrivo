@@ -10,8 +10,8 @@ const buttonVariants = cva(
       variant: {
         // Darken on hover instead of fading: opacity blends the button into
         // light surfaces and drops white-on-primary text below the WCAG AA
-        // 4.5:1 contrast minimum while hovered.
-        default: "bg-primary text-primary-foreground hover:brightness-95",
+        // 4.5:1 contrast minimum while hovered; 90% brightness keeps ~4.7:1.
+        default: "bg-primary text-primary-foreground hover:brightness-90",
         brand: "bg-[hsl(var(--brand-secondary))] text-[hsl(var(--brand-secondary-foreground))] hover:bg-[hsl(var(--brand-secondary))]/90 focus-visible:ring-[hsl(var(--brand-secondary))]",
         secondary: "bg-muted text-foreground hover:bg-muted/80",
         outline: "border border-border bg-background hover:bg-muted",

@@ -440,7 +440,7 @@ export function StorefrontCheckoutPage({ store, viewer, branding, settings, stud
                   <Link
                     href={digitalAccessUrl}
                     className={cn(
-                      "inline-flex min-h-11 items-center justify-center bg-[var(--storefront-accent)] px-5 text-sm font-semibold text-[color:var(--storefront-accent-foreground)] transition hover:brightness-95",
+                      "inline-flex min-h-11 items-center justify-center bg-[var(--storefront-accent)] px-5 text-sm font-semibold text-[color:var(--storefront-accent-foreground)] transition hover:brightness-90",
                       buttonRadiusClass
                     )}
                   >

@@ -336,7 +336,7 @@ export function StorefrontCartButton({
           <Link
             href={resolvedHref}
             className={cn(
-              "mt-2 inline-flex h-9 w-full items-center justify-center bg-[var(--storefront-primary)] px-3 text-sm font-medium text-[color:var(--storefront-primary-foreground)] hover:brightness-95",
+              "mt-2 inline-flex h-9 w-full items-center justify-center bg-[var(--storefront-primary)] px-3 text-sm font-medium text-[color:var(--storefront-primary-foreground)] hover:brightness-90",
               buttonRadiusClass
             )}
           >
