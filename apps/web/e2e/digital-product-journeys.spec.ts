@@ -1,5 +1,6 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
+import fs from "node:fs";
 import { deflateSync } from "node:zlib";
 import {
   acceptanceAction,
@@ -160,16 +161,14 @@ function waitForFileGrantResponse(page: Page) {
   );
 }
 
-function waitForFinalDownload(page: Page) {
-  return page.waitForResponse((response) => {
-    let request: import("@playwright/test").Request | null = response.request();
-    let originatedAtDownloadPost = false;
-    while (request) {
-      if (request.url().includes("/api/digital-downloads/file/") && request.method() === "POST") originatedAtDownloadPost = true;
-      request = request.redirectedFrom();
-    }
-    return originatedAtDownloadPost && response.status() === 200 && !response.url().includes("/api/digital-downloads/file/");
-  }, { timeout: 45_000 });
+async function captureDownloadedFile(page: Page, click: () => Promise<void>) {
+  const downloadPromise = page.waitForEvent("download", { timeout: 60_000 });
+  await click();
+  const download = await downloadPromise;
+  const filePath = await download.path();
+  if (!filePath) throw new Error("Download did not produce a file.");
+  const bytes = fs.readFileSync(filePath);
+  return { filename: download.suggestedFilename(), sha256: createHash("sha256").update(bytes).digest("hex") };
 }
 
 async function contextSessionHash(context: BrowserContext) {
@@ -257,7 +256,7 @@ test.describe.serial("digital product user journeys", () => {
           }
           const grantResponse = waitForFileGrantResponse(sessionPage);
           await sessionDownload.click();
-          expect((await grantResponse).status()).toBe(303);
+          expect((await grantResponse).status()).toBe(200);
           await expect(sessionPage.getByRole("status")).toContainText(/download started/i, { timeout: 30_000 });
           sessionHashes.push(await contextSessionHash(context));
           if (index === 0) {
@@ -266,7 +265,7 @@ test.describe.serial("digital product user journeys", () => {
             graceCountBefore = beforeGrace.observation.grants.filter((grant) => grant.status === "issued").length;
             const graceResponse = waitForFileGrantResponse(sessionPage);
             await sessionDownload.click();
-            expect((await graceResponse).status()).toBe(303);
+            expect((await graceResponse).status()).toBe(200);
             const grace = await acceptanceAction(request, fixture!, "observe", undefined, orderId);
             graceReusedGrantId = grace.observation.grants.at(-1)?.id ?? "";
             graceCountAfter = grace.observation.grants.filter((grant) => grant.status === "issued").length;
@@ -301,7 +300,7 @@ test.describe.serial("digital product user journeys", () => {
       } else {
         const grantResponse = waitForFileGrantResponse(page);
         await downloadButton.click();
-        expect((await grantResponse).status()).toBe(303);
+        expect((await grantResponse).status()).toBe(200);
         await expect(page.getByRole("status")).toContainText(/started|preparing/i);
       }
       const beforeCheckoutEvidence = await acceptanceAction(request, fixture!, "observe", undefined, orderId);
@@ -321,11 +320,9 @@ test.describe.serial("digital product user journeys", () => {
     const priorPage = await priorContext.newPage();
     await priorPage.goto(priorMessage.link);
     await expect(priorPage.getByRole("button", { name: /download/i }).first()).toBeVisible({ timeout: 30_000 });
-    const priorResponse = waitForFinalDownload(priorPage);
-    await priorPage.getByRole("button", { name: /download/i }).first().click();
-    const priorStorageResponse = await priorResponse;
-    expect(priorStorageResponse.headers()["content-disposition"]).toContain(priorVersion.customer_filename);
-    const priorContentSha256 = createHash("sha256").update(await priorStorageResponse.body()).digest("hex");
+    const priorDownload = await captureDownloadedFile(priorPage, () => priorPage.getByRole("button", { name: /download/i }).first().click());
+    expect(priorDownload.filename).toBe(priorVersion.customer_filename);
+    const priorContentSha256 = priorDownload.sha256;
     await priorContext.close();
     await page.goto(fixture!.routes.recovery);
     await dismissCookieBannerIfPresent(page);
@@ -360,11 +357,9 @@ test.describe.serial("digital product user journeys", () => {
     const oldAfterPage = await oldAfterContext.newPage();
     await oldAfterPage.goto(priorMessage.link);
     await expect(oldAfterPage.getByRole("button", { name: /download/i }).first()).toBeVisible({ timeout: 30_000 });
-    const oldAfterResponse = waitForFinalDownload(oldAfterPage);
-    await oldAfterPage.getByRole("button", { name: /download/i }).first().click();
-    const oldAfterStorageResponse = await oldAfterResponse;
-    expect(oldAfterStorageResponse.headers()["content-disposition"]).toContain(priorVersion.customer_filename);
-    const oldAfterHash = createHash("sha256").update(await oldAfterStorageResponse.body()).digest("hex");
+    const oldAfterDownload = await captureDownloadedFile(oldAfterPage, () => oldAfterPage.getByRole("button", { name: /download/i }).first().click());
+    expect(oldAfterDownload.filename).toBe(priorVersion.customer_filename);
+    const oldAfterHash = oldAfterDownload.sha256;
     await oldAfterContext.close();
     if (oldAfterHash !== priorContentSha256) throw new Error("Replacement changed the prior buyer's immutable file bytes.");
     const newMessage = await getDeliveredAccessMessage(request, fixture!, replacementOrderId, "purchase");
@@ -372,13 +367,11 @@ test.describe.serial("digital product user journeys", () => {
     const newPage = await newContext.newPage();
     await newPage.goto(newMessage.link);
     await expect(newPage.getByRole("button", { name: /download/i }).first()).toBeVisible({ timeout: 30_000 });
-    const newResponse = waitForFinalDownload(newPage);
-    await newPage.getByRole("button", { name: /download/i }).first().click();
-    const replacementStorageResponse = await newResponse;
+    const replacementDownload = await captureDownloadedFile(newPage, () => newPage.getByRole("button", { name: /download/i }).first().click());
     const replacementFilename = replacementOrder.observation.manifestItems.find((item) => item.asset_version_id === replacementVersion)?.customer_filename;
     if (!replacementFilename) throw new Error("Replacement manifest has no customer filename.");
-    expect(replacementStorageResponse.headers()["content-disposition"]).toContain(replacementFilename);
-    const replacementContentSha256 = createHash("sha256").update(await replacementStorageResponse.body()).digest("hex");
+    expect(replacementDownload.filename).toBe(replacementFilename);
+    const replacementContentSha256 = replacementDownload.sha256;
     await newContext.close();
     if (replacementContentSha256 === priorContentSha256) throw new Error("Replacement checkout served the prior file bytes.");
     await buyer.close();

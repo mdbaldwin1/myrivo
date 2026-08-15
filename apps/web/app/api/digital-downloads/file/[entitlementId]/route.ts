@@ -28,7 +28,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const access = await authorizeAccessTokenId({ accessTokenId: session.accessTokenId, client });
     if (!access) return response("This access link is unavailable.", 410);
     const signedUrl = await prepareDigitalDownload({ entitlementId, accessTokenId: access.access_token_id, clientFingerprintHash: session.fingerprintHash, client });
-    return hardenDigitalDownloadResponse(NextResponse.redirect(signedUrl, 303));
+    // A direct 303 to the storage URL turns the hidden iframe's navigation
+    // into a download that never fires a load event, so the downloads page
+    // could not distinguish a started download from a hung request and told
+    // buyers every successful download "did not respond". Confirm initiation
+    // with a same-origin interstitial that immediately continues to the
+    // short-lived signed URL.
+    const safeUrl = signedUrl.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
+    const interstitial = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${safeUrl}"><title>Download starting</title></head><body>Your download is starting.</body></html>`;
+    return hardenDigitalDownloadResponse(new NextResponse(interstitial, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } }));
   } catch (error) {
     if (error instanceof DigitalDownloadError && error.code === "rate_limited") return hardenDigitalDownloadResponse(NextResponse.json({ error: "Too many requests. Please retry shortly." }, { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds ?? 1) } }));
     if (error instanceof DigitalDownloadError && error.code === "commit_failed") return response("Unable to finalize download.", 409);
