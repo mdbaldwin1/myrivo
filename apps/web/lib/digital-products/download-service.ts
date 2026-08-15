@@ -245,12 +245,16 @@ export function hardenDigitalDownloadResponse<T extends Response>(response: T): 
   response.headers.set("Pragma", "no-cache");
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("Referrer-Policy", "no-referrer");
+  // The downloads page initiates downloads through a same-origin hidden
+  // iframe and reads JSON control responses (limit reached, signing failure)
+  // from that frame to announce them to the buyer. Same-origin framing must
+  // therefore stay permitted; cross-origin embedding remains blocked.
   response.headers.set(
     "Content-Security-Policy",
-    "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+    "default-src 'none'; frame-ancestors 'self'; base-uri 'none'",
   );
   response.headers.set("Cross-Origin-Resource-Policy", "same-origin");
-  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("X-Frame-Options", "SAMEORIGIN");
   return response;
 }
 
