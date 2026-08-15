@@ -33,7 +33,7 @@ for (const viewport of [
       test.setTimeout(600_000);
       // Bare /downloads has no access context; the real buyer surface is the
       // emailed fragment link. Use an order with remaining download grants.
-      const accessMessage = await getDeliveredAccessMessage(request, acceptance!, acceptance!.financialOrders.partialRefund, "purchase");
+      const accessMessage = await getDeliveredAccessMessage(request, acceptance!, acceptance!.financialOrders.partialRefund, ["purchase", "merchant_resend", "customer_recovery"]);
       for (const [label, route] of [
         ["product", acceptance!.routes.product],
         ["cart", acceptance!.routes.cart],
@@ -175,7 +175,10 @@ for (const viewport of [
       const fileInput = page.getByLabel("Add customer download files");
       await tabTo(page, fileInput, 120);
       await expect(fileInput).toBeFocused();
-      await fileInput.setInputFiles({ name: "keyboard-art.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") });
+      // Unique per run: repeated acceptance passes must not accumulate
+      // ambiguous same-label assets.
+      const keyboardArtLabel = `keyboard art ${Date.now().toString(36)}`;
+      await fileInput.setInputFiles({ name: `${keyboardArtLabel.replaceAll(" ", "-")}.png`, mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") });
       await expect(page.getByText("Customer file is ready.").first()).toBeVisible({ timeout: 60_000 });
       await expectNoSeriousAccessibilityViolations(page, `${viewport.name} upload dynamic state`);
       // The product is already live: the publish control must expose that
@@ -186,12 +189,12 @@ for (const viewport of [
       await expectNoSeriousAccessibilityViolations(page, `${viewport.name} catalog publish state`);
       await page.getByRole("tab", { name: "Files" }).click();
 
-      const actions = page.getByRole("button", { name: /^Manage keyboard art$/ }).first();
+      const actions = page.getByRole("button", { name: `Manage ${keyboardArtLabel}` }).first();
       await actions.scrollIntoViewIfNeeded();
       await actions.focus();
       await page.keyboard.press("Enter");
       await page.getByRole("menuitem", { name: "Replace file" }).click();
-      await page.getByLabel("Choose a replacement for keyboard art").setInputFiles({ name: "replacement-keyboard.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") });
+      await page.getByLabel(`Choose a replacement for ${keyboardArtLabel}`).setInputFiles({ name: "replacement-keyboard.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") });
       const dialog = page.getByRole("dialog");
       await expect(dialog).toBeVisible();
       const cancel = dialog.getByRole("button", { name: "Cancel" });
@@ -206,7 +209,7 @@ for (const viewport of [
       await actions.focus();
       await page.keyboard.press("Enter");
       await page.getByRole("menuitem", { name: "Replace file" }).click();
-      await page.getByLabel("Choose a replacement for keyboard art").setInputFiles({ name: "replacement-confirm.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") });
+      await page.getByLabel(`Choose a replacement for ${keyboardArtLabel}`).setInputFiles({ name: "replacement-confirm.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") });
       await expect(dialog).toBeVisible();
       await dialog.getByRole("button", { name: /replace file/i }).press("Enter");
       await expect(dialog).toBeHidden();
@@ -312,7 +315,7 @@ for (const viewport of [
       await page.keyboard.press("Enter");
       await expect(page).toHaveURL(/checkout\.stripe\.com/, { timeout: 60_000 });
 
-      const accessMessage = await getDeliveredAccessMessage(request, acceptance!, acceptance!.financialOrders.partialRefund, "purchase");
+      const accessMessage = await getDeliveredAccessMessage(request, acceptance!, acceptance!.financialOrders.partialRefund, ["purchase", "merchant_resend", "customer_recovery"]);
       await page.goto(accessMessage.link);
       const download = page.getByRole("button", { name: /download/i }).first();
       await expect(download).toBeVisible({ timeout: 30_000 });
