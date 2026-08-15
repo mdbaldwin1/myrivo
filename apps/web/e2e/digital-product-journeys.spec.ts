@@ -5,10 +5,12 @@ import {
   acceptanceAction,
   acceptanceSessionHash,
   createStripeTestRefund,
+  dismissCookieBannerIfPresent,
   getDeliveredAccessMessage,
   getStripeCheckoutEvidence,
   loadDigitalAcceptanceFixture,
   runSupportedStripeDisputeScenario,
+  signIn,
   waitForFinancialObservation,
 } from "./digital-products-fixture";
 import { expectNoSeriousAccessibilityViolations } from "./accessibility-helpers";
@@ -63,26 +65,7 @@ export function makeAcceptancePng(seed: number) {
   ]);
 }
 
-async function dismissCookieBanner(page: Page) {
-  const essential = page.getByRole("button", { name: /essential only/i });
-  if (await essential.isVisible().catch(() => false)) await essential.click();
-}
 
-export async function signIn(page: Page, email: string, password: string) {
-  await page.goto("/login");
-  await dismissCookieBanner(page);
-  await page.getByPlaceholder("owner@yourshop.com").fill(email);
-  await page.getByPlaceholder("Enter your password").fill(password);
-  await page.getByRole("button", { name: /sign in/i }).click();
-  await page.waitForLoadState("networkidle").catch(() => undefined);
-  const legal = page.getByRole("checkbox", { name: /i have read and accept the required legal updates/i });
-  if (await legal.isVisible().catch(() => false)) {
-    await legal.check();
-    await page.getByRole("button", { name: /accept and continue/i }).click();
-    await page.waitForLoadState("networkidle").catch(() => undefined);
-  }
-  await expect(page).toHaveURL(/\/(dashboard|onboarding|account)/, { timeout: 20_000 });
-}
 
 async function selectDigitalProductInCatalog(page: Page) {
   await page.goto(fixture!.routes.catalogFiles);
@@ -145,7 +128,7 @@ async function completeStripeCheckout(page: Page) {
 
 async function startCartCheckout(page: Page, options: { mixed?: boolean } = {}) {
   await page.goto(fixture!.routes.product);
-  await dismissCookieBanner(page);
+  await dismissCookieBannerIfPresent(page);
   await page.evaluate(() => window.localStorage.removeItem("aha-cart:single-store"));
   await page.reload();
   await page.getByRole("button", { name: /add to cart/i }).click();
@@ -345,7 +328,7 @@ test.describe.serial("digital product user journeys", () => {
     const priorContentSha256 = createHash("sha256").update(await priorStorageResponse.body()).digest("hex");
     await priorContext.close();
     await page.goto(fixture!.routes.recovery);
-    await dismissCookieBanner(page);
+    await dismissCookieBannerIfPresent(page);
     await page.getByLabel(/order id/i).fill(fixture!.orderId);
     await page.getByLabel(/order email/i).fill(fixture!.customer.email);
     await page.getByRole("button", { name: /fresh link/i }).click();
