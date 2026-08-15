@@ -215,7 +215,8 @@ export function OrderDetailPanel({ orderId, onReschedulePickup, refreshToken = 0
       return;
     }
 
-    setLoading(true);
+    // Refresh in place: blanking the panel unmounts child sections and wipes
+    // their announced feedback (e.g. the fresh-link confirmation) mid-read.
     setError(null);
     const response = await fetch(`/api/orders/${orderId}`);
     const data = (await response.json()) as OrderDetailResponse;
