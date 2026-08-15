@@ -206,7 +206,10 @@ export function DigitalProductFileRow({
                 event.target.value = "";
               }}
             />
-            <DropdownMenu>
+            {/* Non-modal: menu items open a confirmation dialog, and a modal
+                menu's pointer-events lock can outlive the menu when a dialog
+                mounts during its close transition, leaving the page unclickable. */}
+            <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
                 <Button ref={actionsRef} type="button" size="sm" variant="outline" disabled={busy} aria-label={`Manage ${asset.label}`}>
                   Actions
