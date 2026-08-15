@@ -102,12 +102,14 @@ export async function getDeliveredAccessMessage(
   const tokenSecret = process.env.DIGITAL_DELIVERY_TOKEN_SECRET ?? env.DIGITAL_DELIVERY_TOKEN_SECRET;
   if (!supabaseUrl || !serviceRole || !tokenSecret) throw new Error("Digital acceptance message retrieval is not configured.");
   const deadline = Date.now() + (options.timeoutMs ?? 90_000);
-  type DeliveredNotificationRow = { id: string; delivery_job_id: string | null; provider_message_id: string | null; sent_at: string | null; token_derivation_nonce: string | null; token_hash: string | null };
+  type DeliveredNotificationRow = { id: string; access_token_id: string | null; delivery_job_id: string | null; provider_message_id: string | null; sent_at: string | null };
+  type AccessTokenRow = { id: string; token_hash: string; token_derivation_nonce: string | null; delivery_job_id: string | null };
+  const restHeaders = { apikey: serviceRole, authorization: `Bearer ${serviceRole}` };
   let row: DeliveredNotificationRow | null = null;
   while (Date.now() < deadline) {
     const response = await request.get(
-      `${supabaseUrl}/rest/v1/digital_delivery_notifications?order_id=eq.${orderId}&notification_type=eq.${type}&status=eq.succeeded&select=id,delivery_job_id,provider_message_id,sent_at,token_derivation_nonce,token_hash&order=created_at.desc&limit=1`,
-      { headers: { apikey: serviceRole, authorization: `Bearer ${serviceRole}` } },
+      `${supabaseUrl}/rest/v1/digital_delivery_notifications?order_id=eq.${orderId}&notification_type=eq.${type}&status=eq.succeeded&select=id,access_token_id,delivery_job_id,provider_message_id,sent_at&order=created_at.desc&limit=1`,
+      { headers: restHeaders },
     );
     const rows = response.ok() ? (await response.json() as DeliveredNotificationRow[]) : [];
     const candidate = rows[0] ?? null;
@@ -117,9 +119,15 @@ export async function getDeliveredAccessMessage(
     }
     await new Promise((resolve) => setTimeout(resolve, 1_500));
   }
-  if (!row?.provider_message_id || !row.sent_at) throw new Error(`No delivered ${type} notification matched order ${orderId}.`);
-  const token = deriveNotificationAccessToken(type, row, tokenSecret);
-  if (createHash("sha256").update(token).digest("hex") !== row.token_hash) {
+  if (!row?.provider_message_id || !row.sent_at || !row.access_token_id) throw new Error(`No delivered ${type} notification matched order ${orderId}.`);
+  const tokenResponse = await request.get(
+    `${supabaseUrl}/rest/v1/digital_order_access_tokens?id=eq.${row.access_token_id}&order_id=eq.${orderId}&select=id,token_hash,token_derivation_nonce,delivery_job_id&limit=1`,
+    { headers: restHeaders },
+  );
+  const tokenRow = tokenResponse.ok() ? ((await tokenResponse.json() as AccessTokenRow[])[0] ?? null) : null;
+  if (!tokenRow) throw new Error(`Delivered ${type} notification has no access token row.`);
+  const token = deriveNotificationAccessToken(type, { id: row.id, delivery_job_id: tokenRow.delivery_job_id ?? row.delivery_job_id, token_derivation_nonce: tokenRow.token_derivation_nonce }, tokenSecret);
+  if (createHash("sha256").update(token).digest("hex") !== tokenRow.token_hash) {
     throw new Error("Derived access token does not match the persisted token hash.");
   }
   const link = `${new URL(fixture.baseUrl).origin}/downloads#token=${token}`;
@@ -205,4 +213,26 @@ export async function runSupportedStripeDisputeScenario(request: import("@playwr
   const result = JSON.parse(responseText) as { disputeId?: string; chargeId?: string; paymentIntentId?: string; eventIds?: string[]; outcome?: string };
   if (!result.disputeId?.startsWith("dp_") || !result.chargeId?.startsWith("ch_") || result.paymentIntentId !== paymentIntentId || result.outcome !== scenario || !result.eventIds?.every((id) => id.startsWith("evt_"))) throw new Error("Stripe dispute helper returned uncorrelated evidence.");
   return result;
+}
+
+export async function dismissCookieBannerIfPresent(page: import("@playwright/test").Page) {
+  const essential = page.getByRole("button", { name: /essential only/i });
+  if (await essential.isVisible().catch(() => false)) await essential.click();
+}
+
+export async function signIn(page: import("@playwright/test").Page, email: string, password: string) {
+  await page.goto("/login");
+  await dismissCookieBannerIfPresent(page);
+  await page.getByPlaceholder("owner@yourshop.com").fill(email);
+  await page.getByPlaceholder("Enter your password").fill(password);
+  await page.getByRole("button", { name: /sign in/i }).click();
+  await page.waitForLoadState("networkidle").catch(() => undefined);
+  const legal = page.getByRole("checkbox", { name: /i have read and accept the required legal updates/i });
+  if (await legal.isVisible().catch(() => false)) {
+    await legal.check();
+    await page.getByRole("button", { name: /accept and continue/i }).click();
+    await page.waitForLoadState("networkidle").catch(() => undefined);
+  }
+  const { expect } = await import("@playwright/test");
+  await expect(page).toHaveURL(/\/(dashboard|onboarding|account)/, { timeout: 20_000 });
 }
