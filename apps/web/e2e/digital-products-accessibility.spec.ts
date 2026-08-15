@@ -293,10 +293,16 @@ for (const viewport of [
       await expect(download).toBeVisible({ timeout: 30_000 });
       await download.scrollIntoViewIfNeeded();
       await tabTo(page, download);
+      // The public-surfaces pass already exercises a real grant-consuming
+      // download; answer this keyboard press with the same interstitial shape
+      // so repeated accessibility passes cannot exhaust the buyer's five
+      // lifetime grants.
+      await page.route("**/api/digital-downloads/file/**", (route) => route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: "<!doctype html><html><head><title>Download starting</title></head><body>Your download is starting.</body></html>" }));
       await page.keyboard.press("Enter");
       await expect(page.getByRole("status")).toContainText(/started|preparing/i, { timeout: 30_000 });
       await expect(download).toBeFocused();
       await expectNoSeriousAccessibilityViolations(page, `${viewport.name} download result`);
+      await page.unroute("**/api/digital-downloads/file/**");
     });
 
     test("loading animation respects reduced motion while the asynchronous state is active", async ({ page }) => {
