@@ -241,7 +241,7 @@ for (const viewport of [
 
       await page.request.post("/api/auth/signout");
       await acceptanceAction(request, acceptance!, "inject-signing-failure");
-      const mainAccess = await getDeliveredAccessMessage(request, acceptance!, acceptance!.orderId, "merchant_resend");
+      const mainAccess = await getDeliveredAccessMessage(request, acceptance!, acceptance!.orderId, ["merchant_resend", "customer_recovery", "purchase"]);
       await page.goto(mainAccess.link);
       const download = page.getByRole("button", { name: /download/i }).first();
       await expect(download).toBeVisible({ timeout: 30_000 });

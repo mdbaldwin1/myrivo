@@ -93,22 +93,23 @@ export async function getDeliveredAccessMessage(
   request: import("@playwright/test").APIRequestContext,
   fixture: DigitalAcceptanceFixture,
   orderId: string,
-  type: DeliveredNotificationType,
+  type: DeliveredNotificationType | DeliveredNotificationType[],
   options: { sentAfterMs?: number; timeoutMs?: number } = {},
 ) {
+  const types = Array.isArray(type) ? type : [type];
   const env = readWebEnv();
   const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY;
   const tokenSecret = process.env.DIGITAL_DELIVERY_TOKEN_SECRET ?? env.DIGITAL_DELIVERY_TOKEN_SECRET;
   if (!supabaseUrl || !serviceRole || !tokenSecret) throw new Error("Digital acceptance message retrieval is not configured.");
   const deadline = Date.now() + (options.timeoutMs ?? 90_000);
-  type DeliveredNotificationRow = { id: string; access_token_id: string | null; delivery_job_id: string | null; provider_message_id: string | null; sent_at: string | null };
+  type DeliveredNotificationRow = { id: string; notification_type: DeliveredNotificationType; access_token_id: string | null; delivery_job_id: string | null; provider_message_id: string | null; sent_at: string | null };
   type AccessTokenRow = { id: string; token_hash: string; token_derivation_nonce: string | null; delivery_job_id: string | null };
   const restHeaders = { apikey: serviceRole, authorization: `Bearer ${serviceRole}` };
   let row: DeliveredNotificationRow | null = null;
   while (Date.now() < deadline) {
     const response = await request.get(
-      `${supabaseUrl}/rest/v1/digital_delivery_notifications?order_id=eq.${orderId}&notification_type=eq.${type}&status=eq.succeeded&select=id,access_token_id,delivery_job_id,provider_message_id,sent_at&order=created_at.desc&limit=1`,
+      `${supabaseUrl}/rest/v1/digital_delivery_notifications?order_id=eq.${orderId}&notification_type=in.(${types.join(",")})&status=eq.succeeded&select=id,notification_type,access_token_id,delivery_job_id,provider_message_id,sent_at&order=created_at.desc&limit=1`,
       { headers: restHeaders },
     );
     const rows = response.ok() ? (await response.json() as DeliveredNotificationRow[]) : [];
@@ -119,14 +120,14 @@ export async function getDeliveredAccessMessage(
     }
     await new Promise((resolve) => setTimeout(resolve, 1_500));
   }
-  if (!row?.provider_message_id || !row.sent_at || !row.access_token_id) throw new Error(`No delivered ${type} notification matched order ${orderId}.`);
+  if (!row?.provider_message_id || !row.sent_at || !row.access_token_id) throw new Error(`No delivered ${types.join("/")} notification matched order ${orderId}.`);
   const tokenResponse = await request.get(
     `${supabaseUrl}/rest/v1/digital_order_access_tokens?id=eq.${row.access_token_id}&order_id=eq.${orderId}&select=id,token_hash,token_derivation_nonce,delivery_job_id&limit=1`,
     { headers: restHeaders },
   );
   const tokenRow = tokenResponse.ok() ? ((await tokenResponse.json() as AccessTokenRow[])[0] ?? null) : null;
   if (!tokenRow) throw new Error(`Delivered ${type} notification has no access token row.`);
-  const token = deriveNotificationAccessToken(type, { id: row.id, delivery_job_id: tokenRow.delivery_job_id ?? row.delivery_job_id, token_derivation_nonce: tokenRow.token_derivation_nonce }, tokenSecret);
+  const token = deriveNotificationAccessToken(row.notification_type, { id: row.id, delivery_job_id: tokenRow.delivery_job_id ?? row.delivery_job_id, token_derivation_nonce: tokenRow.token_derivation_nonce }, tokenSecret);
   if (createHash("sha256").update(token).digest("hex") !== tokenRow.token_hash) {
     throw new Error("Derived access token does not match the persisted token hash.");
   }

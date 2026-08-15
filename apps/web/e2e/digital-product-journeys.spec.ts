@@ -321,7 +321,7 @@ test.describe.serial("digital product user journeys", () => {
     const before = await acceptanceAction(request, fixture!, "observe");
     const priorVersion = before.observation.manifestItems[0];
     if (!priorVersion) throw new Error("Prior buyer manifest has no immutable asset version.");
-    const priorMessage = await getDeliveredAccessMessage(request, fixture!, fixture!.orderId, "purchase");
+    const priorMessage = await getDeliveredAccessMessage(request, fixture!, fixture!.orderId, ["purchase", "merchant_resend", "customer_recovery"]);
     const priorContext = await page.context().browser()!.newContext();
     const priorPage = await priorContext.newPage();
     await priorPage.goto(priorMessage.link);
