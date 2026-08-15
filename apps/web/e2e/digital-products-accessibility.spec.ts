@@ -47,7 +47,9 @@ for (const viewport of [
         await expectNoSeriousAccessibilityViolations(page, `${viewport.name} ${label}`);
         await page.evaluate(() => { document.documentElement.style.zoom = "2"; });
         await expect(page.locator("body")).toBeVisible();
-        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
+        await expect
+          .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1), { timeout: 10_000 })
+          .toBe(true);
         if (label === "cart") {
           // The checkout form requires buyer identity and digital-delivery
           // consent before the hosted payment redirect.
@@ -139,8 +141,9 @@ for (const viewport of [
       await recoveryButton.focus();
       await expect(recoveryButton).toBeFocused();
       await page.keyboard.press("Enter");
-      const alert = page.getByRole("alert");
-      await expect(alert).toContainText("Enter the full order ID");
+      // Exclude Next.js's empty route announcer, which also has role=alert.
+      const alert = page.getByRole("alert").filter({ hasText: "Enter the full order ID" });
+      await expect(alert).toBeVisible();
       await expect(alert).toBeFocused();
       await page.keyboard.press("Shift+Tab");
       await expect(page.getByLabel("Order email")).toBeFocused();
@@ -248,8 +251,8 @@ for (const viewport of [
       await resend.scrollIntoViewIfNeeded();
       await tabTo(page, resend, 120);
       await resend.press("Enter");
-      const resendAlert = page.getByRole("alert");
-      await expect(resendAlert).toHaveText("Fresh link delivery is temporarily unavailable.");
+      const resendAlert = page.getByRole("alert").filter({ hasText: "Fresh link delivery is temporarily unavailable." });
+      await expect(resendAlert).toBeVisible();
       await expect(resendAlert).toBeFocused();
       await page.keyboard.press("Shift+Tab");
       await expect(page.getByRole("button", { name: "Try sending again" })).toBeFocused();
