@@ -126,7 +126,11 @@ const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
             className
           )}
         >
-          <SelectPrimitive.Value className="block max-w-[calc(100%-1.5rem)] truncate" placeholder={placeholder ?? "Select"} />
+          {/* Render the resolved label explicitly so the trigger always has a
+              discernible accessible name, even while options stream in. */}
+          <SelectPrimitive.Value className="block max-w-[calc(100%-1.5rem)] truncate" placeholder={placeholder ?? "Select"}>
+            {options.find((option) => option.value === selectedValue)?.label ?? placeholder ?? "Select"}
+          </SelectPrimitive.Value>
           <SelectPrimitive.Icon>
             {icon === "up-down" ? <ChevronsUpDown className="h-4 w-4 opacity-50" /> : <ChevronDown className="h-4 w-4 opacity-50" />}
           </SelectPrimitive.Icon>
