@@ -12,7 +12,6 @@ import {
   loadDigitalAcceptanceFixture,
   runSupportedStripeDisputeScenario,
   signIn,
-  waitForFinancialObservation,
 } from "./digital-products-fixture";
 import { expectNoSeriousAccessibilityViolations } from "./accessibility-helpers";
 
@@ -463,9 +462,19 @@ test.describe.serial("digital product user journeys", () => {
       const paymentIntentId = before.observation?.providerPayment?.id;
       if (typeof paymentIntentId !== "string") throw new Error("Dispute fixture has no correlated Stripe PaymentIntent.");
       const dispute = await runSupportedStripeDisputeScenario(request, transition, paymentIntentId);
-      const processed = await waitForFinancialObservation(request, fixture!, subject, dispute.eventIds![dispute.eventIds!.length - 1]);
-      const webhook = processed.observation.webhookEvents.find((row) => row.stripe_event_id === dispute.eventIds![dispute.eventIds!.length - 1]);
-      if (!webhook?.processed_at) throw new Error("Dispute webhook did not produce correlated application state.");
+      const expectedDisputeStatus = transition === "opened" ? "needs_response" : transition;
+      // The application records the newest processed dispute event as the
+      // row's source; wait for that exact provider event to be processed.
+      const disputeDeadline = Date.now() + 180_000;
+      let webhook: (typeof beforeTypes)["webhook"] | undefined;
+      for (;;) {
+        const processed = await acceptanceAction(request, fixture!, "observe", undefined, subject);
+        const disputeRow = processed.observation.disputes.find((row) => row.stripe_dispute_id === dispute.disputeId);
+        webhook = processed.observation.webhookEvents.find((row) => row.stripe_event_id === disputeRow?.source_event_id);
+        if (disputeRow?.status === expectedDisputeStatus && webhook?.processed_at && dispute.eventIds!.includes(disputeRow.source_event_id)) break;
+        if (Date.now() > disputeDeadline) throw new Error("Dispute webhook did not produce correlated application state.");
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+      }
       await page.goto(`/order/${subject}`);
       if (transition === "opened") {
         await expect(page.getByText("Downloads are temporarily unavailable while a payment dispute is reviewed. Your download grants are preserved.")).toBeVisible({ timeout: 60_000 });
