@@ -19,6 +19,22 @@ async function tabTo(page: import("@playwright/test").Page, target: import("@pla
   throw new Error("Target was not reachable in the real keyboard tab order.");
 }
 
+async function mintRecoveryAccessLink(
+  page: import("@playwright/test").Page,
+  request: import("@playwright/test").APIRequestContext,
+  orderId: string,
+) {
+  // The buyer's real self-service path to a fresh link; earlier passes may
+  // have exhausted or revoked older emailed links for this order.
+  const requestedAt = Date.now();
+  const response = await page.request.post("/api/digital-downloads/request-link", {
+    headers: { origin: new URL(acceptance!.baseUrl).origin },
+    data: { orderId, email: acceptance!.customer.email },
+  });
+  if (!response.ok()) throw new Error(`Recovery link request failed with ${response.status()}.`);
+  return getDeliveredAccessMessage(request, acceptance!, orderId, ["customer_recovery", "merchant_resend", "purchase"], { sentAfterMs: requestedAt - 5_000 });
+}
+
 for (const viewport of [
   { name: "mobile", width: 390, height: 844 },
   { name: "desktop", width: 1440, height: 900 },
@@ -33,7 +49,7 @@ for (const viewport of [
       test.setTimeout(600_000);
       // Bare /downloads has no access context; the real buyer surface is the
       // emailed fragment link. Use an order with remaining download grants.
-      const accessMessage = await getDeliveredAccessMessage(request, acceptance!, acceptance!.financialOrders.partialRefund, ["purchase", "merchant_resend", "customer_recovery"]);
+      const accessMessage = await mintRecoveryAccessLink(page, request, acceptance!.financialOrders.disputeWon);
       for (const [label, route] of [
         ["product", acceptance!.routes.product],
         ["cart", acceptance!.routes.cart],
@@ -83,7 +99,7 @@ for (const viewport of [
           // The recovery endpoint answers uniformly by design; use an order
           // pair that no other surface exercises to stay inside its rate
           // limits across repeated runs.
-          await page.getByLabel("Order ID").fill(acceptance!.financialOrders.disputeLost);
+          await page.getByLabel("Order ID").fill(viewport.name === "mobile" ? acceptance!.financialOrders.disputeLost : acceptance!.financialOrders.fullRefund);
           await page.getByLabel("Order email").fill(acceptance!.customer.email);
           await primaryAction.focus();
           await page.keyboard.press("Enter");
@@ -156,7 +172,7 @@ for (const viewport of [
       await expect(recoveryButton).toBeFocused();
       await expectNoSeriousAccessibilityViolations(page, `${viewport.name} recovery dynamic error`);
 
-      await page.getByLabel("Order ID").fill(acceptance!.financialOrders.disputeWon);
+      await page.getByLabel("Order ID").fill(viewport.name === "mobile" ? acceptance!.financialOrders.disputeWon : acceptance!.financialOrders.disputeOpened);
       await page.getByLabel("Order email").fill(acceptance!.customer.email);
       await recoveryButton.press("Enter");
       const recoveryStatus = page.getByRole("status");
@@ -315,7 +331,7 @@ for (const viewport of [
       await page.keyboard.press("Enter");
       await expect(page).toHaveURL(/checkout\.stripe\.com/, { timeout: 60_000 });
 
-      const accessMessage = await getDeliveredAccessMessage(request, acceptance!, acceptance!.financialOrders.partialRefund, ["purchase", "merchant_resend", "customer_recovery"]);
+      const accessMessage = await mintRecoveryAccessLink(page, request, acceptance!.financialOrders.disputeWon);
       await page.goto(accessMessage.link);
       const download = page.getByRole("button", { name: /download/i }).first();
       await expect(download).toBeVisible({ timeout: 30_000 });
