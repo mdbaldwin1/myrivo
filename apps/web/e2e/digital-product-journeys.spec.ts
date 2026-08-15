@@ -9,6 +9,7 @@ import {
   dismissCookieBannerIfPresent,
   getDeliveredAccessMessage,
   getStripeCheckoutEvidence,
+  getStripeRefund,
   loadDigitalAcceptanceFixture,
   runSupportedStripeDisputeScenario,
   signIn,
@@ -394,7 +395,15 @@ test.describe.serial("digital product user journeys", () => {
       const before = await acceptanceAction(request, fixture!, "observe", undefined, subject);
       const paymentIntentId = before.observation?.providerPayment?.id;
       if (typeof paymentIntentId !== "string") throw new Error("Refund fixture has no correlated Stripe PaymentIntent.");
-      const refund = await createStripeTestRefund(request, paymentIntentId, transition === "partial" ? 1 : undefined);
+      // A full refund can only be created once; on a rerun the provider
+      // refund already exists, so verify and reuse it instead of fabricating
+      // a second one.
+      const existingFullRefund = transition === "full" && before.observation.order.refund_status === "full"
+        ? before.observation.refunds.find((row) => row.status === "succeeded")
+        : undefined;
+      const refund = existingFullRefund
+        ? await getStripeRefund(request, existingFullRefund.stripe_refund_id, paymentIntentId)
+        : await createStripeTestRefund(request, paymentIntentId, transition === "partial" ? 1 : undefined);
       const processed = await waitForFinancialObservation(request, fixture!, subject);
       const refundRow = processed.observation.refunds.find((row) => row.stripe_refund_id === refund.id);
       const webhook = processed.observation.webhookEvents.find((row) => row.stripe_event_id === refundRow?.source_event_id);

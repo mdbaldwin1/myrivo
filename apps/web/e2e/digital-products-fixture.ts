@@ -167,6 +167,16 @@ export async function createStripeTestRefund(request: import("@playwright/test")
   return refund;
 }
 
+export async function getStripeRefund(request: import("@playwright/test").APIRequestContext, refundId: string, paymentIntentId: string) {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key?.startsWith("sk_test_")) throw new Error("Stripe refund retrieval requires an explicit test-mode secret.");
+  const response = await request.get(`https://api.stripe.com/v1/refunds/${encodeURIComponent(refundId)}`, { headers: { authorization: `Bearer ${key}` } });
+  if (!response.ok()) throw new Error(`Stripe refund retrieval failed with ${response.status()}.`);
+  const refund = await response.json() as { id?: string; payment_intent?: string; status?: string; amount?: number };
+  if (refund.id !== refundId || refund.payment_intent !== paymentIntentId || refund.status !== "succeeded") throw new Error("Stripe returned an uncorrelated refund.");
+  return refund;
+}
+
 export async function waitForFinancialObservation(request: import("@playwright/test").APIRequestContext, fixture: DigitalAcceptanceFixture, subjectId: string, eventId?: string) {
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
