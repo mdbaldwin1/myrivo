@@ -331,7 +331,9 @@ for (const viewport of [
       await page.keyboard.press("Enter");
       await expect(page).toHaveURL(/checkout\.stripe\.com/, { timeout: 60_000 });
 
-      const accessMessage = await mintRecoveryAccessLink(page, request, acceptance!.financialOrders.disputeWon);
+      // Reuse the link minted by the public-surfaces pass (which always runs
+      // earlier in the suite) rather than spending another recovery request.
+      const accessMessage = await getDeliveredAccessMessage(request, acceptance!, acceptance!.financialOrders.disputeWon, ["customer_recovery", "merchant_resend", "purchase"]);
       await page.goto(accessMessage.link);
       const download = page.getByRole("button", { name: /download/i }).first();
       await expect(download).toBeVisible({ timeout: 30_000 });
