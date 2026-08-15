@@ -110,12 +110,18 @@ for (const viewport of [
       await page.goto(acceptance!.routes.recovery);
       await dismissCookieBannerIfPresent(page);
       const order: string[] = [];
-      for (let index = 0; index < 4; index += 1) {
+      // Chromium parks the first Tab stop on the scrollable document before
+      // reaching interactive content; require four unique, visibly focused
+      // interactive stops after skipping document-level focus.
+      for (let index = 0; index < 8 && order.length < 4; index += 1) {
         await page.keyboard.press("Tab");
-        const focused = page.locator(":focus-visible");
+        const onDocument = await page.evaluate(() => document.activeElement === document.body || document.activeElement === document.documentElement);
+        if (onDocument) continue;
+        const focused = page.locator(":focus-visible").last();
         await expect(focused).toBeVisible();
         order.push(await focused.evaluate((node) => node.id || node.textContent?.trim() || node.getAttribute("aria-label") || ""));
       }
+      expect(order.length).toBe(4);
       expect(new Set(order).size).toBe(order.length);
       await page.getByLabel("Order ID").fill("invalid");
       await page.getByLabel("Order email").fill("invalid");
@@ -220,7 +226,8 @@ for (const viewport of [
       await signIn(page, acceptance!.merchant.email, acceptance!.merchant.password);
       await acceptanceAction(request, acceptance!, "inject-delivery-failure");
       await page.goto(acceptance!.routes.merchantOrder);
-      await expect(page.locator("main").first()).toContainText(/delivery needs attention|failed|retry/i);
+      // The order detail opens in a flyout portalled outside <main>.
+      await expect(page.getByText(/Delivery needs attention/i).first()).toBeVisible({ timeout: 30_000 });
       await expectNoSeriousAccessibilityViolations(page, `${viewport.name} delivery failure`);
       // A resend-eligible order (delivery succeeded, access active) exercises
       // the announced provider failure path via a mocked 503.

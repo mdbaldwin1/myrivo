@@ -232,6 +232,9 @@ export async function dismissCookieBannerIfPresent(page: import("@playwright/tes
 }
 
 export async function signIn(page: import("@playwright/test").Page, email: string, password: string) {
+  // Start from a clean session: the login page bounces already-authenticated
+  // visitors to their dashboard, which races any in-page sign-out attempt.
+  await page.context().clearCookies();
   await page.goto("/login");
   await dismissCookieBannerIfPresent(page);
   await page.getByPlaceholder("owner@yourshop.com").fill(email);

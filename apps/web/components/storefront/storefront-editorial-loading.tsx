@@ -12,9 +12,9 @@ export function StorefrontEditorialLoading({ context }: StorefrontEditorialLoadi
   return (
     <StorefrontLoadingShell context={context}>
       <section className="space-y-3 border-b border-[color:color-mix(in_srgb,var(--storefront-text)_14%,transparent)] pb-5">
-        <div className="h-4 w-24 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-primary)_20%,transparent)] motion-reduce:animate-none" />
-        <div className="h-10 w-64 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_16%,transparent)] motion-reduce:animate-none" />
-        <div className="h-4 w-2/3 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
+        <div className="h-4 w-24 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-primary)_20%,transparent)] motion-reduce:animate-none" />
+        <div className="h-10 w-64 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_16%,transparent)] motion-reduce:animate-none" />
+        <div className="h-4 w-2/3 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
       </section>
 
       <section className="mx-auto max-w-4xl space-y-6">
@@ -32,17 +32,17 @@ export function StorefrontEditorialLoading({ context }: StorefrontEditorialLoadi
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className={cn("space-y-3 p-5", surfaceClass)}>
-            <div className="h-5 w-32 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_16%,transparent)] motion-reduce:animate-none" />
+            <div className="h-5 w-32 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_16%,transparent)] motion-reduce:animate-none" />
             <div className="space-y-2">
               <div className="h-4 w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
-              <div className="h-4 w-5/6 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
+              <div className="h-4 w-5/6 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
             </div>
           </div>
           <div className={cn("space-y-3 p-5", surfaceClass)}>
-            <div className="h-5 w-32 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_16%,transparent)] motion-reduce:animate-none" />
+            <div className="h-5 w-32 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_16%,transparent)] motion-reduce:animate-none" />
             <div className="space-y-2">
               <div className="h-4 w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
-              <div className="h-4 w-2/3 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
+              <div className="h-4 w-2/3 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
             </div>
           </div>
         </div>
