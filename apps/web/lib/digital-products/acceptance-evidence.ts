@@ -45,13 +45,14 @@ export const digitalAcceptanceObservationSchema = z.object({
 
 export type DigitalAcceptanceObservation = z.infer<typeof digitalAcceptanceObservationSchema>;
 
+const providerTimestamp = z.string().datetime({ offset: true });
 const webhook = z.object({
   eventId: z.string().startsWith("evt_"), type: z.string().min(1), signatureVerified: z.literal(true),
-  status: z.literal("processed"), receivedAt: z.string().datetime(), processedAt: z.string().datetime(), attempts: z.number().int().positive(),
+  status: z.literal("processed"), receivedAt: providerTimestamp, processedAt: providerTimestamp, attempts: z.number().int().positive(),
 }).strict();
 const refundEvidence = z.object({ kind: z.literal("refund"), refundId: z.string().startsWith("re_"), status: z.literal("succeeded"), amount: z.number().int().positive(), paymentIntentId: z.string().startsWith("pi_"), webhook }).strict();
 const disputeEvidence = z.object({ kind: z.literal("dispute"), disputeId: z.string().startsWith("dp_"), chargeId: z.string().startsWith("ch_"), paymentIntentId: z.string().startsWith("pi_"), outcome: z.enum(["opened", "won", "lost"]), eventIds: z.array(z.string().startsWith("evt_")).min(1), webhook }).strict();
-const resendEvidence = z.object({ kind: z.literal("resend"), messageId: z.string().min(1), status: z.literal("sent"), recipient: z.string().email(), orderId: uuid, accessUrlHash: z.string().regex(/^[a-f0-9]{64}$/), sentAt: z.string().datetime() }).strict();
+const resendEvidence = z.object({ kind: z.literal("resend"), messageId: z.string().min(1), status: z.literal("sent"), recipient: z.string().email(), orderId: uuid, accessUrlHash: z.string().regex(/^[a-f0-9]{64}$/), sentAt: providerTimestamp }).strict();
 const checkoutEvidence = z.object({ kind: z.literal("checkout"), sessionId: z.string().startsWith("cs_test_"), paymentIntentId: z.string().startsWith("pi_"), orderId: uuid }).strict();
 const grantIds = z.array(uuid);
 const downloadLimitContract = DIGITAL_PRODUCT_CONFIG.downloadLimitResponse;
@@ -60,7 +61,7 @@ const grantsEvidence = z.object({ kind: z.literal("grants"), uniqueGrantIds: gra
   if (JSON.stringify(value.signingFailureIssuedIdsBefore) !== JSON.stringify(value.signingFailureIssuedIdsAfter) || value.signingFailureUsedBefore !== value.signingFailureUsedAfter) context.addIssue({ code: "custom", message: "Signing failure changed issued usage." });
 });
 const replacementEvidence = z.object({ kind: z.literal("replacement"), priorAssetVersionId: uuid, replacementAssetVersionId: uuid, oldBeforeFilename: z.string().min(1), oldAfterFilename: z.string().min(1), newFilename: z.string().min(1), oldBeforeHash: z.string().regex(/^[a-f0-9]{64}$/), oldAfterHash: z.string().regex(/^[a-f0-9]{64}$/), newHash: z.string().regex(/^[a-f0-9]{64}$/), newCheckoutAssetVersionId: uuid, newCheckoutOrderId: uuid }).strict().refine((value) => value.priorAssetVersionId !== value.replacementAssetVersionId && value.newCheckoutAssetVersionId === value.replacementAssetVersionId && value.oldBeforeHash === value.oldAfterHash && value.oldBeforeHash !== value.newHash && value.oldBeforeFilename === value.oldAfterFilename);
-const deliveryEvidence = z.object({ kind: z.literal("delivery"), jobId: uuid, attempts: z.array(z.object({ attempt: z.number().int().positive(), status: z.enum(["failed", "succeeded"]), startedAt: z.string().datetime(), finishedAt: z.string().datetime() }).strict()).min(2), resendMessageId: z.string().min(1), resendSentAt: z.string().datetime() }).strict().superRefine((value, context) => {
+const deliveryEvidence = z.object({ kind: z.literal("delivery"), jobId: uuid, attempts: z.array(z.object({ attempt: z.number().int().positive(), status: z.enum(["failed", "succeeded"]), startedAt: providerTimestamp, finishedAt: providerTimestamp }).strict()).min(2), resendMessageId: z.string().min(1), resendSentAt: providerTimestamp }).strict().superRefine((value, context) => {
   value.attempts.forEach((attempt, index) => {
     if (attempt.attempt !== index + 1 || Date.parse(attempt.finishedAt) < Date.parse(attempt.startedAt) || (index > 0 && Date.parse(attempt.startedAt) < Date.parse(value.attempts[index - 1]!.finishedAt))) context.addIssue({ code: "custom", message: "Delivery attempts are not an ordered chronology." });
   });
