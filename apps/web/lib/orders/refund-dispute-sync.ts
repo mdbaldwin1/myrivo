@@ -76,6 +76,13 @@ export async function syncStripeRefundRecord(
   };
 }
 
+export class UnknownDisputedPaymentError extends Error {
+  constructor(paymentIntentId: string) {
+    super(`No order is recorded for disputed payment ${paymentIntentId}.`);
+    this.name = "UnknownDisputedPaymentError";
+  }
+}
+
 export async function syncStripeDisputeRecord(
   dispute: Stripe.Dispute,
   options?: FinancialSource,
@@ -87,26 +94,17 @@ export async function syncStripeDisputeRecord(
   if (!paymentIntentId) return null;
 
   const admin = createSupabaseAdminClient();
+  const { data: order, error: orderError } = await admin
+    .from("orders")
+    .select("id,store_id")
+    .eq("stripe_payment_intent_id", paymentIntentId)
+    .maybeSingle<{ id: string; store_id: string }>();
+  if (orderError) throw new Error(orderError.message);
   // A dispute can be raised before the paid checkout has finished creating its
-  // order, and dropping the event would leave the store unaware of the dispute
-  // and the buyer's access unsuspended. Give order creation a bounded moment to
-  // land before treating the payment as unknown; the caller surfaces a failure
-  // so the provider redelivers rather than the event being lost silently.
-  let order: { id: string; store_id: string } | null = null;
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const { data, error: orderError } = await admin
-      .from("orders")
-      .select("id,store_id")
-      .eq("stripe_payment_intent_id", paymentIntentId)
-      .maybeSingle<{ id: string; store_id: string }>();
-    if (orderError) throw new Error(orderError.message);
-    if (data) {
-      order = data;
-      break;
-    }
-    if (attempt < 4) await new Promise((resolve) => setTimeout(resolve, 2_000));
-  }
-  if (!order) return null;
+  // order. Reporting success would retire the event permanently, leaving the
+  // store unaware of the dispute and the buyer's access unsuspended, so fail
+  // and let the provider redeliver once the order exists.
+  if (!order) throw new UnknownDisputedPaymentError(paymentIntentId);
 
   const source = requireSource(
     options ?? {},
