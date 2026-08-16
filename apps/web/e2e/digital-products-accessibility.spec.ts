@@ -3,6 +3,7 @@ import { expectNoSeriousAccessibilityViolations } from "./accessibility-helpers"
 import {
   acceptanceAction,
   dismissCookieBannerIfPresent,
+  dismissToasts,
   getDeliveredAccessMessage,
   loadDigitalAcceptanceFixture,
   signIn,
@@ -205,6 +206,7 @@ for (const viewport of [
       await expectNoSeriousAccessibilityViolations(page, `${viewport.name} catalog publish state`);
       await page.getByRole("tab", { name: "Files" }).click();
 
+      await dismissToasts(page);
       const actions = page.getByRole("button", { name: `Manage ${keyboardArtLabel}` }).first();
       await actions.scrollIntoViewIfNeeded();
       await actions.focus();
@@ -235,6 +237,7 @@ for (const viewport of [
       // Remove the file this pass created. Every active file is snapshotted
       // into later purchases, so leaving it behind would grow each subsequent
       // order's manifest and break repeat runs of the journey scenarios.
+      await dismissToasts(page);
       await actions.focus();
       await page.keyboard.press("Enter");
       await page.getByRole("menuitem", { name: "Remove file" }).click();

@@ -6,6 +6,7 @@ import {
   acceptanceAction,
   acceptanceSessionHash,
   dismissCookieBannerIfPresent,
+  dismissToasts,
   getDeliveredAccessMessage,
   getStripeCheckoutEvidence,
   getStripeRefund,
@@ -198,6 +199,7 @@ test.describe.serial("digital product user journeys", () => {
     await expect(page.getByText("Customer file is ready.").first()).toBeVisible({ timeout: 60_000 });
     // Keep the storefront on exactly one deliverable file: remove the file we
     // just uploaded (existing purchases keep their versions).
+    await dismissToasts(page);
     await page.getByRole("button", { name: "Manage acceptance extra" }).click();
     await page.getByRole("menuitem", { name: "Remove file" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Remove file" }).click();

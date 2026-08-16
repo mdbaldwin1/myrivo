@@ -1,3 +1,4 @@
+import { expect } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
@@ -229,6 +230,20 @@ export async function runSupportedStripeDisputeScenario(request: import("@playwr
 export async function dismissCookieBannerIfPresent(page: import("@playwright/test").Page) {
   const essential = page.getByRole("button", { name: /essential only/i });
   if (await essential.isVisible().catch(() => false)) await essential.click();
+}
+
+// Toasts stack in the bottom-right corner and can cover controls beneath
+// them, and hovering one (which a retrying click does) pauses its dismiss
+// timer, so an intercepted click never resolves on its own. Clear them
+// before driving UI that shares that corner.
+export async function dismissToasts(page: import("@playwright/test").Page) {
+  const toasts = page.locator("[data-sonner-toast]");
+  for (let remaining = await toasts.count(); remaining > 0; remaining -= 1) {
+    const close = toasts.first().getByRole("button", { name: /close toast/i });
+    if (!(await close.isVisible().catch(() => false))) break;
+    await close.click({ timeout: 5_000 }).catch(() => undefined);
+  }
+  await expect(toasts).toHaveCount(0, { timeout: 15_000 });
 }
 
 export async function signIn(page: import("@playwright/test").Page, email: string, password: string) {
