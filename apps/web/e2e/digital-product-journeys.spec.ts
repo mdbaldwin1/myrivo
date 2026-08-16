@@ -354,8 +354,12 @@ test.describe.serial("digital product user journeys", () => {
     await dismissCookieBannerIfPresent(page);
     await page.getByLabel(/order id/i).fill(fixture!.orderId);
     await page.getByLabel(/order email/i).fill(fixture!.customer.email);
+    const recoveryRequestedAt = Date.now();
     await page.getByRole("button", { name: /fresh link/i }).click();
     await expect(page.getByRole("status")).toContainText(/check your email/i, { timeout: 30_000 });
+    // Issuing a recovery link revokes the buyer's earlier links, so the
+    // post-replacement check has to open the link the buyer now holds.
+    const refreshedMessage = await getDeliveredAccessMessage(request, fixture!, fixture!.orderId, ["customer_recovery"], { sentAfterMs: recoveryRequestedAt - 5_000 });
     await signIn(page, fixture!.merchant.email, fixture!.merchant.password);
     await selectDigitalProductInCatalog(page);
     await page.getByRole("tab", { name: "Files" }).click();
@@ -385,7 +389,7 @@ test.describe.serial("digital product user journeys", () => {
     const replacementOrder = await acceptanceAction(request, fixture!, "observe", undefined, replacementOrderId);
     const oldAfterContext = await page.context().browser()!.newContext();
     const oldAfterPage = await oldAfterContext.newPage();
-    await oldAfterPage.goto(priorMessage.link);
+    await oldAfterPage.goto(refreshedMessage.link);
     await expect(oldAfterPage.getByRole("button", { name: /download/i }).first()).toBeVisible({ timeout: 30_000 });
     const oldAfterDownload = await captureDownloadedFile(oldAfterPage, () => oldAfterPage.getByRole("button", { name: /download/i }).first().click());
     expect(oldAfterDownload.filename).toBe(priorVersion.customer_filename);
