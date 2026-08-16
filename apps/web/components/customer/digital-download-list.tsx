@@ -147,13 +147,21 @@ export function DigitalDownloadList() {
     }
   }, []);
 
-  function beginDownload(fileId: string, label: string) {
+  function beginDownload(fileId: string, label: string, trigger?: HTMLElement | null) {
     if (downloadingId) return;
     setDownloadingId(fileId);
     setDownloadFeedback(`Preparing ${label}.`);
     const iframe = document.createElement("iframe");
     iframe.hidden = true;
     iframe.name = `digital-download-${crypto.randomUUID()}`;
+    // The hidden frame's navigation can steal keyboard focus; hand it back to
+    // the initiating control unless the user has already moved on.
+    const restoreFocus = () => {
+      const active = document.activeElement;
+      if (trigger && trigger.isConnected && (!active || active === document.body || active === iframe)) {
+        trigger.focus();
+      }
+    };
     const handleFrameLoad = () => {
       let failed = false;
       let failureMessage: string | null = null;
@@ -169,7 +177,11 @@ export function DigitalDownloadList() {
       window.clearTimeout(timeoutId);
       setDownloadingId(null);
       setDownloadFeedback(failed ? failureMessage ?? `${label} could not be downloaded. Please try again.` : `${label} download started.`);
-      window.setTimeout(() => iframe.remove(), 1_000);
+      restoreFocus();
+      window.setTimeout(() => {
+        iframe.remove();
+        restoreFocus();
+      }, 1_000);
     };
     iframe.addEventListener("load", handleFrameLoad);
     const timeoutId = window.setTimeout(() => {
@@ -177,6 +189,7 @@ export function DigitalDownloadList() {
       iframe.remove();
       setDownloadingId((current) => current === fileId ? null : current);
       setDownloadFeedback(`${label} did not respond. Please try the download again.`);
+      restoreFocus();
     }, DIGITAL_PRODUCT_CONFIG.downloadInitiationTimeoutMs);
     document.body.append(iframe);
     const form = document.createElement("form");
@@ -307,10 +320,14 @@ export function DigitalDownloadList() {
                     {available ? (
                       <Button
                         type="button"
-                        disabled={downloadingId !== null}
+                        // Keep the pressed control focusable while the download
+                        // initiates: hard-disabling it drops keyboard focus to
+                        // the body. beginDownload ignores re-entry while busy.
+                        disabled={downloadingId !== null && downloadingId !== file.id}
+                        aria-busy={downloadingId === file.id || undefined}
                         className={cn(buttonVariants(), "w-full shrink-0 sm:w-auto")}
                         aria-label={`Download ${file.label}`}
-                        onClick={() => beginDownload(file.id, file.label)}
+                        onClick={(event) => beginDownload(file.id, file.label, event.currentTarget)}
                       >
                         <Download className="mr-2 h-4 w-4" aria-hidden="true" />
                         {downloadingId === file.id ? "Preparing…" : "Download"}

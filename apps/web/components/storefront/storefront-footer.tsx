@@ -391,7 +391,7 @@ export function StorefrontFooter({
                   type="submit"
                   disabled={submitting}
                   className={cn(
-                    "h-11 w-full px-5 bg-[var(--storefront-primary)] text-[color:var(--storefront-primary-foreground)] hover:opacity-90",
+                    "h-11 w-full px-5 bg-[var(--storefront-primary)] text-[color:var(--storefront-primary-foreground)] hover:brightness-90",
                     buttonRadiusClass
                   )}
                 >

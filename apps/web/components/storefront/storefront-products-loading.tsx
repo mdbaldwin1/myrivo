@@ -12,8 +12,8 @@ export function StorefrontProductsLoading({ context }: StorefrontProductsLoading
   return (
     <StorefrontLoadingShell context={context}>
       <section className="space-y-3 border-b border-[color:color-mix(in_srgb,var(--storefront-text)_14%,transparent)] pb-5">
-        <div className="h-4 w-20 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-primary)_22%,transparent)] motion-reduce:animate-none" />
-        <div className="h-10 w-56 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_16%,transparent)] motion-reduce:animate-none" />
+        <div className="h-4 w-20 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-primary)_22%,transparent)] motion-reduce:animate-none" />
+        <div className="h-10 w-56 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_16%,transparent)] motion-reduce:animate-none" />
       </section>
 
       <section className="grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)]">
@@ -21,11 +21,11 @@ export function StorefrontProductsLoading({ context }: StorefrontProductsLoading
           <aside className={cn("hidden lg:block space-y-4 p-4", surfaceClass)}>
             {Array.from({ length: 4 }).map((_, index) => (
               <div key={`filter-${index}`} className="space-y-3">
-                <div className="h-4 w-24 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_14%,transparent)] motion-reduce:animate-none" />
+                <div className="h-4 w-24 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_14%,transparent)] motion-reduce:animate-none" />
                 <div className="space-y-2">
-                  <div className="h-4 w-32 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
-                  <div className="h-4 w-28 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
-                  <div className="h-4 w-24 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
+                  <div className="h-4 w-32 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
+                  <div className="h-4 w-28 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
+                  <div className="h-4 w-24 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
                 </div>
               </div>
             ))}
@@ -44,8 +44,8 @@ export function StorefrontProductsLoading({ context }: StorefrontProductsLoading
               <div key={`product-${index}`} className={cn("space-y-4 p-4", surfaceClass)}>
                 <div className={cn("aspect-[4/5] animate-pulse motion-reduce:animate-none", surfaceClass)} />
                 <div className="space-y-2">
-                  <div className="h-5 w-3/4 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_16%,transparent)] motion-reduce:animate-none" />
-                  <div className="h-4 w-20 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-primary)_20%,transparent)] motion-reduce:animate-none" />
+                  <div className="h-5 w-3/4 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_16%,transparent)] motion-reduce:animate-none" />
+                  <div className="h-4 w-20 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-primary)_20%,transparent)] motion-reduce:animate-none" />
                   <div className="h-4 w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
                 </div>
                 <div className="h-10 w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-primary)_24%,transparent)] motion-reduce:animate-none" />

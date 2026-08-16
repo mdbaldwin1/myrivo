@@ -32,7 +32,7 @@ const manifestSchema = z.object({
   storeId: uuidSchema,
   consentVersion: z.string().trim().min(1),
   licenseVersion: z.string().trim().min(1),
-  createdAt: z.string().datetime(),
+  createdAt: z.string().datetime({ offset: true }),
   items: z.array(manifestItemSchema).min(1)
 });
 
@@ -103,7 +103,7 @@ export async function createOrReuseCheckoutManifest(
   const checkoutSessionId = uuidSchema.parse(input.checkoutSessionId);
   const storeId = uuidSchema.parse(input.storeId);
   const items = z.array(checkoutItemSchema).min(1).parse(input.items);
-  const acceptedAt = z.string().datetime().parse(input.consent.acceptedAt);
+  const acceptedAt = z.string().datetime({ offset: true }).parse(input.consent.acceptedAt);
 
   if (input.consent.version !== DIGITAL_PRODUCT_CONFIG.consentVersion) {
     throw new DigitalPurchaseManifestError(

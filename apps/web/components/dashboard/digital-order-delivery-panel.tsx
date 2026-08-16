@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/ui/status-chip";
 
@@ -58,6 +58,11 @@ export function DigitalOrderDeliveryPanel({
   const [sending, setSending] = useState(false);
   const [feedback, setFeedback] = useState<{ kind: "success" | "error"; message: string } | null>(null);
   const feedbackRef = useRef<HTMLParagraphElement | null>(null);
+  // Move focus to the announced failure only after React has committed it;
+  // scheduling from the async handler ran before the element existed.
+  useEffect(() => {
+    if (feedback?.kind === "error") feedbackRef.current?.focus();
+  }, [feedback]);
 
   async function resend() {
     setSending(true);
@@ -79,7 +84,6 @@ export function DigitalOrderDeliveryPanel({
       onQueued?.();
     } catch (error) {
       setFeedback({ kind: "error", message: error instanceof Error ? error.message : "Unable to queue a fresh link." });
-      queueMicrotask(() => feedbackRef.current?.focus());
     } finally {
       setSending(false);
     }

@@ -10,8 +10,8 @@
   --popover-foreground: 182 39% 15%; /* #173435 */
   --border: 183 38% 82%; /* #c0e1e3 */
   --input: 183 38% 82%; /* #c0e1e3 */
-  --ring: 185 80% 29%; /* #0f7b85 */
-  --primary: 185 80% 29%; /* #0f7b85 */
+  --ring: 185 80% 27%; /* #0e737c */
+  --primary: 185 80% 27%; /* #0e737c - keeps AA contrast over the page gradient */
   --primary-foreground: 0 0% 100%; /* #ffffff */
   --muted: 184 44% 92%; /* #e2f2f4 */
   --muted-foreground: 182 16% 39%; /* #547273 */
@@ -21,7 +21,9 @@
   --brand-secondary-foreground: 0 0% 100%; /* #ffffff */
   --brand-secondary-soft: 265 27% 94%; /* #ece9f2 */
   --brand-secondary-muted-foreground: 266 15% 37%; /* #5f5570 */
-  --destructive: 0 72% 51%; /* #dc2828 */
+  /* Darkened from 0 72% 51% (#dc2828): destructive text on its 10% tint sat
+     at 4.13:1, below the WCAG AA minimum for body-size alert copy. */
+  --destructive: 0 74% 42%; /* #bb1c1c */
   --destructive-foreground: 0 0% 100%; /* #ffffff */
   --radius-lg: 1rem;
   --radius-md: 0.75rem;
@@ -227,4 +229,20 @@
       margin: 0 auto 1rem !important;
     }
   }
+}
+
+/* Sonner's rich-color palette renders body-size toast copy below the WCAG AA
+   4.5:1 minimum (e.g. success #008a2e on #ecfdf3 at 4.25:1); darken the text
+   tones while keeping the tinted backgrounds. */
+[data-sonner-toast][data-type="success"] {
+  --success-text: #15803d;
+}
+[data-sonner-toast][data-type="error"] {
+  --error-text: #b91c1c;
+}
+[data-sonner-toast][data-type="warning"] {
+  --warning-text: #8a5300;
+}
+[data-sonner-toast][data-type="info"] {
+  --info-text: #1d4ed8;
 }

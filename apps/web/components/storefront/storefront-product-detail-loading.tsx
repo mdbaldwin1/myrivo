@@ -21,8 +21,8 @@ export function StorefrontProductDetailLoading({ context }: StorefrontProductDet
       )}
     >
       <div className="space-y-3">
-        <div className="h-4 w-28 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_12%,transparent)] motion-reduce:animate-none" />
-        <div className="h-4 w-40 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-primary)_20%,transparent)] motion-reduce:animate-none" />
+        <div className="h-4 w-28 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_12%,transparent)] motion-reduce:animate-none" />
+        <div className="h-4 w-40 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-primary)_20%,transparent)] motion-reduce:animate-none" />
       </div>
 
       <section className="grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(20rem,0.9fr)]">
@@ -37,14 +37,14 @@ export function StorefrontProductDetailLoading({ context }: StorefrontProductDet
 
         <div className="space-y-5">
           <div className="space-y-3">
-            <div className="h-10 w-5/6 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_16%,transparent)] motion-reduce:animate-none" />
-            <div className="h-6 w-28 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-primary)_22%,transparent)] motion-reduce:animate-none" />
-            <div className="h-4 w-1/2 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
+            <div className="h-10 w-5/6 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_16%,transparent)] motion-reduce:animate-none" />
+            <div className="h-6 w-28 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-primary)_22%,transparent)] motion-reduce:animate-none" />
+            <div className="h-4 w-1/2 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
           </div>
 
           <div className={cn("space-y-4 p-5", surfaceClass)}>
             <div className="space-y-2">
-              <div className="h-4 w-24 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_14%,transparent)] motion-reduce:animate-none" />
+              <div className="h-4 w-24 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_14%,transparent)] motion-reduce:animate-none" />
               <div className="flex flex-wrap gap-2">
                 {Array.from({ length: 4 }).map((_, index) => (
                   <div
@@ -56,7 +56,7 @@ export function StorefrontProductDetailLoading({ context }: StorefrontProductDet
             </div>
 
             <div className="space-y-3">
-              <div className="h-4 w-32 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
+              <div className="h-4 w-32 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
               <div className="flex items-center gap-3">
                 <div className={cn("h-10 w-32 animate-pulse motion-reduce:animate-none", surfaceClass)} />
                 <div className="h-11 flex-1 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-primary)_24%,transparent)] motion-reduce:animate-none" />
@@ -66,8 +66,8 @@ export function StorefrontProductDetailLoading({ context }: StorefrontProductDet
 
           <div className="space-y-2">
             <div className="h-4 w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
-            <div className="h-4 w-11/12 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
-            <div className="h-4 w-5/6 animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
+            <div className="h-4 w-11/12 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
+            <div className="h-4 w-5/6 max-w-full animate-pulse bg-[color:color-mix(in_srgb,var(--storefront-text)_10%,transparent)] motion-reduce:animate-none" />
           </div>
         </div>
       </section>

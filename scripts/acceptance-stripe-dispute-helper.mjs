@@ -47,7 +47,27 @@ function equal(a, b) {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
-async function findDisputeEvent(type, disputeId, attempts = 30) {
+const DISPUTE_EVENT_TYPES = [
+  "charge.dispute.created",
+  "charge.dispute.updated",
+  "charge.dispute.closed",
+  "charge.dispute.funds_withdrawn",
+  "charge.dispute.funds_reinstated"
+];
+
+// The application records the newest processed dispute event as the row's
+// source, so the helper must report every provider event that references the
+// dispute, not just the transition it drove.
+async function listDisputeEvents(disputeId) {
+  const query = DISPUTE_EVENT_TYPES.map((type) => `types[]=${encodeURIComponent(type)}`).join("&");
+  const events = await stripe("GET", `/v1/events?${query}&limit=100`);
+  return (events.data ?? [])
+    .filter((event) => event?.data?.object?.id === disputeId)
+    .sort((left, right) => left.created - right.created)
+    .map((event) => event.id);
+}
+
+async function waitForDisputeEvent(type, disputeId, attempts = 30) {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const events = await stripe("GET", `/v1/events?type=${encodeURIComponent(type)}&limit=50`);
     const match = (events.data ?? []).find((event) => event?.data?.object?.id === disputeId);
@@ -73,7 +93,7 @@ async function runScenario(scenario, paymentIntentId) {
   if (!charge?.id) throw new Error("Payment intent has no charge");
   const disputeId = typeof charge.dispute === "string" ? charge.dispute : charge.dispute?.id;
   if (!disputeId) throw new Error("Charge has no dispute; pay dispute fixtures with card 4000000000000259");
-  const eventIds = [await findDisputeEvent("charge.dispute.created", disputeId)];
+  await waitForDisputeEvent("charge.dispute.created", disputeId);
   if (scenario !== "opened") {
     const dispute = await stripe("GET", `/v1/disputes/${disputeId}`);
     if (dispute.status === "needs_response" || dispute.status === "warning_needs_response") {
@@ -83,8 +103,15 @@ async function runScenario(scenario, paymentIntentId) {
       });
     }
     await waitForDisputeStatus(disputeId, [scenario]);
-    eventIds.push(await findDisputeEvent("charge.dispute.closed", disputeId));
+    await waitForDisputeEvent("charge.dispute.closed", disputeId);
+    if (scenario === "won") {
+      // A won dispute reinstates funds moments after closing; include that
+      // event so the application's final source event is covered.
+      await waitForDisputeEvent("charge.dispute.funds_reinstated", disputeId).catch(() => undefined);
+    }
   }
+  const eventIds = await listDisputeEvents(disputeId);
+  if (eventIds.length === 0) throw new Error(`No dispute events observed for ${disputeId}`);
   return { disputeId, chargeId: charge.id, paymentIntentId, outcome: scenario, eventIds };
 }
 

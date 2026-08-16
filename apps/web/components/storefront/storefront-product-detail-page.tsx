@@ -711,7 +711,7 @@ export function StorefrontProductDetailPage({ store, viewer, branding, settings,
                 onClick={() => void addToCart()}
                 disabled={!canPurchaseSelectedVariant || addToCartState !== "idle"}
                 className={cn(
-                  "h-11 w-full bg-[var(--storefront-primary)] text-[color:var(--storefront-primary-foreground)] hover:opacity-90",
+                  "h-11 w-full bg-[var(--storefront-primary)] text-[color:var(--storefront-primary-foreground)] hover:brightness-90",
                   buttonRadiusClass
                 )}
               >
