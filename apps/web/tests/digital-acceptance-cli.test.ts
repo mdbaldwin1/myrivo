@@ -5,13 +5,13 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { verifyDigitalAcceptanceArtifact } from "@/lib/digital-products/acceptance-evidence";
+import { canonicalAcceptanceEvidenceJson, verifyDigitalAcceptanceArtifact } from "@/lib/digital-products/acceptance-evidence";
 import { buildDigitalAcceptanceEvidenceFixture, requiredDigitalAcceptanceScenarios } from "./fixtures/digital-acceptance-evidence";
 
 function sign(evidence: any, key: string) {
   const unsigned = structuredClone(evidence);
   delete unsigned.signature;
-  return { ...unsigned, signature: createHmac("sha256", key).update(JSON.stringify(unsigned)).digest("hex") };
+  return { ...unsigned, signature: createHmac("sha256", key).update(canonicalAcceptanceEvidenceJson(unsigned)).digest("hex") };
 }
 
 describe("digital acceptance CLI artifact verification", () => {

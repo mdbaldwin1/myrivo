@@ -320,14 +320,17 @@ describe("digital download grant route", () => {
     expect(response.status).toBe(403);
     expect(state.events).toEqual([]);
   });
-  test("authorizes, reserves, looks up the bound version, signs for 300 seconds, commits, and redirects", async () => {
+  test("authorizes, reserves, looks up the bound version, signs for 300 seconds, commits, and confirms initiation", async () => {
     const state = buildAdmin();
     createSupabaseAdminClientMock.mockReturnValue(state.admin);
 
     const response = await invokeDownload();
 
-    expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe(SIGNED_URL);
+    // A same-origin interstitial, not a direct redirect: an iframe navigated
+    // straight to the storage URL never reports that the download started.
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    expect(await response.text()).toContain(SIGNED_URL.replaceAll("&", "&amp;"));
     expectHardenedHeaders(response);
     expect(state.events).toEqual([
       "rate-limit",

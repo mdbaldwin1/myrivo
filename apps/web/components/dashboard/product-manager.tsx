@@ -2619,6 +2619,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                       </TableCell>
                       <TableCell>
                         <Select
+                          aria-label={`Status for ${product.title}`}
                           value={product.status}
                           onChange={(event) =>
                             void updateProduct(product.id, { status: event.target.value as ProductRecord["status"] })

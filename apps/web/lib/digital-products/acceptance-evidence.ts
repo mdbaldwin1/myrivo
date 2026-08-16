@@ -20,7 +20,7 @@ const order = z.object({
   stripe_payment_intent_id: z.string().startsWith("pi_"), checkout_composition: z.enum(["digital_only", "mixed"]),
 }).strict();
 const grant = z.object({ id: uuid, entitlement_id: uuid, status: z.enum(["reserved", "issued", "released", "failed"]), asset_version_id: uuid, created_at: z.string(), released_at: z.string().nullable(), last_safe_error: z.string().nullable() }).strict();
-const notification = z.object({ id: uuid, notification_type: z.string().min(1), status: z.string().min(1), provider: z.string().min(1), provider_message_id: z.string().nullable(), attempt_count: z.number().int().nonnegative(), sent_at: z.string().nullable() }).strict();
+const notification = z.object({ id: uuid, notification_type: z.string().min(1), status: z.string().min(1), provider: z.string().min(1).nullable(), provider_message_id: z.string().nullable(), attempt_count: z.number().int().nonnegative(), sent_at: z.string().nullable() }).strict();
 
 export const digitalAcceptanceObservationSchema = z.object({
   version: z.literal(1), runId: uuid, subjectId: uuid, observedAt: z.string().datetime(),
@@ -32,7 +32,7 @@ export const digitalAcceptanceObservationSchema = z.object({
     manifestItems: z.array(z.object({ asset_version_id: uuid, customer_filename: z.string().min(1) }).strict()).min(1),
     providerPayment: z.object({ id: z.string().startsWith("pi_"), status: z.literal("succeeded"), livemode: z.literal(false) }).strict(),
     refunds: z.array(z.object({ stripe_refund_id: z.string().startsWith("re_"), amount_cents: z.number().int().positive(), status: z.string(), source_event_id: z.string().startsWith("evt_") }).strict()),
-    disputes: z.array(z.object({ stripe_dispute_id: z.string().startsWith("dp_"), stripe_charge_id: z.string().startsWith("ch_"), stripe_payment_intent_id: z.string().startsWith("pi_"), status: z.string(), source_event_id: z.string().startsWith("evt_") }).strict()),
+    disputes: z.array(z.object({ stripe_dispute_id: z.string().regex(/^d[pu]_/), stripe_charge_id: z.string().startsWith("ch_"), stripe_payment_intent_id: z.string().startsWith("pi_"), status: z.string(), source_event_id: z.string().startsWith("evt_") }).strict()),
     webhookEvents: z.array(z.object({ stripe_event_id: z.string().startsWith("evt_"), event_type: z.string(), status: z.string(), signature_verified: z.boolean(), attempt_count: z.number().int().positive(), last_attempt_at: z.string(), processed_at: z.string().nullable(), created_at: z.string() }).strict()),
     deliveryAttempts: z.array(z.object({ job_id: uuid, attempt_number: z.number().int().positive(), status: z.string(), started_at: z.string(), finished_at: z.string().nullable() }).strict()),
     catalogAssetVersions: z.array(z.object({ id: uuid, current_version_id: uuid, customer_filename: z.string().min(1) }).strict()),
@@ -45,13 +45,14 @@ export const digitalAcceptanceObservationSchema = z.object({
 
 export type DigitalAcceptanceObservation = z.infer<typeof digitalAcceptanceObservationSchema>;
 
+const providerTimestamp = z.string().datetime({ offset: true });
 const webhook = z.object({
   eventId: z.string().startsWith("evt_"), type: z.string().min(1), signatureVerified: z.literal(true),
-  status: z.literal("processed"), receivedAt: z.string().datetime(), processedAt: z.string().datetime(), attempts: z.number().int().positive(),
+  status: z.literal("processed"), receivedAt: providerTimestamp, processedAt: providerTimestamp, attempts: z.number().int().positive(),
 }).strict();
 const refundEvidence = z.object({ kind: z.literal("refund"), refundId: z.string().startsWith("re_"), status: z.literal("succeeded"), amount: z.number().int().positive(), paymentIntentId: z.string().startsWith("pi_"), webhook }).strict();
-const disputeEvidence = z.object({ kind: z.literal("dispute"), disputeId: z.string().startsWith("dp_"), chargeId: z.string().startsWith("ch_"), paymentIntentId: z.string().startsWith("pi_"), outcome: z.enum(["opened", "won", "lost"]), eventIds: z.array(z.string().startsWith("evt_")).min(1), webhook }).strict();
-const resendEvidence = z.object({ kind: z.literal("resend"), messageId: z.string().min(1), status: z.literal("sent"), recipient: z.string().email(), orderId: uuid, accessUrlHash: z.string().regex(/^[a-f0-9]{64}$/), sentAt: z.string().datetime() }).strict();
+const disputeEvidence = z.object({ kind: z.literal("dispute"), disputeId: z.string().regex(/^d[pu]_/), chargeId: z.string().startsWith("ch_"), paymentIntentId: z.string().startsWith("pi_"), outcome: z.enum(["opened", "won", "lost"]), eventIds: z.array(z.string().startsWith("evt_")).min(1), webhook }).strict();
+const resendEvidence = z.object({ kind: z.literal("resend"), messageId: z.string().min(1), status: z.literal("sent"), recipient: z.string().email(), orderId: uuid, accessUrlHash: z.string().regex(/^[a-f0-9]{64}$/), sentAt: providerTimestamp }).strict();
 const checkoutEvidence = z.object({ kind: z.literal("checkout"), sessionId: z.string().startsWith("cs_test_"), paymentIntentId: z.string().startsWith("pi_"), orderId: uuid }).strict();
 const grantIds = z.array(uuid);
 const downloadLimitContract = DIGITAL_PRODUCT_CONFIG.downloadLimitResponse;
@@ -60,7 +61,7 @@ const grantsEvidence = z.object({ kind: z.literal("grants"), uniqueGrantIds: gra
   if (JSON.stringify(value.signingFailureIssuedIdsBefore) !== JSON.stringify(value.signingFailureIssuedIdsAfter) || value.signingFailureUsedBefore !== value.signingFailureUsedAfter) context.addIssue({ code: "custom", message: "Signing failure changed issued usage." });
 });
 const replacementEvidence = z.object({ kind: z.literal("replacement"), priorAssetVersionId: uuid, replacementAssetVersionId: uuid, oldBeforeFilename: z.string().min(1), oldAfterFilename: z.string().min(1), newFilename: z.string().min(1), oldBeforeHash: z.string().regex(/^[a-f0-9]{64}$/), oldAfterHash: z.string().regex(/^[a-f0-9]{64}$/), newHash: z.string().regex(/^[a-f0-9]{64}$/), newCheckoutAssetVersionId: uuid, newCheckoutOrderId: uuid }).strict().refine((value) => value.priorAssetVersionId !== value.replacementAssetVersionId && value.newCheckoutAssetVersionId === value.replacementAssetVersionId && value.oldBeforeHash === value.oldAfterHash && value.oldBeforeHash !== value.newHash && value.oldBeforeFilename === value.oldAfterFilename);
-const deliveryEvidence = z.object({ kind: z.literal("delivery"), jobId: uuid, attempts: z.array(z.object({ attempt: z.number().int().positive(), status: z.enum(["failed", "succeeded"]), startedAt: z.string().datetime(), finishedAt: z.string().datetime() }).strict()).min(2), resendMessageId: z.string().min(1), resendSentAt: z.string().datetime() }).strict().superRefine((value, context) => {
+const deliveryEvidence = z.object({ kind: z.literal("delivery"), jobId: uuid, attempts: z.array(z.object({ attempt: z.number().int().positive(), status: z.enum(["failed", "succeeded"]), startedAt: providerTimestamp, finishedAt: providerTimestamp }).strict()).min(2), resendMessageId: z.string().min(1), resendSentAt: providerTimestamp }).strict().superRefine((value, context) => {
   value.attempts.forEach((attempt, index) => {
     if (attempt.attempt !== index + 1 || Date.parse(attempt.finishedAt) < Date.parse(attempt.startedAt) || (index > 0 && Date.parse(attempt.startedAt) < Date.parse(value.attempts[index - 1]!.finishedAt))) context.addIssue({ code: "custom", message: "Delivery attempts are not an ordered chronology." });
   });
@@ -176,6 +177,24 @@ export function verifyDigitalAcceptanceEvidence(input: unknown, options: Digital
   return evidence;
 }
 
+// The signature must not depend on incidental key order: the artifact is
+// written by the acceptance harness and re-serialised here after schema
+// parsing, which reorders keys. Sign and verify a canonical form instead.
+export function canonicalAcceptanceEvidenceJson(value: unknown): string {
+  const canonical = (input: unknown): unknown => {
+    if (Array.isArray(input)) return input.map(canonical);
+    if (input && typeof input === "object") {
+      return Object.fromEntries(
+        Object.keys(input as Record<string, unknown>)
+          .sort()
+          .map((key) => [key, canonical((input as Record<string, unknown>)[key])]),
+      );
+    }
+    return input;
+  };
+  return JSON.stringify(canonical(value));
+}
+
 export function verifyDigitalAcceptanceArtifact(input: unknown, options: { key: string; now?: number; maxAgeMs?: number } & DigitalAcceptanceVerificationOptions) {
   if (options.key.length < 32) throw new Error("Acceptance evidence signing key is invalid.");
   assertNoAcceptanceSecrets(input);
@@ -183,7 +202,7 @@ export function verifyDigitalAcceptanceArtifact(input: unknown, options: { key: 
   const unsigned = { ...candidate } as Record<string, unknown>;
   const signature = String(unsigned.signature);
   delete unsigned.signature;
-  const expected = createHmac("sha256", options.key).update(JSON.stringify(unsigned)).digest("hex");
+  const expected = createHmac("sha256", options.key).update(canonicalAcceptanceEvidenceJson(unsigned)).digest("hex");
   const suppliedBytes = Buffer.from(signature, "hex");
   const expectedBytes = Buffer.from(expected, "hex");
   if (suppliedBytes.length !== expectedBytes.length || !timingSafeEqual(suppliedBytes, expectedBytes)) throw new Error("Acceptance evidence signature is invalid.");

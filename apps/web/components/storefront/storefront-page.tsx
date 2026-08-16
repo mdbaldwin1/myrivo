@@ -274,7 +274,7 @@ function getAvailabilityLabel(
 
 function getPrimaryCtaClass(themeConfig: StorefrontThemeConfig, buttonRadiusClass: string) {
   if (themeConfig.primaryCtaStyle === "accent") {
-    return cn("inline-flex h-10 items-center justify-center bg-[var(--storefront-accent)] px-4 text-sm font-medium text-[color:var(--storefront-accent-foreground)] hover:opacity-90", buttonRadiusClass);
+    return cn("inline-flex h-10 items-center justify-center bg-[var(--storefront-accent)] px-4 text-sm font-medium text-[color:var(--storefront-accent-foreground)] hover:brightness-90", buttonRadiusClass);
   }
 
   if (themeConfig.primaryCtaStyle === "outline") {
@@ -285,7 +285,7 @@ function getPrimaryCtaClass(themeConfig: StorefrontThemeConfig, buttonRadiusClas
   }
 
   return cn(
-    "inline-flex h-10 items-center justify-center bg-[var(--storefront-primary)] px-4 text-sm font-medium text-[color:var(--storefront-primary-foreground)] hover:opacity-90",
+    "inline-flex h-10 items-center justify-center bg-[var(--storefront-primary)] px-4 text-sm font-medium text-[color:var(--storefront-primary-foreground)] hover:brightness-90",
     buttonRadiusClass
   );
 }
@@ -1474,7 +1474,7 @@ export function StorefrontPage(props: StorefrontPageProps) {
                                   void addToCart(product.id);
                                 }}
                                 disabled={!canQuickAdd || addToCartState !== "idle"}
-                                className={cn("h-9 w-full px-3 bg-[var(--storefront-primary)] text-[color:var(--storefront-primary-foreground)] hover:opacity-90 sm:w-auto", buttonRadiusClass)}
+                                className={cn("h-9 w-full px-3 bg-[var(--storefront-primary)] text-[color:var(--storefront-primary-foreground)] hover:brightness-90 sm:w-auto", buttonRadiusClass)}
                               >
                                 {addToCartLabel}
                               </Button>

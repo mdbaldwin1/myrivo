@@ -38,7 +38,7 @@ for (const route of Object.values(fixture.routes ?? {})) {
   const resolved = new URL(String(route), baseUrl);
   if (resolved.origin !== baseUrl.origin) fail("fixture routes must be same-origin");
 }
-const result = spawnSync("npm", ["run", "-w", "@myrivo/web", "e2e", "--", "digital-products.spec.ts", "digital-products-accessibility.spec.ts"], {
+const result = spawnSync("npm", ["run", "-w", "@myrivo/web", "e2e", "--", "digital-product-journeys.spec.ts", "digital-products-accessibility.spec.ts"], {
   stdio: "inherit", env: { ...process.env, MYRIVO_DIGITAL_RELEASE_GATE: "true", MYRIVO_DIGITAL_RELEASE_SHA: process.env.GITHUB_HEAD_SHA || process.env.GITHUB_SHA, E2E_BASE_URL: baseUrl.origin, E2E_MANAGED_SERVER: loopback ? "true" : "false" },
 });
 if (result.status !== 0) process.exit(result.status ?? 1);

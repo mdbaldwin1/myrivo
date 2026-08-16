@@ -342,6 +342,20 @@ function getContrastRatio(foregroundHex: string, backgroundHex: string) {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+function resolveAccessibleMutedForeground(textColorHex: string, surfaceHexes: string[]) {
+  const text = normalizeHex(textColorHex) ?? "#111111";
+  const surfaces = surfaceHexes.map((surface) => normalizeHex(surface) ?? "#FFFFFF");
+  // Contrast is monotonic in the mix amount, so walk back from the softest
+  // tint to the first one that stays AA-compliant everywhere it is used.
+  for (let mix = 0.62; mix >= 0; mix -= 0.02) {
+    const candidate = mixHex(text, surfaces[1] ?? "#FFFFFF", mix);
+    if (surfaces.every((surface) => getContrastRatio(candidate, surface) >= 4.6)) {
+      return candidate;
+    }
+  }
+  return text;
+}
+
 function resolveAccessibleForeground(backgroundHex: string, preferredForegroundHex: string | null | undefined) {
   const normalizedBackground = normalizeHex(backgroundHex) ?? "#000000";
   const preferred = normalizeHex(preferredForegroundHex ?? null);
@@ -603,7 +617,14 @@ export function buildStorefrontThemeStyle(input: StorefrontThemeInput): CSSPrope
   const headerForeground = resolveAccessibleForeground(config.headerBackgroundColor, config.headerForegroundColor);
   const border = mixHex(config.textColor, config.surfaceColor, 0.2);
   const muted = mixHex(primary, config.surfaceColor, 0.12);
-  const mutedForeground = mixHex(config.textColor, config.surfaceColor, 0.62);
+  // Soften the muted text only as far as WCAG AA allows on every surface it
+  // renders over (page background, cards, and muted panels); a fixed 62% mix
+  // toward the surface fell below the 4.5:1 minimum on light themes.
+  const mutedForeground = resolveAccessibleMutedForeground(config.textColor, [
+    config.backgroundColor,
+    config.surfaceColor,
+    muted,
+  ]);
   const resolvedFontOption =
     STOREFRONT_FONT_OPTIONS.find((option) => option.id === config.fontFamily) ??
     STOREFRONT_FONT_OPTIONS.find((option) => option.id === DEFAULT_STOREFRONT_THEME_CONFIG.fontFamily) ??

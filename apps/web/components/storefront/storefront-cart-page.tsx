@@ -1162,7 +1162,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                   </div>
                 ) : null}
                 <div className="relative">
-                  <Button type="submit" disabled={pending || cartItems.length === 0} className={cn("h-11 w-full bg-[var(--storefront-accent)] text-[color:var(--storefront-accent-foreground)] hover:opacity-90", buttonRadiusClass)}>
+                  <Button type="submit" disabled={pending || cartItems.length === 0} className={cn("h-11 w-full bg-[var(--storefront-accent)] text-[color:var(--storefront-accent-foreground)] hover:brightness-90", buttonRadiusClass)}>
                     {pending ? copy.cart.processing : copy.cart.checkout}
                   </Button>
                   {studio?.enabled && !pending ? (
