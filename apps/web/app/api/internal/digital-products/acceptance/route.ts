@@ -9,7 +9,8 @@ function equal(left: string, right: string) {
 function resolveRequestOrigin(request: NextRequest) {
   // request.url reflects the server's own bind address behind an edge, so the
   // approved-origin comparison must use the forwarded request identity.
-  const host = (request.headers.get("x-forwarded-host") ?? request.headers.get("host"))?.split(",")[0]?.trim().toLowerCase();
+  const forwarded = (request.headers.get("x-forwarded-host") ?? request.headers.get("host"))?.split(",")[0]?.trim().toLowerCase();
+  const host = forwarded || new URL(request.url).host.toLowerCase();
   if (!host) return null;
   const protocol = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase()
     ?? new URL(request.url).protocol.replace(/:$/, "");

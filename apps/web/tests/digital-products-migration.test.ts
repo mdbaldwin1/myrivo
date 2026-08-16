@@ -174,6 +174,8 @@ const ids = {
 const baseSchema = `
 create extension if not exists pgcrypto;
 create schema auth;
+create function auth.uid() returns uuid language sql stable as 'select null::uuid';
+create function auth.jwt() returns jsonb language sql stable as 'select ''{}''::jsonb';
 create table auth.users (id uuid primary key);
 create schema storage;
 create table storage.buckets (
@@ -237,6 +239,7 @@ create table public.storefront_checkout_sessions (
 const supabaseFoundationSchema = `
 create schema auth;
 create function auth.uid() returns uuid language sql stable as 'select null::uuid';
+create function auth.jwt() returns jsonb language sql stable as 'select ''{}''::jsonb';
 create table auth.users (
   id uuid primary key,
   email text,

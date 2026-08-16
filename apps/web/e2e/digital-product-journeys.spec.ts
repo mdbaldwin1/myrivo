@@ -198,11 +198,9 @@ async function contextSessionHash(context: BrowserContext) {
   return acceptanceSessionHash(cookies.map((cookie) => `${cookie.name}:${cookie.value}`).join("|"));
 }
 
-const beforeTypes = null as unknown as {
-  webhook: {
-    stripe_event_id: string; event_type: string; status: string; signature_verified: boolean;
-    attempt_count: number; last_attempt_at: string; processed_at: string | null; created_at: string;
-  };
+type ObservedWebhookEvent = {
+  stripe_event_id: string; event_type: string; status: string; signature_verified: boolean;
+  attempt_count: number; last_attempt_at: string; processed_at: string | null; created_at: string;
 };
 
 test.skip(!fixture, "Digital acceptance requires an explicit non-production fixture.");
@@ -463,7 +461,7 @@ test.describe.serial("digital product user journeys", () => {
       // Wait for the provider webhook for THIS refund to land and correlate.
       const refundDeadline = Date.now() + 90_000;
       let refundRow: { stripe_refund_id: string; amount_cents: number; status: string; source_event_id: string } | undefined;
-      let webhook: (typeof beforeTypes)["webhook"] | undefined;
+      let webhook: ObservedWebhookEvent | undefined;
       // A refund emits several provider events and the record keeps the most
       // recent one it applied, so wait until that correlation stops moving
       // before it is quoted as evidence.
@@ -499,7 +497,7 @@ test.describe.serial("digital product user journeys", () => {
       // The application records the newest processed dispute event as the
       // row's source; wait for that exact provider event to be processed.
       const disputeDeadline = Date.now() + 180_000;
-      let webhook: (typeof beforeTypes)["webhook"] | undefined;
+      let webhook: ObservedWebhookEvent | undefined;
       let stableDisputeEventId: string | undefined;
       for (;;) {
         const processed = await acceptanceAction(request, fixture!, "observe", undefined, subject);
