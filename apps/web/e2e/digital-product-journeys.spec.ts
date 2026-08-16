@@ -464,11 +464,16 @@ test.describe.serial("digital product user journeys", () => {
       const refundDeadline = Date.now() + 90_000;
       let refundRow: { stripe_refund_id: string; amount_cents: number; status: string; source_event_id: string } | undefined;
       let webhook: (typeof beforeTypes)["webhook"] | undefined;
+      // A refund emits several provider events and the record keeps the most
+      // recent one it applied, so wait until that correlation stops moving
+      // before it is quoted as evidence.
+      let stableSourceEventId: string | undefined;
       for (;;) {
         const processed = await acceptanceAction(request, fixture!, "observe", undefined, subject);
         refundRow = processed.observation.refunds.find((row) => row.stripe_refund_id === refund.id);
         webhook = processed.observation.webhookEvents.find((row) => row.stripe_event_id === refundRow?.source_event_id);
-        if (refundRow && webhook?.processed_at) break;
+        if (refundRow && webhook?.processed_at && refundRow.source_event_id === stableSourceEventId) break;
+        stableSourceEventId = refundRow?.source_event_id;
         if (Date.now() > refundDeadline) throw new Error("Refund webhook did not produce correlated application state.");
         await new Promise((resolve) => setTimeout(resolve, 1_500));
       }
@@ -495,11 +500,13 @@ test.describe.serial("digital product user journeys", () => {
       // row's source; wait for that exact provider event to be processed.
       const disputeDeadline = Date.now() + 180_000;
       let webhook: (typeof beforeTypes)["webhook"] | undefined;
+      let stableDisputeEventId: string | undefined;
       for (;;) {
         const processed = await acceptanceAction(request, fixture!, "observe", undefined, subject);
         const disputeRow = processed.observation.disputes.find((row) => row.stripe_dispute_id === dispute.disputeId);
         webhook = processed.observation.webhookEvents.find((row) => row.stripe_event_id === disputeRow?.source_event_id);
-        if (disputeRow?.status === expectedDisputeStatus && webhook?.processed_at && dispute.eventIds!.includes(disputeRow.source_event_id)) break;
+        if (disputeRow?.status === expectedDisputeStatus && webhook?.processed_at && dispute.eventIds!.includes(disputeRow.source_event_id) && disputeRow.source_event_id === stableDisputeEventId) break;
+        stableDisputeEventId = disputeRow?.source_event_id;
         if (Date.now() > disputeDeadline) throw new Error("Dispute webhook did not produce correlated application state.");
         await new Promise((resolve) => setTimeout(resolve, 1_500));
       }
