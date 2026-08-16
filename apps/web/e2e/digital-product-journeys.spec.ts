@@ -68,6 +68,23 @@ export function makeAcceptancePng(seed: number) {
 
 
 
+// Every active file is snapshotted into later purchases, so this pass's extra
+// file - and any left behind by an interrupted pass - must be cleared before
+// the storefront scenarios run.
+async function removeExtraAcceptanceFiles(page: Page) {
+  for (let guard = 0; guard < 10; guard += 1) {
+    const manage = page.getByRole("button", { name: "Manage acceptance extra" }).first();
+    if (!(await manage.isVisible().catch(() => false))) return;
+    await dismissToasts(page);
+    await manage.click();
+    await page.getByRole("menuitem", { name: "Remove file" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Remove file" }).click();
+    await expect(page.getByText("Customer file removed. Existing purchases are preserved.").first()).toBeVisible({ timeout: 30_000 });
+    await dismissToasts(page);
+  }
+  throw new Error("Extra acceptance files were never fully cleared.");
+}
+
 async function selectDigitalProductInCatalog(page: Page) {
   await page.goto(fixture!.routes.catalogFiles);
   await page.keyboard.press("Escape");
@@ -199,11 +216,7 @@ test.describe.serial("digital product user journeys", () => {
     await expect(page.getByText("Customer file is ready.").first()).toBeVisible({ timeout: 60_000 });
     // Keep the storefront on exactly one deliverable file: remove the file we
     // just uploaded (existing purchases keep their versions).
-    await dismissToasts(page);
-    await page.getByRole("button", { name: "Manage acceptance extra" }).click();
-    await page.getByRole("menuitem", { name: "Remove file" }).click();
-    await page.getByRole("dialog").getByRole("button", { name: "Remove file" }).click();
-    await expect(page.getByText("Customer file removed. Existing purchases are preserved.").first()).toBeVisible({ timeout: 30_000 });
+    await removeExtraAcceptanceFiles(page);
     await page.getByRole("tab", { name: "Overview" }).click();
     await expect(page.getByText("Ready for your storefront")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole("button", { name: "Published" })).toBeDisabled();

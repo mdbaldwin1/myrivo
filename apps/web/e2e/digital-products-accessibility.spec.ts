@@ -36,6 +36,28 @@ async function mintRecoveryAccessLink(
   return getDeliveredAccessMessage(request, acceptance!, orderId, ["customer_recovery", "merchant_resend", "purchase"], { sentAfterMs: requestedAt - 5_000 });
 }
 
+// The file list refreshes asynchronously after each mutation, so Radix can
+// remount an open menu and detach the item mid-click. Re-open and retry
+// rather than waiting on an element that keeps being replaced.
+async function activateFileMenuItem(
+  page: import("@playwright/test").Page,
+  trigger: import("@playwright/test").Locator,
+  itemName: string,
+) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await dismissToasts(page);
+    await trigger.focus();
+    await page.keyboard.press("Enter");
+    try {
+      await page.getByRole("menuitem", { name: itemName }).click({ timeout: 15_000 });
+      return;
+    } catch {
+      await page.keyboard.press("Escape").catch(() => undefined);
+    }
+  }
+  throw new Error(`The ${itemName} menu item never stayed mounted long enough to activate.`);
+}
+
 for (const viewport of [
   { name: "mobile", width: 390, height: 844 },
   { name: "desktop", width: 1440, height: 900 },
@@ -206,12 +228,9 @@ for (const viewport of [
       await expectNoSeriousAccessibilityViolations(page, `${viewport.name} catalog publish state`);
       await page.getByRole("tab", { name: "Files" }).click();
 
-      await dismissToasts(page);
       const actions = page.getByRole("button", { name: `Manage ${keyboardArtLabel}` }).first();
       await actions.scrollIntoViewIfNeeded();
-      await actions.focus();
-      await page.keyboard.press("Enter");
-      await page.getByRole("menuitem", { name: "Replace file" }).click();
+      await activateFileMenuItem(page, actions, "Replace file");
       await page.getByLabel(`Choose a replacement for ${keyboardArtLabel}`).setInputFiles({ name: "replacement-keyboard.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") });
       const dialog = page.getByRole("dialog");
       await expect(dialog).toBeVisible();
@@ -224,9 +243,7 @@ for (const viewport of [
       await expect(cancel).toBeFocused();
       await page.keyboard.press("Escape");
       await expect(dialog).toBeHidden();
-      await actions.focus();
-      await page.keyboard.press("Enter");
-      await page.getByRole("menuitem", { name: "Replace file" }).click();
+      await activateFileMenuItem(page, actions, "Replace file");
       await page.getByLabel(`Choose a replacement for ${keyboardArtLabel}`).setInputFiles({ name: "replacement-confirm.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") });
       await expect(dialog).toBeVisible();
       await dialog.getByRole("button", { name: /replace file/i }).press("Enter");
@@ -237,10 +254,7 @@ for (const viewport of [
       // Remove the file this pass created. Every active file is snapshotted
       // into later purchases, so leaving it behind would grow each subsequent
       // order's manifest and break repeat runs of the journey scenarios.
-      await dismissToasts(page);
-      await actions.focus();
-      await page.keyboard.press("Enter");
-      await page.getByRole("menuitem", { name: "Remove file" }).click();
+      await activateFileMenuItem(page, actions, "Remove file");
       const removeDialog = page.getByRole("dialog", { name: `Remove ${keyboardArtLabel}?` });
       await expect(removeDialog).toBeVisible();
       await removeDialog.getByRole("button", { name: "Remove file" }).click();
