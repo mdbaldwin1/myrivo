@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { assertNoAcceptanceSecrets, digitalAcceptanceObservationSchema, digitalAcceptanceScenarioEvidenceSchema, hashAcceptanceSession } from "../lib/digital-products/acceptance-evidence";
+import { assertNoAcceptanceSecrets, canonicalAcceptanceEvidenceJson, digitalAcceptanceObservationSchema, digitalAcceptanceScenarioEvidenceSchema, hashAcceptanceSession } from "../lib/digital-products/acceptance-evidence";
 
 const relativeRoute = z.string().startsWith("/").refine((value) => !value.startsWith("//") && !value.includes("#token="));
 const identity = z.object({ email: z.string().email(), password: z.string().min(12) }).strict();
@@ -47,7 +47,7 @@ export async function acceptanceAction(request: import("@playwright/test").APIRe
     const signingKey = process.env.MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_HMAC_KEY;
     if (!signingKey || signingKey.length < 32 || signingKey === fixture.controlSecret) throw new Error("A separate evidence HMAC key is required.");
     assertNoAcceptanceSecrets(existing);
-    const unsigned = JSON.stringify(existing); existing.signature = createHmac("sha256", signingKey).update(unsigned).digest("hex");
+    existing.signature = createHmac("sha256", signingKey).update(canonicalAcceptanceEvidenceJson(existing)).digest("hex");
     fs.writeFileSync(output, JSON.stringify(existing));
   }
   return body;

@@ -177,6 +177,24 @@ export function verifyDigitalAcceptanceEvidence(input: unknown, options: Digital
   return evidence;
 }
 
+// The signature must not depend on incidental key order: the artifact is
+// written by the acceptance harness and re-serialised here after schema
+// parsing, which reorders keys. Sign and verify a canonical form instead.
+export function canonicalAcceptanceEvidenceJson(value: unknown): string {
+  const canonical = (input: unknown): unknown => {
+    if (Array.isArray(input)) return input.map(canonical);
+    if (input && typeof input === "object") {
+      return Object.fromEntries(
+        Object.keys(input as Record<string, unknown>)
+          .sort()
+          .map((key) => [key, canonical((input as Record<string, unknown>)[key])]),
+      );
+    }
+    return input;
+  };
+  return JSON.stringify(canonical(value));
+}
+
 export function verifyDigitalAcceptanceArtifact(input: unknown, options: { key: string; now?: number; maxAgeMs?: number } & DigitalAcceptanceVerificationOptions) {
   if (options.key.length < 32) throw new Error("Acceptance evidence signing key is invalid.");
   assertNoAcceptanceSecrets(input);
@@ -184,7 +202,7 @@ export function verifyDigitalAcceptanceArtifact(input: unknown, options: { key: 
   const unsigned = { ...candidate } as Record<string, unknown>;
   const signature = String(unsigned.signature);
   delete unsigned.signature;
-  const expected = createHmac("sha256", options.key).update(JSON.stringify(unsigned)).digest("hex");
+  const expected = createHmac("sha256", options.key).update(canonicalAcceptanceEvidenceJson(unsigned)).digest("hex");
   const suppliedBytes = Buffer.from(signature, "hex");
   const expectedBytes = Buffer.from(expected, "hex");
   if (suppliedBytes.length !== expectedBytes.length || !timingSafeEqual(suppliedBytes, expectedBytes)) throw new Error("Acceptance evidence signature is invalid.");
