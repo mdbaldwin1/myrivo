@@ -10,8 +10,8 @@
   --popover-foreground: 182 39% 15%; /* #173435 */
   --border: 183 38% 82%; /* #c0e1e3 */
   --input: 183 38% 82%; /* #c0e1e3 */
-  --ring: 185 80% 29%; /* #0f7b85 */
-  --primary: 185 80% 29%; /* #0f7b85 */
+  --ring: 185 80% 27%; /* #0e737c */
+  --primary: 185 80% 27%; /* #0e737c - keeps AA contrast over the page gradient */
   --primary-foreground: 0 0% 100%; /* #ffffff */
   --muted: 184 44% 92%; /* #e2f2f4 */
   --muted-foreground: 182 16% 39%; /* #547273 */

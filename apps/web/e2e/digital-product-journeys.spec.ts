@@ -356,7 +356,11 @@ test.describe.serial("digital product user journeys", () => {
     await page.getByRole("tab", { name: "Files" }).click();
     await page.getByRole("button", { name: /^Manage / }).first().click();
     await page.getByRole("menuitem", { name: "Replace file" }).click();
-    await page.getByLabel(/choose a replacement/i).first().setInputFiles({ name: "acceptance-print-v2.png", mimeType: "image/png", buffer: makeAcceptancePng(7) });
+    // Distinct bytes per run: a fixed seed would reproduce the bytes a prior
+    // pass already published, so the replacement could not be told apart from
+    // what the earlier buyer purchased.
+    const replacementSeed = 8 + (Math.floor(Date.now() / 1000) % 240);
+    await page.getByLabel(/choose a replacement/i).first().setInputFiles({ name: "acceptance-print-v2.png", mimeType: "image/png", buffer: makeAcceptancePng(replacementSeed) });
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: /replace file/i }).click();
