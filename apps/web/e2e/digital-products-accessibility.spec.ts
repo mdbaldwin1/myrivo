@@ -128,15 +128,16 @@ for (const viewport of [
           await page.keyboard.press("Enter");
           await expect(page.getByRole("status")).toContainText("Check your email", { timeout: 30_000 });
         } else if (label === "download") {
-          // One real grant-consuming press per suite run (mobile); the other
-          // viewport answers with the interstitial shape so repeated runs
-          // cannot exhaust the buyer's five lifetime grants.
-          if (viewport.name !== "mobile") {
-            await page.route("**/api/digital-downloads/file/**", (route) => route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: "<!doctype html><html><head><title>Download starting</title></head><body>Your download is starting.</body></html>" }));
-          }
+          // Answer with the interstitial shape rather than spending one of the
+          // buyer's five lifetime grants: this pass asserts the announcement
+          // and focus behaviour, while the journey scenarios prove the real
+          // grant-consuming download, its exact exhaustion contract, and the
+          // delivered bytes. Consuming here would drain the seeded order and
+          // make repeat runs of this suite impossible.
+          await page.route("**/api/digital-downloads/file/**", (route) => route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: "<!doctype html><html><head><title>Download starting</title></head><body>Your download is starting.</body></html>" }));
           await page.keyboard.press("Enter");
           await expect(page.getByRole("status")).toContainText(/download started|Preparing/, { timeout: 30_000 });
-          if (viewport.name !== "mobile") await page.unroute("**/api/digital-downloads/file/**");
+          await page.unroute("**/api/digital-downloads/file/**");
         } else if (label === "cart") {
           await page.keyboard.press("Enter");
           await expect(page).toHaveURL(/checkout\.stripe\.com/, { timeout: 60_000 });
