@@ -232,6 +232,18 @@ for (const viewport of [
       await expect(page.getByText("Customer file replaced. Existing purchases still use their original version.").first()).toBeVisible({ timeout: 60_000 });
       await expectNoSeriousAccessibilityViolations(page, `${viewport.name} replace dynamic state`);
 
+      // Remove the file this pass created. Every active file is snapshotted
+      // into later purchases, so leaving it behind would grow each subsequent
+      // order's manifest and break repeat runs of the journey scenarios.
+      await actions.focus();
+      await page.keyboard.press("Enter");
+      await page.getByRole("menuitem", { name: "Remove file" }).click();
+      const removeDialog = page.getByRole("dialog", { name: `Remove ${keyboardArtLabel}?` });
+      await expect(removeDialog).toBeVisible();
+      await removeDialog.getByRole("button", { name: "Remove file" }).click();
+      await expect(page.getByText("Customer file removed. Existing purchases are preserved.").first()).toBeVisible({ timeout: 60_000 });
+      await expectNoSeriousAccessibilityViolations(page, `${viewport.name} remove dynamic state`);
+
       await page.goto(acceptance!.routes.merchantOrder.replace(acceptance!.orderId, acceptance!.financialOrders.partialRefund));
       const resend = page.getByRole("button", { name: /send fresh access link|resend|retry/i });
       await resend.scrollIntoViewIfNeeded();
