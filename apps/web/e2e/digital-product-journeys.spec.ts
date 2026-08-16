@@ -68,15 +68,20 @@ export function makeAcceptancePng(seed: number) {
 
 
 
-// Every active file is snapshotted into later purchases, so this pass's extra
-// file - and any left behind by an interrupted pass - must be cleared before
-// the storefront scenarios run.
+// Every active file is snapshotted into later purchases, so the storefront
+// scenarios need exactly the one canonical deliverable: clear this pass's
+// extra file plus anything an interrupted pass left behind.
+const CANONICAL_FILE_LABEL = "Manage acceptance print v1";
+
 async function removeExtraAcceptanceFiles(page: Page) {
-  for (let guard = 0; guard < 10; guard += 1) {
-    const manage = page.getByRole("button", { name: "Manage acceptance extra" }).first();
-    if (!(await manage.isVisible().catch(() => false))) return;
+  for (let guard = 0; guard < 12; guard += 1) {
+    const labels = await page
+      .getByRole("button", { name: /^Manage / })
+      .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label") ?? ""));
+    const target = labels.find((label) => label && label !== CANONICAL_FILE_LABEL);
+    if (!target) return;
     await dismissToasts(page);
-    await manage.click();
+    await page.getByRole("button", { name: target, exact: true }).first().click();
     await page.getByRole("menuitem", { name: "Remove file" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Remove file" }).click();
     await expect(page.getByText("Customer file removed. Existing purchases are preserved.").first()).toBeVisible({ timeout: 30_000 });
