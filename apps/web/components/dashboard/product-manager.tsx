@@ -3142,7 +3142,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                   <Checkbox checked={isFeatured} onChange={(event) => setIsFeatured(event.target.checked)} />
                   <span className="text-sm font-medium">Featured product</span>
                 </label>
-                <FormField label="Image">
+                <FormField label="Image" description={productType === "digital" ? "Buyers only ever see a watermarked version of a digital product. If the file you sell is a JPG or PNG, that watermark is generated from the file automatically; any image you add here is watermarked before the storefront shows it." : undefined}>
                   <input
                     ref={createImageInputRef}
                     type="file"
@@ -4113,7 +4113,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                   <Checkbox checked={editIsFeatured} onChange={(event) => setEditIsFeatured(event.target.checked)} />
                   <span className="text-sm font-medium">Featured product</span>
                 </label>
-                <FormField label="Image">
+                <FormField label="Image" description={editProductType === "digital" ? "Buyers only ever see a watermarked version of a digital product. If the file you sell is a JPG or PNG, that watermark is generated from the file automatically; any image you add here is watermarked before the storefront shows it." : undefined}>
                   <input
                     ref={editImageInputRef}
                     type="file"

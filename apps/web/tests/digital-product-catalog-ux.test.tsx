@@ -638,4 +638,22 @@ describe("ProductManager digital catalog integration", () => {
     expect(screen.queryByText("Stale product A")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
   });
+  test("explains on the image field that buyers only ever see a watermarked version", async () => {
+    const user = userEvent.setup();
+    render(<ProductManager initialProducts={[product()]} />);
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const guidance = screen.getByText(/Buyers only ever see a watermarked version/i);
+    expect(guidance.textContent).toMatch(/generated from the file automatically/i);
+    expect(guidance.textContent).toMatch(/watermarked before the storefront shows it/i);
+
+    // Rendered as the field's description, so assistive technology announces it
+    // with the control rather than as loose text nearby.
+    expect(guidance.getAttribute("id")).toMatch(/-description$/);
+  });
+
+  test("does not claim watermarking on a physical product's image field", () => {
+    render(<ProductManager initialProducts={[product({ product_type: "physical", digital_readiness: null, digital_preview: null, digital_rights_affirmed_at: null })]} />);
+    expect(screen.queryByText(/Buyers only ever see a watermarked version/i)).toBeNull();
+  });
 });
