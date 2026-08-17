@@ -6,6 +6,23 @@ function uniqueSuffix() {
   return `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
 }
 
+// Recorded so global teardown can remove exactly what this run created,
+// rather than guessing which stores are test data after the fact.
+export function recordCreatedIdentity(email: string) {
+  try {
+    const manifest = path.resolve(__dirname, ".created-identities.json");
+    const existing = fs.existsSync(manifest)
+      ? (JSON.parse(fs.readFileSync(manifest, "utf8")) as string[])
+      : [];
+    if (!existing.includes(email)) {
+      existing.push(email);
+      fs.writeFileSync(manifest, JSON.stringify(existing));
+    }
+  } catch {
+    // Recording is best-effort; never fail a test over bookkeeping.
+  }
+}
+
 export function buildMerchantIdentity() {
   const suffix = uniqueSuffix();
   return {
@@ -268,6 +285,7 @@ async function acceptLegalUpdatesIfPresent(page: Page) {
 
 export async function signupAndOnboard(page: Page) {
   const identity = buildMerchantIdentity();
+  recordCreatedIdentity(identity.email);
   let ownerFallback: OwnerStoreIdentity | null = null;
   try {
     await ensureUserExists(identity.email, identity.password);
