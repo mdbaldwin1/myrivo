@@ -1,4 +1,27 @@
-export const PLATFORM_TERMS_V1_MARKDOWN = `# Myrivo Terms and Conditions
+-- Publish v2 of the legal documents affected by digital products.
+--
+-- v1 said nothing about files: nothing required a merchant to hold the rights
+-- to what they sell, nothing told a buyer how delivery works or what they may
+-- do with a purchased file, and the storefront privacy notice did not mention
+-- delivery data. Content matches apps/web/lib/legal/seeded-documents.ts.
+--
+-- Each v2 inherits its document's own is_required flag: the platform terms are
+-- a required acceptance, while the storefront documents are baselines stores
+-- copy rather than something a merchant accepts. Publishing a newer required
+-- version re-prompts acceptance at the consent gate; v1 rows are left intact
+-- as the historical record of what was accepted.
+
+insert into public.legal_document_versions (
+  legal_document_id, version_label, status, is_required,
+  effective_at, published_at, content_markdown, content_hash, change_summary
+)
+select doc.id, 'v2', 'published',
+  coalesce((
+    select prior.is_required from public.legal_document_versions prior
+    where prior.legal_document_id = doc.id and prior.status = 'published'
+    order by prior.published_at desc nulls last, prior.id desc limit 1
+  ), true),
+  now(), now(), $$# Myrivo Terms and Conditions
 
 ## 1. Scope
 
@@ -90,92 +113,101 @@ Myrivo may update these terms from time to time. When material updates are requi
 
 ## 15. Contact
 
-Questions about these terms may be sent to legal@myrivo.com.`;
+Questions about these terms may be sent to legal@myrivo.com.$$,
+  '2338004f814f9aa420f2db93d921c10225e5c60ec061c81cabe21c28dc6108da',
+  'Digital product rights: merchants must hold the rights to every file they sell'
+from public.legal_documents doc
+where doc.key = 'platform_terms'
+  and not exists (
+    select 1 from public.legal_document_versions existing
+    where existing.legal_document_id = doc.id and existing.version_label = 'v2'
+  );
 
-export const PLATFORM_PRIVACY_V1_MARKDOWN = `# Myrivo Privacy Policy
+insert into public.legal_document_versions (
+  legal_document_id, version_label, status, is_required,
+  effective_at, published_at, content_markdown, content_hash, change_summary
+)
+select doc.id, 'v2', 'published',
+  coalesce((
+    select prior.is_required from public.legal_document_versions prior
+    where prior.legal_document_id = doc.id and prior.status = 'published'
+    order by prior.published_at desc nulls last, prior.id desc limit 1
+  ), true),
+  now(), now(), $$# Terms & Conditions
 
 ## 1. Scope
 
-This Privacy Policy explains how Myrivo collects, uses, discloses, and protects information when people use Myrivo accounts, workspaces, hosted storefront technology, APIs, support channels, public websites, legal/compliance surfaces, and related services.
+These Terms & Conditions govern your use of the {storeName} storefront and any purchases or interactions you make through it. By accessing the storefront or placing an order, you agree to these terms and any store policies, notices, and operational information presented with the storefront.
 
-If you purchase from a Myrivo-powered storefront, the store's customer-facing privacy policy also applies to store-specific operations. Myrivo may process data both on its own behalf and in support of the store's operations depending on the context.
+This storefront is hosted on Myrivo. Myrivo provides the technology platform used to operate the storefront, but unless expressly stated otherwise, {storeName} is the seller responsible for the products, product descriptions, pricing, fulfillment promises, returns, and customer service associated with purchases from this storefront.
 
-## 2. Information We Collect
+## 2. Orders and Acceptance
 
-Depending on how you use the Services, Myrivo may collect:
+When you place an order, you agree that the information you provide is accurate, complete, and current. Submission of an order request does not guarantee acceptance. We may reject, limit, cancel, or refund orders when necessary for inventory reasons, pricing errors, fraud prevention, legal compliance, fulfillment constraints, misuse, or other legitimate operational reasons.
 
-- account and profile information, such as names, email addresses, usernames, avatars, and role assignments
-- business and store information, such as store names, contact details, domains, branding assets, team invitations, fulfillment settings, legal settings, and connected-service configuration
-- transaction and order information, such as customer names, order contents, order values, shipping or pickup details, discount usage, refund activity, and fulfillment events
-- communications and support information, such as emails, notifications, customer-service messages, legal acceptance records, privacy requests, and support submissions
-- technical and usage information, such as device/browser data, IP-derived context, event telemetry, page visits, CTA clicks, analytics session data, and feature usage
-- fraud, security, and compliance information, such as audit events, moderation/governance records, dispute data, and logs required to protect the Services or comply with law
+## 3. Pricing, Taxes, and Payment
 
-## 3. Sources of Information
+Prices, promotions, availability, shipping or pickup fees, and applicable taxes may change without notice before an order is submitted. Payment processing is handled through supported payment providers. By placing an order, you represent that you are authorized to use the selected payment method and that the billing and payment details you provide are accurate.
 
-We may collect information directly from you, from other users acting within the same store or workspace, from shoppers or customers interacting with a storefront, automatically from devices and browsers, and from service providers that support payments, messaging, hosting, analytics, shipping, tax, identity, or fraud prevention.
+## 4. Fulfillment, Pickup, Shipping, Returns, and Support
 
-## 4. How We Use Information
+Shipping, pickup, return, support, and refund expectations are described throughout the storefront and in the store's policy content. Please review those details carefully before completing a purchase. Fulfillment timing may vary based on inventory, made-to-order production, pickup scheduling, shipping-carrier performance, and circumstances outside the store's reasonable control.
 
-Myrivo uses information to:
+Digital products are delivered as files rather than shipped. After payment, an access link is emailed to the address used at checkout. That link is personal to the order, expires after a limited period, and allows a limited number of downloads per file; you can request a fresh link from the storefront if it expires or is exhausted. Download the files promptly and keep your own copy. If a payment is fully refunded or a dispute is decided against the order, access to the files ends; a partial refund leaves access in place.
 
-- create, authenticate, and manage accounts and workspaces
-- host and operate storefronts, carts, checkouts, orders, fulfillment, and related commerce features
-- process payments, payouts, refunds, disputes, and fee calculations through supported providers
-- send transactional messages, product/service notifications, and legally required notices
-- personalize, measure, improve, secure, and troubleshoot the Services
-- enforce platform rules, protect users, investigate misuse, and respond to fraud or security incidents
-- comply with legal obligations, resolve disputes, and maintain records required for auditability and platform operations
+## 5. Storefront Use Rules
 
-Where applicable under law, Myrivo may rely on contract performance, legitimate interests, consent, and legal obligations as the basis for processing.
+You may not use the storefront in a way that is unlawful, fraudulent, abusive, harassing, infringing, disruptive, or technically harmful. You may not interfere with storefront security, checkout flows, pricing displays, review systems, availability controls, or any other feature of the storefront or supporting platform.
 
-## 5. When We Share Information
+## 6. Product and Content Information
 
-We may disclose information:
+We try to present product, pricing, availability, fulfillment, and policy information accurately, but mistakes can happen. Images, colors, packaging, timing, and presentation may vary from what is displayed on your device or from earlier storefront content. We reserve the right to correct errors and update storefront information when necessary.
 
-- to stores, merchants, staff, and authorized workspace users when necessary to operate the relevant store or customer experience
-- to service providers and subprocessors that support hosting, storage, payments, tax, shipping, communications, analytics, customer support, fraud prevention, and operational tooling
-- to advisors, auditors, insurers, and professional service providers when reasonably necessary
-- in connection with mergers, financings, acquisitions, restructurings, or asset transfers
-- when required to comply with law, enforce terms, protect rights, or respond to emergencies or security threats
+## 7. Intellectual Property
 
-Myrivo does not sell personal information in the ordinary meaning of the term. If a rights surface such as a "Do Not Sell or Share" mechanism is offered for a storefront experience, that mechanism should be followed for the relevant surface and jurisdiction.
+The storefront, branding, product descriptions, imagery, copy, and other content made available by the store are protected by applicable intellectual property laws. You may not copy, reproduce, republish, modify, or exploit storefront content except as allowed by law or with the store's prior written permission.
 
-## 6. Cookies, Analytics, and Similar Technologies
+Buying a digital product does not transfer ownership of it. Unless the store grants you different rights in writing, a purchased file is licensed to you for personal, non-commercial use: you may not resell, redistribute, sublicense, share the file or its access link, or use it commercially. Previews shown on the storefront are watermarked samples and are not the purchased file.
 
-Myrivo may use cookies, local storage, pixels, and similar technologies to keep users signed in, preserve preferences, measure usage, understand conversion behavior, improve performance, and support security controls. Where required, Myrivo will provide consent choices or honor applicable browser privacy signals before enabling certain analytics or marketing-related processing.
+## 8. Disclaimers
 
-## 7. Retention
+To the maximum extent permitted by law, the storefront and products are provided on an "as available" basis. Except where required by law, we do not guarantee uninterrupted access, error-free storefront operation, or that every product or fulfillment estimate will always be available exactly as displayed.
 
-We retain information for as long as reasonably necessary for the purposes described in this policy, including to provide the Services, maintain transactional and audit records, comply with legal obligations, resolve disputes, enforce agreements, and protect platform integrity. Retention periods may vary by data type and operational context.
+## 9. Limitation of Liability
 
-## 8. Your Choices and Rights
+To the maximum extent permitted by law, {storeName} will not be liable for indirect, incidental, special, consequential, or punitive damages, or for lost profits, lost savings, or loss of data arising out of or relating to your use of the storefront or any purchase made through it. Nothing in these terms limits liability that cannot be limited under applicable law.
 
-Depending on your location and relationship to the Services, you may have rights to access, correct, delete, export, or restrict certain personal information, or to object to particular processing activities. You may also have rights relating to marketing communications, cookies, and certain disclosures or sharing practices.
+## 10. Governing Law
 
-Requests can be made through the privacy request mechanisms provided in the relevant storefront or by contacting Myrivo directly. We may need to verify identity or authority before fulfilling a request.
+These terms are governed by the laws of {governingLawRegion}, without regard to conflict-of-law principles, except where mandatory law requires a different result.
 
-## 9. Security
+## 11. Changes to These Terms
 
-Myrivo uses administrative, technical, and organizational safeguards designed to protect personal information. No security measure is perfect, and no system can guarantee absolute security, but we work to reduce risk, limit access, and maintain operational protections appropriate for the Services.
+We may update these Terms & Conditions from time to time to reflect storefront, operational, legal, or policy changes. Updated terms become effective when published to the storefront or on the stated effective date, as applicable.
 
-## 10. Children's Privacy
+## 12. Contact
 
-The Services are not directed to children under 13, and Myrivo does not knowingly collect personal information from children in a manner prohibited by law. If you believe a child provided personal information improperly, contact us so we can investigate and take appropriate action.
+If you have questions about these terms, contact us at {termsContactEmail}.$$,
+  'b014a64bbc616b0dec1b6ef26d445f98fa0ca4c1658d147f2f4648022f48bcb9',
+  'Digital delivery, access limits, and the personal-use licence for purchased files'
+from public.legal_documents doc
+where doc.key = 'store_terms_base'
+  and not exists (
+    select 1 from public.legal_document_versions existing
+    where existing.legal_document_id = doc.id and existing.version_label = 'v2'
+  );
 
-## 11. International Data Handling
-
-Myrivo and its service providers may process information in the United States and other jurisdictions where Myrivo or its providers operate. Where required, Myrivo will use appropriate measures to support lawful cross-border data handling.
-
-## 12. Changes to This Policy
-
-Myrivo may update this Privacy Policy from time to time. When material changes are made, Myrivo may publish a new version, update the effective date, and provide additional notice or obtain renewed acknowledgement where required by law.
-
-## 13. Contact
-
-Questions about this Privacy Policy or Myrivo privacy practices may be sent to privacy@myrivo.com.`;
-
-export const STORE_PRIVACY_BASE_V1_MARKDOWN = `# Privacy Policy
+insert into public.legal_document_versions (
+  legal_document_id, version_label, status, is_required,
+  effective_at, published_at, content_markdown, content_hash, change_summary
+)
+select doc.id, 'v2', 'published',
+  coalesce((
+    select prior.is_required from public.legal_document_versions prior
+    where prior.legal_document_id = doc.id and prior.status = 'published'
+    order by prior.published_at desc nulls last, prior.id desc limit 1
+  ), true),
+  now(), now(), $$# Privacy Policy
 
 ## 1. Scope
 
@@ -246,79 +278,12 @@ We may update this Privacy Policy from time to time to reflect operational, lega
 
 ## 11. Contact
 
-Questions about this Privacy Policy or the store's privacy practices may be sent to {privacyContactEmail}.`;
-
-export const STORE_TERMS_BASE_V1_MARKDOWN = `# Terms & Conditions
-
-## 1. Scope
-
-These Terms & Conditions govern your use of the {storeName} storefront and any purchases or interactions you make through it. By accessing the storefront or placing an order, you agree to these terms and any store policies, notices, and operational information presented with the storefront.
-
-This storefront is hosted on Myrivo. Myrivo provides the technology platform used to operate the storefront, but unless expressly stated otherwise, {storeName} is the seller responsible for the products, product descriptions, pricing, fulfillment promises, returns, and customer service associated with purchases from this storefront.
-
-## 2. Orders and Acceptance
-
-When you place an order, you agree that the information you provide is accurate, complete, and current. Submission of an order request does not guarantee acceptance. We may reject, limit, cancel, or refund orders when necessary for inventory reasons, pricing errors, fraud prevention, legal compliance, fulfillment constraints, misuse, or other legitimate operational reasons.
-
-## 3. Pricing, Taxes, and Payment
-
-Prices, promotions, availability, shipping or pickup fees, and applicable taxes may change without notice before an order is submitted. Payment processing is handled through supported payment providers. By placing an order, you represent that you are authorized to use the selected payment method and that the billing and payment details you provide are accurate.
-
-## 4. Fulfillment, Pickup, Shipping, Returns, and Support
-
-Shipping, pickup, return, support, and refund expectations are described throughout the storefront and in the store's policy content. Please review those details carefully before completing a purchase. Fulfillment timing may vary based on inventory, made-to-order production, pickup scheduling, shipping-carrier performance, and circumstances outside the store's reasonable control.
-
-Digital products are delivered as files rather than shipped. After payment, an access link is emailed to the address used at checkout. That link is personal to the order, expires after a limited period, and allows a limited number of downloads per file; you can request a fresh link from the storefront if it expires or is exhausted. Download the files promptly and keep your own copy. If a payment is fully refunded or a dispute is decided against the order, access to the files ends; a partial refund leaves access in place.
-
-## 5. Storefront Use Rules
-
-You may not use the storefront in a way that is unlawful, fraudulent, abusive, harassing, infringing, disruptive, or technically harmful. You may not interfere with storefront security, checkout flows, pricing displays, review systems, availability controls, or any other feature of the storefront or supporting platform.
-
-## 6. Product and Content Information
-
-We try to present product, pricing, availability, fulfillment, and policy information accurately, but mistakes can happen. Images, colors, packaging, timing, and presentation may vary from what is displayed on your device or from earlier storefront content. We reserve the right to correct errors and update storefront information when necessary.
-
-## 7. Intellectual Property
-
-The storefront, branding, product descriptions, imagery, copy, and other content made available by the store are protected by applicable intellectual property laws. You may not copy, reproduce, republish, modify, or exploit storefront content except as allowed by law or with the store's prior written permission.
-
-Buying a digital product does not transfer ownership of it. Unless the store grants you different rights in writing, a purchased file is licensed to you for personal, non-commercial use: you may not resell, redistribute, sublicense, share the file or its access link, or use it commercially. Previews shown on the storefront are watermarked samples and are not the purchased file.
-
-## 8. Disclaimers
-
-To the maximum extent permitted by law, the storefront and products are provided on an "as available" basis. Except where required by law, we do not guarantee uninterrupted access, error-free storefront operation, or that every product or fulfillment estimate will always be available exactly as displayed.
-
-## 9. Limitation of Liability
-
-To the maximum extent permitted by law, {storeName} will not be liable for indirect, incidental, special, consequential, or punitive damages, or for lost profits, lost savings, or loss of data arising out of or relating to your use of the storefront or any purchase made through it. Nothing in these terms limits liability that cannot be limited under applicable law.
-
-## 10. Governing Law
-
-These terms are governed by the laws of {governingLawRegion}, without regard to conflict-of-law principles, except where mandatory law requires a different result.
-
-## 11. Changes to These Terms
-
-We may update these Terms & Conditions from time to time to reflect storefront, operational, legal, or policy changes. Updated terms become effective when published to the storefront or on the stated effective date, as applicable.
-
-## 12. Contact
-
-If you have questions about these terms, contact us at {termsContactEmail}.`;
-
-export const SEEDED_LEGAL_DOCUMENTS_V1 = {
-  platform_terms: {
-    title: "Myrivo Terms and Conditions",
-    contentMarkdown: PLATFORM_TERMS_V1_MARKDOWN
-  },
-  platform_privacy: {
-    title: "Myrivo Privacy Policy",
-    contentMarkdown: PLATFORM_PRIVACY_V1_MARKDOWN
-  },
-  store_privacy_base: {
-    title: "Storefront Privacy Policy Base",
-    contentMarkdown: STORE_PRIVACY_BASE_V1_MARKDOWN
-  },
-  store_terms_base: {
-    title: "Storefront Terms & Conditions Base",
-    contentMarkdown: STORE_TERMS_BASE_V1_MARKDOWN
-  }
-} as const;
+Questions about this Privacy Policy or the store's privacy practices may be sent to {privacyContactEmail}.$$,
+  'a0e3f8831aab3b119d1683f80e6c292b01df932a142328884c5c1aaece07c2db',
+  'Digital delivery information added to collected data'
+from public.legal_documents doc
+where doc.key = 'store_privacy_base'
+  and not exists (
+    select 1 from public.legal_document_versions existing
+    where existing.legal_document_id = doc.id and existing.version_label = 'v2'
+  );
