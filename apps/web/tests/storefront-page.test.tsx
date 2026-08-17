@@ -301,7 +301,7 @@ describe("StorefrontPage quick add", () => {
     expect(screen.getByRole("link", { name: "Printable pack" })).toBeTruthy();
     expect(screen.queryByText("No products match your filters.")).toBeNull();
   });
-  test("uses the watermarked preview as the listing image when a digital product has none of its own", () => {
+  test("represents a digital product with its watermarked preview, never its own uploaded artwork", () => {
     function digitalProduct(overrides: Record<string, unknown>) {
       return {
         id: "product-digital",
@@ -357,7 +357,9 @@ describe("StorefrontPage quick add", () => {
     );
     expect(screen.getByText("https://cdn.example.test/watermarked.jpg")).toBeTruthy();
 
-    // Merchant imagery still takes precedence when it exists.
+    // Uploaded imagery is never shown for a digital product: it can be the
+    // artwork being sold, and a listing image is one right-click from a free
+    // copy. The watermarked preview stands in instead.
     rerender(
       <StorefrontPage
         store={{ id: "store-1", name: "Shop", slug: "shop" }}
@@ -371,6 +373,7 @@ describe("StorefrontPage quick add", () => {
         view="products"
       />,
     );
-    expect(screen.getByText("https://cdn.example.test/marketing.jpg")).toBeTruthy();
+    expect(screen.queryByText("https://cdn.example.test/marketing.jpg")).toBeNull();
+    expect(screen.getByText("https://cdn.example.test/watermarked.jpg")).toBeTruthy();
   });
 });

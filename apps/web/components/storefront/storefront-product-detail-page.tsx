@@ -11,6 +11,7 @@ import { StorefrontStudioEditableTemplateText } from "@/components/storefront/st
 import { StorefrontStudioEditableText } from "@/components/storefront/storefront-studio-editable-text";
 import { buildStorefrontThemeStyle, resolveStorefrontThemeConfig } from "@/lib/theme/storefront-theme";
 import { sanitizeRichTextHtml } from "@/lib/rich-text";
+import { resolveBuyerProductImages } from "@/lib/storefront/buyer-product-images";
 import { formatVariantLabel } from "@/lib/products/variants";
 import { setEditorValueAtPath } from "@/lib/store-editor/object-path";
 import {
@@ -271,27 +272,13 @@ function resolveVariantLabel(variant: StorefrontVariant) {
 }
 
 function getVariantImages(variant: StorefrontVariant | null, product: StorefrontProduct) {
-  // Only the watermarked preview may represent a digital product here: its own
-  // image_urls can be the artwork being sold, and showing that unwatermarked
-  // would give the file away.
-  if ((product.product_type ?? "physical") === "digital") {
-    return product.digital_summary?.publicPreviewUrl
-      ? [product.digital_summary.publicPreviewUrl]
-      : [];
-  }
-
-  const ordered = [...(variant?.image_urls ?? []), ...(variant?.group_image_urls ?? []), ...(product.image_urls ?? [])].filter(
-    (image): image is string => Boolean(image)
-  );
-  const unique: string[] = [];
-  const seen = new Set<string>();
-  for (const image of ordered) {
-    if (seen.has(image)) continue;
-    seen.add(image);
-    unique.push(image);
-  }
-  return unique;
+  return resolveBuyerProductImages({
+    productType: product.product_type,
+    digitalPreviewUrl: product.digital_summary?.publicPreviewUrl,
+    candidates: [...(variant?.image_urls ?? []), ...(variant?.group_image_urls ?? []), ...(product.image_urls ?? [])],
+  });
 }
+
 
 function getAvailabilityLabel(
   variant: StorefrontVariant | null,

@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { buildStorefrontThemeStyle, resolveStorefrontThemeConfig, type StorefrontThemeConfig } from "@/lib/theme/storefront-theme";
+import { resolveBuyerProductImages } from "@/lib/storefront/buyer-product-images";
 import { formatVariantLabel } from "@/lib/products/variants";
 import { StorefrontHeader } from "@/components/storefront/storefront-header";
 import { StorefrontImageCarousel } from "@/components/storefront/storefront-image-carousel";
@@ -205,29 +206,13 @@ function getVariantOptionNames(product: StorefrontProduct, variants: StorefrontV
 }
 
 function getVariantImages(variant: StorefrontVariant | null, product: StorefrontProduct) {
-  const ordered = [...(variant?.image_urls ?? []), ...(variant?.group_image_urls ?? []), ...(product.image_urls ?? [])].filter(
-    (image): image is string => Boolean(image)
-  );
-
-  // A digital product whose merchant never uploaded imagery still has a
-  // watermarked preview of the file itself; show that rather than nothing.
-  if (ordered.length === 0 && product.digital_summary?.publicPreviewUrl) {
-    return [product.digital_summary.publicPreviewUrl];
-  }
-
-  const unique: string[] = [];
-  const seen = new Set<string>();
-
-  for (const image of ordered) {
-    if (seen.has(image)) {
-      continue;
-    }
-    seen.add(image);
-    unique.push(image);
-  }
-
-  return unique;
+  return resolveBuyerProductImages({
+    productType: product.product_type,
+    digitalPreviewUrl: product.digital_summary?.publicPreviewUrl,
+    candidates: [...(variant?.image_urls ?? []), ...(variant?.group_image_urls ?? []), ...(product.image_urls ?? [])],
+  });
 }
+
 
 function getPriceRange(variants: StorefrontVariant[]) {
   if (variants.length === 0) {
