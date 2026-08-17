@@ -48,5 +48,12 @@ export function resolvePostAuthReturnTo(requestedReturnTo: string | null | undef
   }
 
   const pendingInvitePath = getPendingStoreInvitePath(getPendingStoreInviteTokenFromMetadata(userMetadata));
-  return pendingInvitePath ?? safeReturnTo;
+  if (pendingInvitePath) {
+    return pendingInvitePath;
+  }
+
+  // Signing in from the marketing home page carries a bare "/" through as the
+  // return target, which would land the signed-in seller back on the public
+  // landing page instead of their workspace.
+  return safeReturnTo === "/" ? DEFAULT_RETURN_TO : safeReturnTo;
 }

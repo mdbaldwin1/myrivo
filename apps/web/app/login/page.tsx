@@ -20,7 +20,10 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   if (user) {
     const fallbackPath = await resolveAuthenticatedWorkspacePath(user.id);
-    redirect(sanitizeReturnTo(requestedReturnTo, fallbackPath));
+    // A bare "/" is what the public header carries in; it is not a destination
+    // worth returning an authenticated seller to.
+    const explicitReturnTo = requestedReturnTo === "/" ? null : requestedReturnTo;
+    redirect(sanitizeReturnTo(explicitReturnTo, fallbackPath));
   }
 
   return (
