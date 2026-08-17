@@ -107,8 +107,11 @@ export function Flyout({
 
       <DialogPrimitive.Root open={isDiscardDialogOpen} onOpenChange={setIsDiscardDialogOpen}>
         <DialogPrimitive.Portal>
-          <DialogPrimitive.Overlay className="fixed inset-0 z-[60] bg-black/45 data-[state=open]:animate-in data-[state=closed]:animate-out" />
-          <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-[61] w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-white p-6 shadow-lg">
+          {/* Above the sheet this dialog belongs to (z-[80]/[81]); below it the
+              sheet's own backdrop covers these controls and swallows the click,
+              leaving no way to answer the prompt or close the sheet. */}
+          <DialogPrimitive.Overlay className="fixed inset-0 z-[90] bg-black/45 data-[state=open]:animate-in data-[state=closed]:animate-out" />
+          <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-[91] w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-white p-6 shadow-lg">
             <DialogPrimitive.Title className="text-lg font-semibold text-foreground">{discardTitle}</DialogPrimitive.Title>
             <DialogPrimitive.Description className="mt-2 text-sm text-muted-foreground">{discardDescription}</DialogPrimitive.Description>
             <div className="mt-5 flex justify-end gap-2">
