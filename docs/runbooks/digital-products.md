@@ -4,7 +4,7 @@ Owner: Commerce Engineering
 Review cadence: Quarterly and after every delivery/security incident  
 Last reviewed: August 13, 2026
 
-This runbook is the production operating procedure for native digital products. The feature is default-off and must stay disabled for non-internal stores until the release checklist, real Stripe/Resend acceptance, and independent security, code, and UX reviews are complete.
+This runbook is the production operating procedure for native digital products. The feature is default-off per store; enable it deliberately, starting with an internal store, after the pre-enablement validation below.
 
 ## Invariants
 
@@ -51,47 +51,28 @@ Alert when the scheduler has no successful invocation for five minutes, paid del
 4. Deploy application code with every plan ineligible and every store disabled.
 5. Verify worker authentication, bucket policies, privacy-safe operations UI, and alerts.
 6. Enable `digitalProducts: true` on one internal test plan, then enable one internal flagged store through the idempotent admin operation.
-7. Complete the acceptance matrix below. Observe one complete retry window before enabling another cohort.
+7. Complete the pre-enablement validation below. Observe one complete retry window before enabling another cohort.
 
-Promotion runs `npm run verify:digital-products-release` on the PR targeting `main`, before merge. When the acceptance environment secrets are not configured in CI, the step skips with a warning so unrelated promotions are not blocked; the database release-approval gate below remains the enforcement point, and digital products cannot be enabled for any store until the acceptance run completes. When the secrets are configured, it fails closed unless the fixture, current-run provider-linked evidence, Stripe test-mode credentials, Resend test recipient, and all executable digital Playwright journeys are present. The fixture origin is forced into Playwright and must be loopback or the explicitly approved HTTPS non-production host; every route and the acceptance-control endpoint is same-origin. The successful evidence digest, exact release SHA, production target, and three review timestamps must be recorded in `digital_products_release_approvals` and matched by `digital_products_release_runtime`; the database rejects rollout enablement for stale, mismatched, future-dated, over-seven-day, revoked, or expired approval. A skipped test is never approval.
+Promotion carries no digital-products-specific gate: the standard CI validation (lint, typecheck, unit suite, build) applies, and enablement is controlled by the store and plan feature flags.
 
 Rollback starts by disabling every enabled store. Roll back application code only after flags are off. Leave additive tables, immutable manifests, jobs, entitlements, grants, tokens, and audit records in place so paid buyers retain support. Do not reverse migrations that would discard order evidence. If schema rollback is unavoidable, stop checkout, back up affected tables, and obtain engineering/security approval.
 
-## Acceptance matrix and evidence
+## Pre-enablement validation
 
-Run against a dedicated non-production store with Stripe test mode and a Resend-authorized recipient. Point `MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE` at the versioned fixture and `MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_OUTPUT` at a new empty temporary path. The browser run performs user-facing merchant/buyer actions; the separately authenticated control endpoint is limited to deterministic reset, provider-event/failure injection, and independent state observation. It returns 404 in production. The run generates its own SHA/environment/run-bound HMAC evidence; static or pre-created evidence is rejected.
+There is no release-approval interlock: enabling a store is governed solely by
+`store_feature_flags.digital_products` plus the billing plan's `digitalProducts`
+flag, both checked by `is_store_digital_products_enabled`. Buyer-facing limits
+(five download grants per file, 48-hour access links) are unchanged.
 
-The acceptance application additionally requires `MYRIVO_DIGITAL_ACCEPTANCE_ORIGIN`, `MYRIVO_DIGITAL_ACCEPTANCE_PROJECT_REF`, an active `digital_acceptance_targets` row binding that project, store, and run, and a matching singleton `digital_acceptance_configuration` row installed by a privileged migration or database administrator. Application roles, including `service_role`, cannot mutate that database-owned configuration. The service-role-only RPC rejects inactive configuration, expired targets, cross-store subjects, cross-run requests, invalid transitions, and reused idempotency keys. Keep `MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_HMAC_KEY` separate from the control bearer and CI-only. Checkout acceptance enters Stripe's test card on hosted Checkout for both digital-only and mixed carts and waits for the real return/delivery path; never replace this with direct navigation to a seeded return URL.
-
-Real refunds use Stripe's test API. Exact dispute won/lost certification additionally requires `MYRIVO_STRIPE_DISPUTE_HELPER_URL` and `MYRIVO_STRIPE_DISPUTE_HELPER_TOKEN` for an audited provider-side test helper. Without that supported capability, the strict gate stops before the browser suite; database-injected financial transitions never count as provider evidence.
-
-The dispute helper URL must be HTTPS and match `MYRIVO_STRIPE_DISPUTE_HELPER_ORIGIN` exactly. CI also requires `MYRIVO_STRIPE_DISPUTE_HELPER_SIGNING_KEY`: requests and responses are HMAC authenticated, redirects are rejected, calls time out after 15 seconds, and application evidence is accepted only after the exact Stripe event appears as processed in the webhook ledger. Signed scenario records include checkout, refund/dispute, Resend, grant/session, replacement-version, and delivery-attempt correlations; a missing or mismatched artifact fails promotion.
-
-`MYRIVO_DIGITAL_ACCEPTANCE_REDACTION_KEY` must be an independent CI secret. Raw cookies and access tokens are never evidence: the harness stores exactly six domain-separated HMAC session digests, and recursively rejects token fragments, cookie material, signed URLs, and private storage paths before signing the evidence file. The one-shot storage-signing fault is scoped to an active database acceptance run, consumed only after reservation, and unavailable unless the acceptance build is active outside production.
-
-File integrity evidence must come from the final storage response after the application 303: require HTTP 200, verify `Content-Disposition`, and hash the returned bytes. Hashing the redirect response is invalid. Grant evidence compares exact ordered grant IDs immediately around the injected signing failure and same-session grace retry; the sixth-session denial must report the production `Download limit reached` state.
-
-The observer reports entitlement `download_grants_used`, issued grant IDs, and released reservation audit rows separately. A signing-fault scenario is valid only when used count and issued IDs are unchanged, exactly one new reservation is released with safe audit metadata, and a later retry becomes issued. Replacement evidence includes old-before, old-after, and new byte hashes and filenames; old values must remain identical and the new file must differ.
-
-The release command imports the same canonical signed-envelope and semantic verifier used by the application tests. It validates every full observation record and provider artifact before applying release-specific signature, freshness, target, and scenario requirements.
-
-Semantic verification cross-links exact issued grant sets and versions, checkout composition and manifests, financial provider IDs/amounts/outcomes with processed signature-verified webhook rows and entitlement access, Resend provider artifacts with durable sent notifications, and delivery artifacts with the observed job and ordered attempt history.
-
-Deployed acceptance is permitted only on an explicitly enabled Vercel preview build with the exact allowlisted origin and project; ordinary production and unknown/self-hosted tiers return 404. Each checkout's newly returned order ID—not a seeded order—is the observation subject. The run must retrieve the matching Resend message, verify recipient/order/provider identity and its single fragment link, and open that link in a clean browser context. Synthetic database refund/dispute actions intentionally fail with `acceptance_control_provider_event_required` and cannot satisfy production acceptance. If Stripe's supported test environment cannot produce a required dispute outcome, the evidence matrix remains incomplete and rollout stays blocked.
-
-Record timestamps and safe IDs (store/order/job/manifest IDs are acceptable internally), Stripe test event IDs, Resend delivery IDs, screenshots, and observed states for:
-
-- digital-only and mixed successful payments;
-- duplicated/retried webhook convergence;
-- initial email, access page, and storage redirect;
-- five grants, deterministic same-session grace reuse, and sixth-grant rejection;
-- expired-link recovery and merchant resend with rotated links but unchanged grant counts;
-- replacement with the original buyer still receiving the purchased version;
-- partial and cumulative-full refund transitions;
-- dispute opened, won, and lost transitions;
-- injected email/delivery failure followed by durable retry convergence.
-
-Redact email addresses, IP addresses, bearer tokens, signed URLs, object paths, API keys, and provider payload bodies. Never mark this gate complete from stub-mode, mocks, unit tests, or a skipped Playwright suite.
+Before enabling a cohort, exercise the real paths against a non-production store
+with Stripe test mode and a Resend-authorized recipient: publish a digital
+product through the catalog UI, complete a digital-only and a mixed hosted
+Stripe checkout, confirm the delivery email arrives and its link downloads the
+purchased version, replace a file and confirm prior buyers still receive their
+original bytes, then exercise a partial refund (access preserved), a full refund
+(access revoked), and a dispute (access suspended, restored on win, revoked on
+loss). Watch `/dashboard/admin/digital-products` for delivery health across one
+full retry window before widening.
 
 ## Delivery repair and reconciliation
 

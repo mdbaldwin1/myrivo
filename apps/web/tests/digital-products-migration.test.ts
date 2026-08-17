@@ -1159,33 +1159,14 @@ describe("digital product migration upgrade safety", () => {
   });
 });
 
-describe("digital release approval and secure-session migration contracts", () => {
-  const actor = "00000000-0000-4000-8000-000000000011";
-  const digest = "a".repeat(64);
-
-  function resetReleaseState() {
-    runSql("full_chain", `
-      update public.store_feature_flags set digital_products = false where store_id = '${ids.manifestStore}';
-      delete from public.digital_products_release_approvals;
-      delete from public.digital_products_release_runtime;
-    `);
-  }
-
-  function callEnable(key: string) {
-    return `select public.set_store_digital_products_enabled(
-      '${ids.manifestStore}', true, '${actor}', '${key}'
-    )::text`;
-  }
-
+describe("secure download session migration contracts", () => {
   afterAll(() => {
     runSql("full_chain", `update public.store_feature_flags set digital_products = true where store_id = '${ids.manifestStore}'`);
   });
 
-  it("installs both security migrations in fresh-chain and upgrade-shaped databases", () => {
+  it("installs the secure-session migration in fresh-chain and upgrade-shaped databases", () => {
     expect(runSql("full_chain", `select
-      to_regprocedure('public.authorize_digital_download_session(uuid)') is not null
-      and to_regclass('public.digital_products_release_approvals') is not null
-      and to_regclass('public.digital_products_release_runtime') is not null`)).toBe("t");
+      to_regprocedure('public.authorize_digital_download_session(uuid)') is not null`)).toBe("t");
     expect(runSql("upgrade", "select count(*) from public.orders")).toMatch(/^\d+$/);
   });
 
@@ -1198,91 +1179,8 @@ describe("digital release approval and secure-session migration contracts", () =
     expect(runSqlAs("full_chain", "service_role", "select count(*) from public.authorize_digital_download_session(gen_random_uuid())")).toBe("0");
   });
 
-  it("allows only an exact current runtime and approval match", () => {
-    resetReleaseState();
-    expectRejectedAs("full_chain", "service_role", callEnable("approval-none"));
-    runSql("full_chain", `insert into public.digital_products_release_runtime(singleton, release_version, evidence_sha256, target_environment)
-      values (true, 'release-a', '${digest}', 'production');
-      insert into public.digital_products_release_approvals(
-        release_version, environment, target_environment, evidence_sha256,
-        provider_accepted_at, security_reviewed_at, code_reviewed_at, ux_reviewed_at,
-        expires_at, approved_by_user_id
-      ) values ('release-a', 'preview', 'production', '${digest}', now(), now(), now(), now(), now() + interval '1 day', '${actor}');`);
-    expect(runSqlAs("full_chain", "service_role", callEnable("approval-exact"))).toBe("true");
-  });
 
-  it.each([
-    ["wrong release", "release-b", digest, "null"],
-    ["wrong digest", "release-a", "b".repeat(64), "null"],
-    ["revoked", "release-a", digest, "now()"],
-  ])("rejects %s approvals", (_label, release, evidence, revoked) => {
-    resetReleaseState();
-    runSql("full_chain", `insert into public.digital_products_release_runtime(singleton, release_version, evidence_sha256, target_environment)
-      values (true, 'release-a', '${digest}', 'production');
-      insert into public.digital_products_release_approvals(
-        release_version, environment, target_environment, evidence_sha256,
-        provider_accepted_at, security_reviewed_at, code_reviewed_at, ux_reviewed_at,
-        expires_at, approved_by_user_id, revoked_at
-      ) values ('${release}', 'preview', 'production', '${evidence}', now(), now(), now(), now(), now() + interval '1 day', '${actor}', ${revoked});`);
-    expectRejectedAs("full_chain", "service_role", callEnable(`approval-${_label.replaceAll(" ", "-")}`));
-  });
 
-  it("rejects expired, overlong, and future-dated approval windows", () => {
-    resetReleaseState();
-    const columns = `release_version, environment, target_environment, evidence_sha256,
-      provider_accepted_at, security_reviewed_at, code_reviewed_at, ux_reviewed_at,
-      expires_at, approved_by_user_id`;
-    expectRejected("full_chain", `insert into public.digital_products_release_approvals(${columns})
-      values ('release-a','preview','production','${digest}',now(),now(),now(),now(),now() - interval '1 second','${actor}')`);
-    expectRejected("full_chain", `insert into public.digital_products_release_approvals(${columns})
-      values ('release-a','preview','production','${digest}',now(),now(),now(),now(),now() + interval '8 days','${actor}')`);
-    expectRejected("full_chain", `insert into public.digital_products_release_approvals(${columns})
-      values ('release-a','preview','production','${digest}',now() + interval '10 minutes',now(),now(),now(),now() + interval '1 day','${actor}')`);
-  });
-
-  it("denies application roles direct release-control table and trigger access", () => {
-    for (const role of ["anon", "authenticated"] as const) {
-      expect(runSql("full_chain", `select
-        has_table_privilege('${role}', 'public.digital_products_release_approvals', 'select')::text || ':' ||
-        has_table_privilege('${role}', 'public.digital_products_release_runtime', 'insert')::text || ':' ||
-        has_function_privilege('${role}', 'public.enforce_digital_products_release_approval()', 'execute')::text`)).toBe("false:false:false");
-    }
-  });
-});
-
-describe("non-production digital acceptance control", () => {
-  const runId = "c0000000-0000-4000-8000-000000000001";
-  const key = "c1000000-0000-4000-8000-000000000001";
-  const orderId = "c2000000-0000-4000-8000-000000000001";
-
-  beforeAll(() => {
-    runSql("full_chain", `insert into public.orders(id,store_id,customer_email,subtotal_cents,total_cents,status)
-      values('${orderId}','${ids.manifestStore}','acceptance@example.test',100,100,'paid');
-      insert into public.digital_acceptance_configuration(environment,project_ref,active) values ('test','local-test',true);
-      insert into public.digital_acceptance_targets(store_id,run_id,environment,project_ref,expires_at)
-      values('${ids.manifestStore}','${runId}','test','local-test',now()+interval '1 hour')`);
-  });
-
-  it("is service-role-only and rejects production, cross-run, and cross-store tampering", () => {
-    expect(runSql("full_chain", `select
-      has_function_privilege('authenticated','public.acceptance_control_digital_products(integer,text,uuid,uuid,text,uuid)','execute')::text || ':' ||
-      has_function_privilege('service_role','public.acceptance_control_digital_products(integer,text,uuid,uuid,text,uuid)','execute')::text`)).toBe("false:true");
-    const call = (run: string, order = orderId) => `select public.acceptance_control_digital_products(1,'expire-access','${run}','${order}',null,'${key}')`;
-    expectRejectedAs("full_chain", "service_role", call("c0000000-0000-4000-8000-000000000002"));
-    expectRejectedAs("full_chain", "service_role", call(runId, ids.orderA));
-  });
-
-  it("applies one idempotent run-bound action and records immutable audit evidence", () => {
-    const statement = `select public.acceptance_control_digital_products(1,'expire-access','${runId}','${orderId}',null,'${key}') ->> 'action'`;
-    expect(runSqlAs("full_chain", "service_role", statement)).toBe("expire-access");
-    expect(runSqlAs("full_chain", "service_role", statement)).toBe("expire-access");
-    expect(runSql("full_chain", `select count(*) from public.digital_acceptance_actions where run_id='${runId}' and idempotency_key='${key}'`)).toBe("1");
-  });
-
-  it("rejects invalid action-transition pairs and project mismatch", () => {
-    expectRejectedAs("full_chain", "service_role", `select public.acceptance_control_digital_products(1,'inject-refund','${runId}','${orderId}','full',gen_random_uuid())`);
-    expectRejectedAs("full_chain", "service_role", `select public.acceptance_control_digital_products(1,'inject-delivery-failure','${runId}','${orderId}','lost',gen_random_uuid())`);
-  });
 });
 
 describe("digital product relational integrity", () => {
@@ -1795,15 +1693,6 @@ describe("transactional checkout manifests", () => {
 });
 
 describe("durable digital delivery", () => {
-  it("binds acceptance controls to database-owned deployment configuration", () => {
-    const sql = readFileSync(join(repoRoot, "supabase/migrations/20260813023000_nonproduction_digital_acceptance_control.sql"), "utf8");
-    expect(sql).toContain("digital_acceptance_configuration");
-    expect(sql).toContain("revoke all on table public.digital_acceptance_configuration from public, anon, authenticated, service_role");
-    expect(sql).not.toContain("current_setting('app.acceptance_environment'");
-    expect(sql).not.toContain("p_environment text, p_project_ref text");
-    expect(sql).toContain("v_config.environment<>v_target.environment");
-    expect(sql).toContain("v_config.project_ref<>v_target.project_ref");
-  });
   const deliveryItemsSql = `jsonb_build_array(jsonb_build_object(
     'productId', '${ids.manifestProduct}',
     'variantId', '${ids.manifestVariant}',

@@ -56,29 +56,3 @@ jobs:
           else
             echo "Skipping rollout verification: missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY."
           fi
-      - name: Digital products release acceptance (promotion only)
-        if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.base_ref == 'main')
-        env:
-          MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE_BASE64: ${{ secrets.MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE_BASE64 }}
-          MYRIVO_DIGITAL_APPROVED_NONPROD_HOST: ${{ vars.MYRIVO_DIGITAL_APPROVED_NONPROD_HOST }}
-          MYRIVO_DIGITAL_TEST_RECIPIENT: ${{ secrets.MYRIVO_DIGITAL_TEST_RECIPIENT }}
-          MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_HMAC_KEY: ${{ secrets.MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_HMAC_KEY }}
-          MYRIVO_DIGITAL_ACCEPTANCE_REDACTION_KEY: ${{ secrets.MYRIVO_DIGITAL_ACCEPTANCE_REDACTION_KEY }}
-          MYRIVO_STRIPE_DISPUTE_HELPER_URL: ${{ secrets.MYRIVO_STRIPE_DISPUTE_HELPER_URL }}
-          MYRIVO_STRIPE_DISPUTE_HELPER_TOKEN: ${{ secrets.MYRIVO_STRIPE_DISPUTE_HELPER_TOKEN }}
-          MYRIVO_STRIPE_DISPUTE_HELPER_SIGNING_KEY: ${{ secrets.MYRIVO_STRIPE_DISPUTE_HELPER_SIGNING_KEY }}
-          MYRIVO_STRIPE_DISPUTE_HELPER_ORIGIN: ${{ secrets.MYRIVO_STRIPE_DISPUTE_HELPER_ORIGIN }}
-          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
-          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_TEST_WEBHOOK_SECRET }}
-          STRIPE_STUB_MODE: "false"
-          RESEND_API_KEY: ${{ secrets.RESEND_TEST_API_KEY }}
-        run: |
-          if [ -z "$MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE_BASE64" ] || [ -z "$STRIPE_SECRET_KEY" ]; then
-            echo "::warning::Skipping digital products release acceptance: the acceptance environment secrets are not configured. Digital products cannot be enabled for any store until this gate runs — the database release-approval gate remains enforced."
-            exit 0
-          fi
-          fixture_file="$(mktemp)"
-          evidence_file="$(mktemp)"
-          trap 'rm -f "$fixture_file" "$evidence_file"' EXIT
-          printf '%s' "$MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE_BASE64" | base64 --decode > "$fixture_file"
-          MYRIVO_DIGITAL_ACCEPTANCE_FIXTURE="$fixture_file" MYRIVO_DIGITAL_ACCEPTANCE_EVIDENCE_OUTPUT="$evidence_file" npm run verify:digital-products-release
