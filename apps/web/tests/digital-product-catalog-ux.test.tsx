@@ -387,7 +387,9 @@ describe("ProductManager digital catalog integration", () => {
     expect(screen.queryByText(/Files tab/i)).toBeNull();
     expect(screen.queryByText("Enable made to order")).toBeNull();
     expect(screen.queryByText("Inventory")).toBeNull();
-    expect(screen.getByRole("checkbox", { name: /I own or control the rights/i })).toBeTruthy();
+    // Rights are affirmed against the files themselves, not by a checkbox
+    // signed before any file exists.
+    expect(screen.queryByRole("checkbox", { name: /I own or control the rights/i })).toBeNull();
   });
 
   test("keeps physical inventory controls unchanged", () => {
@@ -432,7 +434,6 @@ describe("ProductManager digital catalog integration", () => {
     await user.click(fulfillment);
     await user.click(screen.getByRole("option", { name: "Digital download" }));
 
-    expect(screen.getByRole("checkbox", { name: /I own or control the rights/i }).getAttribute("aria-checked")).toBe("false");
     await user.click(screen.getByRole("button", { name: "Save product" }));
     expect(putBodies[0]?.digitalRightsAffirmed).toBe(false);
   });
@@ -484,7 +485,6 @@ describe("ProductManager digital catalog integration", () => {
     render(<ProductManager initialProducts={[starting]} />);
 
     await user.click(screen.getByRole("button", { name: "Edit" }));
-    await user.click(screen.getByRole("checkbox", { name: /I own or control the rights/i }));
     await user.click(screen.getByRole("button", { name: "Save product" }));
 
     const readiness = await screen.findByRole("region", { name: "Publishing readiness" });

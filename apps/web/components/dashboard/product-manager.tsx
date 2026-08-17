@@ -2239,6 +2239,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
           productId={editingProductId}
           scope={{ productVariantId }}
           productImageUrls={editImageUrls}
+          rightsAffirmed={editDigitalRightsAffirmed}
           onCatalogChange={async (signal) => { await refreshCatalogProducts({ signal }); }}
         />
       </div>
@@ -2786,7 +2787,6 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                     }}
                     onEdit={() => {
                       openEditFlyout(selectedProduct);
-                      window.requestAnimationFrame(() => document.getElementById("edit-digital-rights")?.focus());
                     }}
                     onPublish={async () => { await publishDigitalProduct(selectedProduct.id); }}
                   />
@@ -3096,13 +3096,10 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                   </Select>
                 </FormField>
                 {productType === "digital" ? (
-                  <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3">
-                    <label className="flex items-start gap-2">
-                      <Checkbox id="create-digital-rights" checked={digitalRightsAffirmed} onChange={(event) => setDigitalRightsAffirmed(event.target.checked)} />
-                      <span className="text-sm">I own or control the rights necessary to distribute and sell these files.</span>
-                    </label>
-                    <p className="text-xs text-muted-foreground">Customer downloads are added once this product exists. Save it, then attach files beside the SKU for whichever unit sells them.</p>
-                  </div>
+                  <p className="rounded-md border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
+                    Customer downloads are added once this product exists. Save it, then attach files beside the SKU for
+                    whichever unit sells them; each file asks you to confirm you hold the rights to sell it.
+                  </p>
                 ) : null}
                 <FormField label="Description">
                   <RichTextEditor
@@ -4043,14 +4040,6 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                     <option value="digital">Digital download</option>
                   </Select>
                 </FormField>
-                {editProductType === "digital" ? (
-                  <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3">
-                    <label className="flex items-start gap-2">
-                      <Checkbox id="edit-digital-rights" checked={editDigitalRightsAffirmed} onChange={(event) => setEditDigitalRightsAffirmed(event.target.checked)} />
-                      <span className="text-sm">I own or control the rights necessary to distribute and sell these files.</span>
-                    </label>
-                  </div>
-                ) : null}
                 <FormField label="Description">
                   <RichTextEditor
                     required

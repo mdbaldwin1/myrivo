@@ -84,6 +84,8 @@ type DigitalProductFilesProps = {
   scope?: { productVariantId: string | null };
   /** Storefront images available to stand in as the buyer preview. */
   productImageUrls?: string[];
+  /** Whether the merchant has affirmed the right to sell this product's files. */
+  rightsAffirmed?: boolean;
 };
 
 function parseError(payload: unknown, fallback: string) {
@@ -125,7 +127,7 @@ function sortAssets(assets: DigitalProductAsset[]) {
   return [...assets].sort((left, right) => left.sort_order - right.sort_order);
 }
 
-export function DigitalProductFiles({ productId, variants = [], focusTarget, onCatalogChange, scope, productImageUrls = [] }: DigitalProductFilesProps) {
+export function DigitalProductFiles({ productId, variants = [], focusTarget, onCatalogChange, scope, productImageUrls = [], rightsAffirmed = true }: DigitalProductFilesProps) {
   const [assets, setAssets] = useState<DigitalProductAsset[]>([]);
   const [failedUploads, setFailedUploads] = useState<PersistedFailedUpload[]>([]);
   const [uploads, setUploads] = useState<UploadJob[]>([]);
@@ -835,6 +837,18 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
       ) : null}
 
       {loading ? <p role="status" className="text-sm text-muted-foreground">Loading customer files…</p> : null}
+      {!rightsAffirmed && scopedAssets.length > 0 ? (
+        <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <p>
+            <span className="font-medium">Confirm you can sell these files.</span>{" "}
+            Myrivo&apos;s terms require you to hold the rights to distribute and sell everything you upload.
+          </p>
+          <Button type="button" size="sm" variant="outline" onClick={() => void affirmRights()}>
+            I hold the rights
+          </Button>
+        </div>
+      ) : null}
+
       {missingProductImage ? (
         <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
           <p className="font-medium">Add a product image before publishing</p>
