@@ -124,7 +124,15 @@ export function DigitalProductFileRow({
             ) : (
               <>
                 <div className="flex flex-wrap items-center gap-2">
-                  <h5 className="truncate font-medium">{asset.label}</h5>
+                  <button
+                    type="button"
+                    className="truncate rounded px-1 -mx-1 text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    onClick={() => setRenaming(true)}
+                    disabled={busy}
+                    title="Rename this file"
+                  >
+                    {asset.label}
+                  </button>
                   {version ? (
                     <Badge
                       variant="outline"
@@ -140,12 +148,11 @@ export function DigitalProductFileRow({
                     </Badge>
                   ) : null}
                 </div>
-                <p className="truncate text-sm text-foreground">{version?.customer_filename ?? "Preparing file metadata"}</p>
-                {version ? (
-                  <p className="text-xs text-muted-foreground">
-                    {fileTypeLabel(version.mime_type)} · {fileSizeLabel(version.byte_size)} · Version {version.version_number}
-                  </p>
-                ) : null}
+                <p className="truncate text-xs text-muted-foreground">
+                  {version
+                    ? `${version.customer_filename} · ${fileTypeLabel(version.mime_type)} · ${fileSizeLabel(version.byte_size)} · v${version.version_number}`
+                    : "Preparing file metadata"}
+                </p>
                 {version?.failure_reason ? <p className="text-xs text-destructive">{version.failure_reason}</p> : null}
               </>
             )}

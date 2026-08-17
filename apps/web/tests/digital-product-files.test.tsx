@@ -139,8 +139,8 @@ describe("DigitalProductFiles", () => {
 
     const list = await screen.findByRole("list", { name: "Customer download files" });
     const poster = within(list).getByRole("listitem", { name: "Printable poster" });
-    expect(within(poster).getByText("sunrise-poster.pdf")).toBeTruthy();
-    expect(within(poster).getByText("PDF · 2 MB · Version 2")).toBeTruthy();
+    // Filename and metadata share one compact line so rows stay short.
+    expect(within(poster).getByText("sunrise-poster.pdf · PDF · 2 MB · v2")).toBeTruthy();
     expect(within(poster).getByRole("combobox", { name: "File availability" })).toBeTruthy();
     expect(within(poster).getByText("Ready")).toBeTruthy();
 
