@@ -1023,7 +1023,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     productId: string,
     patch: Record<string, unknown>,
     scope: "catalog" | "edit" = "catalog"
-  ): Promise<{ ok: boolean; error?: string }> {
+  ): Promise<{ ok: boolean; error?: string; product?: ProductListItem }> {
     if (scope === "catalog") {
       setCatalogError(null);
     } else {
@@ -1077,7 +1077,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       await refreshCatalogProducts();
     }
 
-    return { ok: true };
+    return { ok: true, product: payload.product };
   }
 
   async function refreshCatalogProducts(options: { surfaceError?: boolean; signal?: AbortSignal } = {}) {
@@ -1505,9 +1505,25 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     })();
   }
 
+  // A variant only becomes something files can attach to once it exists, so the
+  // editor can commit and stay put instead of sending the merchant back to the
+  // catalog and making them find their way in again.
+  function adoptSavedVariantIds(product: ProductListItem) {
+    const seeded = productVariantsForEditing(product, resolveTierNamesForProduct(product));
+    const activeSku = editActiveVariantIndex === null ? null : editVariants[editActiveVariantIndex]?.sku ?? null;
+    setEditVariants(seeded);
+    if (activeSku) {
+      const nextIndex = seeded.findIndex((variant) => variant.sku === activeSku);
+      if (nextIndex >= 0) setEditActiveVariantIndex(nextIndex);
+    }
+  }
+
   async function saveEditedProduct(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    await submitEditedProduct({ keepEditorOpen: false });
+  }
 
+  async function submitEditedProduct({ keepEditorOpen = false }: { keepEditorOpen?: boolean } = {}) {
     if (!editingProductId) {
       setEditError("No product selected for editing.");
       return;
@@ -1603,6 +1619,12 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     setEditPending(false);
 
     if (!updated.ok) {
+      return;
+    }
+
+    if (keepEditorOpen && updated.product) {
+      adoptSavedVariantIds(updated.product);
+      notify.success("Product saved.");
       return;
     }
 
@@ -2246,13 +2268,30 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     );
   }
 
-  function renderEditDigitalFilesForVariant(variant: VariantDraft | null | undefined) {
+  function renderEditDigitalFilesForVariant(variant: VariantDraft | null | undefined, noun: "variant" | "option") {
     if (editProductType !== "digital") return null;
     if (!variant?.id) {
+      // Files key to a real variant row, so a brand-new one has nowhere to put
+      // them yet. Saving from here keeps the merchant on this {noun} rather
+      // than closing the editor and losing their place.
       return (
-        <p className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
-          Save this product to attach customer files to this option.
-        </p>
+        <div className="rounded-lg border border-dashed border-border p-3">
+          <p className="text-xs text-muted-foreground">
+            Customer downloads attach to this {noun} once it is saved.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-2"
+            disabled={editPending}
+            onClick={() => {
+              void submitEditedProduct({ keepEditorOpen: true });
+            }}
+          >
+            {editPending ? "Saving…" : "Save to add files"}
+          </Button>
+        </div>
       );
     }
     return renderEditDigitalFiles(variant.id);
@@ -4587,7 +4626,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                             <p className="mt-1 text-xs text-muted-foreground">SKU is locked because this variant has orders.</p>
                           ) : null}
                         </FormField>
-                        {renderEditDigitalFilesForVariant(activeEditVariant)}
+                        {renderEditDigitalFilesForVariant(activeEditVariant, "variant")}
                         <FormField label="Price">
                           <Input
                             inputMode="decimal"
@@ -4884,7 +4923,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         <p className="mt-1 text-xs text-muted-foreground">SKU is locked because this variant has orders.</p>
                       ) : null}
                     </FormField>
-                    {renderEditDigitalFilesForVariant(activeEditVariant)}
+                    {renderEditDigitalFilesForVariant(activeEditVariant, "option")}
                     <FormField label="Price">
                       <Input
                         inputMode="decimal"
