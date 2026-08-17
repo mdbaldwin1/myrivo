@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Select } from "@/components/ui/select";
 import { DIGITAL_PRODUCT_CONFIG } from "@/lib/digital-products/config";
+import { digitalFileLabel as fileLabel, validateDigitalFile as validateFile } from "@/lib/digital-products/upload-asset";
 import { notify } from "@/lib/feedback/toast";
 
 export type DigitalAssetVersion = {
@@ -105,20 +106,6 @@ async function responseJson(response: Response) {
   }
 }
 
-function fileLabel(fileName: string) {
-  return fileName.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").trim() || "Customer file";
-}
-
-function validateFile(file: File) {
-  const extension = `.${file.name.split(".").pop()?.toLowerCase() ?? ""}` as keyof typeof DIGITAL_PRODUCT_CONFIG.acceptedFiles;
-  if (DIGITAL_PRODUCT_CONFIG.acceptedFiles[extension] !== file.type) {
-    return "Unsupported file type. Use JPG, PNG, PDF, or ZIP.";
-  }
-  if (file.size <= 0 || file.size > DIGITAL_PRODUCT_CONFIG.maxFileBytes) {
-    return "File must be between 1 byte and 250 MB.";
-  }
-  return null;
-}
 
 function isAbortError(error: unknown, signal: AbortSignal) {
   return signal.aborted || (error instanceof Error && error.name === "AbortError");

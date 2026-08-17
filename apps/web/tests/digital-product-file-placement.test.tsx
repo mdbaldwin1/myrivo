@@ -164,15 +164,35 @@ describe("where customer downloads are provided", () => {
     expect(visibleFileScopes()).toEqual(["product"]);
   });
 
-  test("saves a brand-new variant in place rather than dead-ending on its files", async () => {
+  test("holds a new variant's files in the browser and uploads them with the save", async () => {
     const saved = product({
-      product_variants: [variant(), variant({ id: NEW_VARIANT_ID, sku: "SUNRISE-2", title: "Variant 2", option_values: { Size: "Variant 2" }, is_default: false, sort_order: 1 })],
+      product_variants: [
+        variant(),
+        variant({
+          id: NEW_VARIANT_ID,
+          sku: "SUNRISE-2",
+          title: "Variant 2",
+          option_values: { Size: "Variant 2" },
+          is_default: false,
+          sort_order: 1,
+        }),
+      ],
     });
+
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (init?.method === "PATCH") {
-        return new Response(JSON.stringify({ product: saved }), { status: 200 });
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      calls.push({ url, method, body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body });
+      if (url.includes("digital-assets/upload-url")) {
+        return new Response(
+          JSON.stringify({ intentId: "intent-1", assetId: "asset-1", uploadUrl: "https://storage.test/put" }),
+          { status: 200 },
+        );
       }
-      void input;
+      if (url.startsWith("https://storage.test/put")) return new Response(null, { status: 200 });
+      if (url.includes("digital-assets/complete")) return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      if (method === "PATCH") return new Response(JSON.stringify({ product: saved }), { status: 200 });
       return new Response(JSON.stringify({ products: [saved] }), { status: 200 });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -182,15 +202,72 @@ describe("where customer downloads are provided", () => {
     await user.click(screen.getByRole("button", { name: "Edit" }));
     await user.click(screen.getByRole("button", { name: "Add variant" }));
 
-    // A variant that does not exist yet cannot hold files, so the editor offers
-    // the one action that changes that instead of telling the merchant to leave.
-    expect(visibleFileScopes()).toEqual([]);
-    expect(visible(screen.getAllByText(/Customer downloads attach to this variant once it is saved/i))).toBeTruthy();
+    // Nothing has been sent anywhere yet - the variant does not exist.
+    const picker = visible(screen.getAllByLabelText("Add customer download files")) as HTMLInputElement;
+    await user.upload(picker, new File(["artwork"], "sunrise-print.png", { type: "image/png" }));
 
-    await user.click(visible(screen.getAllByRole("button", { name: "Save to add files" })));
+    expect(visible(screen.getAllByText(/sunrise-print\.png/i)).textContent).toContain("Uploads on save");
+    expect(calls.some((call) => call.url.includes("digital-assets"))).toBe(false);
 
-    // The editor stays on this variant and the field it promised appears.
-    await waitFor(() => expect(visibleFileScopes()).toEqual([NEW_VARIANT_ID]));
-    expect(fetchMock.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === "PATCH")).toBe(true);
+    // The file is renamed while it is still only in the browser.
+    await user.click(visible(screen.getAllByRole("button", { name: "sunrise print" })));
+    const rename = visible(screen.getAllByLabelText(/Rename sunrise print/i));
+    await user.clear(rename);
+    await user.type(rename, "Sunrise A3{Enter}");
+    expect(visible(screen.getAllByRole("button", { name: "Sunrise A3" }))).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Save product" }));
+
+    // Only now does anything upload, and against the variant the save created.
+    await waitFor(() => expect(calls.some((call) => call.url.includes("digital-assets/complete"))).toBe(true));
+    const intent = calls.find((call) => call.url.includes("digital-assets/upload-url"))!;
+    expect(intent.body).toMatchObject({
+      productVariantId: NEW_VARIANT_ID,
+      label: "Sunrise A3",
+      fileName: "sunrise-print.png",
+    });
+    // The save that created the variant came first.
+    expect(calls.findIndex((call) => call.method === "PATCH")).toBeLessThan(
+      calls.findIndex((call) => call.url.includes("digital-assets/upload-url")),
+    );
   });
+
+  test("keeps the editor open and says so when a staged file fails to upload", async () => {
+    const saved = product({
+      product_variants: [
+        variant(),
+        variant({ id: NEW_VARIANT_ID, sku: "SUNRISE-2", title: "Variant 2", option_values: { Size: "Variant 2" }, is_default: false, sort_order: 1 }),
+      ],
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("digital-assets/upload-url")) {
+          return new Response(JSON.stringify({ error: "That file type is not allowed." }), { status: 422 });
+        }
+        if ((init?.method ?? "GET") === "PATCH") return new Response(JSON.stringify({ product: saved }), { status: 200 });
+        return new Response(JSON.stringify({ products: [saved] }), { status: 200 });
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<ProductManager initialProducts={[product()]} />);
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("button", { name: "Add variant" }));
+    await user.upload(
+      visible(screen.getAllByLabelText("Add customer download files")) as HTMLInputElement,
+      new File(["artwork"], "sunrise-print.png", { type: "image/png" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Save product" }));
+
+    // The product saved; the file did not. Closing would lose it silently.
+    await waitFor(() =>
+      expect(screen.getByText(/Product saved, but some files did not upload/i).textContent).toContain(
+        "That file type is not allowed.",
+      ),
+    );
+    expect(screen.getByRole("button", { name: "Save product" })).toBeTruthy();
+  });
+
 });

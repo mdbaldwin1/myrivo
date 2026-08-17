@@ -8,6 +8,7 @@ import { MoreHorizontal, Pencil, Plus, RotateCcw, Search, Star, X } from "lucide
 import { AppAlert } from "@/components/ui/app-alert";
 import { DigitalPreviewManager } from "@/components/dashboard/digital-preview-manager";
 import { DigitalProductFiles } from "@/components/dashboard/digital-product-files";
+import { StagedDigitalFiles, type StagedDigitalFile } from "@/components/dashboard/staged-digital-files";
 import { DigitalProductOverview } from "@/components/dashboard/digital-product-overview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,7 @@ import {
 import { shouldOpenCatalogProductFromUrl } from "@/lib/dashboard/catalog-url-sync";
 import { formatVariantLabel } from "@/lib/products/variants";
 import { richTextToPlainText } from "@/lib/rich-text";
+import { uploadDigitalAsset } from "@/lib/digital-products/upload-asset";
 import { notify } from "@/lib/feedback/toast";
 import { prepareImageUploadFile } from "@/lib/uploads/prepare-image-upload-file";
 import { ProductRecord } from "@/types/database";
@@ -581,6 +583,10 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   const [editDraggingImageIndex, setEditDraggingImageIndex] = useState<number | null>(null);
   const [editVariants, setEditVariants] = useState<VariantDraft[]>([createBlankVariant(true)]);
   const [editHasVariants, setEditHasVariants] = useState(false);
+  // Files chosen for a variant that has no row yet, held in the browser until
+  // the save that brings that variant into existence. Keyed by draft.
+  const [editStagedFiles, setEditStagedFiles] = useState<Record<string, StagedDigitalFile[]>>({});
+  const [editUploadingStaged, setEditUploadingStaged] = useState(false);
   const [editVariantTierCount, setEditVariantTierCount] = useState<1 | 2>(1);
   const [editFlowStep, setEditFlowStep] = useState<"product" | "variant" | "option">("product");
   const [editStepDirection, setEditStepDirection] = useState<"forward" | "backward">("forward");
@@ -679,6 +685,15 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     ]
   );
 
+  const editStagedFileSignature = useMemo(
+    () =>
+      Object.entries(editStagedFiles)
+        .map(([key, staged]) => `${key}:${staged.map((entry) => `${entry.label}/${entry.file.name}`).join("|")}`)
+        .sort()
+        .join(";"),
+    [editStagedFiles],
+  );
+
   const currentEditSnapshot = useMemo(
     () =>
       JSON.stringify({
@@ -701,7 +716,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
         editOptionOneName,
         editOptionTwoName,
         editSingleInventoryQty,
-        editSingleMadeToOrder
+        editSingleMadeToOrder,
+        editStagedFileSignature
       }),
     [
       editingProductId,
@@ -723,7 +739,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       editOptionOneName,
       editOptionTwoName,
       editSingleInventoryQty,
-      editSingleMadeToOrder
+      editSingleMadeToOrder,
+      editStagedFileSignature
     ]
   );
 
@@ -1518,12 +1535,61 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     }
   }
 
-  async function saveEditedProduct(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await submitEditedProduct({ keepEditorOpen: false });
+  /**
+   * Uploads everything staged against variants that only just came into
+   * existence. Returns the drafts whose files did not make it, so a partial
+   * failure keeps the editor open instead of quietly dropping the files.
+   */
+  async function flushStagedFiles(productId: string, saved: ProductListItem, drafts: VariantDraft[]) {
+    const buckets = Object.entries(editStagedFiles).filter(([, files]) => files.length > 0);
+    if (buckets.length === 0) return { failures: [] as string[], uploaded: 0 };
+
+    const failures: string[] = [];
+    let uploaded = 0;
+    const stillStaged: Record<string, StagedDigitalFile[]> = {};
+
+    for (const [draftKey, files] of buckets) {
+      const draft = drafts.find((variant) => variant.draftKey === draftKey);
+      if (!draft) {
+        // The variant these files were for was deleted before the save, so
+        // there is nothing left to attach them to.
+        continue;
+      }
+      const savedVariant = (saved.product_variants ?? []).find((variant) => variant.sku === draft.sku);
+      if (!savedVariant) {
+        stillStaged[draftKey] = files;
+        failures.push(`${files.length === 1 ? "1 file" : `${files.length} files`} could not be matched to a saved variant.`);
+        continue;
+      }
+
+      const unsent: StagedDigitalFile[] = [];
+      for (const staged of files) {
+        const result = await uploadDigitalAsset({
+          productId,
+          productVariantId: savedVariant.id,
+          label: staged.label,
+          file: staged.file,
+        });
+        if (result.ok) {
+          uploaded += 1;
+        } else {
+          unsent.push(staged);
+          failures.push(`${staged.label}: ${result.message}`);
+        }
+      }
+      if (unsent.length > 0) stillStaged[draftKey] = unsent;
+    }
+
+    setEditStagedFiles(stillStaged);
+    return { failures, uploaded };
   }
 
-  async function submitEditedProduct({ keepEditorOpen = false }: { keepEditorOpen?: boolean } = {}) {
+  async function saveEditedProduct(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await submitEditedProduct();
+  }
+
+  async function submitEditedProduct() {
     if (!editingProductId) {
       setEditError("No product selected for editing.");
       return;
@@ -1616,15 +1682,27 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       "edit"
     );
 
-    setEditPending(false);
-
     if (!updated.ok) {
+      setEditPending(false);
       return;
     }
 
-    if (keepEditorOpen && updated.product) {
-      adoptSavedVariantIds(updated.product);
-      notify.success("Product saved.");
+    const savedProduct = updated.product;
+    let stagedFailures: string[] = [];
+    if (savedProduct) {
+      setEditUploadingStaged(true);
+      const flushed = await flushStagedFiles(editingProductId, savedProduct, editVariants);
+      setEditUploadingStaged(false);
+      stagedFailures = flushed.failures;
+    }
+
+    setEditPending(false);
+
+    if (stagedFailures.length > 0) {
+      // The product is saved either way; leaving the editor open is the only
+      // way the merchant can retry the files that did not land.
+      if (savedProduct) adoptSavedVariantIds(savedProduct);
+      setEditError(`Product saved, but some files did not upload. ${stagedFailures.join(" ")}`);
       return;
     }
 
@@ -1685,6 +1763,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     setEditSingleMadeToOrder(false);
     setEditVariantsSnapshotByMode(null);
     setEditOrderedVariantIds(new Set());
+    setEditStagedFiles({});
     setEditError(null);
     setEditVariantError(null);
   }
@@ -2269,28 +2348,29 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   }
 
   function renderEditDigitalFilesForVariant(variant: VariantDraft | null | undefined, noun: "variant" | "option") {
-    if (editProductType !== "digital") return null;
-    if (!variant?.id) {
+    if (editProductType !== "digital" || !variant) return null;
+    if (!variant.id) {
       // Files key to a real variant row, so a brand-new one has nowhere to put
-      // them yet. Saving from here keeps the merchant on this {noun} rather
-      // than closing the editor and losing their place.
+      // them yet. They wait in the browser and upload with the save that
+      // creates the variant.
+      const draftKey = variant.draftKey;
+      if (!draftKey) return null;
       return (
-        <div className="rounded-lg border border-dashed border-border p-3">
-          <p className="text-xs text-muted-foreground">
-            Customer downloads attach to this {noun} once it is saved.
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="mt-2"
-            disabled={editPending}
-            onClick={() => {
-              void submitEditedProduct({ keepEditorOpen: true });
-            }}
-          >
-            {editPending ? "Saving…" : "Save to add files"}
-          </Button>
+        <div className="rounded-lg border border-border/70 bg-muted/10 p-3">
+          <StagedDigitalFiles
+            noun={noun}
+            files={editStagedFiles[draftKey] ?? []}
+            onChange={(files) =>
+              setEditStagedFiles((current) => {
+                if (files.length === 0) {
+                  const rest = { ...current };
+                  delete rest[draftKey];
+                  return rest;
+                }
+                return { ...current, [draftKey]: files };
+              })
+            }
+          />
         </div>
       );
     }
@@ -2524,7 +2604,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
             Close
           </Button>
           <Button disabled={editPending || isEditReadOnly} type="submit" form="edit-product-form">
-            {editPending ? "Saving..." : "Save product"}
+            {editUploadingStaged ? "Uploading files..." : editPending ? "Saving..." : "Save product"}
           </Button>
         </div>
         <div className="flex w-1/3 justify-end gap-2">

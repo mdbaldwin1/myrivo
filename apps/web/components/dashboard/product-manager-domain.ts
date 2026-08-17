@@ -70,6 +70,8 @@ export type OptionPairDraft = {
 
 export type VariantDraft = {
   id?: string;
+  /** Identifies a draft that has no row yet, so staged files can follow it. */
+  draftKey?: string;
   title: string;
   sku: string;
   skuMode: "auto" | "manual";
@@ -199,9 +201,13 @@ export function sortVariants(variants: ProductVariantListItem[]) {
   });
 }
 
+let draftKeyCounter = 0;
+
 export function createBlankVariant(isDefault = false): VariantDraft {
+  draftKeyCounter += 1;
   return {
     id: undefined,
+    draftKey: `draft-${draftKeyCounter}`,
     title: "",
     sku: "",
     skuMode: "auto",
