@@ -176,7 +176,7 @@ create extension if not exists pgcrypto;
 create schema auth;
 create function auth.uid() returns uuid language sql stable as 'select null::uuid';
 create function auth.jwt() returns jsonb language sql stable as 'select ''{}''::jsonb';
-create table auth.users (id uuid primary key);
+create table auth.users (id uuid primary key, email text, email_confirmed_at timestamptz);
 create schema storage;
 create table storage.buckets (
   id text primary key,
@@ -243,6 +243,7 @@ create function auth.jwt() returns jsonb language sql stable as 'select ''{}''::
 create table auth.users (
   id uuid primary key,
   email text,
+  email_confirmed_at timestamptz,
   raw_user_meta_data jsonb not null default '{}'::jsonb
 );
 create schema storage;
