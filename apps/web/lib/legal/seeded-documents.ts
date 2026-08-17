@@ -24,6 +24,8 @@ If you operate a store on Myrivo, you are responsible for the accuracy, legality
 
 You must not use Myrivo to sell unlawful, infringing, unsafe, deceptive, or prohibited goods or services, or to misrepresent stock, shipping, pickup, refunds, taxes, discounts, or customer rights.
 
+If you sell digital products, you must hold the rights necessary to distribute and sell every file you upload, including any copyright, licence, model or property release, trademark, or other permission that the file requires. You must not upload or sell a file you did not create unless the rights holder has authorised you to distribute and sell it on these terms, and you must affirm those rights for each file when you add it. Myrivo may remove a file, unpublish a product, suspend digital selling, or terminate an account in response to a credible infringement report, and you remain responsible for refunds, chargebacks, and claims arising from files you were not entitled to sell.
+
 ## 5. Shopper Transactions
 
 When you place an order through a Myrivo-powered storefront, you agree to provide accurate and current purchase, contact, pickup, delivery, and payment information. Stores may reject, limit, cancel, or refund orders when required by law, platform rules, fraud prevention, inventory limits, pricing errors, fulfillment constraints, or policy enforcement.
@@ -43,6 +45,7 @@ You may not:
 - interfere with or disrupt the Services, security controls, or platform integrity
 - reverse engineer, scrape, or extract data from the Services except as expressly allowed by law or written agreement
 - upload malware, abusive content, or unlawful material
+- sell, or offer for sale, a digital file you do not hold the rights to distribute and sell
 - circumvent feature gates, billing rules, access controls, audit controls, or governance workflows
 - use the Services for spam, fraud, deceptive conduct, or harassment
 - attempt unauthorized access to accounts, stores, systems, or data

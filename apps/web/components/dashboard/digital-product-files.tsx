@@ -68,6 +68,7 @@ type UploadJob = {
 type PendingConfirmation =
   | { type: "replace"; asset: DigitalProductAsset; file: File; returnFocus: HTMLButtonElement | null }
   | { type: "remove"; asset: DigitalProductAsset }
+  | { type: "rights"; fileName: string }
   | null;
 
 type DigitalProductFilesProps = {
@@ -148,6 +149,29 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
 
   function finishOperation(controller: AbortController) {
     operationControllersRef.current.delete(controller);
+  }
+
+  async function affirmRights() {
+    const controller = beginOperation();
+    try {
+      const response = await fetch("/api/products", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId, digitalRightsAffirmed: true }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        showError(parseError(await responseJson(response), "Unable to record your rights confirmation."));
+        return;
+      }
+      notify.success("Rights confirmed for this product.");
+      await onCatalogChange?.(controller.signal);
+    } catch (affirmError) {
+      if (isAbortError(affirmError, controller.signal)) return;
+      showError(affirmError instanceof Error ? affirmError.message : "Unable to record your rights confirmation.");
+    } finally {
+      finishOperation(controller);
+    }
   }
 
   const showError = useCallback((message: string) => {
@@ -389,6 +413,9 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
       if (result.ok || (result.assetId && refreshed.some((asset) => asset.id === result.assetId))) {
         setUploads((current) => current.filter((candidate) => candidate.id !== job.id));
         notify.success("Customer file is ready.");
+        // Rights are affirmed against the file that was actually uploaded,
+        // while the merchant still has it in mind.
+        setPendingConfirmation({ type: "rights", fileName: job.file.name });
         await onCatalogChange?.(controller.signal);
       } else {
         updateJob(job.id, { phase: "failed", progress: 100, message: result.message });
@@ -866,6 +893,21 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
           }}
         />
       ) : null}
+      {pendingConfirmation?.type === "rights" ? (
+        <ConfirmDialog
+          open
+          title="Confirm you can sell this file"
+          description={`Myrivo's terms require you to hold the rights to distribute and sell every file you upload. Confirm that you own "${pendingConfirmation.fileName}" or are authorised by the rights holder to sell it.`}
+          confirmLabel="I hold the rights"
+          cancelLabel="Not yet"
+          onCancel={() => setPendingConfirmation(null)}
+          onConfirm={() => {
+            setPendingConfirmation(null);
+            void affirmRights();
+          }}
+        />
+      ) : null}
+
       {pendingConfirmation?.type === "remove" ? (
         <ConfirmDialog
           open
