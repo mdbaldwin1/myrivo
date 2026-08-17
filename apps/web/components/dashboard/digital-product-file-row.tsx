@@ -76,7 +76,7 @@ export function DigitalProductFileRow({
       className="rounded-xl border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md"
     >
       <div className="flex flex-col gap-4">
-        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0 space-y-1">
             {renaming ? (
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
@@ -181,51 +181,21 @@ export function DigitalProductFileRow({
             >
               <ArrowDown className="h-4 w-4" aria-hidden="true" />
             </Button>
-          </div>
-        </div>
-
-        <div className="grid gap-3 border-t border-border/70 pt-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-          {scopeLocked ? <div /> : (
-          <label htmlFor={`digital-file-scope-${asset.id}`} className="text-xs font-medium text-muted-foreground">
-            File availability
-            <Select
-              id={`digital-file-scope-${asset.id}`}
-              value={asset.product_variant_id ?? "all"}
-              disabled={busy}
-              onChange={(event) => void onAssign(event.target.value === "all" ? null : event.target.value)}
-              className="mt-1"
-            >
-              <option value="all">All variants</option>
-              {variants.map((variant) => (
-                <option key={variant.id} value={variant.id}>
-                  {variant.label}{variant.status === "archived" ? " (archived)" : ""}
-                </option>
-              ))}
-            </Select>
-          </label>
-          )}
-
-          <div className="flex flex-wrap gap-2">
-            <input
-              ref={replacementRef}
-              type="file"
-              className="sr-only"
-              accept={Object.keys(DIGITAL_PRODUCT_CONFIG.acceptedFiles).join(",")}
-              aria-label={`Choose a replacement for ${asset.label}`}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) onReplace(file, actionsRef.current);
-                event.target.value = "";
-              }}
-            />
             {/* Non-modal: menu items open a confirmation dialog, and a modal
                 menu's pointer-events lock can outlive the menu when a dialog
                 mounts during its close transition, leaving the page unclickable. */}
             <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
-                <Button ref={actionsRef} type="button" size="sm" variant="outline" disabled={busy} aria-label={`Manage ${asset.label}`}>
-                  Actions
-                  <MoreHorizontal className="ml-1.5 h-4 w-4" aria-hidden="true" />
+                <Button
+                  ref={actionsRef}
+                  type="button"
+                  size="icon"
+                  variant="outline"
+                  className="h-8 w-8"
+                  disabled={busy}
+                  aria-label={`Manage ${asset.label}`}
+                >
+                  <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -236,6 +206,44 @@ export function DigitalProductFileRow({
             </DropdownMenu>
           </div>
         </div>
+
+        <input
+          ref={replacementRef}
+          type="file"
+          className="sr-only"
+          accept={Object.keys(DIGITAL_PRODUCT_CONFIG.acceptedFiles).join(",")}
+          aria-label={`Choose a replacement for ${asset.label}`}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) onReplace(file, actionsRef.current);
+            event.target.value = "";
+          }}
+        />
+
+        {/* Placement fixes the scope when this list belongs to one unit, so the
+            picker - and the rule it sat on - only appear in the unscoped list. */}
+        {scopeLocked ? null : (
+          <div className="border-t border-border/70 pt-3">
+            <label htmlFor={`digital-file-scope-${asset.id}`} className="text-xs font-medium text-muted-foreground">
+              File availability
+              <Select
+                id={`digital-file-scope-${asset.id}`}
+                value={asset.product_variant_id ?? "all"}
+                disabled={busy}
+                onChange={(event) => void onAssign(event.target.value === "all" ? null : event.target.value)}
+                className="mt-1"
+              >
+                <option value="all">All variants</option>
+                {variants.map((variant) => (
+                  <option key={variant.id} value={variant.id}>
+                    {variant.label}{variant.status === "archived" ? " (archived)" : ""}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          </div>
+        )}
+
       </div>
     </li>
   );
