@@ -1,5 +1,6 @@
 "use client";
 
+import { Plus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DigitalProductFileRow } from "@/components/dashboard/digital-product-file-row";
 import { Button } from "@/components/ui/button";
@@ -714,27 +715,30 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/15 p-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="space-y-1">
-          <h4 className="font-medium">Customer download files</h4>
-          <p className="max-w-2xl text-xs text-muted-foreground">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-0.5">
+          <h4 className="text-sm font-semibold">Customer downloads</h4>
+          <p className="text-xs text-muted-foreground">
             {scope
               ? "Originals stay private. Buyers who purchase this option receive these files."
               : "Originals stay private. Buyers receive only the ready files that apply to their selected variant."}
           </p>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <div className="flex shrink-0 items-center gap-2">
           {!scope && variants.length > 0 ? (
             <label className="space-y-1 text-xs font-medium">
-              Applies to
-              <Select value={uploadScope} onChange={(event) => setUploadScope(event.target.value)}>
+              <span className="sr-only">Applies to</span>
+              <Select value={uploadScope} onChange={(event) => setUploadScope(event.target.value)} aria-label="Applies to">
                 <option value="all">All variants</option>
                 {variants.map((variant) => <option key={variant.id} value={variant.id}>{variant.label}</option>)}
               </Select>
             </label>
           ) : null}
-          <label className="inline-flex h-9 cursor-pointer items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2">
-            Add files
+          <label
+            title="Add files"
+            className={`inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background transition hover:bg-muted focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${uploadDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
             <input
               ref={uploadInputRef}
               type="file"
