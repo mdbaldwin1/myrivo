@@ -610,13 +610,6 @@ export async function prepareDigitalDownload({
     }
 
     safeReleaseError = "Storage signing failed";
-    const acceptanceRunId = process.env.MYRIVO_DIGITAL_ACCEPTANCE_RUN_ID;
-    const acceptanceDeployment = process.env.VERCEL_ENV === "preview" || (process.env.NODE_ENV !== "production" && process.env.VERCEL_ENV !== "production");
-    if (process.env.MYRIVO_DIGITAL_ACCEPTANCE_BUILD === "enabled" && acceptanceDeployment && acceptanceRunId) {
-      const injected = await client.rpc("consume_digital_acceptance_signing_fault", { p_run_id: acceptanceRunId, p_entitlement_id: entitlementId });
-      if (injected.error) throw new DigitalDownloadError("preparation_failed");
-      if (injected.data === true) throw new DigitalDownloadError("preparation_failed");
-    }
     let signedResult: {
       data: { signedUrl?: string } | null;
       error: { message?: string } | null;
