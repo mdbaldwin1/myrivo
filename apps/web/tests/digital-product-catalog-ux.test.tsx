@@ -381,7 +381,10 @@ describe("ProductManager digital catalog integration", () => {
     expect(within(tabs).queryByRole("tab", { name: "Inventory" })).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Edit" }));
-    expect(screen.getByText(/Files are attached after this draft is created/i)).toBeTruthy();
+    // The editor holds the files themselves, so it no longer tells the merchant
+    // to go somewhere else to attach them.
+    expect(screen.queryByText(/attached after this draft is created/i)).toBeNull();
+    expect(screen.queryByText(/Files tab/i)).toBeNull();
     expect(screen.queryByText("Enable made to order")).toBeNull();
     expect(screen.queryByText("Inventory")).toBeNull();
     expect(screen.getByRole("checkbox", { name: /I own or control the rights/i })).toBeTruthy();

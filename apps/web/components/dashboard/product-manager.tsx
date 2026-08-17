@@ -3101,7 +3101,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                       <Checkbox id="create-digital-rights" checked={digitalRightsAffirmed} onChange={(event) => setDigitalRightsAffirmed(event.target.checked)} />
                       <span className="text-sm">I own or control the rights necessary to distribute and sell these files.</span>
                     </label>
-                    <p className="text-xs text-muted-foreground">Files are attached after this draft is created. Save it, then use the Files tab to add customer downloads.</p>
+                    <p className="text-xs text-muted-foreground">Customer downloads are added once this product exists. Save it, then attach files beside the SKU for whichever unit sells them.</p>
                   </div>
                 ) : null}
                 <FormField label="Description">
@@ -4049,7 +4049,6 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                       <Checkbox id="edit-digital-rights" checked={editDigitalRightsAffirmed} onChange={(event) => setEditDigitalRightsAffirmed(event.target.checked)} />
                       <span className="text-sm">I own or control the rights necessary to distribute and sell these files.</span>
                     </label>
-                    <p className="text-xs text-muted-foreground">Files are attached after this draft is created. Save it, then use the Files tab to add customer downloads.</p>
                   </div>
                 ) : null}
                 <FormField label="Description">
