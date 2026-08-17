@@ -642,6 +642,9 @@ describe("ProductManager digital catalog integration", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
   test("explains on the image field that buyers only ever see a watermarked version", async () => {
+    // Opening the editor fires background catalog requests; without a stub the
+    // relative URLs escape as unhandled rejections.
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({}), { status: 200 })));
     const user = userEvent.setup();
     render(<ProductManager initialProducts={[product()]} />);
 
