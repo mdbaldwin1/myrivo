@@ -79,6 +79,9 @@ type StorefrontProduct = {
   price_cents: number;
   inventory_qty: number;
   product_type?: "physical" | "digital";
+  digital_summary?: {
+    publicPreviewUrl: string | null;
+  } | null;
   product_variants: StorefrontVariant[];
   product_option_axes?: Array<{
     id: string;
@@ -205,6 +208,12 @@ function getVariantImages(variant: StorefrontVariant | null, product: Storefront
   const ordered = [...(variant?.image_urls ?? []), ...(variant?.group_image_urls ?? []), ...(product.image_urls ?? [])].filter(
     (image): image is string => Boolean(image)
   );
+
+  // A digital product whose merchant never uploaded imagery still has a
+  // watermarked preview of the file itself; show that rather than nothing.
+  if (ordered.length === 0 && product.digital_summary?.publicPreviewUrl) {
+    return [product.digital_summary.publicPreviewUrl];
+  }
 
   const unique: string[] = [];
   const seen = new Set<string>();

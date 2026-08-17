@@ -271,6 +271,9 @@ function resolveVariantLabel(variant: StorefrontVariant) {
 }
 
 function getVariantImages(variant: StorefrontVariant | null, product: StorefrontProduct) {
+  // Only the watermarked preview may represent a digital product here: its own
+  // image_urls can be the artwork being sold, and showing that unwatermarked
+  // would give the file away.
   if ((product.product_type ?? "physical") === "digital") {
     return product.digital_summary?.publicPreviewUrl
       ? [product.digital_summary.publicPreviewUrl]
