@@ -166,7 +166,9 @@ describe("digital catalog overview and media", () => {
     await user.click(within(readiness).getByRole("button", { name: "Finish storefront preview" }));
     expect(onNavigate).toHaveBeenCalledWith("media", "preview");
     await user.click(within(readiness).getByRole("button", { name: "Attach a file to Square" }));
-    expect(onNavigate).toHaveBeenCalledWith("files", VARIANT_ID);
+    // Files are provided beside the SKU for the unit that owns them, so this
+    // blocker opens the product editor at that variant rather than a tab.
+    expect(onNavigate).toHaveBeenCalledWith("editor", VARIANT_ID);
     expect(within(readiness).getByRole("button", { name: "Publish product" }).hasAttribute("disabled")).toBe(true);
   });
 
@@ -374,7 +376,8 @@ describe("ProductManager digital catalog integration", () => {
     expect(within(table).queryByRole("button", { name: /Adjust inventory/i })).toBeNull();
 
     const tabs = screen.getByRole("tablist", { name: "Product details" });
-    expect(within(tabs).getByRole("tab", { name: "Files" })).toBeTruthy();
+    // Files live beside the SKU in the product editor, not in their own tab.
+    expect(within(tabs).queryByRole("tab", { name: "Files" })).toBeNull();
     expect(within(tabs).queryByRole("tab", { name: "Inventory" })).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Edit" }));
@@ -558,13 +561,22 @@ describe("ProductManager digital catalog integration", () => {
       json: () => catalogBody,
     }) as Response));
     const user = userEvent.setup();
-    render(<ProductManager initialProducts={[product(), productB]} />);
+    // A single unstructured variant keeps the SKU - and therefore the files
+    // manager - at the product level, which is what this test drives.
+    const productA = product({
+      product_variants: [{ ...product().product_variants[0]!, option_values: {} }],
+    });
+    render(<ProductManager initialProducts={[productA, productB]} />);
 
-    await user.click(screen.getByRole("tab", { name: "Files" }));
+    // The files manager now lives in the product editor beside the SKU.
+    await user.click(screen.getByRole("button", { name: "Edit" }));
     await user.click(screen.getByRole("button", { name: `Refresh files catalog for ${PRODUCT_ID}` }));
     await waitFor(() => expect(filesMockState.signals).toHaveLength(1));
     expect(filesMockState.signals[0]?.aborted).toBe(false);
 
+    // The editor is modal, so leaving it is how a merchant reaches another
+    // product; that unmount is what must abort the in-flight refresh.
+    await user.keyboard("{Escape}");
     await user.click(screen.getByText("Product B"));
     await waitFor(() => expect(filesMockState.signals[0]?.aborted).toBe(true));
 

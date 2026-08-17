@@ -608,7 +608,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   const catalogRefreshGenerationRef = useRef(0);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(searchParams.get("productId") ?? initialProducts[0]?.id ?? null);
   const [catalogInspectorTab, setCatalogInspectorTab] = useState<CatalogInspectorTab>("overview");
-  const [digitalInspectorTarget, setDigitalInspectorTarget] = useState<string | null>(null);
+  const [, setDigitalInspectorTarget] = useState<string | null>(null);
   const [variantInspectorMode, setVariantInspectorMode] = useState<"flat" | "grouped">("flat");
   const [inventoryAdjustDraft, setInventoryAdjustDraft] = useState<{
     productId: string;
@@ -987,8 +987,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
 
     setProducts((current) => [payload.product!, ...current]);
     setSelectedProductId(payload.product.id);
-    setCatalogInspectorTab(productType === "digital" ? "files" : "overview");
-    setDigitalInspectorTarget(productType === "digital" ? "upload" : null);
+    setCatalogInspectorTab("overview");
+    setDigitalInspectorTarget(null);
     setTitle("");
     setDescription("");
     setProductSlug("");
@@ -2227,6 +2227,36 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     );
   }
 
+  // Customer files belong to whichever unit carries the SKU: the product when
+  // it has no variants, otherwise the variant or option being edited.
+  function renderEditDigitalFiles(productVariantId: string | null) {
+    if (editProductType !== "digital" || !editingProductId) return null;
+    if (productVariantId === null && editHasVariants) return null;
+    return (
+      <div className="rounded-lg border border-border/70 bg-muted/10 p-3">
+        <DigitalProductFiles
+          key={`${editingProductId}:${productVariantId ?? "product"}`}
+          productId={editingProductId}
+          scope={{ productVariantId }}
+          productImageUrls={editImageUrls}
+          onCatalogChange={async (signal) => { await refreshCatalogProducts({ signal }); }}
+        />
+      </div>
+    );
+  }
+
+  function renderEditDigitalFilesForVariant(variant: VariantDraft | null | undefined) {
+    if (editProductType !== "digital") return null;
+    if (!variant?.id) {
+      return (
+        <p className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
+          Save this product to attach customer files to this option.
+        </p>
+      );
+    }
+    return renderEditDigitalFiles(variant.id);
+  }
+
   async function removeEditVariants(indexes: number[], label: string) {
     const uniqueIndexes = [...new Set(indexes)].sort((a, b) => a - b);
     if (uniqueIndexes.length === 0) {
@@ -2744,6 +2774,13 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                   <DigitalProductOverview
                     product={selectedProduct}
                     onNavigate={(tab, target) => {
+                      if (tab === "editor") {
+                        openEditFlyout(
+                          selectedProduct,
+                          target === "product" ? { step: "product" } : { step: "variant", variantId: target },
+                        );
+                        return;
+                      }
                       setDigitalInspectorTarget(target);
                       setCatalogInspectorTab(tab);
                     }}
@@ -2775,22 +2812,6 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                       <span className="font-medium">Inventory:</span> {selectedProduct.inventory_qty}
                     </p>
                   </div>
-                </div>
-              ) : null}
-
-              {catalogInspectorTab === "files" && selectedProduct.product_type === "digital" ? (
-                <div role="tabpanel" id="catalog-panel-files">
-                  <DigitalProductFiles
-                    key={selectedProduct.id}
-                    productId={selectedProduct.id}
-                    variants={sortVariants(selectedProduct.product_variants ?? []).map((variant) => ({
-                      id: variant.id,
-                      label: formatVariantLabel(variant),
-                      status: variant.status,
-                    }))}
-                    focusTarget={digitalInspectorTarget}
-                    onCatalogChange={async (signal) => { await refreshCatalogProducts({ signal }); }}
-                  />
                 </div>
               ) : null}
 
@@ -4336,6 +4357,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         onChange={(event) => setEditSku(event.target.value)}
                       />
                     </FormField>
+                    {renderEditDigitalFiles(null)}
                     {editProductType === "physical" ? (
                       <>
                         <FormField label="Inventory">
@@ -4577,6 +4599,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                             <p className="mt-1 text-xs text-muted-foreground">SKU is locked because this variant has orders.</p>
                           ) : null}
                         </FormField>
+                        {renderEditDigitalFilesForVariant(activeEditVariant)}
                         <FormField label="Price">
                           <Input
                             inputMode="decimal"
@@ -4873,6 +4896,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         <p className="mt-1 text-xs text-muted-foreground">SKU is locked because this variant has orders.</p>
                       ) : null}
                     </FormField>
+                    {renderEditDigitalFilesForVariant(activeEditVariant)}
                     <FormField label="Price">
                       <Input
                         inputMode="decimal"

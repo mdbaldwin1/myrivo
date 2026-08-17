@@ -75,6 +75,14 @@ type DigitalProductFilesProps = {
   variants?: DigitalProductFileVariant[];
   focusTarget?: string | null;
   onCatalogChange?: (signal?: AbortSignal) => void | Promise<void>;
+  /**
+   * Locks this list to one sellable unit, matching where the SKU for that unit
+   * is edited: the product itself when it has no variants, otherwise the
+   * variant or option being edited. Undefined keeps the unscoped list.
+   */
+  scope?: { productVariantId: string | null };
+  /** Storefront images available to stand in as the buyer preview. */
+  productImageUrls?: string[];
 };
 
 function parseError(payload: unknown, fallback: string) {
@@ -116,7 +124,7 @@ function sortAssets(assets: DigitalProductAsset[]) {
   return [...assets].sort((left, right) => left.sort_order - right.sort_order);
 }
 
-export function DigitalProductFiles({ productId, variants = [], focusTarget, onCatalogChange }: DigitalProductFilesProps) {
+export function DigitalProductFiles({ productId, variants = [], focusTarget, onCatalogChange, scope, productImageUrls = [] }: DigitalProductFilesProps) {
   const [assets, setAssets] = useState<DigitalProductAsset[]>([]);
   const [failedUploads, setFailedUploads] = useState<PersistedFailedUpload[]>([]);
   const [uploads, setUploads] = useState<UploadJob[]>([]);
@@ -259,7 +267,7 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         productId,
-        productVariantId: uploadScope === "all" ? null : uploadScope,
+        productVariantId: scope ? scope.productVariantId : uploadScope === "all" ? null : uploadScope,
         label: job.label,
         fileName: job.file.name,
         mimeType: job.file.type,
@@ -659,6 +667,20 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
   }
 
   const activeUploadCount = uploads.filter((job) => job.phase !== "failed").length;
+  const scopedAssets = scope
+    ? assets.filter((asset) => (asset.product_variant_id ?? null) === scope.productVariantId)
+    : assets;
+
+  // Watermarked buyer previews are only generated from JPEG or PNG originals.
+  // Anything else needs a storefront image to stand in, or the product cannot
+  // be published.
+  const needsStandInPreview = scopedAssets.some((asset) =>
+    asset.digital_product_asset_versions.some(
+      (version) => version.retired_at === null && version.mime_type !== "image/jpeg" && version.mime_type !== "image/png",
+    ),
+  );
+  const missingProductImage = needsStandInPreview && productImageUrls.length === 0;
+
   const uploadDisabled = assets.length + activeUploadCount >= DIGITAL_PRODUCT_CONFIG.maxFilesPerProduct;
 
   return (
@@ -667,11 +689,13 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
         <div className="space-y-1">
           <h4 className="font-medium">Customer download files</h4>
           <p className="max-w-2xl text-xs text-muted-foreground">
-            Originals stay private. Buyers receive only the ready files that apply to their selected variant.
+            {scope
+              ? "Originals stay private. Buyers who purchase this option receive these files."
+              : "Originals stay private. Buyers receive only the ready files that apply to their selected variant."}
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-          {variants.length > 0 ? (
+          {!scope && variants.length > 0 ? (
             <label className="space-y-1 text-xs font-medium">
               Applies to
               <Select value={uploadScope} onChange={(event) => setUploadScope(event.target.value)}>
@@ -784,22 +808,33 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
       ) : null}
 
       {loading ? <p role="status" className="text-sm text-muted-foreground">Loading customer files…</p> : null}
-      {!loading && assets.length === 0 && uploads.length === 0 && failedUploads.length === 0 ? (
+      {missingProductImage ? (
+        <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <p className="font-medium">Add a product image before publishing</p>
+          <p className="mt-1 text-xs">
+            Buyer previews are watermarked from the original file, which only works for JPG and PNG. This file type needs a
+            storefront image to show buyers instead — add one in the product&apos;s images, then choose it as the buyer preview.
+          </p>
+        </div>
+      ) : null}
+
+      {!loading && scopedAssets.length === 0 && uploads.length === 0 && failedUploads.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-6 text-center">
           <p className="text-sm font-medium">No customer files yet</p>
           <p className="mt-1 text-xs text-muted-foreground">Add at least one ready file before publishing this digital product.</p>
         </div>
       ) : null}
 
-      {assets.length > 0 ? (
+      {scopedAssets.length > 0 ? (
         <ul aria-label="Customer download files" className="space-y-3">
-          {assets.map((asset, index) => (
+          {scopedAssets.map((asset, index) => (
             <DigitalProductFileRow
               key={asset.id}
               asset={asset}
               variants={variants}
+              scopeLocked={Boolean(scope)}
               index={index}
-              count={assets.length}
+              count={scopedAssets.length}
               busy={busyAssetIds.has(asset.id)}
               onRename={(label) => updateAsset(asset.id, { label })}
               onAssign={(productVariantId) => updateAsset(asset.id, { productVariantId })}

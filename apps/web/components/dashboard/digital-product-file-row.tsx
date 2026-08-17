@@ -16,6 +16,8 @@ import { DIGITAL_PRODUCT_CONFIG } from "@/lib/digital-products/config";
 type DigitalProductFileRowProps = {
   asset: DigitalProductAsset;
   variants: DigitalProductFileVariant[];
+  /** Placement already fixes which unit this file belongs to. */
+  scopeLocked?: boolean;
   index: number;
   count: number;
   busy: boolean;
@@ -58,6 +60,7 @@ export function DigitalProductFileRow({
   busy,
   onRename,
   onAssign,
+  scopeLocked = false,
   onMove,
   onReplace,
   onRemove,
@@ -175,6 +178,7 @@ export function DigitalProductFileRow({
         </div>
 
         <div className="grid gap-3 border-t border-border/70 pt-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+          {scopeLocked ? <div /> : (
           <label htmlFor={`digital-file-scope-${asset.id}`} className="text-xs font-medium text-muted-foreground">
             File availability
             <Select
@@ -192,6 +196,7 @@ export function DigitalProductFileRow({
               ))}
             </Select>
           </label>
+          )}
 
           <div className="flex flex-wrap gap-2">
             <input

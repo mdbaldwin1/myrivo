@@ -420,4 +420,73 @@ describe("DigitalProductFiles", () => {
     expect(onCatalogChange).not.toHaveBeenCalled();
     expect(screen.queryByRole("alert")).toBeNull();
   });
+  test("scoped to one sellable unit: shows only that unit's files and drops the availability pickers", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).startsWith(`/api/products/digital-assets?productId=${PRODUCT_ID}`)) {
+        return json({ assets: readyAssets() });
+      }
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }));
+
+    render(
+      <DigitalProductFiles
+        productId={PRODUCT_ID}
+        variants={variants}
+        scope={{ productVariantId: VARIANT_ID }}
+        productImageUrls={["https://images.example/a.jpg"]}
+      />,
+    );
+
+    const list = await screen.findByRole("list", { name: "Customer download files" });
+    // Only the file belonging to this variant, and no scope pickers at all:
+    // placement already decides where the file belongs.
+    expect(within(list).getByText("Square artwork")).toBeTruthy();
+    expect(within(list).queryByText("Printable poster")).toBeNull();
+    expect(screen.queryByLabelText(/Applies to/i)).toBeNull();
+    expect(screen.queryByLabelText(/File availability/i)).toBeNull();
+  });
+
+  test("requires a product image when the original cannot be watermarked", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).startsWith(`/api/products/digital-assets?productId=${PRODUCT_ID}`)) {
+        return json({ assets: readyAssets() });
+      }
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }));
+
+    // The product-level file is a PDF, which cannot carry a watermark.
+    const { unmount } = render(
+      <DigitalProductFiles productId={PRODUCT_ID} variants={variants} scope={{ productVariantId: null }} productImageUrls={[]} />,
+    );
+    expect(await screen.findByText("Add a product image before publishing")).toBeTruthy();
+    unmount();
+
+    // Supplying a storefront image satisfies it.
+    render(
+      <DigitalProductFiles
+        productId={PRODUCT_ID}
+        variants={variants}
+        scope={{ productVariantId: null }}
+        productImageUrls={["https://images.example/a.jpg"]}
+      />,
+    );
+    await screen.findByRole("list", { name: "Customer download files" });
+    expect(screen.queryByText("Add a product image before publishing")).toBeNull();
+  });
+
+  test("a watermarkable original needs no stand-in image", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).startsWith(`/api/products/digital-assets?productId=${PRODUCT_ID}`)) {
+        return json({ assets: readyAssets() });
+      }
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }));
+
+    // The variant-scoped file is a PNG.
+    render(
+      <DigitalProductFiles productId={PRODUCT_ID} variants={variants} scope={{ productVariantId: VARIANT_ID }} productImageUrls={[]} />,
+    );
+    await screen.findByRole("list", { name: "Customer download files" });
+    expect(screen.queryByText("Add a product image before publishing")).toBeNull();
+  });
 });
