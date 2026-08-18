@@ -145,7 +145,8 @@ describe("where customer downloads are provided", () => {
     // and holds no files.
     expect(visibleFileScopes()).toEqual([]);
 
-    await user.click(screen.getAllByRole("button", { name: "Edit" }).at(-1)!);
+    // A variant row opens from its own name, the same as a file row.
+    await user.click(visible(screen.getAllByRole("button", { name: "Square" })));
     expect(visibleFileScopes()).toEqual([VARIANT_ID]);
 
     // Once the variant splits into options, the option is the sellable unit and

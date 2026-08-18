@@ -9,6 +9,7 @@ import { AppAlert } from "@/components/ui/app-alert";
 import { DigitalPreviewManager } from "@/components/dashboard/digital-preview-manager";
 import { DigitalProductFiles } from "@/components/dashboard/digital-product-files";
 import { StagedDigitalFiles, type StagedDigitalFile } from "@/components/dashboard/staged-digital-files";
+import { OptionsLister, VariantsLister } from "@/components/dashboard/variant-listers";
 import { DigitalProductOverview } from "@/components/dashboard/digital-product-overview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -3429,76 +3430,31 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                 </div>
 
                 {createHasVariants ? (
-                  <div className="space-y-3 rounded-md border border-border bg-white p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="text-sm font-medium">Variants</p>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="outline"
-                        className="h-8 w-8"
-                        title="Add variant"
-                        aria-label="Add variant"
-                        onClick={addCreateVariantFromProductView}
-                      >
-                        <Plus className="h-4 w-4" aria-hidden="true" />
-                      </Button>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm text-muted-foreground">Create variants, then define option names and values inside each variant.</p>
-                        {createVariantError ? <p className="text-xs font-medium text-destructive">{createVariantError}</p> : null}
-                      </div>
-                      {createVariantGroups.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">No variants yet.</p>
-                      ) : (
-                        createVariantGroups.map((group, index) => (
-                          <div key={`create-group-${group.key}-${index}`} className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-2">
-                            <div>
-                              <p className="text-sm font-medium">{group.label}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {createVariantTierCount === 2 ? `${group.indexes.length} ${createTierTwoLabel.toLowerCase()} options` : "1 option"}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {group.indexes.some((variantIndex) => createVariants[variantIndex]?.status === "archived") ? (
-                                <Badge variant="secondary">archived</Badge>
-                              ) : null}
-                              <Button type="button" variant="outline" size="sm" onClick={() => openCreateVariantEditor(group.indexes[0] ?? 0)}>
-                                Edit
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() =>
-                                  updateCreateVariantStatuses(
-                                    group.indexes,
-                                    group.indexes.some((variantIndex) => createVariants[variantIndex]?.status === "archived")
-                                      ? "active"
-                                      : "archived"
-                                  )
-                                }
-                              >
-                                {group.indexes.some((variantIndex) => createVariants[variantIndex]?.status === "archived")
-                                  ? "Unarchive"
-                                  : "Archive"}
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                onClick={() => removeCreateVariants(group.indexes, `variant "${group.label}"`)}
-                              >
-                                Delete
-                              </Button>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
+                  <VariantsLister
+                    groups={createVariantGroups.map((group) => ({
+                      key: group.key,
+                      label: group.label,
+                      optionCount: group.indexes.length,
+                      archived: group.indexes.some((variantIndex) => createVariants[variantIndex]?.status === "archived"),
+                    }))}
+                    optionNoun={(group) =>
+                      createVariantTierCount === 2 ? `${group.optionCount} ${createTierTwoLabel.toLowerCase()} options` : "1 option"
+                    }
+                    error={createVariantError}
+                    onAdd={addCreateVariantFromProductView}
+                    onEdit={(index) => openCreateVariantEditor(createVariantGroups[index]?.indexes[0] ?? 0)}
+                    onToggleArchived={(index) => {
+                      const group = createVariantGroups[index];
+                      if (!group) return;
+                      const archived = group.indexes.some((variantIndex) => createVariants[variantIndex]?.status === "archived");
+                      updateCreateVariantStatuses(group.indexes, archived ? "active" : "archived");
+                    }}
+                    onDelete={(index) => {
+                      const group = createVariantGroups[index];
+                      if (!group) return;
+                      void removeCreateVariants(group.indexes, `variant "${group.label}"`);
+                    }}
+                  />
                 ) : (
                   <div className="space-y-3">
                     <FormField label="SKU">
@@ -3820,73 +3776,31 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         </label> : null}
                       </>
                     ) : (
-                      <div className="space-y-3 rounded-md border border-border bg-white p-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <p className="text-sm font-medium">Options</p>
-                          <Button
-                            type="button"
-                            size="icon"
-                            variant="outline"
-                            className="h-8 w-8"
-                            title="Add option"
-                            aria-label="Add option"
-                            onClick={addCreateTierTwoOption}
-                          >
-                            <Plus className="h-4 w-4" aria-hidden="true" />
-                          </Button>
-                        </div>
-                        <p className="text-sm text-muted-foreground">{variantOptionInstruction(productType)}</p>
-                        <div className="space-y-2">
-                          {activeCreateSubOptionIndexes.length === 0 ? (
-                            <p className="text-xs text-muted-foreground">No options yet.</p>
-                          ) : null}
-                          {activeCreateSubOptionIndexes.map((index) => {
-                            const option = createVariants[index];
-                            if (!option) {
-                              return null;
-                            }
-
-                            return (
-                              <div key={`create-tier2-${index}`} className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-2">
-                                <div>
-                                  <p className="text-sm font-medium">{getOptionValue(option, activeCreateLevelTwoName) || `${activeCreateLevelTwoName} option`}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {variantOptionSummary(productType, option)}
-                                  </p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <Button type="button" variant="outline" size="sm" onClick={() => openCreateOptionEditor(index)}>
-                                    Edit
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => updateCreateVariantStatuses([index], option.status === "archived" ? "active" : "archived")}
-                                  >
-                                    {option.status === "archived" ? "Unarchive" : "Archive"}
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    className="border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                    onClick={() => {
-                                      if (activeCreateSubOptionIndexes.length <= 1) {
-                                        setCreateSubOptionsEnabled(false);
-                                        return;
-                                      }
-                                      void removeCreateVariants([index], "option");
-                                    }}
-                                  >
-                                    Delete
-                                  </Button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
+                      <OptionsLister
+                        description={variantOptionInstruction(productType)}
+                        onAdd={addCreateTierTwoOption}
+                        onEdit={(index) => openCreateOptionEditor(index)}
+                        onToggleArchived={(index) =>
+                          updateCreateVariantStatuses([index], createVariants[index]?.status === "archived" ? "active" : "archived")
+                        }
+                        onDelete={(index) => {
+                          if (activeCreateSubOptionIndexes.length <= 1) {
+                            setCreateSubOptionsEnabled(false);
+                            return;
+                          }
+                          void removeCreateVariants([index], "option");
+                        }}
+                        options={activeCreateSubOptionIndexes.flatMap((index) => {
+                          const option = createVariants[index];
+                          if (!option) return [];
+                          return [{
+                            index,
+                            label: getOptionValue(option, activeCreateLevelTwoName) || `${activeCreateLevelTwoName} option`,
+                            summary: variantOptionSummary(productType, option),
+                            archived: option.status === "archived",
+                          }];
+                        })}
+                      />
                     )}
                   </>
                 ) : (
@@ -4405,76 +4319,31 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                 </div>
 
                 {editHasVariants ? (
-                  <div className="space-y-3 rounded-md border border-border bg-white p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="text-sm font-medium">Variants</p>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="outline"
-                        className="h-8 w-8"
-                        title="Add variant"
-                        aria-label="Add variant"
-                        onClick={addEditVariantFromProductView}
-                      >
-                        <Plus className="h-4 w-4" aria-hidden="true" />
-                      </Button>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm text-muted-foreground">Create variants, then define option names and values inside each variant.</p>
-                        {editVariantError ? <p className="text-xs font-medium text-destructive">{editVariantError}</p> : null}
-                      </div>
-                      {editVariantGroups.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">No variants yet.</p>
-                      ) : (
-                        editVariantGroups.map((group, index) => (
-                          <div key={`edit-group-${group.key}-${index}`} className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-2">
-                            <div>
-                              <p className="text-sm font-medium">{group.label}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {editVariantTierCount === 2 ? `${group.indexes.length} ${editTierTwoLabel.toLowerCase()} options` : "1 option"}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {group.indexes.some((variantIndex) => editVariants[variantIndex]?.status === "archived") ? (
-                                <Badge variant="secondary">archived</Badge>
-                              ) : null}
-                              <Button type="button" variant="outline" size="sm" onClick={() => openEditVariantEditor(group.indexes[0] ?? 0)}>
-                                Edit
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() =>
-                                  updateEditVariantStatuses(
-                                    group.indexes,
-                                    group.indexes.some((variantIndex) => editVariants[variantIndex]?.status === "archived")
-                                      ? "active"
-                                      : "archived"
-                                  )
-                                }
-                              >
-                                {group.indexes.some((variantIndex) => editVariants[variantIndex]?.status === "archived")
-                                  ? "Unarchive"
-                                  : "Archive"}
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                onClick={() => removeEditVariants(group.indexes, `variant "${group.label}"`)}
-                              >
-                                Delete
-                              </Button>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
+                  <VariantsLister
+                    groups={editVariantGroups.map((group) => ({
+                      key: group.key,
+                      label: group.label,
+                      optionCount: group.indexes.length,
+                      archived: group.indexes.some((variantIndex) => editVariants[variantIndex]?.status === "archived"),
+                    }))}
+                    optionNoun={(group) =>
+                      editVariantTierCount === 2 ? `${group.optionCount} ${editTierTwoLabel.toLowerCase()} options` : "1 option"
+                    }
+                    error={editVariantError}
+                    onAdd={addEditVariantFromProductView}
+                    onEdit={(index) => openEditVariantEditor(editVariantGroups[index]?.indexes[0] ?? 0)}
+                    onToggleArchived={(index) => {
+                      const group = editVariantGroups[index];
+                      if (!group) return;
+                      const archived = group.indexes.some((variantIndex) => editVariants[variantIndex]?.status === "archived");
+                      updateEditVariantStatuses(group.indexes, archived ? "active" : "archived");
+                    }}
+                    onDelete={(index) => {
+                      const group = editVariantGroups[index];
+                      if (!group) return;
+                      void removeEditVariants(group.indexes, `variant "${group.label}"`);
+                    }}
+                  />
                 ) : (
                   <div className="space-y-3">
                     <FormField label="SKU">
@@ -4765,74 +4634,32 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         </label> : null}
                       </>
                     ) : (
-                      <div className="space-y-3 rounded-md border border-border bg-white p-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <p className="text-sm font-medium">Options</p>
-                          <Button
-                            type="button"
-                            size="icon"
-                            variant="outline"
-                            className="h-8 w-8"
-                            title="Add option"
-                            aria-label="Add option"
-                            disabled={activeEditGroupHasOrderedVariant}
-                            onClick={addEditTierTwoOption}
-                          >
-                            <Plus className="h-4 w-4" aria-hidden="true" />
-                          </Button>
-                        </div>
-                        <p className="text-sm text-muted-foreground">{variantOptionInstruction(editProductType)}</p>
-                        <div className="space-y-2">
-                          {activeEditSubOptionIndexes.length === 0 ? (
-                            <p className="text-xs text-muted-foreground">No options yet.</p>
-                          ) : null}
-                          {activeEditSubOptionIndexes.map((index) => {
-                            const option = editVariants[index];
-                            if (!option) {
-                              return null;
-                            }
-
-                            return (
-                              <div key={`edit-tier2-${index}`} className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-2">
-                                <div>
-                                  <p className="text-sm font-medium">{getOptionValue(option, activeEditLevelTwoName) || `${activeEditLevelTwoName} option`}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {variantOptionSummary(editProductType, option)}
-                                  </p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <Button type="button" variant="outline" size="sm" onClick={() => openEditOptionEditor(index)}>
-                                    Edit
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => updateEditVariantStatuses([index], option.status === "archived" ? "active" : "archived")}
-                                  >
-                                    {option.status === "archived" ? "Unarchive" : "Archive"}
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    className="border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                    onClick={() => {
-                                      if (activeEditSubOptionIndexes.length <= 1) {
-                                        setEditSubOptionsEnabled(false);
-                                        return;
-                                      }
-                                      void removeEditVariants([index], "option");
-                                    }}
-                                  >
-                                    Delete
-                                  </Button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
+                      <OptionsLister
+                        description={variantOptionInstruction(editProductType)}
+                        addDisabled={activeEditGroupHasOrderedVariant}
+                        onAdd={addEditTierTwoOption}
+                        onEdit={(index) => openEditOptionEditor(index)}
+                        onToggleArchived={(index) =>
+                          updateEditVariantStatuses([index], editVariants[index]?.status === "archived" ? "active" : "archived")
+                        }
+                        onDelete={(index) => {
+                          if (activeEditSubOptionIndexes.length <= 1) {
+                            setEditSubOptionsEnabled(false);
+                            return;
+                          }
+                          void removeEditVariants([index], "option");
+                        }}
+                        options={activeEditSubOptionIndexes.flatMap((index) => {
+                          const option = editVariants[index];
+                          if (!option) return [];
+                          return [{
+                            index,
+                            label: getOptionValue(option, activeEditLevelTwoName) || `${activeEditLevelTwoName} option`,
+                            summary: variantOptionSummary(editProductType, option),
+                            archived: option.status === "archived",
+                          }];
+                        })}
+                      />
                     )}
                   </>
                 ) : (

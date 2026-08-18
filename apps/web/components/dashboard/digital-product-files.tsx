@@ -3,6 +3,7 @@
 import { Plus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DigitalProductFileRow } from "@/components/dashboard/digital-product-file-row";
+import { Lister, ListerEmpty, ListerRows } from "@/components/dashboard/lister";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Select } from "@/components/ui/select";
@@ -701,9 +702,15 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
   const uploadDisabled = assets.length + activeUploadCount >= DIGITAL_PRODUCT_CONFIG.maxFilesPerProduct;
 
   return (
-    <div className="space-y-3 rounded-md border border-border bg-white p-3">
-      <div className="flex items-start justify-between gap-3">
-        <h4 className="text-sm font-medium">Customer downloads</h4>
+    <Lister
+      title="Customer downloads"
+      description={
+        scope
+          ? "Originals stay private. Buyers who purchase this option receive these files."
+          : "Originals stay private. Buyers receive only the ready files that apply to their selected variant."
+      }
+      meta={`${assets.length + activeUploadCount} of ${DIGITAL_PRODUCT_CONFIG.maxFilesPerProduct} files · JPG, PNG, PDF, or ZIP · 250 MB each`}
+      addControl={
         <div className="flex shrink-0 items-center gap-2">
           {!scope && variants.length > 0 ? (
             <label className="space-y-1 text-xs font-medium">
@@ -735,19 +742,8 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
             />
           </label>
         </div>
-      </div>
-
-      <div className="space-y-1">
-        <p className="text-sm text-muted-foreground">
-          {scope
-            ? "Originals stay private. Buyers who purchase this option receive these files."
-            : "Originals stay private. Buyers receive only the ready files that apply to their selected variant."}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {assets.length + activeUploadCount} of {DIGITAL_PRODUCT_CONFIG.maxFilesPerProduct} files · JPG, PNG, PDF, or ZIP · 250 MB each
-        </p>
-      </div>
-
+      }
+    >
       {error ? (
         <div
           ref={errorRef}
@@ -851,13 +847,11 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
       ) : null}
 
       {!loading && scopedAssets.length === 0 && uploads.length === 0 && failedUploads.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          No files yet. Add at least one ready file before publishing this digital product.
-        </p>
+        <ListerEmpty>No files yet. Add at least one ready file before publishing this digital product.</ListerEmpty>
       ) : null}
 
       {scopedAssets.length > 0 ? (
-        <ul aria-label="Customer download files" className="space-y-2">
+        <ListerRows label="Customer download files">
           {scopedAssets.map((asset, index) => (
             <DigitalProductFileRow
               key={asset.id}
@@ -874,7 +868,7 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
               onRemove={() => setPendingConfirmation({ type: "remove", asset })}
             />
           ))}
-        </ul>
+        </ListerRows>
       ) : null}
 
       {pendingConfirmation?.type === "replace" ? (
@@ -927,6 +921,6 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
           }}
         />
       ) : null}
-    </div>
+    </Lister>
   );
 }

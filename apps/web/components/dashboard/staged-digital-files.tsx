@@ -1,7 +1,19 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { ArrowDown, ArrowUp, Plus } from "lucide-react";
+import { useState } from "react";
+import {
+  Lister,
+  ListerActionsMenu,
+  ListerEmpty,
+  ListerRow,
+  ListerRowBody,
+  ListerRowControls,
+  ListerRowLabel,
+  ListerRowMain,
+  ListerRowMeta,
+  ListerRows,
+} from "@/components/dashboard/lister";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DIGITAL_PRODUCT_CONFIG } from "@/lib/digital-products/config";
@@ -43,7 +55,6 @@ function fileSizeLabel(bytes: number) {
 export function StagedDigitalFiles({ noun, files, onChange }: StagedDigitalFilesProps) {
   const [error, setError] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
 
   function addFiles(selected: File[]) {
     setError(null);
@@ -77,16 +88,19 @@ export function StagedDigitalFiles({ noun, files, onChange }: StagedDigitalFiles
   const addDisabled = files.length >= DIGITAL_PRODUCT_CONFIG.maxFilesPerProduct;
 
   return (
-    <div className="space-y-3 rounded-md border border-border bg-white p-3">
-      <div className="flex items-start justify-between gap-3">
-        <h4 className="text-sm font-medium">Customer downloads</h4>
+    <Lister
+      title="Customer downloads"
+      addLabel="Add customer download files"
+      description={`Originals stay private. Buyers who purchase this ${noun} receive these files.`}
+      meta={`${files.length} of ${DIGITAL_PRODUCT_CONFIG.maxFilesPerProduct} files · JPG, PNG, PDF, or ZIP · 250 MB each`}
+      error={error}
+      addControl={
         <label
           title="Add files"
           className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-background transition hover:bg-muted focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${addDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
         >
           <Plus className="h-4 w-4" aria-hidden="true" />
           <input
-            ref={inputRef}
             type="file"
             multiple
             disabled={addDisabled}
@@ -100,111 +114,88 @@ export function StagedDigitalFiles({ noun, files, onChange }: StagedDigitalFiles
             }}
           />
         </label>
-      </div>
-
-      <div className="space-y-1">
-        <p className="text-sm text-muted-foreground">
-          Originals stay private. Buyers who purchase this {noun} receive these files.
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {files.length} of {DIGITAL_PRODUCT_CONFIG.maxFilesPerProduct} files · JPG, PNG, PDF, or ZIP · 250 MB each
-        </p>
-      </div>
-
-      {error ? (
-        <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </div>
-      ) : null}
-
+      }
+    >
       {files.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          No files yet. Anything you add uploads when you save the product.
-        </p>
+        <ListerEmpty>No files yet. Anything you add uploads when you save the product.</ListerEmpty>
       ) : (
         <>
-          <ul className="space-y-2">
+          <ListerRows label="Customer download files">
             {files.map((staged, index) => (
-              <li
-                key={staged.id}
-                aria-label={staged.label}
-                className="flex flex-col gap-2 rounded-md border border-border bg-muted/20 p-2 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="min-w-0 flex-1">
-                  {renamingId === staged.id ? (
-                    <Input
-                      autoFocus
-                      aria-label={`Rename ${staged.label}`}
-                      defaultValue={staged.label}
-                      className="h-8 text-sm"
-                      onBlur={(event) => {
-                        const label = event.target.value.trim();
-                        setRenamingId(null);
-                        if (label && label !== staged.label) {
-                          onChange(files.map((entry) => (entry.id === staged.id ? { ...entry, label } : entry)));
-                        }
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") event.currentTarget.blur();
-                        if (event.key === "Escape") setRenamingId(null);
-                      }}
-                    />
-                  ) : (
-                    <button
+              <ListerRow key={staged.id} label={staged.label}>
+                <ListerRowBody>
+                  <ListerRowMain>
+                    {renamingId === staged.id ? (
+                      <Input
+                        autoFocus
+                        aria-label={`Rename ${staged.label}`}
+                        defaultValue={staged.label}
+                        className="h-8 text-sm"
+                        onBlur={(event) => {
+                          const label = event.target.value.trim();
+                          setRenamingId(null);
+                          if (label && label !== staged.label) {
+                            onChange(files.map((entry) => (entry.id === staged.id ? { ...entry, label } : entry)));
+                          }
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") event.currentTarget.blur();
+                          if (event.key === "Escape") setRenamingId(null);
+                        }}
+                      />
+                    ) : (
+                      <ListerRowLabel title="Rename this file" onClick={() => setRenamingId(staged.id)}>
+                        {staged.label}
+                      </ListerRowLabel>
+                    )}
+                    <ListerRowMeta>
+                      {staged.file.name} · {fileTypeLabel(staged.file.type)} · {fileSizeLabel(staged.file.size)} · Uploads on save
+                    </ListerRowMeta>
+                  </ListerRowMain>
+                  <ListerRowControls>
+                    <Button
                       type="button"
-                      className="block max-w-full truncate text-left text-sm font-medium hover:underline"
-                      title="Rename"
-                      onClick={() => setRenamingId(staged.id)}
+                      size="icon"
+                      variant="outline"
+                      className="h-8 w-8"
+                      aria-label={`Move ${staged.label} up`}
+                      disabled={index === 0}
+                      onClick={() => move(index, -1)}
                     >
-                      {staged.label}
-                    </button>
-                  )}
-                  <p className="truncate text-xs text-muted-foreground">
-                    {staged.file.name} · {fileTypeLabel(staged.file.type)} · {fileSizeLabel(staged.file.size)} · Uploads on save
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="outline"
-                    className="h-8 w-8"
-                    aria-label={`Move ${staged.label} up`}
-                    disabled={index === 0}
-                    onClick={() => move(index, -1)}
-                  >
-                    <ArrowUp className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="outline"
-                    className="h-8 w-8"
-                    aria-label={`Move ${staged.label} down`}
-                    disabled={index === files.length - 1}
-                    onClick={() => move(index, 1)}
-                  >
-                    <ArrowDown className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="outline"
-                    className="h-8 w-8"
-                    aria-label={`Remove ${staged.label}`}
-                    onClick={() => onChange(files.filter((entry) => entry.id !== staged.id))}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              </li>
+                      <ArrowUp className="h-4 w-4" aria-hidden="true" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="outline"
+                      className="h-8 w-8"
+                      aria-label={`Move ${staged.label} down`}
+                      disabled={index === files.length - 1}
+                      onClick={() => move(index, 1)}
+                    >
+                      <ArrowDown className="h-4 w-4" aria-hidden="true" />
+                    </Button>
+                    <ListerActionsMenu
+                      label={staged.label}
+                      actions={[
+                        { label: "Rename", onSelect: () => setRenamingId(staged.id) },
+                        {
+                          label: "Remove file",
+                          destructive: true,
+                          onSelect: () => onChange(files.filter((entry) => entry.id !== staged.id)),
+                        },
+                      ]}
+                    />
+                  </ListerRowControls>
+                </ListerRowBody>
+              </ListerRow>
             ))}
-          </ul>
+          </ListerRows>
           <p className="text-xs text-muted-foreground">
             These upload when you save the product. You can confirm distribution rights afterwards.
           </p>
         </>
       )}
-    </div>
+    </Lister>
   );
 }

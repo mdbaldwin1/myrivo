@@ -118,7 +118,8 @@ describe("prompts raised from inside the product editor", () => {
     const user = userEvent.setup();
     render(<ProductManager initialProducts={[product()]} />);
     await user.click(screen.getByRole("button", { name: "Edit" }));
-    await user.click(screen.getAllByRole("button", { name: "Delete" }).at(-1)!);
+    await user.click(screen.getByRole("button", { name: "Manage Square" }));
+    await user.click(screen.getByRole("menuitem", { name: "Delete" }));
 
     const prompt = await screen.findByText(/Delete variant/i);
     const dialog = prompt.closest("[role='dialog']");
