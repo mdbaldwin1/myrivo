@@ -77,14 +77,9 @@ export function StagedDigitalFiles({ noun, files, onChange }: StagedDigitalFiles
   const addDisabled = files.length >= DIGITAL_PRODUCT_CONFIG.maxFilesPerProduct;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 rounded-md border border-border bg-white p-3">
       <div className="flex items-start justify-between gap-3">
-        <div className="space-y-0.5">
-          <h4 className="text-sm font-semibold">Customer downloads</h4>
-          <p className="text-xs text-muted-foreground">
-            Originals stay private. Buyers who purchase this {noun} receive these files.
-          </p>
-        </div>
+        <h4 className="text-sm font-medium">Customer downloads</h4>
         <label
           title="Add files"
           className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-background transition hover:bg-muted focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${addDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
@@ -107,9 +102,14 @@ export function StagedDigitalFiles({ noun, files, onChange }: StagedDigitalFiles
         </label>
       </div>
 
-      <p className="text-xs text-muted-foreground">
-        {files.length} of {DIGITAL_PRODUCT_CONFIG.maxFilesPerProduct} files · JPG, PNG, PDF, or ZIP · 250 MB each
-      </p>
+      <div className="space-y-1">
+        <p className="text-sm text-muted-foreground">
+          Originals stay private. Buyers who purchase this {noun} receive these files.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {files.length} of {DIGITAL_PRODUCT_CONFIG.maxFilesPerProduct} files · JPG, PNG, PDF, or ZIP · 250 MB each
+        </p>
+      </div>
 
       {error ? (
         <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -118,7 +118,7 @@ export function StagedDigitalFiles({ noun, files, onChange }: StagedDigitalFiles
       ) : null}
 
       {files.length === 0 ? (
-        <p className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           No files yet. Anything you add uploads when you save the product.
         </p>
       ) : (
@@ -128,7 +128,7 @@ export function StagedDigitalFiles({ noun, files, onChange }: StagedDigitalFiles
               <li
                 key={staged.id}
                 aria-label={staged.label}
-                className="flex flex-col gap-2 rounded-md border border-border bg-white p-2 sm:flex-row sm:items-center sm:justify-between"
+                className="flex flex-col gap-2 rounded-md border border-border bg-muted/20 p-2 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="min-w-0 flex-1">
                   {renamingId === staged.id ? (
@@ -136,7 +136,7 @@ export function StagedDigitalFiles({ noun, files, onChange }: StagedDigitalFiles
                       autoFocus
                       aria-label={`Rename ${staged.label}`}
                       defaultValue={staged.label}
-                      className="h-7 text-sm"
+                      className="h-8 text-sm"
                       onBlur={(event) => {
                         const label = event.target.value.trim();
                         setRenamingId(null);
@@ -163,38 +163,38 @@ export function StagedDigitalFiles({ noun, files, onChange }: StagedDigitalFiles
                     {staged.file.name} · {fileTypeLabel(staged.file.type)} · {fileSizeLabel(staged.file.size)} · Uploads on save
                   </p>
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
+                <div className="flex shrink-0 items-center gap-2">
                   <Button
                     type="button"
                     size="icon"
                     variant="outline"
-                    className="h-7 w-7"
+                    className="h-8 w-8"
                     aria-label={`Move ${staged.label} up`}
                     disabled={index === 0}
                     onClick={() => move(index, -1)}
                   >
-                    <ArrowUp className="h-3.5 w-3.5" />
+                    <ArrowUp className="h-4 w-4" />
                   </Button>
                   <Button
                     type="button"
                     size="icon"
                     variant="outline"
-                    className="h-7 w-7"
+                    className="h-8 w-8"
                     aria-label={`Move ${staged.label} down`}
                     disabled={index === files.length - 1}
                     onClick={() => move(index, 1)}
                   >
-                    <ArrowDown className="h-3.5 w-3.5" />
+                    <ArrowDown className="h-4 w-4" />
                   </Button>
                   <Button
                     type="button"
                     size="icon"
                     variant="outline"
-                    className="h-7 w-7"
+                    className="h-8 w-8"
                     aria-label={`Remove ${staged.label}`}
                     onClick={() => onChange(files.filter((entry) => entry.id !== staged.id))}
                   >
-                    <X className="h-3.5 w-3.5" />
+                    <X className="h-4 w-4" />
                   </Button>
                 </div>
               </li>

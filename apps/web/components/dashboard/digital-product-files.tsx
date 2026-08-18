@@ -701,16 +701,9 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
   const uploadDisabled = assets.length + activeUploadCount >= DIGITAL_PRODUCT_CONFIG.maxFilesPerProduct;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 rounded-md border border-border bg-white p-3">
       <div className="flex items-start justify-between gap-3">
-        <div className="space-y-0.5">
-          <h4 className="text-sm font-semibold">Customer downloads</h4>
-          <p className="text-xs text-muted-foreground">
-            {scope
-              ? "Originals stay private. Buyers who purchase this option receive these files."
-              : "Originals stay private. Buyers receive only the ready files that apply to their selected variant."}
-          </p>
-        </div>
+        <h4 className="text-sm font-medium">Customer downloads</h4>
         <div className="flex shrink-0 items-center gap-2">
           {!scope && variants.length > 0 ? (
             <label className="space-y-1 text-xs font-medium">
@@ -744,9 +737,16 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
         </div>
       </div>
 
-      <p className="text-xs text-muted-foreground">
-        {assets.length + activeUploadCount} of {DIGITAL_PRODUCT_CONFIG.maxFilesPerProduct} files · JPG, PNG, PDF, or ZIP · 250 MB each
-      </p>
+      <div className="space-y-1">
+        <p className="text-sm text-muted-foreground">
+          {scope
+            ? "Originals stay private. Buyers who purchase this option receive these files."
+            : "Originals stay private. Buyers receive only the ready files that apply to their selected variant."}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {assets.length + activeUploadCount} of {DIGITAL_PRODUCT_CONFIG.maxFilesPerProduct} files · JPG, PNG, PDF, or ZIP · 250 MB each
+        </p>
+      </div>
 
       {error ? (
         <div
@@ -851,14 +851,13 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
       ) : null}
 
       {!loading && scopedAssets.length === 0 && uploads.length === 0 && failedUploads.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border p-6 text-center">
-          <p className="text-sm font-medium">No customer files yet</p>
-          <p className="mt-1 text-xs text-muted-foreground">Add at least one ready file before publishing this digital product.</p>
-        </div>
+        <p className="text-xs text-muted-foreground">
+          No files yet. Add at least one ready file before publishing this digital product.
+        </p>
       ) : null}
 
       {scopedAssets.length > 0 ? (
-        <ul aria-label="Customer download files" className="space-y-3">
+        <ul aria-label="Customer download files" className="space-y-2">
           {scopedAssets.map((asset, index) => (
             <DigitalProductFileRow
               key={asset.id}

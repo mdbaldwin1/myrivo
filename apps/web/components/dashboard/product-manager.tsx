@@ -2334,16 +2334,14 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     if (editProductType !== "digital" || !editingProductId) return null;
     if (productVariantId === null && editHasVariants) return null;
     return (
-      <div className="rounded-lg border border-border/70 bg-muted/10 p-3">
-        <DigitalProductFiles
+      <DigitalProductFiles
           key={`${editingProductId}:${productVariantId ?? "product"}`}
           productId={editingProductId}
           scope={{ productVariantId }}
           productImageUrls={editImageUrls}
           rightsAffirmed={editDigitalRightsAffirmed}
-          onCatalogChange={async (signal) => { await refreshCatalogProducts({ signal }); }}
-        />
-      </div>
+        onCatalogChange={async (signal) => { await refreshCatalogProducts({ signal }); }}
+      />
     );
   }
 
@@ -2356,8 +2354,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       const draftKey = variant.draftKey;
       if (!draftKey) return null;
       return (
-        <div className="rounded-lg border border-border/70 bg-muted/10 p-3">
-          <StagedDigitalFiles
+        <StagedDigitalFiles
             noun={noun}
             files={editStagedFiles[draftKey] ?? []}
             onChange={(files) =>
@@ -2369,9 +2366,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                 }
                 return { ...current, [draftKey]: files };
               })
-            }
-          />
-        </div>
+          }
+        />
       );
     }
     return renderEditDigitalFiles(variant.id);

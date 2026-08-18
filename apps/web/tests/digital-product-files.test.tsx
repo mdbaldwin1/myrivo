@@ -295,7 +295,7 @@ describe("DigitalProductFiles", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<DigitalProductFiles productId={PRODUCT_ID} />);
-    await screen.findByText("No customer files yet");
+    await screen.findByText(/No files yet/i);
 
     await user.upload(screen.getByLabelText("Add customer download files"), new File(["retry"], "retry.pdf", { type: "application/pdf" }));
     const retry = await screen.findByRole("button", { name: "Retry upload" });
@@ -399,7 +399,7 @@ describe("DigitalProductFiles", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     const { rerender } = render(<DigitalProductFiles productId={PRODUCT_ID} onCatalogChange={onCatalogChange} />);
-    await screen.findByText("No customer files yet");
+    await screen.findByText(/No files yet/i);
 
     await user.upload(
       screen.getByLabelText("Add customer download files"),
@@ -408,7 +408,7 @@ describe("DigitalProductFiles", () => {
     expect(await screen.findByRole("status", { name: "Upload progress for product-a.pdf" })).toBeTruthy();
     await waitFor(() => expect(uploadSignal).not.toBeNull());
     rerender(<DigitalProductFiles productId={PRODUCT_B_ID} onCatalogChange={onCatalogChange} />);
-    expect(await screen.findByText("No customer files yet")).toBeTruthy();
+    expect(await screen.findByText(/No files yet/i)).toBeTruthy();
     try {
       await waitFor(() => expect(uploadSignal?.aborted).toBe(true));
     } finally {

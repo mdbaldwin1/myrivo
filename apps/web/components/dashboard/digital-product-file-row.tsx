@@ -73,10 +73,10 @@ export function DigitalProductFileRow({
   return (
     <li
       aria-label={asset.label}
-      className="rounded-xl border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md"
+      className="rounded-md border border-border bg-muted/20 p-2"
     >
-      <div className="flex flex-col gap-4">
-        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2">
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0 space-y-1">
             {renaming ? (
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
@@ -158,7 +158,7 @@ export function DigitalProductFileRow({
             )}
           </div>
 
-          <div className="flex shrink-0 flex-wrap items-center gap-1">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             <Button
               type="button"
               size="icon"
