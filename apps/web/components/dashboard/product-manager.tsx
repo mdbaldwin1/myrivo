@@ -3426,16 +3426,24 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                     />
                     <span className="text-sm font-medium">Has variants</span>
                   </label>
-                  {createHasVariants ? (
-                    <Button type="button" variant="outline" size="sm" onClick={addCreateVariantFromProductView}>
-                      Add variant
-                    </Button>
-                  ) : null}
                 </div>
 
                 {createHasVariants ? (
                   <div className="space-y-3 rounded-md border border-border bg-white p-3">
-                    <p className="text-sm font-medium">Variants</p>
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm font-medium">Variants</p>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        className="h-8 w-8"
+                        title="Add variant"
+                        aria-label="Add variant"
+                        onClick={addCreateVariantFromProductView}
+                      >
+                        <Plus className="h-4 w-4" aria-hidden="true" />
+                      </Button>
+                    </div>
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
                         <p className="text-sm text-muted-foreground">Create variants, then define option names and values inside each variant.</p>
@@ -3699,11 +3707,6 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         />
                         <span className="text-sm font-medium">Has options</span>
                       </label>
-                      {activeCreateHasSubOptions ? (
-                        <Button type="button" variant="outline" size="sm" onClick={addCreateTierTwoOption}>
-                          Add option
-                        </Button>
-                      ) : null}
                     </div>
                     {!activeCreateHasSubOptions ? (
                       <>
@@ -3818,7 +3821,20 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                       </>
                     ) : (
                       <div className="space-y-3 rounded-md border border-border bg-white p-3">
-                        <p className="text-sm font-medium">Options</p>
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="text-sm font-medium">Options</p>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="outline"
+                            className="h-8 w-8"
+                            title="Add option"
+                            aria-label="Add option"
+                            onClick={addCreateTierTwoOption}
+                          >
+                            <Plus className="h-4 w-4" aria-hidden="true" />
+                          </Button>
+                        </div>
                         <p className="text-sm text-muted-foreground">{variantOptionInstruction(productType)}</p>
                         <div className="space-y-2">
                           {activeCreateSubOptionIndexes.length === 0 ? (
@@ -4386,16 +4402,24 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                     />
                     <span className="text-sm font-medium">Has variants</span>
                   </label>
-                  {editHasVariants ? (
-                    <Button type="button" variant="outline" size="sm" onClick={addEditVariantFromProductView}>
-                      Add variant
-                    </Button>
-                  ) : null}
                 </div>
 
                 {editHasVariants ? (
                   <div className="space-y-3 rounded-md border border-border bg-white p-3">
-                    <p className="text-sm font-medium">Variants</p>
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm font-medium">Variants</p>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        className="h-8 w-8"
+                        title="Add variant"
+                        aria-label="Add variant"
+                        onClick={addEditVariantFromProductView}
+                      >
+                        <Plus className="h-4 w-4" aria-hidden="true" />
+                      </Button>
+                    </div>
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
                         <p className="text-sm text-muted-foreground">Create variants, then define option names and values inside each variant.</p>
@@ -4622,17 +4646,6 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         />
                         <span className="text-sm font-medium">Has options</span>
                       </label>
-                      {activeEditHasSubOptions ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={addEditTierTwoOption}
-                          disabled={activeEditGroupHasOrderedVariant}
-                        >
-                          Add option
-                        </Button>
-                      ) : null}
                     </div>
                     {!activeEditHasSubOptions ? (
                       <>
@@ -4753,7 +4766,21 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                       </>
                     ) : (
                       <div className="space-y-3 rounded-md border border-border bg-white p-3">
-                        <p className="text-sm font-medium">Options</p>
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="text-sm font-medium">Options</p>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="outline"
+                            className="h-8 w-8"
+                            title="Add option"
+                            aria-label="Add option"
+                            disabled={activeEditGroupHasOrderedVariant}
+                            onClick={addEditTierTwoOption}
+                          >
+                            <Plus className="h-4 w-4" aria-hidden="true" />
+                          </Button>
+                        </div>
                         <p className="text-sm text-muted-foreground">{variantOptionInstruction(editProductType)}</p>
                         <div className="space-y-2">
                           {activeEditSubOptionIndexes.length === 0 ? (
