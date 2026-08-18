@@ -18,6 +18,8 @@ jobs:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_SCOPE: michael-baldwins-projects
       VERCEL_PROJECT: myrivo
+      PRODUCTION_DOMAIN: www.myrivo.app
+      VERCEL_TEAM_ID: team_WDuH4UjqjLMrShaXrr9WDnwh
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://example.supabase.co' }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'ci-placeholder-anon-key' }}
     steps:
@@ -50,4 +52,41 @@ jobs:
         run: npx vercel pull --yes --environment=production --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
 
       - name: Deploy production to Vercel
-        run: npx vercel deploy --prod --yes --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
+        id: deploy
+        run: |
+          set -euo pipefail
+          url="$(npx vercel deploy --prod --yes --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN")"
+          test -n "$url"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Deployed $url"
+
+      # The project has autoAssignCustomDomains disabled, so deploying leaves a
+      # Ready deployment that nothing points at. Without this the production
+      # domain silently keeps serving whatever it served before - it drifted
+      # four days behind main that way.
+      - name: Promote deployment to the production domains
+        run: |
+          set -euo pipefail
+          npx vercel promote "${{ steps.deploy.outputs.url }}" \
+            --yes --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
+
+      # Checking the domain merely answers would have passed happily through
+      # the four days it spent serving a stale build, so ask Vercel which
+      # deployment the domain actually resolves to. "vercel inspect" is no use
+      # here: it omits custom domains from the aliases it reports.
+      - name: Verify the production domain points at this deployment
+        run: |
+          set -euo pipefail
+          deployed="${{ steps.deploy.outputs.url }}"
+          expected="${deployed#https://}"
+          resolved="$(curl -fsS \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v4/aliases/$PRODUCTION_DOMAIN?teamId=$VERCEL_TEAM_ID" \
+            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const a=JSON.parse(s);console.log((a.deployment&&a.deployment.url)||"")})')"
+          if [ "$resolved" != "$expected" ]; then
+            echo "::error::$PRODUCTION_DOMAIN serves $resolved, expected $expected"
+            exit 1
+          fi
+          served="$(curl -fsS -o /dev/null -w '%{http_code}' "https://$PRODUCTION_DOMAIN/")"
+          test "$served" = "200"
+          echo "$PRODUCTION_DOMAIN serves $resolved (HTTP $served)"
