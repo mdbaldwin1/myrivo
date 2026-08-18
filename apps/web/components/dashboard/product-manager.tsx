@@ -4,11 +4,12 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import Image from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
-import { MoreHorizontal, Pencil, Plus, RotateCcw, Search, Star, X } from "lucide-react";
+import { MoreHorizontal, Pencil, Plus, RotateCcw, Search } from "lucide-react";
 import { AppAlert } from "@/components/ui/app-alert";
 import { DigitalPreviewManager } from "@/components/dashboard/digital-preview-manager";
 import { DigitalProductFiles, type DigitalProductAsset } from "@/components/dashboard/digital-product-files";
 import { StagedDigitalFiles, type StagedDigitalFile } from "@/components/dashboard/staged-digital-files";
+import { ProductImageActions } from "@/components/dashboard/product-image-actions";
 import { OptionsLister, VariantsLister } from "@/components/dashboard/variant-listers";
 import { DigitalProductOverview } from "@/components/dashboard/digital-product-overview";
 import { Badge } from "@/components/ui/badge";
@@ -2431,6 +2432,46 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
    * describes the same thing the SKU does - the unit somebody buys - so one
    * painting can be sold as a download, a print, and the original canvas.
    */
+  /** Applies a change to whichever image list the active variant tile shows. */
+  function updateActiveVariantImages(
+    scope: "create" | "edit",
+    transform: (urls: string[]) => string[],
+  ) {
+    const setVariants = scope === "create" ? setCreateVariants : setEditVariants;
+    const activeIndex = scope === "create" ? createActiveVariantIndex : editActiveVariantIndex;
+    const grouped = scope === "create" ? activeCreateHasSubOptions : activeEditHasSubOptions;
+    const groupIndexes = scope === "create" ? activeCreateGroupIndexes : activeEditGroupIndexes;
+    setVariants((current) =>
+      normalizeVariantDefaults(
+        current.map((variant, index) =>
+          grouped
+            ? groupIndexes.includes(index)
+              ? { ...variant, groupImageUrls: transform(variant.groupImageUrls ?? []) }
+              : variant
+            : index === activeIndex
+              ? { ...variant, imageUrls: transform(variant.imageUrls ?? []) }
+              : variant,
+        ),
+      ),
+    );
+  }
+
+  /** The same, for the option tile, which always edits its own list. */
+  function updateActiveOptionImages(
+    scope: "create" | "edit",
+    transform: (urls: string[]) => string[],
+  ) {
+    const setVariants = scope === "create" ? setCreateVariants : setEditVariants;
+    const activeIndex = scope === "create" ? createActiveVariantIndex : editActiveVariantIndex;
+    setVariants((current) =>
+      normalizeVariantDefaults(
+        current.map((variant, index) =>
+          index === activeIndex ? { ...variant, imageUrls: transform(variant.imageUrls ?? []) } : variant,
+        ),
+      ),
+    );
+  }
+
   function renderEditVariantFulfillment() {
     if (editActiveVariantIndex === null) return null;
     const active = editVariants[editActiveVariantIndex];
@@ -3471,29 +3512,14 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
                           <Pencil className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]" />
                         </div>
-                        <button
-                          type="button"
-                          className="absolute left-1 top-1 rounded-full bg-white/90 p-1 text-amber-500 transition hover:bg-white"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setCreateImageUrls((current) => promotePrimaryImage(current, imageIndex));
-                          }}
-                          aria-label={imageIndex === 0 ? "Primary image" : "Set as primary image"}
-                          title={imageIndex === 0 ? "Primary image" : "Set as primary image"}
-                        >
-                          <Star className={`h-3.5 w-3.5 ${imageIndex === 0 ? "fill-current" : ""}`} />
-                        </button>
-                        <button
-                          type="button"
-                          className="absolute right-1 top-1 rounded-full bg-red-600 p-1 text-white transition hover:bg-red-700"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setCreateImageUrls((current) => current.filter((_, index) => index !== imageIndex));
-                          }}
-                          aria-label="Remove product image"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
+                        <ProductImageActions
+                          imageUrl={imageUrl}
+                          label={`product image ${imageIndex + 1}`}
+                          isFeatured={imageIndex === 0}
+                          onFeature={() => setCreateImageUrls((current) => promotePrimaryImage(current, imageIndex))}
+                          onWatermarked={(publicUrl) => setCreateImageUrls((current) => current.map((entry, index) => (index === imageIndex ? publicUrl : entry)))}
+                          onRemove={() => setCreateImageUrls((current) => current.filter((_, index) => index !== imageIndex))}
+                        />
                       </div>
                     ))}
                     <button
@@ -3732,34 +3758,14 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         {activeCreateVariantImageUrls.map((imageUrl, imageIndex) => (
                           <div key={`create-variant-group-image-preview-${imageUrl}-${imageIndex}`} className="group relative h-24 w-24 overflow-hidden rounded-md border border-border bg-muted/15">
                             <Image src={imageUrl} alt="Variant image preview" fill unoptimized className="object-cover" />
-                            <button
-                              type="button"
-                              className="absolute right-1 top-1 rounded-full bg-red-600 p-1 text-white transition hover:bg-red-700"
-                              onClick={() =>
-                                setCreateVariants((current) =>
-                                  normalizeVariantDefaults(
-                                    current.map((variant, index) =>
-                                      activeCreateHasSubOptions
-                                        ? activeCreateGroupIndexes.includes(index)
-                                          ? {
-                                              ...variant,
-                                              groupImageUrls: (variant.groupImageUrls ?? []).filter((_, currentIndex) => currentIndex !== imageIndex)
-                                            }
-                                          : variant
-                                        : index === createActiveVariantIndex
-                                          ? {
-                                              ...variant,
-                                              imageUrls: (variant.imageUrls ?? []).filter((_, currentIndex) => currentIndex !== imageIndex)
-                                            }
-                                          : variant
-                                    )
-                                  )
-                                )
-                              }
-                              aria-label="Remove variant image"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
+                            <ProductImageActions
+                              imageUrl={imageUrl}
+                              label={`variant image ${imageIndex + 1}`}
+                              isFeatured={imageIndex === 0}
+                              onFeature={() => updateActiveVariantImages("create", (urls) => promotePrimaryImage(urls, imageIndex))}
+                              onWatermarked={(publicUrl) => updateActiveVariantImages("create", (urls) => urls.map((entry, index) => (index === imageIndex ? publicUrl : entry)))}
+                              onRemove={() => updateActiveVariantImages("create", (urls) => urls.filter((_, index) => index !== imageIndex))}
+                            />
                           </div>
                         ))}
                         <label
@@ -4011,24 +4017,14 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         {activeCreateVariant.imageUrls.map((imageUrl, imageIndex) => (
                           <div key={`create-option-image-preview-${imageUrl}-${imageIndex}`} className="group relative h-24 w-24 overflow-hidden rounded-md border border-border bg-muted/15">
                             <Image src={imageUrl} alt="Option image preview" fill unoptimized className="object-cover" />
-                            <button
-                              type="button"
-                              className="absolute right-1 top-1 rounded-full bg-red-600 p-1 text-white transition hover:bg-red-700"
-                              onClick={() =>
-                                setCreateVariants((current) =>
-                                  normalizeVariantDefaults(
-                                    current.map((variant, index) =>
-                                      index === createActiveVariantIndex
-                                        ? { ...variant, imageUrls: (variant.imageUrls ?? []).filter((_, currentIndex) => currentIndex !== imageIndex) }
-                                        : variant
-                                    )
-                                  )
-                                )
-                              }
-                              aria-label="Remove option image"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
+                            <ProductImageActions
+                              imageUrl={imageUrl}
+                              label={`option image ${imageIndex + 1}`}
+                              isFeatured={imageIndex === 0}
+                              onFeature={() => updateActiveOptionImages("create", (urls) => promotePrimaryImage(urls, imageIndex))}
+                              onWatermarked={(publicUrl) => updateActiveOptionImages("create", (urls) => urls.map((entry, index) => (index === imageIndex ? publicUrl : entry)))}
+                              onRemove={() => updateActiveOptionImages("create", (urls) => urls.filter((_, index) => index !== imageIndex))}
+                            />
                           </div>
                         ))}
                         <label
@@ -4362,29 +4358,14 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
                           <Pencil className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]" />
                         </div>
-                        <button
-                          type="button"
-                          className="absolute left-1 top-1 rounded-full bg-white/90 p-1 text-amber-500 transition hover:bg-white"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setEditImageUrls((current) => promotePrimaryImage(current, imageIndex));
-                          }}
-                          aria-label={imageIndex === 0 ? "Primary image" : "Set as primary image"}
-                          title={imageIndex === 0 ? "Primary image" : "Set as primary image"}
-                        >
-                          <Star className={`h-3.5 w-3.5 ${imageIndex === 0 ? "fill-current" : ""}`} />
-                        </button>
-                        <button
-                          type="button"
-                          className="absolute right-1 top-1 rounded-full bg-red-600 p-1 text-white transition hover:bg-red-700"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setEditImageUrls((current) => current.filter((_, index) => index !== imageIndex));
-                          }}
-                          aria-label="Remove image"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
+                        <ProductImageActions
+                          imageUrl={imageUrl}
+                          label={`product image ${imageIndex + 1}`}
+                          isFeatured={imageIndex === 0}
+                          onFeature={() => setEditImageUrls((current) => promotePrimaryImage(current, imageIndex))}
+                          onWatermarked={(publicUrl) => setEditImageUrls((current) => current.map((entry, index) => (index === imageIndex ? publicUrl : entry)))}
+                          onRemove={() => setEditImageUrls((current) => current.filter((_, index) => index !== imageIndex))}
+                        />
                       </div>
                     ))}
                     <button
@@ -4594,34 +4575,14 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         {activeEditVariantImageUrls.map((imageUrl, imageIndex) => (
                           <div key={`edit-variant-group-image-preview-${imageUrl}-${imageIndex}`} className="group relative h-24 w-24 overflow-hidden rounded-md border border-border bg-muted/15">
                             <Image src={imageUrl} alt="Variant image preview" fill unoptimized className="object-cover" />
-                            <button
-                              type="button"
-                              className="absolute right-1 top-1 rounded-full bg-red-600 p-1 text-white transition hover:bg-red-700"
-                              onClick={() =>
-                                setEditVariants((current) =>
-                                  normalizeVariantDefaults(
-                                    current.map((variant, index) =>
-                                      activeEditHasSubOptions
-                                        ? activeEditGroupIndexes.includes(index)
-                                          ? {
-                                              ...variant,
-                                              groupImageUrls: (variant.groupImageUrls ?? []).filter((_, currentIndex) => currentIndex !== imageIndex)
-                                            }
-                                          : variant
-                                        : index === editActiveVariantIndex
-                                          ? {
-                                              ...variant,
-                                              imageUrls: (variant.imageUrls ?? []).filter((_, currentIndex) => currentIndex !== imageIndex)
-                                            }
-                                          : variant
-                                    )
-                                  )
-                                )
-                              }
-                              aria-label="Remove variant image"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
+                            <ProductImageActions
+                              imageUrl={imageUrl}
+                              label={`variant image ${imageIndex + 1}`}
+                              isFeatured={imageIndex === 0}
+                              onFeature={() => updateActiveVariantImages("edit", (urls) => promotePrimaryImage(urls, imageIndex))}
+                              onWatermarked={(publicUrl) => updateActiveVariantImages("edit", (urls) => urls.map((entry, index) => (index === imageIndex ? publicUrl : entry)))}
+                              onRemove={() => updateActiveVariantImages("edit", (urls) => urls.filter((_, index) => index !== imageIndex))}
+                            />
                           </div>
                         ))}
                         <label
@@ -4894,24 +4855,14 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                             {activeEditVariant.imageUrls.map((imageUrl, imageIndex) => (
                               <div key={`edit-option-image-preview-${imageUrl}-${imageIndex}`} className="group relative h-24 w-24 overflow-hidden rounded-md border border-border bg-muted/15">
                                 <Image src={imageUrl} alt="Option image preview" fill unoptimized className="object-cover" />
-                                <button
-                                  type="button"
-                                  className="absolute right-1 top-1 rounded-full bg-red-600 p-1 text-white transition hover:bg-red-700"
-                                  onClick={() =>
-                                    setEditVariants((current) =>
-                                      normalizeVariantDefaults(
-                                        current.map((variant, index) =>
-                                          index === editActiveVariantIndex
-                                            ? { ...variant, imageUrls: (variant.imageUrls ?? []).filter((_, currentIndex) => currentIndex !== imageIndex) }
-                                            : variant
-                                        )
-                                      )
-                                    )
-                                  }
-                                  aria-label="Remove option image"
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
+                                <ProductImageActions
+                                  imageUrl={imageUrl}
+                                  label={`option image ${imageIndex + 1}`}
+                                  isFeatured={imageIndex === 0}
+                                  onFeature={() => updateActiveOptionImages("edit", (urls) => promotePrimaryImage(urls, imageIndex))}
+                                  onWatermarked={(publicUrl) => updateActiveOptionImages("edit", (urls) => urls.map((entry, index) => (index === imageIndex ? publicUrl : entry)))}
+                                  onRemove={() => updateActiveOptionImages("edit", (urls) => urls.filter((_, index) => index !== imageIndex))}
+                                />
                               </div>
                             ))}
                             <label

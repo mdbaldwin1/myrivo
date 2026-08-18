@@ -383,3 +383,62 @@ export async function setPreviewOverride(input: {
     throw new PreviewLifecycleError(500, "Unable to set preview image.", "preview_override_failed");
   }
 }
+
+/**
+ * Burns a watermark into one of a product's own storefront images, in place.
+ *
+ * A merchant selling artwork often wants the picture buyers browse to be the
+ * picture they are buying. This lets them keep that image and still hand out a
+ * copy nobody would want instead of the original, without going anywhere near
+ * the private deliverable.
+ */
+export async function watermarkProductImage(input: {
+  admin: PreviewAdminClient;
+  storeId: string;
+  sourceUrl: string;
+  storeName: string;
+  fetcher?: typeof fetch;
+}): Promise<{ publicUrl: string }> {
+  const source = parsePublicProductImage(input.sourceUrl, input.storeId);
+  if (!source) {
+    throw new PreviewLifecycleError(404, "That image is unavailable.", "preview_source_unavailable");
+  }
+
+  const storage = input.admin.storage.from("store-products");
+  const listed = await storage.list?.(source.directory, { search: source.name, limit: 2 });
+  if (!listed || listed.error || !listed.data?.some((object) => object.name === source.name)) {
+    throw new PreviewLifecycleError(404, "That image is unavailable.", "preview_source_unavailable");
+  }
+  const canonicalUrl = storage.getPublicUrl?.(source.path).data.publicUrl;
+  const canonical = canonicalUrl ? parsePublicProductImage(canonicalUrl, input.storeId) : null;
+  if (!canonical || canonical.normalizedUrl !== source.normalizedUrl) {
+    throw new PreviewLifecycleError(404, "That image is unavailable.", "preview_source_unavailable");
+  }
+
+  try {
+    const response = await (input.fetcher ?? fetch)(canonical.normalizedUrl, {
+      cache: "no-store",
+      redirect: "error",
+    });
+    const rendered = await renderWatermarkedPreview(response, {
+      storeName: input.storeName,
+      maxSourceBytes: DIGITAL_PRODUCT_CONFIG.previewOverrideMaxSourceBytes,
+    });
+    // A new object rather than an overwrite: the original stays reachable until
+    // the merchant saves, so cancelling leaves the product as it was.
+    const digest = createHash("sha256").update(canonical.normalizedUrl).digest("hex").slice(0, 32);
+    const publicPath = `${source.directory}/watermarked-${digest}.jpg`;
+    const uploaded = await storage.upload?.(publicPath, rendered.bytes, {
+      contentType: "image/jpeg",
+      cacheControl: "31536000, immutable",
+      upsert: true,
+    });
+    if (!uploaded || uploaded.error) throw new Error("Watermarked image upload failed");
+    const publicUrl = storage.getPublicUrl?.(publicPath).data.publicUrl;
+    if (!publicUrl) throw new Error("Watermarked image is unreachable");
+    return { publicUrl };
+  } catch (error) {
+    if (error instanceof PreviewLifecycleError) throw error;
+    throw new PreviewLifecycleError(500, "Unable to watermark this image.", "preview_override_failed");
+  }
+}
