@@ -185,9 +185,11 @@ describe("where customer downloads are provided", () => {
         variant(),
         variant({
           id: NEW_VARIANT_ID,
-          sku: "SUNRISE-2",
-          title: "Variant 2",
-          option_values: { Size: "Variant 2" },
+          // Auto SKUs are regenerated on save from the option values, so the
+          // saved SKU is not the placeholder the draft was created with.
+          sku: "SUNRISE-LARGE",
+          title: "Large",
+          option_values: { Size: "Large" },
           is_default: false,
           sort_order: 1,
         }),
@@ -251,7 +253,7 @@ describe("where customer downloads are provided", () => {
     const saved = product({
       product_variants: [
         variant(),
-        variant({ id: NEW_VARIANT_ID, sku: "SUNRISE-2", title: "Variant 2", option_values: { Size: "Variant 2" }, is_default: false, sort_order: 1 }),
+        variant({ id: NEW_VARIANT_ID, sku: "SUNRISE-LARGE", title: "Large", option_values: { Size: "Large" }, is_default: false, sort_order: 1 }),
       ],
     });
     vi.stubGlobal(

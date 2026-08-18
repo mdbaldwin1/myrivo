@@ -1531,13 +1531,24 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   // editor can commit and stay put instead of sending the merchant back to the
   // catalog and making them find their way in again.
   function adoptSavedVariantIds(product: ProductListItem) {
-    const seeded = productVariantsForEditing(product, resolveTierNamesForProduct(product));
-    const activeSku = editActiveVariantIndex === null ? null : editVariants[editActiveVariantIndex]?.sku ?? null;
-    setEditVariants(seeded);
-    if (activeSku) {
-      const nextIndex = seeded.findIndex((variant) => variant.sku === activeSku);
-      if (nextIndex >= 0) setEditActiveVariantIndex(nextIndex);
-    }
+    setEditVariants(savedVariantsInSubmissionOrder(product));
+  }
+
+  /**
+   * The saved variants in the order they were submitted, so a draft can be
+   * paired with the row it became. Matching on SKU does not work: an auto SKU
+   * is regenerated on save from the option values, so it rarely matches the
+   * placeholder the draft was created with.
+   */
+  function savedVariantsInSubmissionOrder(product: ProductListItem) {
+    return productVariantsForEditing(product, resolveTierNamesForProduct(product));
+  }
+
+  function optionSignature(pairs: Array<{ name: string; value: string }>) {
+    return pairs
+      .map((pair) => `${pair.name.trim().toLowerCase()}=${pair.value.trim().toLowerCase()}`)
+      .sort()
+      .join("|");
   }
 
   /**
@@ -1553,15 +1564,22 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     let uploaded = 0;
     const stillStaged: Record<string, StagedDigitalFile[]> = {};
 
+    const savedInOrder = savedVariantsInSubmissionOrder(saved);
+    const positionsAlign = savedInOrder.length === drafts.length;
+
     for (const [draftKey, files] of buckets) {
-      const draft = drafts.find((variant) => variant.draftKey === draftKey);
-      if (!draft) {
+      const draftIndex = drafts.findIndex((variant) => variant.draftKey === draftKey);
+      if (draftIndex < 0) {
         // The variant these files were for was deleted before the save, so
         // there is nothing left to attach them to.
         continue;
       }
-      const savedVariant = (saved.product_variants ?? []).find((variant) => variant.sku === draft.sku);
-      if (!savedVariant) {
+      const draft = drafts[draftIndex]!;
+      const signature = optionSignature(draft.optionPairs);
+      const savedVariant = positionsAlign
+        ? savedInOrder[draftIndex]
+        : savedInOrder.find((variant) => optionSignature(variant.optionPairs) === signature);
+      if (!savedVariant?.id) {
         stillStaged[draftKey] = files;
         failures.push(`${files.length === 1 ? "1 file" : `${files.length} files`} could not be matched to a saved variant.`);
         continue;
