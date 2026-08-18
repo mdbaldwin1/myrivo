@@ -9,8 +9,9 @@ import { ProductImageActions } from "@/components/dashboard/product-image-action
 const notified = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() }));
 vi.mock("@/lib/feedback/toast", () => ({ notify: notified }));
 
-const ORIGINAL = "https://cdn.test/store/product/artwork.jpg";
-const WATERMARKED = "https://cdn.test/store/product/watermarked-abc.jpg";
+const ORIGINAL = "https://cdn.test/storage/v1/object/public/store-products/store/product/artwork.jpg";
+const WATERMARKED =
+  "https://cdn.test/storage/v1/object/public/store-products/store/product/watermarked/artwork.jpg";
 
 function setup(overrides: Partial<React.ComponentProps<typeof ProductImageActions>> = {}) {
   const props = {
@@ -55,7 +56,7 @@ describe("what a merchant can do with a storefront image", () => {
     await userEvent.click(await screen.findByRole("menuitem", { name: "Add watermark" }));
 
     await waitFor(() => expect(props.onWatermarked).toHaveBeenCalledWith(WATERMARKED));
-    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ sourceUrl: ORIGINAL });
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ sourceUrl: ORIGINAL, mode: "add" });
     // Nothing is committed until the product is saved, and the merchant is told.
     expect(notified.success).toHaveBeenCalledWith("Watermark added. Save the product to keep it.");
   });
@@ -145,5 +146,45 @@ describe("what a merchant can do with a storefront image", () => {
 
     expect(onRemove).toHaveBeenCalled();
     expect(onTileClick).not.toHaveBeenCalled();
+  });
+
+  test("offers putting the original back once an image is watermarked", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      void _input;
+      void init;
+      return new Response(JSON.stringify({ publicUrl: ORIGINAL }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const props = setup({ imageUrl: WATERMARKED });
+
+    await userEvent.click(screen.getByRole("button", { name: "Manage product image 1" }));
+    // The watermark is in the pixels, so the menu offers the only real undo.
+    expect(screen.queryByRole("menuitem", { name: "Add watermark" })).toBeNull();
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Remove watermark" }));
+
+    await waitFor(() => expect(props.onWatermarked).toHaveBeenCalledWith(ORIGINAL));
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      sourceUrl: WATERMARKED,
+      mode: "remove",
+    });
+    expect(notified.success).toHaveBeenCalledWith("Original restored. Save the product to keep it.");
+  });
+
+  test("says so when the original a watermark came from is gone", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ error: "The original image is no longer available." }), { status: 404 }),
+      ),
+    );
+    const props = setup({ imageUrl: WATERMARKED });
+
+    await userEvent.click(screen.getByRole("button", { name: "Manage product image 1" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Remove watermark" }));
+
+    await waitFor(() =>
+      expect(notified.error).toHaveBeenCalledWith("The original image is no longer available."),
+    );
+    expect(props.onWatermarked).not.toHaveBeenCalled();
   });
 });

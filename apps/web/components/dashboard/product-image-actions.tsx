@@ -4,6 +4,7 @@ import { MoreHorizontal, Star } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { isWatermarkedProductImage } from "@/lib/digital-products/watermarked-images";
 import { notify } from "@/lib/feedback/toast";
 
 /**
@@ -34,23 +35,28 @@ export function ProductImageActions({
   onRemove: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const watermarked = isWatermarkedProductImage(imageUrl);
 
-  async function watermark() {
+  async function setWatermark(mode: "add" | "remove") {
     setBusy(true);
     try {
       const response = await fetch("/api/products/images/watermark", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sourceUrl: imageUrl }),
+        body: JSON.stringify({ sourceUrl: imageUrl, mode }),
       });
       const payload = (await response.json().catch(() => null)) as { publicUrl?: string; error?: string } | null;
       if (!response.ok || !payload?.publicUrl) {
-        throw new Error(payload?.error ?? "Unable to watermark this image.");
+        throw new Error(payload?.error ?? "Unable to update this image.");
       }
       onWatermarked(payload.publicUrl);
-      notify.success("Watermark added. Save the product to keep it.");
+      notify.success(
+        mode === "add"
+          ? "Watermark added. Save the product to keep it."
+          : "Original restored. Save the product to keep it.",
+      );
     } catch (error) {
-      notify.error(error instanceof Error ? error.message : "Unable to watermark this image.");
+      notify.error(error instanceof Error ? error.message : "Unable to update this image.");
     } finally {
       setBusy(false);
     }
@@ -92,8 +98,10 @@ export function ProductImageActions({
               saying so again is noise. */}
           {isFeatured ? null : <DropdownMenuItem onClick={onFeature}>Feature</DropdownMenuItem>}
           {onReplace ? <DropdownMenuItem onClick={onReplace}>Replace image</DropdownMenuItem> : null}
-          <DropdownMenuItem onClick={() => void watermark()}>
-            {busy ? "Adding watermark…" : "Add watermark"}
+          {/* A watermark is burned into the pixels, so removing it means going
+              back to the original this copy was made from. */}
+          <DropdownMenuItem onClick={() => void setWatermark(watermarked ? "remove" : "add")}>
+            {busy ? "Working…" : watermarked ? "Remove watermark" : "Add watermark"}
           </DropdownMenuItem>
           <DropdownMenuItem
             className="text-destructive focus:bg-destructive/10 focus:text-destructive"

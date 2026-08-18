@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { PreviewLifecycleError, watermarkProductImage } from "@/lib/digital-products/preview-service";
+import {
+  PreviewLifecycleError,
+  removeProductImageWatermark,
+  watermarkProductImage,
+} from "@/lib/digital-products/preview-service";
 import { parseJsonRequest } from "@/lib/http/parse-json-request";
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
@@ -12,6 +16,8 @@ export const runtime = "nodejs";
 const schema = z
   .object({
     sourceUrl: z.string().url().max(2048),
+    /** "remove" puts back the image the watermarked copy was made from. */
+    mode: z.enum(["add", "remove"]).optional().default("add"),
   })
   .strict();
 
@@ -36,17 +42,25 @@ export async function POST(request: NextRequest) {
   if (!bundle) return NextResponse.json({ error: "Store unavailable." }, { status: 404 });
 
   try {
-    const result = await watermarkProductImage({
-      admin: createSupabaseAdminClient(),
-      storeId: bundle.store.id,
-      sourceUrl: parsed.data.sourceUrl,
-      storeName: bundle.store.name,
-    });
+    const admin = createSupabaseAdminClient();
+    const result =
+      parsed.data.mode === "remove"
+        ? await removeProductImageWatermark({
+            admin,
+            storeId: bundle.store.id,
+            sourceUrl: parsed.data.sourceUrl,
+          })
+        : await watermarkProductImage({
+            admin,
+            storeId: bundle.store.id,
+            sourceUrl: parsed.data.sourceUrl,
+            storeName: bundle.store.name,
+          });
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof PreviewLifecycleError) {
       return NextResponse.json({ error: error.publicMessage }, { status: error.status });
     }
-    return NextResponse.json({ error: "Unable to watermark this image." }, { status: 500 });
+    return NextResponse.json({ error: "Unable to update this image." }, { status: 500 });
   }
 }

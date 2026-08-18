@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
 import sharp from "sharp";
+import {
+  WATERMARKED_FOLDER,
+  imageBaseName,
+  isWatermarkedProductImage,
+  splitWatermarkedPath,
+} from "@/lib/digital-products/watermarked-images";
 import { DIGITAL_ASSET_BUCKET, DIGITAL_PREVIEW_BUCKET } from "./assets";
 import { DIGITAL_PRODUCT_CONFIG } from "./config";
 import type { AssetAdminClient } from "./asset-service";
@@ -403,6 +409,10 @@ export async function watermarkProductImage(input: {
   if (!source) {
     throw new PreviewLifecycleError(404, "That image is unavailable.", "preview_source_unavailable");
   }
+  if (isWatermarkedProductImage(input.sourceUrl)) {
+    // Stamping a stamped copy would bury the original a second time.
+    throw new PreviewLifecycleError(409, "This image is already watermarked.", "preview_source_unavailable");
+  }
 
   const storage = input.admin.storage.from("store-products");
   const listed = await storage.list?.(source.directory, { search: source.name, limit: 2 });
@@ -424,10 +434,11 @@ export async function watermarkProductImage(input: {
       storeName: input.storeName,
       maxSourceBytes: DIGITAL_PRODUCT_CONFIG.previewOverrideMaxSourceBytes,
     });
-    // A new object rather than an overwrite: the original stays reachable until
-    // the merchant saves, so cancelling leaves the product as it was.
-    const digest = createHash("sha256").update(canonical.normalizedUrl).digest("hex").slice(0, 32);
-    const publicPath = `${source.directory}/watermarked-${digest}.jpg`;
+    // Named after its source rather than hashed from it: filenames are already
+    // unique within a folder, and this way the original can always be found
+    // again. A hash would be one-way, stranding the merchant on the stamped
+    // copy the moment they saved.
+    const publicPath = `${source.directory}/${WATERMARKED_FOLDER}/${imageBaseName(source.name)}.jpg`;
     const uploaded = await storage.upload?.(publicPath, rendered.bytes, {
       contentType: "image/jpeg",
       cacheControl: "31536000, immutable",
@@ -442,3 +453,39 @@ export async function watermarkProductImage(input: {
     throw new PreviewLifecycleError(500, "Unable to watermark this image.", "preview_override_failed");
   }
 }
+
+/**
+ * Puts back the image a watermarked copy was made from.
+ *
+ * A watermark is burned into the pixels, so it can never be lifted from the
+ * copy itself - the only way back is the original, which is why watermarking
+ * writes beside it rather than over it.
+ */
+export async function removeProductImageWatermark(input: {
+  admin: PreviewAdminClient;
+  storeId: string;
+  sourceUrl: string;
+}): Promise<{ publicUrl: string }> {
+  const watermarked = parsePublicProductImage(input.sourceUrl, input.storeId);
+  const split = watermarked ? splitWatermarkedPath(watermarked.path) : null;
+  if (!watermarked || !split) {
+    throw new PreviewLifecycleError(400, "That image has no watermark to remove.", "preview_source_unavailable");
+  }
+
+  const storage = input.admin.storage.from("store-products");
+  const listed = await storage.list?.(split.sourceDirectory, { search: split.base, limit: 20 });
+  if (listed?.error) {
+    throw new PreviewLifecycleError(404, "The original image is no longer available.", "preview_source_unavailable");
+  }
+  const original = (listed?.data ?? []).find((object) => imageBaseName(object.name) === split.base);
+  if (!original) {
+    throw new PreviewLifecycleError(404, "The original image is no longer available.", "preview_source_unavailable");
+  }
+
+  const publicUrl = storage.getPublicUrl?.(`${split.sourceDirectory}/${original.name}`).data.publicUrl;
+  if (!publicUrl) {
+    throw new PreviewLifecycleError(404, "The original image is no longer available.", "preview_source_unavailable");
+  }
+  return { publicUrl };
+}
+
