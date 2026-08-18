@@ -25,13 +25,7 @@ When changing product structure after orders exist, verify downstream reporting 
 - Confirm inventory ledger movements
 - Test shipping labels and tracking updates
 
-## Related Docs
-
-- `/docs/pickup-and-shipping-operations`
-- `/docs/refunds-disputes-and-customer-issues`
-- `/docs/reviews-and-customer-trust`
-- `/docs/storefront-analytics-and-reporting`
-# Digital products
+## Digital products
 
 Fulfillment is set with the **Fulfillment** field in the product editor, and belongs to whatever a buyer actually buys. A product with no variants answers for itself. Once it has variants, each variant chooses its own, defaulting to *Same as product*; if a variant is split into options, each option chooses.
 
@@ -45,7 +39,7 @@ Once files are attached you are asked to confirm you hold the rights to sell the
 
 A variant that holds files cannot then be split into variants or options, because its files would be left on something a buyer no longer buys. Remove the files first, and the toggle explains this on hover.
 
-### Storefront images
+## Storefront images
 
 Images you upload are what buyers browse. Each one has a **⋯** menu to feature it, replace it, remove it, or **add a watermark** — useful when the picture you want to show is the artwork you are selling. Watermarking writes a new copy and leaves the original in place, so **Remove watermark** puts it back. Nothing changes until you save the product. Click an image to view it full size.
 
@@ -64,3 +58,10 @@ If delivery is still being prepared after payment, buyers can retry the status c
 Digital purchases are generally final after the first download except for defects, duplicate purchases, misrepresentation, or other required exceptions. A successful full refund revokes remaining access, while partial refunds preserve it. Open disputes suspend downloads, won disputes restore access, and lost disputes revoke it.
 
 For expired or missing links, use `/downloads/request`. The response is intentionally the same whether or not the submitted details match an order. This protects customer information; repeated requests may be temporarily limited.
+
+## Related Docs
+
+- `/docs/pickup-and-shipping-operations`
+- `/docs/refunds-disputes-and-customer-issues`
+- `/docs/reviews-and-customer-trust`
+- `/docs/storefront-analytics-and-reporting`
