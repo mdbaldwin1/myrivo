@@ -33,7 +33,23 @@ When changing product structure after orders exist, verify downstream reporting 
 - `/docs/storefront-analytics-and-reporting`
 # Digital products
 
-Products can be marked as **Digital download** in Catalog. Merchants must affirm that they have rights to sell the files, then save the draft and use the inspector's **Files** tab to upload one or more JPG, PNG, PDF, or ZIP files. Original files remain private. Image originals receive an automatic reduced-resolution, tiled store-name watermark for their storefront preview.
+Fulfillment is set with the **Fulfillment** field in the product editor, and belongs to whatever a buyer actually buys. A product with no variants answers for itself. Once it has variants, each variant chooses its own, defaulting to *Same as product*; if a variant is split into options, each option chooses.
+
+This means one product can be sold more than one way. A painting can offer a **Download**, a **Print** posted to the buyer, and the **Original** canvas as three variants of the same listing, rather than three separate products. Shipping is charged and an address collected only for the parts that ship.
+
+**Customer downloads** appear beside the SKU, at whichever level owns it, and only for the variants sold as downloads. Add JPG, PNG, PDF, or ZIP files with the **+** button; rename a file by clicking its name, and reorder or manage it from the **⋯** menu. Files added to a variant that has not been saved yet wait in the browser and upload with the product when you save it.
+
+Original files always remain private. Buyers see a digital variant only as a watermarked preview, generated automatically from the file when it is a JPG or PNG. A file type that cannot be watermarked needs a storefront image to stand in before the product can be published.
+
+Once files are attached you are asked to confirm you hold the rights to sell them, which is required before publishing.
+
+A variant that holds files cannot then be split into variants or options, because its files would be left on something a buyer no longer buys. Remove the files first, and the toggle explains this on hover.
+
+### Storefront images
+
+Images you upload are what buyers browse. Each one has a **⋯** menu to feature it, replace it, remove it, or **add a watermark** — useful when the picture you want to show is the artwork you are selling. Watermarking writes a new copy and leaves the original in place, so **Remove watermark** puts it back. Nothing changes until you save the product. Click an image to view it full size.
+
+On a product where every variant is a download, your uploaded images are never shown to buyers at all; only the watermarked preview is. As soon as one variant ships, your photographs are shown as they are, and the download variants are still represented only by their preview.
 
 Digital items have a quantity of one. Digital-only checkout asks for name and email but omits phone and physical fulfillment; mixed carts retain physical fulfillment. Buyers consent to immediate digital delivery and the platform personal-use license at checkout.
 
