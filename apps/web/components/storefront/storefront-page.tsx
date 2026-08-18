@@ -64,6 +64,8 @@ type StorefrontVariant = {
   status: "active" | "archived";
   sort_order: number;
   created_at: string;
+  /** How this variant reaches the buyer; null inherits the product's. */
+  fulfillment_type?: "physical" | "digital" | null;
 };
 
 type StorefrontProduct = {
@@ -208,6 +210,10 @@ function getVariantOptionNames(product: StorefrontProduct, variants: StorefrontV
 function getVariantImages(variant: StorefrontVariant | null, product: StorefrontProduct) {
   return resolveBuyerProductImages({
     productType: product.product_type,
+    // With a variant on show its own fulfillment decides; without one, the
+    // product only withholds its images when every variant is a download.
+    ...(variant ? { variantFulfillmentType: variant.fulfillment_type ?? null } : {}),
+    variantFulfillmentTypes: (product.product_variants ?? []).map((entry) => entry.fulfillment_type ?? null),
     digitalPreviewUrl: product.digital_summary?.publicPreviewUrl,
     candidates: [...(variant?.image_urls ?? []), ...(variant?.group_image_urls ?? []), ...(product.image_urls ?? [])],
   });

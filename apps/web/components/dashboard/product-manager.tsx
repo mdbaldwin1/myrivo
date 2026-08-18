@@ -2209,6 +2209,20 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
         ? activeEditVariant.imageUrls
         : activeEditVariant.groupImageUrls
       : [];
+  // Images are withheld from buyers only when every variant is a download.
+  // Once one variant ships, these pictures are what a buyer is shown.
+  const editEveryVariantIsDigital = editHasVariants
+    ? editVariants.length > 0 && editVariants.every((variant) => draftFulfillment(variant) === "digital")
+    : editProductType === "digital";
+  const editSomeVariantIsDigital = editHasVariants
+    ? editVariants.some((variant) => draftFulfillment(variant) === "digital")
+    : editProductType === "digital";
+  const editImageGuidance = editEveryVariantIsDigital
+    ? "Buyers only ever see a watermarked version of a digital product. If the file you sell is a JPG or PNG, that watermark is generated from the file automatically; any image you add here is watermarked before the storefront shows it."
+    : editSomeVariantIsDigital
+      ? "Buyers see these images as they are, because this product has variants that ship. The variants sold as downloads are shown only as a watermarked preview, never as these images."
+      : undefined;
+
   const editProductLevelFileCount = editFileCountFor(null);
   // A variant that already carries files cannot be split into options: the
   // files would be left on a unit that is no longer sold on its own. Staged
@@ -4247,7 +4261,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                   <Checkbox checked={editIsFeatured} onChange={(event) => setEditIsFeatured(event.target.checked)} />
                   <span className="text-sm font-medium">Featured product</span>
                 </label>
-                <FormField label="Image" description={editProductType === "digital" ? "Buyers only ever see a watermarked version of a digital product. If the file you sell is a JPG or PNG, that watermark is generated from the file automatically; any image you add here is watermarked before the storefront shows it." : undefined}>
+                <FormField label="Image" description={editImageGuidance}>
                   <input
                     ref={editImageInputRef}
                     type="file"

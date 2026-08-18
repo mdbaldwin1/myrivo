@@ -53,6 +53,8 @@ type StorefrontVariant = {
   status: "active" | "archived";
   sort_order: number;
   created_at: string;
+  /** How this variant reaches the buyer; null inherits the product's. */
+  fulfillment_type?: "physical" | "digital" | null;
 };
 
 type StorefrontProduct = {
@@ -802,6 +804,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                       >
                         {resolveBuyerProductImages({
                           productType: item.product.product_type,
+                          variantFulfillmentType: item.variant.fulfillment_type ?? null,
                           digitalPreviewUrl: item.product.digital_summary?.publicPreviewUrl,
                           candidates: item.product.image_urls ?? [],
                         })[0] ? (
@@ -809,6 +812,7 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                           <img
                             src={resolveBuyerProductImages({
                               productType: item.product.product_type,
+                              variantFulfillmentType: item.variant.fulfillment_type ?? null,
                               digitalPreviewUrl: item.product.digital_summary?.publicPreviewUrl,
                               candidates: item.product.image_urls ?? [],
                             })[0]}

@@ -122,6 +122,8 @@ export type StorefrontVariant = {
   is_default: boolean;
   status: "active" | "archived";
   sort_order: number;
+  /** How this variant reaches the buyer; null inherits the product's. */
+  fulfillment_type?: "physical" | "digital" | null;
   created_at: string;
 };
 
