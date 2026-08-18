@@ -1351,9 +1351,30 @@ export async function PATCH(request: NextRequest) {
     "imageUrls", "imageAltText", "seoTitle", "seoDescription", "isFeatured",
     "priceCents", "inventoryQty", "status", "variants", "variantTierLevels",
   ].some((key) => Object.hasOwn(payload.data, key));
-  if (nextProductType === "digital" && hasRequestedCatalogMutation) updates.inventory_qty = 0;
+  // Fulfillment belongs to the variant, so both of these ask the variants
+  // rather than the product's own default. Zeroing stock for a digital product
+  // would wipe a print sold beside the download, and clearing rights whenever
+  // the default was physical made a painting that offers a download
+  // unpublishable - readiness demands rights the write kept erasing.
+  const submittedVariants = payload.data.variants;
+  const variantFulfillments: Array<"physical" | "digital"> = submittedVariants
+    ? submittedVariants.flatMap((variant) => {
+        const children = variant.options ?? [];
+        if (children.length === 0) return [variant.fulfillmentType ?? nextProductType];
+        return children.map((option) => option.fulfillmentType ?? variant.fulfillmentType ?? nextProductType);
+      })
+    : (existingProduct.product_variants ?? []).map(
+        (variant) => variant.fulfillment_type ?? nextProductType,
+      );
+  const hasDigitalVariant = variantFulfillments.includes("digital");
+  const hasPhysicalVariant = variantFulfillments.includes("physical");
+
+  if (nextProductType === "digital" && hasRequestedCatalogMutation && !hasPhysicalVariant) {
+    updates.inventory_qty = 0;
+  }
   if (
     nextProductType === "physical" &&
+    !hasDigitalVariant &&
     (existingProduct.product_type === "digital" || payload.data.digitalRightsAffirmed !== undefined)
   ) {
     updates.digital_rights_affirmed_at = null;
@@ -1375,15 +1396,10 @@ export async function PATCH(request: NextRequest) {
   // The atomic path carries the readiness checks, so a product reaches it when
   // anything about it is delivered as a download - including a single variant
   // on an otherwise physical product.
-  const involvesDigitalVariant = (payload.data.variants ?? []).some(
-    (variant) =>
-      variant.fulfillmentType === "digital" ||
-      (variant.options ?? []).some((option) => option.fulfillmentType === "digital"),
-  );
   const usesAtomicDigitalMutation =
     existingProduct.product_type === "digital" ||
     nextProductType === "digital" ||
-    involvesDigitalVariant ||
+    hasDigitalVariant ||
     (existingProduct.product_variants ?? []).some((variant) => variant.fulfillment_type === "digital");
 
   try {
