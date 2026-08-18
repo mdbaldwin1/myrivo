@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import React from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ProductManager, type ProductListItem } from "@/components/dashboard/product-manager";
@@ -422,5 +422,24 @@ describe("where customer downloads are provided", () => {
       ["Download", "digital"],
       ["Print", null],
     ]);
+  });
+
+  test("opens an image to look at instead of straight into a file picker", async () => {
+    const withImage = product({
+      image_urls: ["https://cdn.test/store/product/artwork.jpg"],
+      product_variants: [variant({ option_values: {} })],
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ products: [withImage] }), { status: 200 })));
+
+    const user = userEvent.setup();
+    render(<ProductManager initialProducts={[withImage]} />);
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    await user.click(visible(screen.getAllByAltText(/Edited product image preview/i)).closest("div")!);
+    const viewer = await screen.findByRole("dialog");
+    expect(within(viewer).getByText("Product image 1")).toBeTruthy();
+
+    await user.click(within(viewer).getByRole("button", { name: "Close image" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Close image" })).toBeNull());
   });
 });

@@ -4,11 +4,12 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import Image from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
-import { MoreHorizontal, Pencil, Plus, RotateCcw, Search } from "lucide-react";
+import { Maximize2, MoreHorizontal, Pencil, Plus, RotateCcw, Search } from "lucide-react";
 import { AppAlert } from "@/components/ui/app-alert";
 import { DigitalPreviewManager } from "@/components/dashboard/digital-preview-manager";
 import { DigitalProductFiles, type DigitalProductAsset } from "@/components/dashboard/digital-product-files";
 import { StagedDigitalFiles, type StagedDigitalFile } from "@/components/dashboard/staged-digital-files";
+import { ImageViewerDialog } from "@/components/dashboard/image-viewer-dialog";
 import { ProductImageActions } from "@/components/dashboard/product-image-actions";
 import { OptionsLister, VariantsLister } from "@/components/dashboard/variant-listers";
 import { DigitalProductOverview } from "@/components/dashboard/digital-product-overview";
@@ -600,6 +601,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   // the save that brings that variant into existence. Keyed by draft.
   const [editStagedFiles, setEditStagedFiles] = useState<Record<string, StagedDigitalFile[]>>({});
   const [editUploadingStaged, setEditUploadingStaged] = useState(false);
+  const [viewingImage, setViewingImage] = useState<{ url: string; label: string } | null>(null);
   // Every file on the product being edited, so the editor knows which units
   // already carry downloads.
   const [editDigitalAssets, setEditDigitalAssets] = useState<DigitalProductAsset[]>([]);
@@ -3503,20 +3505,23 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                             createSuppressNextImageClickRef.current = false;
                             return;
                           }
-                          setCreateReplaceImageIndex(imageIndex);
-                          createReplaceImageInputRef.current?.click();
+                          setViewingImage({ url: imageUrl, label: `Product image ${imageIndex + 1}` });
                         }}
                       >
                         <Image src={imageUrl} alt="Product image preview" fill unoptimized className="object-cover" />
                         <div className="pointer-events-none absolute inset-0 bg-black/25 opacity-0 transition-opacity group-hover:opacity-100" />
                         <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
-                          <Pencil className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]" />
+                          <Maximize2 className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]" aria-hidden="true" />
                         </div>
                         <ProductImageActions
                           imageUrl={imageUrl}
                           label={`product image ${imageIndex + 1}`}
                           isFeatured={imageIndex === 0}
                           onFeature={() => setCreateImageUrls((current) => promotePrimaryImage(current, imageIndex))}
+                          onReplace={() => {
+                            setCreateReplaceImageIndex(imageIndex);
+                            createReplaceImageInputRef.current?.click();
+                          }}
                           onWatermarked={(publicUrl) => setCreateImageUrls((current) => current.map((entry, index) => (index === imageIndex ? publicUrl : entry)))}
                           onRemove={() => setCreateImageUrls((current) => current.filter((_, index) => index !== imageIndex))}
                         />
@@ -3757,7 +3762,17 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                       <div className="flex flex-wrap gap-2">
                         {activeCreateVariantImageUrls.map((imageUrl, imageIndex) => (
                           <div key={`create-variant-group-image-preview-${imageUrl}-${imageIndex}`} className="group relative h-24 w-24 overflow-hidden rounded-md border border-border bg-muted/15">
-                            <Image src={imageUrl} alt="Variant image preview" fill unoptimized className="object-cover" />
+                            <button
+                              type="button"
+                              className="absolute inset-0 z-0"
+                              aria-label={`View variant image ${imageIndex + 1}`}
+                              onClick={() => setViewingImage({ url: imageUrl, label: `Variant image ${imageIndex + 1}` })}
+                            />
+                            <div className="pointer-events-none absolute inset-0 bg-black/25 opacity-0 transition-opacity group-hover:opacity-100" />
+                            <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+                              <Maximize2 className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]" aria-hidden="true" />
+                            </div>
+                            <Image src={imageUrl} alt="Variant image preview" fill unoptimized className="pointer-events-none object-cover" />
                             <ProductImageActions
                               imageUrl={imageUrl}
                               label={`variant image ${imageIndex + 1}`}
@@ -4016,7 +4031,17 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                       <div className="flex flex-wrap gap-2">
                         {activeCreateVariant.imageUrls.map((imageUrl, imageIndex) => (
                           <div key={`create-option-image-preview-${imageUrl}-${imageIndex}`} className="group relative h-24 w-24 overflow-hidden rounded-md border border-border bg-muted/15">
-                            <Image src={imageUrl} alt="Option image preview" fill unoptimized className="object-cover" />
+                            <button
+                              type="button"
+                              className="absolute inset-0 z-0"
+                              aria-label={`View option image ${imageIndex + 1}`}
+                              onClick={() => setViewingImage({ url: imageUrl, label: `Option image ${imageIndex + 1}` })}
+                            />
+                            <div className="pointer-events-none absolute inset-0 bg-black/25 opacity-0 transition-opacity group-hover:opacity-100" />
+                            <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+                              <Maximize2 className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]" aria-hidden="true" />
+                            </div>
+                            <Image src={imageUrl} alt="Option image preview" fill unoptimized className="pointer-events-none object-cover" />
                             <ProductImageActions
                               imageUrl={imageUrl}
                               label={`option image ${imageIndex + 1}`}
@@ -4349,20 +4374,23 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                             editSuppressNextImageClickRef.current = false;
                             return;
                           }
-                          setEditReplaceImageIndex(imageIndex);
-                          editReplaceImageInputRef.current?.click();
+                          setViewingImage({ url: imageUrl, label: `Product image ${imageIndex + 1}` });
                         }}
                       >
                         <Image src={imageUrl} alt="Edited product image preview" fill unoptimized className="object-cover" />
                         <div className="pointer-events-none absolute inset-0 bg-black/25 opacity-0 transition-opacity group-hover:opacity-100" />
                         <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
-                          <Pencil className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]" />
+                          <Maximize2 className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]" aria-hidden="true" />
                         </div>
                         <ProductImageActions
                           imageUrl={imageUrl}
                           label={`product image ${imageIndex + 1}`}
                           isFeatured={imageIndex === 0}
                           onFeature={() => setEditImageUrls((current) => promotePrimaryImage(current, imageIndex))}
+                          onReplace={() => {
+                            setEditReplaceImageIndex(imageIndex);
+                            editReplaceImageInputRef.current?.click();
+                          }}
                           onWatermarked={(publicUrl) => setEditImageUrls((current) => current.map((entry, index) => (index === imageIndex ? publicUrl : entry)))}
                           onRemove={() => setEditImageUrls((current) => current.filter((_, index) => index !== imageIndex))}
                         />
@@ -4574,7 +4602,17 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                       <div className="flex flex-wrap gap-2">
                         {activeEditVariantImageUrls.map((imageUrl, imageIndex) => (
                           <div key={`edit-variant-group-image-preview-${imageUrl}-${imageIndex}`} className="group relative h-24 w-24 overflow-hidden rounded-md border border-border bg-muted/15">
-                            <Image src={imageUrl} alt="Variant image preview" fill unoptimized className="object-cover" />
+                            <button
+                              type="button"
+                              className="absolute inset-0 z-0"
+                              aria-label={`View variant image ${imageIndex + 1}`}
+                              onClick={() => setViewingImage({ url: imageUrl, label: `Variant image ${imageIndex + 1}` })}
+                            />
+                            <div className="pointer-events-none absolute inset-0 bg-black/25 opacity-0 transition-opacity group-hover:opacity-100" />
+                            <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+                              <Maximize2 className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]" aria-hidden="true" />
+                            </div>
+                            <Image src={imageUrl} alt="Variant image preview" fill unoptimized className="pointer-events-none object-cover" />
                             <ProductImageActions
                               imageUrl={imageUrl}
                               label={`variant image ${imageIndex + 1}`}
@@ -4854,7 +4892,17 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                           <div className="flex flex-wrap gap-2">
                             {activeEditVariant.imageUrls.map((imageUrl, imageIndex) => (
                               <div key={`edit-option-image-preview-${imageUrl}-${imageIndex}`} className="group relative h-24 w-24 overflow-hidden rounded-md border border-border bg-muted/15">
-                                <Image src={imageUrl} alt="Option image preview" fill unoptimized className="object-cover" />
+                            <button
+                              type="button"
+                              className="absolute inset-0 z-0"
+                              aria-label={`View option image ${imageIndex + 1}`}
+                              onClick={() => setViewingImage({ url: imageUrl, label: `Option image ${imageIndex + 1}` })}
+                            />
+                            <div className="pointer-events-none absolute inset-0 bg-black/25 opacity-0 transition-opacity group-hover:opacity-100" />
+                            <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+                              <Maximize2 className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]" aria-hidden="true" />
+                            </div>
+                                <Image src={imageUrl} alt="Option image preview" fill unoptimized className="pointer-events-none object-cover" />
                                 <ProductImageActions
                                   imageUrl={imageUrl}
                                   label={`option image ${imageIndex + 1}`}
@@ -5089,6 +5137,12 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
+
+      <ImageViewerDialog
+        imageUrl={viewingImage?.url ?? null}
+        title={viewingImage?.label ?? "Product image"}
+        onClose={() => setViewingImage(null)}
+      />
 
       <DialogPrimitive.Root
         open={isDeleteConfirmOpen}

@@ -94,6 +94,21 @@ describe("what a merchant can do with a storefront image", () => {
     expect((await screen.findByRole("menuitem", { name: "Featured" })).getAttribute("aria-disabled")).toBe("true");
   });
 
+  test("offers replacing the image from the menu, not from the tile", async () => {
+    const props = setup({ onReplace: vi.fn() });
+
+    await userEvent.click(screen.getByRole("button", { name: "Manage product image 1" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Replace image" }));
+    expect(props.onReplace).toHaveBeenCalled();
+  });
+
+  test("omits replacing where a grid cannot do it", async () => {
+    setup();
+    await userEvent.click(screen.getByRole("button", { name: "Manage product image 1" }));
+    await screen.findByRole("menuitem", { name: "Remove" });
+    expect(screen.queryByRole("menuitem", { name: "Replace image" })).toBeNull();
+  });
+
   test("keeps a menu click off the tile behind it", async () => {
     // The tile is itself a click target that opens a file picker, and a portal
     // still bubbles through the React tree it was declared in.

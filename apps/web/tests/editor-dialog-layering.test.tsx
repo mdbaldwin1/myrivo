@@ -139,7 +139,11 @@ describe("prompts raised from inside the product editor", () => {
     // Four of these have shipped as bugs: a dialog rendered at the default
     // layer disappears under the sheet's backdrop, which then swallows every
     // click on it. Any component that owns a sheet must clear it.
-    const sources = ["components/dashboard/product-manager.tsx", "components/ui/flyout.tsx"];
+    const sources = [
+      "components/dashboard/product-manager.tsx",
+      "components/dashboard/image-viewer-dialog.tsx",
+      "components/ui/flyout.tsx",
+    ];
     const offenders: string[] = [];
 
     for (const relative of sources) {

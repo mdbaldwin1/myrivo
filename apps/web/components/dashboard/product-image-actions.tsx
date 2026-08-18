@@ -19,6 +19,7 @@ export function ProductImageActions({
   label,
   isFeatured,
   onFeature,
+  onReplace,
   onWatermarked,
   onRemove,
 }: {
@@ -27,6 +28,8 @@ export function ProductImageActions({
   label: string;
   isFeatured: boolean;
   onFeature: () => void;
+  /** Swaps this image for another. Omitted where a grid cannot replace. */
+  onReplace?: () => void;
   onWatermarked: (publicUrl: string) => void;
   onRemove: () => void;
 }) {
@@ -88,6 +91,7 @@ export function ProductImageActions({
           <DropdownMenuItem disabled={isFeatured} onClick={onFeature}>
             {isFeatured ? "Featured" : "Feature"}
           </DropdownMenuItem>
+          {onReplace ? <DropdownMenuItem onClick={onReplace}>Replace image</DropdownMenuItem> : null}
           <DropdownMenuItem onClick={() => void watermark()}>
             {busy ? "Adding watermark…" : "Add watermark"}
           </DropdownMenuItem>
