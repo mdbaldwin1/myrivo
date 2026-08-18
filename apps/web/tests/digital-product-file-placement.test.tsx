@@ -114,6 +114,15 @@ function visibleFileScopes() {
 }
 
 function stubBrowserAnimation() {
+  // Radix drives its listbox through pointer capture, which jsdom omits.
+  if (!Element.prototype.hasPointerCapture) {
+    Element.prototype.hasPointerCapture = () => false;
+    Element.prototype.setPointerCapture = () => {};
+    Element.prototype.releasePointerCapture = () => {};
+  }
+  if (!Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = () => {};
+  }
   if (!Element.prototype.animate) {
     Element.prototype.animate = function animate() {
       return {
@@ -361,5 +370,57 @@ describe("where customer downloads are provided", () => {
     );
 
     await waitFor(() => expect((screen.getByRole("checkbox", { name: /Has options/i }) as HTMLInputElement).disabled).toBe(true));
+  });
+
+  test("sells one painting as a download, a print, and the original", async () => {
+    // The product is physical; only the download variant differs, and only it
+    // asks for files or hides stock.
+    const painting = product({
+      product_type: "physical",
+      product_variants: [
+        variant({ title: "Download", option_values: { Format: "Download" } }),
+        variant({ id: NEW_VARIANT_ID, sku: "SUNRISE-PRINT", title: "Print", option_values: { Format: "Print" }, is_default: false, sort_order: 1 }),
+      ],
+    });
+    const patches: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if ((init?.method ?? "GET") === "PATCH") {
+          patches.push(JSON.parse(String(init?.body)));
+          return new Response(JSON.stringify({ product: painting }), { status: 200 });
+        }
+        void input;
+        return new Response(JSON.stringify({ products: [painting] }), { status: 200 });
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<ProductManager initialProducts={[painting]} />);
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    // A physical product's variant carries stock and no downloads.
+    await user.click(visible(screen.getAllByRole("button", { name: "Download" })));
+    expect(visibleFileScopes()).toEqual([]);
+    const stockControls = () =>
+      screen.queryAllByRole("checkbox", { name: /Enable made to order/i }).filter((node) => !node.closest(".hidden"));
+    expect(stockControls()).toHaveLength(1);
+
+    // Making just this variant a download flips both.
+    await user.click(visible(screen.getAllByRole("combobox", { name: "Fulfillment" })));
+    await user.click(await screen.findByRole("option", { name: "Digital download" }));
+    await waitFor(() => expect(visibleFileScopes()).toEqual([VARIANT_ID]));
+    expect(stockControls()).toEqual([]);
+
+    await user.click(screen.getByRole("button", { name: "Save product" }));
+
+    // The override is submitted for that variant alone; the print inherits.
+    await waitFor(() => expect(patches.length).toBe(1));
+    const submitted = patches[0] as { productType: string; variants: Array<{ optionValue: string; fulfillmentType: string | null }> };
+    expect(submitted.productType).toBe("physical");
+    expect(submitted.variants.map((entry) => [entry.optionValue, entry.fulfillmentType])).toEqual([
+      ["Download", "digital"],
+      ["Print", null],
+    ]);
   });
 });

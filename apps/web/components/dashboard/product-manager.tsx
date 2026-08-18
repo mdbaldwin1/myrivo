@@ -43,6 +43,7 @@ import {
 import { shouldOpenCatalogProductFromUrl } from "@/lib/dashboard/catalog-url-sync";
 import { formatVariantLabel } from "@/lib/products/variants";
 import { richTextToPlainText } from "@/lib/rich-text";
+import { resolveVariantFulfillment } from "@/lib/digital-products/fulfillment";
 import { uploadDigitalAsset } from "@/lib/digital-products/upload-asset";
 import { notify } from "@/lib/feedback/toast";
 import { prepareImageUploadFile } from "@/lib/uploads/prepare-image-upload-file";
@@ -269,6 +270,7 @@ function productVariantsForEditing(product: ProductListItem, tierNames: string[]
         priceDollars: (variant.price_cents / 100).toFixed(2),
         inventoryQty: String(variant.inventory_qty),
         isMadeToOrder: variant.is_made_to_order ?? false,
+        fulfillmentType: variant.fulfillment_type ?? null,
         optionPairs: orderedPairs,
         status: variant.status,
         isDefault: variant.is_default
@@ -363,7 +365,8 @@ function parseVariantsFromDrafts(
       optionValues,
       status: variant.status,
       isDefault,
-      sortOrder: index
+      sortOrder: index,
+      fulfillmentType: variant.fulfillmentType ?? null
     };
   });
 
@@ -384,6 +387,7 @@ type ParsedVariantSubmission = {
   status: "active" | "archived";
   isDefault: boolean;
   sortOrder: number;
+  fulfillmentType: "physical" | "digital" | null;
 };
 
 type NestedVariantOptionSubmission = {
@@ -398,6 +402,7 @@ type NestedVariantOptionSubmission = {
   status: "active" | "archived";
   isDefault: boolean;
   sortOrder: number;
+  fulfillmentType: "physical" | "digital" | null;
 };
 
 type NestedVariantSubmission = {
@@ -412,6 +417,7 @@ type NestedVariantSubmission = {
   status: "active" | "archived";
   isDefault: boolean;
   sortOrder: number;
+  fulfillmentType: "physical" | "digital" | null;
   options: NestedVariantOptionSubmission[];
 };
 
@@ -441,6 +447,7 @@ function buildNestedVariantsFromParsed(
         status: only.status,
         isDefault: true,
         sortOrder: 0,
+        fulfillmentType: only.fulfillmentType,
         options: []
       }
     ];
@@ -462,6 +469,7 @@ function buildNestedVariantsFromParsed(
       status: variant.status,
       isDefault: variant.isDefault,
       sortOrder: variant.sortOrder,
+      fulfillmentType: variant.fulfillmentType,
       options: []
     }));
   }
@@ -485,6 +493,7 @@ function buildNestedVariantsFromParsed(
         status: variant.status,
         isDefault: false,
         sortOrder: orderedKeys.length,
+        fulfillmentType: variant.fulfillmentType,
         options: []
       });
       orderedKeys.push(key);
@@ -503,7 +512,8 @@ function buildNestedVariantsFromParsed(
       isMadeToOrder: variant.isMadeToOrder,
       status: variant.status,
       isDefault: variant.isDefault,
-      sortOrder: group.options.length
+      sortOrder: group.options.length,
+      fulfillmentType: variant.fulfillmentType
     });
     if (variant.isDefault) {
       group.isDefault = true;
@@ -1642,7 +1652,11 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
               isMadeToOrder: editSingleMadeToOrder,
               optionPairs: []
             }
-          ]).map((variant) => editProductType === "digital" ? { ...variant, inventoryQty: "0", isMadeToOrder: false } : variant);
+          ]).map((variant) =>
+            resolveVariantFulfillment(editProductType, variant.fulfillmentType) === "digital"
+              ? { ...variant, inventoryQty: "0", isMadeToOrder: false }
+              : variant,
+          );
 
       const parsed = parseVariantsFromDrafts(variantsForSubmission, editSku.trim() || editTitle.trim() || "SKU", {
         strictValidation: editStatus === "active",
@@ -2370,6 +2384,10 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
    * them cannot be split into smaller ones underneath them - the files would
    * be left pointing at something that is no longer sold on its own.
    */
+  function draftFulfillment(variant: VariantDraft | null | undefined) {
+    return resolveVariantFulfillment(editProductType, variant?.fulfillmentType);
+  }
+
   function editFileCountFor(productVariantId: string | null) {
     return editDigitalAssets.filter(
       (asset) => asset.active && (asset.product_variant_id ?? null) === productVariantId,
@@ -2377,8 +2395,10 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   }
 
   function renderEditDigitalFiles(productVariantId: string | null) {
-    if (editProductType !== "digital" || !editingProductId) return null;
-    if (productVariantId === null && editHasVariants) return null;
+    if (!editingProductId) return null;
+    // Product-level files exist only when the product itself is the unit being
+    // sold; a variant's own digital-ness is settled by its caller.
+    if (productVariantId === null && (editHasVariants || editProductType !== "digital")) return null;
     return (
       <DigitalProductFiles
         key={`${editingProductId}:${productVariantId ?? "product"}`}
@@ -2392,8 +2412,43 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     );
   }
 
+  /**
+   * How this one variant reaches its buyer. It sits with the SKU because it
+   * describes the same thing the SKU does - the unit somebody buys - so one
+   * painting can be sold as a download, a print, and the original canvas.
+   */
+  function renderEditVariantFulfillment() {
+    if (editActiveVariantIndex === null) return null;
+    const active = editVariants[editActiveVariantIndex];
+    if (!active) return null;
+    const inherited = editProductType === "digital" ? "Digital download" : "Physical product";
+    return (
+      <FormField label="Fulfillment">
+        <Select
+          value={active.fulfillmentType ?? "inherit"}
+          aria-label="Fulfillment"
+          onChange={(event) => {
+            const raw = event.target.value;
+            const nextType = raw === "inherit" ? null : (raw as "physical" | "digital");
+            setEditVariants((current) =>
+              normalizeVariantDefaults(
+                current.map((variant, index) =>
+                  index === editActiveVariantIndex ? { ...variant, fulfillmentType: nextType } : variant,
+                ),
+              ),
+            );
+          }}
+        >
+          <option value="inherit">Same as product ({inherited})</option>
+          <option value="physical">Physical product</option>
+          <option value="digital">Digital download</option>
+        </Select>
+      </FormField>
+    );
+  }
+
   function renderEditDigitalFilesForVariant(variant: VariantDraft | null | undefined, noun: "variant" | "option") {
-    if (editProductType !== "digital" || !variant) return null;
+    if (!variant || draftFulfillment(variant) !== "digital") return null;
     if (!variant.id) {
       // Files key to a real variant row, so a brand-new one has nowhere to put
       // them yet. They wait in the browser and upload with the save that
@@ -4651,6 +4706,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                             <p className="mt-1 text-xs text-muted-foreground">SKU is locked because this variant has orders.</p>
                           ) : null}
                         </FormField>
+                        {renderEditVariantFulfillment()}
                         {renderEditDigitalFilesForVariant(activeEditVariant, "variant")}
                         <FormField label="Price">
                           <Input
@@ -4668,7 +4724,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                             }
                           />
                         </FormField>
-                        {editProductType === "physical" ? <FormField label="Inventory">
+                        {draftFulfillment(activeEditVariant) === "physical" ? <FormField label="Inventory">
                           <Input
                             inputMode="numeric"
                             placeholder="0"
@@ -4684,7 +4740,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                             }
                           />
                         </FormField> : null}
-                        {editProductType === "physical" ? <label className="flex items-center gap-2">
+                        {draftFulfillment(activeEditVariant) === "physical" ? <label className="flex items-center gap-2">
                           <Checkbox
                             checked={activeEditVariant.isMadeToOrder}
                             onChange={(event) =>
@@ -4722,7 +4778,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                           return [{
                             index,
                             label: getOptionValue(option, activeEditLevelTwoName) || `${activeEditLevelTwoName} option`,
-                            summary: variantOptionSummary(editProductType, option),
+                            summary: variantOptionSummary(draftFulfillment(option), option),
                             archived: option.status === "archived",
                           }];
                         })}
@@ -4920,6 +4976,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         <p className="mt-1 text-xs text-muted-foreground">SKU is locked because this variant has orders.</p>
                       ) : null}
                     </FormField>
+                    {renderEditVariantFulfillment()}
                     {renderEditDigitalFilesForVariant(activeEditVariant, "option")}
                     <FormField label="Price">
                       <Input
@@ -4937,7 +4994,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         }
                       />
                     </FormField>
-                    {editProductType === "physical" ? <FormField label="Inventory">
+                    {draftFulfillment(activeEditVariant) === "physical" ? <FormField label="Inventory">
                       <Input
                         inputMode="numeric"
                         placeholder="0"
@@ -4953,7 +5010,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         }
                       />
                     </FormField> : null}
-                    {editProductType === "physical" ? <label className="flex items-center gap-2">
+                    {draftFulfillment(activeEditVariant) === "physical" ? <label className="flex items-center gap-2">
                       <Checkbox
                         checked={activeEditVariant.isMadeToOrder}
                         onChange={(event) =>

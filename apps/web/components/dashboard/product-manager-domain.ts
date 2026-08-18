@@ -16,6 +16,8 @@ export type ProductVariantListItem = {
   is_default: boolean;
   status: "active" | "archived";
   sort_order: number;
+  /** How this variant reaches the buyer; null inherits the product's. */
+  fulfillment_type?: "physical" | "digital" | null;
   created_at: string;
 };
 
@@ -72,6 +74,8 @@ export type VariantDraft = {
   id?: string;
   /** Identifies a draft that has no row yet, so staged files can follow it. */
   draftKey?: string;
+  /** Overrides the product's fulfillment for this variant; null inherits it. */
+  fulfillmentType?: "physical" | "digital" | null;
   title: string;
   sku: string;
   skuMode: "auto" | "manual";
@@ -208,6 +212,7 @@ export function createBlankVariant(isDefault = false): VariantDraft {
   return {
     id: undefined,
     draftKey: `draft-${draftKeyCounter}`,
+    fulfillmentType: null,
     title: "",
     sku: "",
     skuMode: "auto",
