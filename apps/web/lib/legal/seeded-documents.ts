@@ -24,6 +24,8 @@ If you operate a store on Myrivo, you are responsible for the accuracy, legality
 
 You must not use Myrivo to sell unlawful, infringing, unsafe, deceptive, or prohibited goods or services, or to misrepresent stock, shipping, pickup, refunds, taxes, discounts, or customer rights.
 
+If you sell digital products, you must hold the rights necessary to distribute and sell every file you upload, including any copyright, licence, model or property release, trademark, or other permission that the file requires. You must not upload or sell a file you did not create unless the rights holder has authorised you to distribute and sell it on these terms, and you must affirm those rights for each file when you add it. Myrivo may remove a file, unpublish a product, suspend digital selling, or terminate an account in response to a credible infringement report, and you remain responsible for refunds, chargebacks, and claims arising from files you were not entitled to sell.
+
 ## 5. Shopper Transactions
 
 When you place an order through a Myrivo-powered storefront, you agree to provide accurate and current purchase, contact, pickup, delivery, and payment information. Stores may reject, limit, cancel, or refund orders when required by law, platform rules, fraud prevention, inventory limits, pricing errors, fulfillment constraints, or policy enforcement.
@@ -43,6 +45,7 @@ You may not:
 - interfere with or disrupt the Services, security controls, or platform integrity
 - reverse engineer, scrape, or extract data from the Services except as expressly allowed by law or written agreement
 - upload malware, abusive content, or unlawful material
+- sell, or offer for sale, a digital file you do not hold the rights to distribute and sell
 - circumvent feature gates, billing rules, access controls, audit controls, or governance workflows
 - use the Services for spam, fraud, deceptive conduct, or harassment
 - attempt unauthorized access to accounts, stores, systems, or data
@@ -187,6 +190,7 @@ Depending on how you interact with the storefront, we may collect:
 - contact information, such as your name, email address, phone number, and support-request details
 - order information, such as items purchased, shipping or pickup details, order notes, discount usage, and transaction history
 - payment-related information processed through our payment providers
+- digital delivery information, such as which files an order grants access to, when access links are issued or re-sent, and how many downloads have been used
 - marketing and communication preferences, including newsletter subscriptions and unsubscribe choices
 - device, browser, analytics, and storefront interaction data used to understand storefront usage and improve operations
 - privacy-request, legal, or support records you submit through the storefront or related channels
@@ -264,6 +268,8 @@ Prices, promotions, availability, shipping or pickup fees, and applicable taxes 
 
 Shipping, pickup, return, support, and refund expectations are described throughout the storefront and in the store's policy content. Please review those details carefully before completing a purchase. Fulfillment timing may vary based on inventory, made-to-order production, pickup scheduling, shipping-carrier performance, and circumstances outside the store's reasonable control.
 
+Digital products are delivered as files rather than shipped. After payment, an access link is emailed to the address used at checkout. That link is personal to the order, expires after a limited period, and allows a limited number of downloads per file; you can request a fresh link from the storefront if it expires or is exhausted. Download the files promptly and keep your own copy. If a payment is fully refunded or a dispute is decided against the order, access to the files ends; a partial refund leaves access in place.
+
 ## 5. Storefront Use Rules
 
 You may not use the storefront in a way that is unlawful, fraudulent, abusive, harassing, infringing, disruptive, or technically harmful. You may not interfere with storefront security, checkout flows, pricing displays, review systems, availability controls, or any other feature of the storefront or supporting platform.
@@ -275,6 +281,8 @@ We try to present product, pricing, availability, fulfillment, and policy inform
 ## 7. Intellectual Property
 
 The storefront, branding, product descriptions, imagery, copy, and other content made available by the store are protected by applicable intellectual property laws. You may not copy, reproduce, republish, modify, or exploit storefront content except as allowed by law or with the store's prior written permission.
+
+Buying a digital product does not transfer ownership of it. Unless the store grants you different rights in writing, a purchased file is licensed to you for personal, non-commercial use: you may not resell, redistribute, sublicense, share the file or its access link, or use it commercially. Previews shown on the storefront are watermarked samples and are not the purchased file.
 
 ## 8. Disclaimers
 

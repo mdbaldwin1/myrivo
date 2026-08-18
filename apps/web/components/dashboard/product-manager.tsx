@@ -4,10 +4,14 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import Image from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
-import { MoreHorizontal, Pencil, Plus, RotateCcw, Search, Star, X } from "lucide-react";
+import { Maximize2, MoreHorizontal, Pencil, Plus, RotateCcw, Search } from "lucide-react";
 import { AppAlert } from "@/components/ui/app-alert";
 import { DigitalPreviewManager } from "@/components/dashboard/digital-preview-manager";
-import { DigitalProductFiles } from "@/components/dashboard/digital-product-files";
+import { DigitalProductFiles, type DigitalProductAsset } from "@/components/dashboard/digital-product-files";
+import { StagedDigitalFiles, type StagedDigitalFile } from "@/components/dashboard/staged-digital-files";
+import { ImageViewerDialog } from "@/components/dashboard/image-viewer-dialog";
+import { ProductImageActions } from "@/components/dashboard/product-image-actions";
+import { OptionsLister, VariantsLister } from "@/components/dashboard/variant-listers";
 import { DigitalProductOverview } from "@/components/dashboard/digital-product-overview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +23,7 @@ import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Select } from "@/components/ui/select";
+import { HintTooltip } from "@/components/ui/tooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   createBlankVariant,
@@ -40,6 +45,8 @@ import {
 import { shouldOpenCatalogProductFromUrl } from "@/lib/dashboard/catalog-url-sync";
 import { formatVariantLabel } from "@/lib/products/variants";
 import { richTextToPlainText } from "@/lib/rich-text";
+import { resolveVariantFulfillment } from "@/lib/digital-products/fulfillment";
+import { uploadDigitalAsset } from "@/lib/digital-products/upload-asset";
 import { notify } from "@/lib/feedback/toast";
 import { prepareImageUploadFile } from "@/lib/uploads/prepare-image-upload-file";
 import { ProductRecord } from "@/types/database";
@@ -265,6 +272,7 @@ function productVariantsForEditing(product: ProductListItem, tierNames: string[]
         priceDollars: (variant.price_cents / 100).toFixed(2),
         inventoryQty: String(variant.inventory_qty),
         isMadeToOrder: variant.is_made_to_order ?? false,
+        fulfillmentType: variant.fulfillment_type ?? null,
         optionPairs: orderedPairs,
         status: variant.status,
         isDefault: variant.is_default
@@ -359,7 +367,8 @@ function parseVariantsFromDrafts(
       optionValues,
       status: variant.status,
       isDefault,
-      sortOrder: index
+      sortOrder: index,
+      fulfillmentType: variant.fulfillmentType ?? null
     };
   });
 
@@ -380,6 +389,7 @@ type ParsedVariantSubmission = {
   status: "active" | "archived";
   isDefault: boolean;
   sortOrder: number;
+  fulfillmentType: "physical" | "digital" | null;
 };
 
 type NestedVariantOptionSubmission = {
@@ -394,6 +404,7 @@ type NestedVariantOptionSubmission = {
   status: "active" | "archived";
   isDefault: boolean;
   sortOrder: number;
+  fulfillmentType: "physical" | "digital" | null;
 };
 
 type NestedVariantSubmission = {
@@ -408,6 +419,7 @@ type NestedVariantSubmission = {
   status: "active" | "archived";
   isDefault: boolean;
   sortOrder: number;
+  fulfillmentType: "physical" | "digital" | null;
   options: NestedVariantOptionSubmission[];
 };
 
@@ -437,6 +449,7 @@ function buildNestedVariantsFromParsed(
         status: only.status,
         isDefault: true,
         sortOrder: 0,
+        fulfillmentType: only.fulfillmentType,
         options: []
       }
     ];
@@ -458,6 +471,7 @@ function buildNestedVariantsFromParsed(
       status: variant.status,
       isDefault: variant.isDefault,
       sortOrder: variant.sortOrder,
+      fulfillmentType: variant.fulfillmentType,
       options: []
     }));
   }
@@ -481,6 +495,7 @@ function buildNestedVariantsFromParsed(
         status: variant.status,
         isDefault: false,
         sortOrder: orderedKeys.length,
+        fulfillmentType: variant.fulfillmentType,
         options: []
       });
       orderedKeys.push(key);
@@ -499,7 +514,8 @@ function buildNestedVariantsFromParsed(
       isMadeToOrder: variant.isMadeToOrder,
       status: variant.status,
       isDefault: variant.isDefault,
-      sortOrder: group.options.length
+      sortOrder: group.options.length,
+      fulfillmentType: variant.fulfillmentType
     });
     if (variant.isDefault) {
       group.isDefault = true;
@@ -581,6 +597,14 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   const [editDraggingImageIndex, setEditDraggingImageIndex] = useState<number | null>(null);
   const [editVariants, setEditVariants] = useState<VariantDraft[]>([createBlankVariant(true)]);
   const [editHasVariants, setEditHasVariants] = useState(false);
+  // Files chosen for a variant that has no row yet, held in the browser until
+  // the save that brings that variant into existence. Keyed by draft.
+  const [editStagedFiles, setEditStagedFiles] = useState<Record<string, StagedDigitalFile[]>>({});
+  const [editUploadingStaged, setEditUploadingStaged] = useState(false);
+  const [viewingImage, setViewingImage] = useState<{ url: string; label: string } | null>(null);
+  // Every file on the product being edited, so the editor knows which units
+  // already carry downloads.
+  const [editDigitalAssets, setEditDigitalAssets] = useState<DigitalProductAsset[]>([]);
   const [editVariantTierCount, setEditVariantTierCount] = useState<1 | 2>(1);
   const [editFlowStep, setEditFlowStep] = useState<"product" | "variant" | "option">("product");
   const [editStepDirection, setEditStepDirection] = useState<"forward" | "backward">("forward");
@@ -608,7 +632,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   const catalogRefreshGenerationRef = useRef(0);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(searchParams.get("productId") ?? initialProducts[0]?.id ?? null);
   const [catalogInspectorTab, setCatalogInspectorTab] = useState<CatalogInspectorTab>("overview");
-  const [digitalInspectorTarget, setDigitalInspectorTarget] = useState<string | null>(null);
+  const [, setDigitalInspectorTarget] = useState<string | null>(null);
   const [variantInspectorMode, setVariantInspectorMode] = useState<"flat" | "grouped">("flat");
   const [inventoryAdjustDraft, setInventoryAdjustDraft] = useState<{
     productId: string;
@@ -679,6 +703,15 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     ]
   );
 
+  const editStagedFileSignature = useMemo(
+    () =>
+      Object.entries(editStagedFiles)
+        .map(([key, staged]) => `${key}:${staged.map((entry) => `${entry.label}/${entry.file.name}`).join("|")}`)
+        .sort()
+        .join(";"),
+    [editStagedFiles],
+  );
+
   const currentEditSnapshot = useMemo(
     () =>
       JSON.stringify({
@@ -701,7 +734,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
         editOptionOneName,
         editOptionTwoName,
         editSingleInventoryQty,
-        editSingleMadeToOrder
+        editSingleMadeToOrder,
+        editStagedFileSignature
       }),
     [
       editingProductId,
@@ -723,7 +757,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       editOptionOneName,
       editOptionTwoName,
       editSingleInventoryQty,
-      editSingleMadeToOrder
+      editSingleMadeToOrder,
+      editStagedFileSignature
     ]
   );
 
@@ -987,8 +1022,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
 
     setProducts((current) => [payload.product!, ...current]);
     setSelectedProductId(payload.product.id);
-    setCatalogInspectorTab(productType === "digital" ? "files" : "overview");
-    setDigitalInspectorTarget(productType === "digital" ? "upload" : null);
+    setCatalogInspectorTab("overview");
+    setDigitalInspectorTarget(null);
     setTitle("");
     setDescription("");
     setProductSlug("");
@@ -1023,7 +1058,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     productId: string,
     patch: Record<string, unknown>,
     scope: "catalog" | "edit" = "catalog"
-  ): Promise<{ ok: boolean; error?: string }> {
+  ): Promise<{ ok: boolean; error?: string; product?: ProductListItem }> {
     if (scope === "catalog") {
       setCatalogError(null);
     } else {
@@ -1077,7 +1112,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       await refreshCatalogProducts();
     }
 
-    return { ok: true };
+    return { ok: true, product: payload.product };
   }
 
   async function refreshCatalogProducts(options: { surfaceError?: boolean; signal?: AbortSignal } = {}) {
@@ -1505,9 +1540,92 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     })();
   }
 
+  // A variant only becomes something files can attach to once it exists, so the
+  // editor can commit and stay put instead of sending the merchant back to the
+  // catalog and making them find their way in again.
+  function adoptSavedVariantIds(product: ProductListItem) {
+    setEditVariants(savedVariantsInSubmissionOrder(product));
+  }
+
+  /**
+   * The saved variants in the order they were submitted, so a draft can be
+   * paired with the row it became. Matching on SKU does not work: an auto SKU
+   * is regenerated on save from the option values, so it rarely matches the
+   * placeholder the draft was created with.
+   */
+  function savedVariantsInSubmissionOrder(product: ProductListItem) {
+    return productVariantsForEditing(product, resolveTierNamesForProduct(product));
+  }
+
+  function optionSignature(pairs: Array<{ name: string; value: string }>) {
+    return pairs
+      .map((pair) => `${pair.name.trim().toLowerCase()}=${pair.value.trim().toLowerCase()}`)
+      .sort()
+      .join("|");
+  }
+
+  /**
+   * Uploads everything staged against variants that only just came into
+   * existence. Returns the drafts whose files did not make it, so a partial
+   * failure keeps the editor open instead of quietly dropping the files.
+   */
+  async function flushStagedFiles(productId: string, saved: ProductListItem, drafts: VariantDraft[]) {
+    const buckets = Object.entries(editStagedFiles).filter(([, files]) => files.length > 0);
+    if (buckets.length === 0) return { failures: [] as string[], uploaded: 0 };
+
+    const failures: string[] = [];
+    let uploaded = 0;
+    const stillStaged: Record<string, StagedDigitalFile[]> = {};
+
+    const savedInOrder = savedVariantsInSubmissionOrder(saved);
+    const positionsAlign = savedInOrder.length === drafts.length;
+
+    for (const [draftKey, files] of buckets) {
+      const draftIndex = drafts.findIndex((variant) => variant.draftKey === draftKey);
+      if (draftIndex < 0) {
+        // The variant these files were for was deleted before the save, so
+        // there is nothing left to attach them to.
+        continue;
+      }
+      const draft = drafts[draftIndex]!;
+      const signature = optionSignature(draft.optionPairs);
+      const savedVariant = positionsAlign
+        ? savedInOrder[draftIndex]
+        : savedInOrder.find((variant) => optionSignature(variant.optionPairs) === signature);
+      if (!savedVariant?.id) {
+        stillStaged[draftKey] = files;
+        failures.push(`${files.length === 1 ? "1 file" : `${files.length} files`} could not be matched to a saved variant.`);
+        continue;
+      }
+
+      const unsent: StagedDigitalFile[] = [];
+      for (const staged of files) {
+        const result = await uploadDigitalAsset({
+          productId,
+          productVariantId: savedVariant.id,
+          label: staged.label,
+          file: staged.file,
+        });
+        if (result.ok) {
+          uploaded += 1;
+        } else {
+          unsent.push(staged);
+          failures.push(`${staged.label}: ${result.message}`);
+        }
+      }
+      if (unsent.length > 0) stillStaged[draftKey] = unsent;
+    }
+
+    setEditStagedFiles(stillStaged);
+    return { failures, uploaded };
+  }
+
   async function saveEditedProduct(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    await submitEditedProduct();
+  }
 
+  async function submitEditedProduct() {
     if (!editingProductId) {
       setEditError("No product selected for editing.");
       return;
@@ -1537,7 +1655,11 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
               isMadeToOrder: editSingleMadeToOrder,
               optionPairs: []
             }
-          ]).map((variant) => editProductType === "digital" ? { ...variant, inventoryQty: "0", isMadeToOrder: false } : variant);
+          ]).map((variant) =>
+            resolveVariantFulfillment(editProductType, variant.fulfillmentType) === "digital"
+              ? { ...variant, inventoryQty: "0", isMadeToOrder: false }
+              : variant,
+          );
 
       const parsed = parseVariantsFromDrafts(variantsForSubmission, editSku.trim() || editTitle.trim() || "SKU", {
         strictValidation: editStatus === "active",
@@ -1600,9 +1722,27 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
       "edit"
     );
 
+    if (!updated.ok) {
+      setEditPending(false);
+      return;
+    }
+
+    const savedProduct = updated.product;
+    let stagedFailures: string[] = [];
+    if (savedProduct) {
+      setEditUploadingStaged(true);
+      const flushed = await flushStagedFiles(editingProductId, savedProduct, editVariants);
+      setEditUploadingStaged(false);
+      stagedFailures = flushed.failures;
+    }
+
     setEditPending(false);
 
-    if (!updated.ok) {
+    if (stagedFailures.length > 0) {
+      // The product is saved either way; leaving the editor open is the only
+      // way the merchant can retry the files that did not land.
+      if (savedProduct) adoptSavedVariantIds(savedProduct);
+      setEditError(`Product saved, but some files did not upload. ${stagedFailures.join(" ")}`);
       return;
     }
 
@@ -1663,6 +1803,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     setEditSingleMadeToOrder(false);
     setEditVariantsSnapshotByMode(null);
     setEditOrderedVariantIds(new Set());
+    setEditStagedFiles({});
+    setEditDigitalAssets([]);
     setEditError(null);
     setEditVariantError(null);
   }
@@ -2070,6 +2212,31 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
         ? activeEditVariant.imageUrls
         : activeEditVariant.groupImageUrls
       : [];
+  // Images are withheld from buyers only when every variant is a download.
+  // Once one variant ships, these pictures are what a buyer is shown.
+  const editEveryVariantIsDigital = editHasVariants
+    ? editVariants.length > 0 && editVariants.every((variant) => draftFulfillment(variant) === "digital")
+    : editProductType === "digital";
+  const editSomeVariantIsDigital = editHasVariants
+    ? editVariants.some((variant) => draftFulfillment(variant) === "digital")
+    : editProductType === "digital";
+  const editImageGuidance = editEveryVariantIsDigital
+    ? "Buyers only ever see a watermarked version of a digital product. If the file you sell is a JPG or PNG, that watermark is generated from the file automatically; any image you add here is watermarked before the storefront shows it."
+    : editSomeVariantIsDigital
+      ? "Buyers see these images as they are, because this product has variants that ship. The variants sold as downloads are shown only as a watermarked preview, never as these images."
+      : undefined;
+
+  const editProductLevelFileCount = editFileCountFor(null);
+  // A variant that already carries files cannot be split into options: the
+  // files would be left on a unit that is no longer sold on its own. Staged
+  // files count too - they are attached, they just have not uploaded yet. A
+  // variant with no row yet can only have staged ones.
+  const editActiveVariantFileCount = activeEditVariant
+    ? (activeEditVariant.id ? editFileCountFor(activeEditVariant.id) : 0) +
+      (activeEditVariant.draftKey ? editStagedFiles[activeEditVariant.draftKey]?.length ?? 0 : 0)
+    : 0;
+  const editActiveVariantFilesBlockOptions = !activeEditHasSubOptions && editActiveVariantFileCount > 0;
+
   const activeEditSubOptionIndexes = activeEditGroupIndexes.filter((index) => {
     const variant = editVariants[index];
     return variant ? getOptionValue(variant, activeEditLevelTwoName).trim().length > 0 : false;
@@ -2225,6 +2392,144 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     setEditVariants((current) =>
       normalizeVariantDefaults(current.map((variant, index) => (indexSet.has(index) ? { ...variant, status } : variant)))
     );
+  }
+
+  // Customer files belong to whichever unit carries the SKU: the product when
+  // it has no variants, otherwise the variant or option being edited.
+  /**
+   * Files belong to whichever unit a buyer buys, so a unit that already holds
+   * them cannot be split into smaller ones underneath them - the files would
+   * be left pointing at something that is no longer sold on its own.
+   */
+  function draftFulfillment(variant: VariantDraft | null | undefined) {
+    return resolveVariantFulfillment(editProductType, variant?.fulfillmentType);
+  }
+
+  function editFileCountFor(productVariantId: string | null) {
+    return editDigitalAssets.filter(
+      (asset) => asset.active && (asset.product_variant_id ?? null) === productVariantId,
+    ).length;
+  }
+
+  function renderEditDigitalFiles(productVariantId: string | null) {
+    if (!editingProductId) return null;
+    // Product-level files exist only when the product itself is the unit being
+    // sold; a variant's own digital-ness is settled by its caller.
+    if (productVariantId === null && (editHasVariants || editProductType !== "digital")) return null;
+    return (
+      <DigitalProductFiles
+        key={`${editingProductId}:${productVariantId ?? "product"}`}
+        productId={editingProductId}
+        scope={{ productVariantId }}
+        productImageUrls={editImageUrls}
+        rightsAffirmed={editDigitalRightsAffirmed}
+        onAssetsChange={setEditDigitalAssets}
+        onCatalogChange={async (signal) => { await refreshCatalogProducts({ signal }); }}
+      />
+    );
+  }
+
+  /**
+   * How this one variant reaches its buyer. It sits with the SKU because it
+   * describes the same thing the SKU does - the unit somebody buys - so one
+   * painting can be sold as a download, a print, and the original canvas.
+   */
+  /** Applies a change to whichever image list the active variant tile shows. */
+  function updateActiveVariantImages(
+    scope: "create" | "edit",
+    transform: (urls: string[]) => string[],
+  ) {
+    const setVariants = scope === "create" ? setCreateVariants : setEditVariants;
+    const activeIndex = scope === "create" ? createActiveVariantIndex : editActiveVariantIndex;
+    const grouped = scope === "create" ? activeCreateHasSubOptions : activeEditHasSubOptions;
+    const groupIndexes = scope === "create" ? activeCreateGroupIndexes : activeEditGroupIndexes;
+    setVariants((current) =>
+      normalizeVariantDefaults(
+        current.map((variant, index) =>
+          grouped
+            ? groupIndexes.includes(index)
+              ? { ...variant, groupImageUrls: transform(variant.groupImageUrls ?? []) }
+              : variant
+            : index === activeIndex
+              ? { ...variant, imageUrls: transform(variant.imageUrls ?? []) }
+              : variant,
+        ),
+      ),
+    );
+  }
+
+  /** The same, for the option tile, which always edits its own list. */
+  function updateActiveOptionImages(
+    scope: "create" | "edit",
+    transform: (urls: string[]) => string[],
+  ) {
+    const setVariants = scope === "create" ? setCreateVariants : setEditVariants;
+    const activeIndex = scope === "create" ? createActiveVariantIndex : editActiveVariantIndex;
+    setVariants((current) =>
+      normalizeVariantDefaults(
+        current.map((variant, index) =>
+          index === activeIndex ? { ...variant, imageUrls: transform(variant.imageUrls ?? []) } : variant,
+        ),
+      ),
+    );
+  }
+
+  function renderEditVariantFulfillment() {
+    if (editActiveVariantIndex === null) return null;
+    const active = editVariants[editActiveVariantIndex];
+    if (!active) return null;
+    const inherited = editProductType === "digital" ? "Digital download" : "Physical product";
+    return (
+      <FormField label="Fulfillment">
+        <Select
+          value={active.fulfillmentType ?? "inherit"}
+          aria-label="Fulfillment"
+          onChange={(event) => {
+            const raw = event.target.value;
+            const nextType = raw === "inherit" ? null : (raw as "physical" | "digital");
+            setEditVariants((current) =>
+              normalizeVariantDefaults(
+                current.map((variant, index) =>
+                  index === editActiveVariantIndex ? { ...variant, fulfillmentType: nextType } : variant,
+                ),
+              ),
+            );
+          }}
+        >
+          <option value="inherit">Same as product ({inherited})</option>
+          <option value="physical">Physical product</option>
+          <option value="digital">Digital download</option>
+        </Select>
+      </FormField>
+    );
+  }
+
+  function renderEditDigitalFilesForVariant(variant: VariantDraft | null | undefined, noun: "variant" | "option") {
+    if (!variant || draftFulfillment(variant) !== "digital") return null;
+    if (!variant.id) {
+      // Files key to a real variant row, so a brand-new one has nowhere to put
+      // them yet. They wait in the browser and upload with the save that
+      // creates the variant.
+      const draftKey = variant.draftKey;
+      if (!draftKey) return null;
+      return (
+        <StagedDigitalFiles
+            noun={noun}
+            files={editStagedFiles[draftKey] ?? []}
+            onChange={(files) =>
+              setEditStagedFiles((current) => {
+                if (files.length === 0) {
+                  const rest = { ...current };
+                  delete rest[draftKey];
+                  return rest;
+                }
+                return { ...current, [draftKey]: files };
+              })
+          }
+        />
+      );
+    }
+    return renderEditDigitalFiles(variant.id);
   }
 
   async function removeEditVariants(indexes: number[], label: string) {
@@ -2454,7 +2759,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
             Close
           </Button>
           <Button disabled={editPending || isEditReadOnly} type="submit" form="edit-product-form">
-            {editPending ? "Saving..." : "Save product"}
+            {editUploadingStaged ? "Uploading files..." : editPending ? "Saving..." : "Save product"}
           </Button>
         </div>
         <div className="flex w-1/3 justify-end gap-2">
@@ -2744,12 +3049,18 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                   <DigitalProductOverview
                     product={selectedProduct}
                     onNavigate={(tab, target) => {
+                      if (tab === "editor") {
+                        openEditFlyout(
+                          selectedProduct,
+                          target === "product" ? { step: "product" } : { step: "variant", variantId: target },
+                        );
+                        return;
+                      }
                       setDigitalInspectorTarget(target);
                       setCatalogInspectorTab(tab);
                     }}
                     onEdit={() => {
                       openEditFlyout(selectedProduct);
-                      window.requestAnimationFrame(() => document.getElementById("edit-digital-rights")?.focus());
                     }}
                     onPublish={async () => { await publishDigitalProduct(selectedProduct.id); }}
                   />
@@ -2775,22 +3086,6 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                       <span className="font-medium">Inventory:</span> {selectedProduct.inventory_qty}
                     </p>
                   </div>
-                </div>
-              ) : null}
-
-              {catalogInspectorTab === "files" && selectedProduct.product_type === "digital" ? (
-                <div role="tabpanel" id="catalog-panel-files">
-                  <DigitalProductFiles
-                    key={selectedProduct.id}
-                    productId={selectedProduct.id}
-                    variants={sortVariants(selectedProduct.product_variants ?? []).map((variant) => ({
-                      id: variant.id,
-                      label: formatVariantLabel(variant),
-                      status: variant.status,
-                    }))}
-                    focusTarget={digitalInspectorTarget}
-                    onCatalogChange={async (signal) => { await refreshCatalogProducts({ signal }); }}
-                  />
                 </div>
               ) : null}
 
@@ -3075,13 +3370,10 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                   </Select>
                 </FormField>
                 {productType === "digital" ? (
-                  <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3">
-                    <label className="flex items-start gap-2">
-                      <Checkbox id="create-digital-rights" checked={digitalRightsAffirmed} onChange={(event) => setDigitalRightsAffirmed(event.target.checked)} />
-                      <span className="text-sm">I own or control the rights necessary to distribute and sell these files.</span>
-                    </label>
-                    <p className="text-xs text-muted-foreground">Files are attached after this draft is created. Save it, then use the Files tab to add customer downloads.</p>
-                  </div>
+                  <p className="rounded-md border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
+                    Customer downloads are added once this product exists. Save it, then attach files beside the SKU for
+                    whichever unit sells them; each file asks you to confirm you hold the rights to sell it.
+                  </p>
                 ) : null}
                 <FormField label="Description">
                   <RichTextEditor
@@ -3121,7 +3413,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                   <Checkbox checked={isFeatured} onChange={(event) => setIsFeatured(event.target.checked)} />
                   <span className="text-sm font-medium">Featured product</span>
                 </label>
-                <FormField label="Image">
+                <FormField label="Image" description={productType === "digital" ? "Buyers only ever see a watermarked version of a digital product. If the file you sell is a JPG or PNG, that watermark is generated from the file automatically; any image you add here is watermarked before the storefront shows it." : undefined}>
                   <input
                     ref={createImageInputRef}
                     type="file"
@@ -3213,38 +3505,26 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                             createSuppressNextImageClickRef.current = false;
                             return;
                           }
-                          setCreateReplaceImageIndex(imageIndex);
-                          createReplaceImageInputRef.current?.click();
+                          setViewingImage({ url: imageUrl, label: `Product image ${imageIndex + 1}` });
                         }}
                       >
                         <Image src={imageUrl} alt="Product image preview" fill unoptimized className="object-cover" />
                         <div className="pointer-events-none absolute inset-0 bg-black/25 opacity-0 transition-opacity group-hover:opacity-100" />
                         <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
-                          <Pencil className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]" />
+                          <Maximize2 className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]" aria-hidden="true" />
                         </div>
-                        <button
-                          type="button"
-                          className="absolute left-1 top-1 rounded-full bg-white/90 p-1 text-amber-500 transition hover:bg-white"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setCreateImageUrls((current) => promotePrimaryImage(current, imageIndex));
+                        <ProductImageActions
+                          imageUrl={imageUrl}
+                          label={`product image ${imageIndex + 1}`}
+                          isFeatured={imageIndex === 0}
+                          onFeature={() => setCreateImageUrls((current) => promotePrimaryImage(current, imageIndex))}
+                          onReplace={() => {
+                            setCreateReplaceImageIndex(imageIndex);
+                            createReplaceImageInputRef.current?.click();
                           }}
-                          aria-label={imageIndex === 0 ? "Primary image" : "Set as primary image"}
-                          title={imageIndex === 0 ? "Primary image" : "Set as primary image"}
-                        >
-                          <Star className={`h-3.5 w-3.5 ${imageIndex === 0 ? "fill-current" : ""}`} />
-                        </button>
-                        <button
-                          type="button"
-                          className="absolute right-1 top-1 rounded-full bg-red-600 p-1 text-white transition hover:bg-red-700"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setCreateImageUrls((current) => current.filter((_, index) => index !== imageIndex));
-                          }}
-                          aria-label="Remove product image"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
+                          onWatermarked={(publicUrl) => setCreateImageUrls((current) => current.map((entry, index) => (index === imageIndex ? publicUrl : entry)))}
+                          onRemove={() => setCreateImageUrls((current) => current.filter((_, index) => index !== imageIndex))}
+                        />
                       </div>
                     ))}
                     <button
@@ -3293,71 +3573,34 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                     />
                     <span className="text-sm font-medium">Has variants</span>
                   </label>
-                  {createHasVariants ? (
-                    <Button type="button" variant="outline" size="sm" onClick={addCreateVariantFromProductView}>
-                      Add variant
-                    </Button>
-                  ) : null}
                 </div>
 
                 {createHasVariants ? (
-                  <div className="space-y-3 rounded-md border border-border bg-white p-3">
-                    <p className="text-sm font-medium">Variants</p>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm text-muted-foreground">Create variants, then define option names and values inside each variant.</p>
-                        {createVariantError ? <p className="text-xs font-medium text-destructive">{createVariantError}</p> : null}
-                      </div>
-                      {createVariantGroups.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">No variants yet.</p>
-                      ) : (
-                        createVariantGroups.map((group, index) => (
-                          <div key={`create-group-${group.key}-${index}`} className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-2">
-                            <div>
-                              <p className="text-sm font-medium">{group.label}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {createVariantTierCount === 2 ? `${group.indexes.length} ${createTierTwoLabel.toLowerCase()} options` : "1 option"}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {group.indexes.some((variantIndex) => createVariants[variantIndex]?.status === "archived") ? (
-                                <Badge variant="secondary">archived</Badge>
-                              ) : null}
-                              <Button type="button" variant="outline" size="sm" onClick={() => openCreateVariantEditor(group.indexes[0] ?? 0)}>
-                                Edit
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() =>
-                                  updateCreateVariantStatuses(
-                                    group.indexes,
-                                    group.indexes.some((variantIndex) => createVariants[variantIndex]?.status === "archived")
-                                      ? "active"
-                                      : "archived"
-                                  )
-                                }
-                              >
-                                {group.indexes.some((variantIndex) => createVariants[variantIndex]?.status === "archived")
-                                  ? "Unarchive"
-                                  : "Archive"}
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                onClick={() => removeCreateVariants(group.indexes, `variant "${group.label}"`)}
-                              >
-                                Delete
-                              </Button>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
+                  <VariantsLister
+                    groups={createVariantGroups.map((group) => ({
+                      key: group.key,
+                      label: group.label,
+                      optionCount: group.indexes.length,
+                      archived: group.indexes.some((variantIndex) => createVariants[variantIndex]?.status === "archived"),
+                    }))}
+                    optionNoun={(group) =>
+                      createVariantTierCount === 2 ? `${group.optionCount} ${createTierTwoLabel.toLowerCase()} options` : "1 option"
+                    }
+                    error={createVariantError}
+                    onAdd={addCreateVariantFromProductView}
+                    onEdit={(index) => openCreateVariantEditor(createVariantGroups[index]?.indexes[0] ?? 0)}
+                    onToggleArchived={(index) => {
+                      const group = createVariantGroups[index];
+                      if (!group) return;
+                      const archived = group.indexes.some((variantIndex) => createVariants[variantIndex]?.status === "archived");
+                      updateCreateVariantStatuses(group.indexes, archived ? "active" : "archived");
+                    }}
+                    onDelete={(index) => {
+                      const group = createVariantGroups[index];
+                      if (!group) return;
+                      void removeCreateVariants(group.indexes, `variant "${group.label}"`);
+                    }}
+                  />
                 ) : (
                   <div className="space-y-3">
                     <FormField label="SKU">
@@ -3519,35 +3762,25 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                       <div className="flex flex-wrap gap-2">
                         {activeCreateVariantImageUrls.map((imageUrl, imageIndex) => (
                           <div key={`create-variant-group-image-preview-${imageUrl}-${imageIndex}`} className="group relative h-24 w-24 overflow-hidden rounded-md border border-border bg-muted/15">
-                            <Image src={imageUrl} alt="Variant image preview" fill unoptimized className="object-cover" />
                             <button
                               type="button"
-                              className="absolute right-1 top-1 rounded-full bg-red-600 p-1 text-white transition hover:bg-red-700"
-                              onClick={() =>
-                                setCreateVariants((current) =>
-                                  normalizeVariantDefaults(
-                                    current.map((variant, index) =>
-                                      activeCreateHasSubOptions
-                                        ? activeCreateGroupIndexes.includes(index)
-                                          ? {
-                                              ...variant,
-                                              groupImageUrls: (variant.groupImageUrls ?? []).filter((_, currentIndex) => currentIndex !== imageIndex)
-                                            }
-                                          : variant
-                                        : index === createActiveVariantIndex
-                                          ? {
-                                              ...variant,
-                                              imageUrls: (variant.imageUrls ?? []).filter((_, currentIndex) => currentIndex !== imageIndex)
-                                            }
-                                          : variant
-                                    )
-                                  )
-                                )
-                              }
-                              aria-label="Remove variant image"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
+                              className="absolute inset-0 z-0"
+                              aria-label={`View variant image ${imageIndex + 1}`}
+                              onClick={() => setViewingImage({ url: imageUrl, label: `Variant image ${imageIndex + 1}` })}
+                            />
+                            <div className="pointer-events-none absolute inset-0 bg-black/25 opacity-0 transition-opacity group-hover:opacity-100" />
+                            <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+                              <Maximize2 className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]" aria-hidden="true" />
+                            </div>
+                            <Image src={imageUrl} alt="Variant image preview" fill unoptimized className="pointer-events-none object-cover" />
+                            <ProductImageActions
+                              imageUrl={imageUrl}
+                              label={`variant image ${imageIndex + 1}`}
+                              isFeatured={imageIndex === 0}
+                              onFeature={() => updateActiveVariantImages("create", (urls) => promotePrimaryImage(urls, imageIndex))}
+                              onWatermarked={(publicUrl) => updateActiveVariantImages("create", (urls) => urls.map((entry, index) => (index === imageIndex ? publicUrl : entry)))}
+                              onRemove={() => updateActiveVariantImages("create", (urls) => urls.filter((_, index) => index !== imageIndex))}
+                            />
                           </div>
                         ))}
                         <label
@@ -3566,11 +3799,6 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         />
                         <span className="text-sm font-medium">Has options</span>
                       </label>
-                      {activeCreateHasSubOptions ? (
-                        <Button type="button" variant="outline" size="sm" onClick={addCreateTierTwoOption}>
-                          Add option
-                        </Button>
-                      ) : null}
                     </div>
                     {!activeCreateHasSubOptions ? (
                       <>
@@ -3684,60 +3912,31 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         </label> : null}
                       </>
                     ) : (
-                      <div className="space-y-3 rounded-md border border-border bg-white p-3">
-                        <p className="text-sm font-medium">Options</p>
-                        <p className="text-sm text-muted-foreground">{variantOptionInstruction(productType)}</p>
-                        <div className="space-y-2">
-                          {activeCreateSubOptionIndexes.length === 0 ? (
-                            <p className="text-xs text-muted-foreground">No options yet.</p>
-                          ) : null}
-                          {activeCreateSubOptionIndexes.map((index) => {
-                            const option = createVariants[index];
-                            if (!option) {
-                              return null;
-                            }
-
-                            return (
-                              <div key={`create-tier2-${index}`} className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-2">
-                                <div>
-                                  <p className="text-sm font-medium">{getOptionValue(option, activeCreateLevelTwoName) || `${activeCreateLevelTwoName} option`}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {variantOptionSummary(productType, option)}
-                                  </p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <Button type="button" variant="outline" size="sm" onClick={() => openCreateOptionEditor(index)}>
-                                    Edit
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => updateCreateVariantStatuses([index], option.status === "archived" ? "active" : "archived")}
-                                  >
-                                    {option.status === "archived" ? "Unarchive" : "Archive"}
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    className="border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                    onClick={() => {
-                                      if (activeCreateSubOptionIndexes.length <= 1) {
-                                        setCreateSubOptionsEnabled(false);
-                                        return;
-                                      }
-                                      void removeCreateVariants([index], "option");
-                                    }}
-                                  >
-                                    Delete
-                                  </Button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
+                      <OptionsLister
+                        description={variantOptionInstruction(productType)}
+                        onAdd={addCreateTierTwoOption}
+                        onEdit={(index) => openCreateOptionEditor(index)}
+                        onToggleArchived={(index) =>
+                          updateCreateVariantStatuses([index], createVariants[index]?.status === "archived" ? "active" : "archived")
+                        }
+                        onDelete={(index) => {
+                          if (activeCreateSubOptionIndexes.length <= 1) {
+                            setCreateSubOptionsEnabled(false);
+                            return;
+                          }
+                          void removeCreateVariants([index], "option");
+                        }}
+                        options={activeCreateSubOptionIndexes.flatMap((index) => {
+                          const option = createVariants[index];
+                          if (!option) return [];
+                          return [{
+                            index,
+                            label: getOptionValue(option, activeCreateLevelTwoName) || `${activeCreateLevelTwoName} option`,
+                            summary: variantOptionSummary(productType, option),
+                            archived: option.status === "archived",
+                          }];
+                        })}
+                      />
                     )}
                   </>
                 ) : (
@@ -3832,25 +4031,25 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                       <div className="flex flex-wrap gap-2">
                         {activeCreateVariant.imageUrls.map((imageUrl, imageIndex) => (
                           <div key={`create-option-image-preview-${imageUrl}-${imageIndex}`} className="group relative h-24 w-24 overflow-hidden rounded-md border border-border bg-muted/15">
-                            <Image src={imageUrl} alt="Option image preview" fill unoptimized className="object-cover" />
                             <button
                               type="button"
-                              className="absolute right-1 top-1 rounded-full bg-red-600 p-1 text-white transition hover:bg-red-700"
-                              onClick={() =>
-                                setCreateVariants((current) =>
-                                  normalizeVariantDefaults(
-                                    current.map((variant, index) =>
-                                      index === createActiveVariantIndex
-                                        ? { ...variant, imageUrls: (variant.imageUrls ?? []).filter((_, currentIndex) => currentIndex !== imageIndex) }
-                                        : variant
-                                    )
-                                  )
-                                )
-                              }
-                              aria-label="Remove option image"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
+                              className="absolute inset-0 z-0"
+                              aria-label={`View option image ${imageIndex + 1}`}
+                              onClick={() => setViewingImage({ url: imageUrl, label: `Option image ${imageIndex + 1}` })}
+                            />
+                            <div className="pointer-events-none absolute inset-0 bg-black/25 opacity-0 transition-opacity group-hover:opacity-100" />
+                            <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+                              <Maximize2 className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]" aria-hidden="true" />
+                            </div>
+                            <Image src={imageUrl} alt="Option image preview" fill unoptimized className="pointer-events-none object-cover" />
+                            <ProductImageActions
+                              imageUrl={imageUrl}
+                              label={`option image ${imageIndex + 1}`}
+                              isFeatured={imageIndex === 0}
+                              onFeature={() => updateActiveOptionImages("create", (urls) => promotePrimaryImage(urls, imageIndex))}
+                              onWatermarked={(publicUrl) => updateActiveOptionImages("create", (urls) => urls.map((entry, index) => (index === imageIndex ? publicUrl : entry)))}
+                              onRemove={() => updateActiveOptionImages("create", (urls) => urls.filter((_, index) => index !== imageIndex))}
+                            />
                           </div>
                         ))}
                         <label
@@ -4022,15 +4221,6 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                     <option value="digital">Digital download</option>
                   </Select>
                 </FormField>
-                {editProductType === "digital" ? (
-                  <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3">
-                    <label className="flex items-start gap-2">
-                      <Checkbox id="edit-digital-rights" checked={editDigitalRightsAffirmed} onChange={(event) => setEditDigitalRightsAffirmed(event.target.checked)} />
-                      <span className="text-sm">I own or control the rights necessary to distribute and sell these files.</span>
-                    </label>
-                    <p className="text-xs text-muted-foreground">Files are attached after this draft is created. Save it, then use the Files tab to add customer downloads.</p>
-                  </div>
-                ) : null}
                 <FormField label="Description">
                   <RichTextEditor
                     required
@@ -4092,7 +4282,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                   <Checkbox checked={editIsFeatured} onChange={(event) => setEditIsFeatured(event.target.checked)} />
                   <span className="text-sm font-medium">Featured product</span>
                 </label>
-                <FormField label="Image">
+                <FormField label="Image" description={editImageGuidance}>
                   <input
                     ref={editImageInputRef}
                     type="file"
@@ -4184,38 +4374,26 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                             editSuppressNextImageClickRef.current = false;
                             return;
                           }
-                          setEditReplaceImageIndex(imageIndex);
-                          editReplaceImageInputRef.current?.click();
+                          setViewingImage({ url: imageUrl, label: `Product image ${imageIndex + 1}` });
                         }}
                       >
                         <Image src={imageUrl} alt="Edited product image preview" fill unoptimized className="object-cover" />
                         <div className="pointer-events-none absolute inset-0 bg-black/25 opacity-0 transition-opacity group-hover:opacity-100" />
                         <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
-                          <Pencil className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]" />
+                          <Maximize2 className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]" aria-hidden="true" />
                         </div>
-                        <button
-                          type="button"
-                          className="absolute left-1 top-1 rounded-full bg-white/90 p-1 text-amber-500 transition hover:bg-white"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setEditImageUrls((current) => promotePrimaryImage(current, imageIndex));
+                        <ProductImageActions
+                          imageUrl={imageUrl}
+                          label={`product image ${imageIndex + 1}`}
+                          isFeatured={imageIndex === 0}
+                          onFeature={() => setEditImageUrls((current) => promotePrimaryImage(current, imageIndex))}
+                          onReplace={() => {
+                            setEditReplaceImageIndex(imageIndex);
+                            editReplaceImageInputRef.current?.click();
                           }}
-                          aria-label={imageIndex === 0 ? "Primary image" : "Set as primary image"}
-                          title={imageIndex === 0 ? "Primary image" : "Set as primary image"}
-                        >
-                          <Star className={`h-3.5 w-3.5 ${imageIndex === 0 ? "fill-current" : ""}`} />
-                        </button>
-                        <button
-                          type="button"
-                          className="absolute right-1 top-1 rounded-full bg-red-600 p-1 text-white transition hover:bg-red-700"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setEditImageUrls((current) => current.filter((_, index) => index !== imageIndex));
-                          }}
-                          aria-label="Remove image"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
+                          onWatermarked={(publicUrl) => setEditImageUrls((current) => current.map((entry, index) => (index === imageIndex ? publicUrl : entry)))}
+                          onRemove={() => setEditImageUrls((current) => current.filter((_, index) => index !== imageIndex))}
+                        />
                       </div>
                     ))}
                     <button
@@ -4229,9 +4407,19 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                   </div>
                 </FormField>
                 <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-2">
+                  <HintTooltip
+                    hint={
+                      editProductLevelFileCount > 0 && !editHasVariants
+                        ? "Remove this product's customer downloads to enable variants. Files are attached to whichever unit a buyer buys, so they would move to the variants."
+                        : undefined
+                    }
+                  >
+                  <label
+                    className={`flex items-center gap-2 ${editProductLevelFileCount > 0 && !editHasVariants ? "cursor-not-allowed opacity-60" : ""}`}
+                  >
                     <Checkbox
                       checked={editHasVariants}
+                      disabled={editProductLevelFileCount > 0 && !editHasVariants}
                       onChange={(event) => {
                         const nextValue = event.target.checked;
                         setEditHasVariants(nextValue);
@@ -4262,71 +4450,35 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                     />
                     <span className="text-sm font-medium">Has variants</span>
                   </label>
-                  {editHasVariants ? (
-                    <Button type="button" variant="outline" size="sm" onClick={addEditVariantFromProductView}>
-                      Add variant
-                    </Button>
-                  ) : null}
+                  </HintTooltip>
                 </div>
 
                 {editHasVariants ? (
-                  <div className="space-y-3 rounded-md border border-border bg-white p-3">
-                    <p className="text-sm font-medium">Variants</p>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm text-muted-foreground">Create variants, then define option names and values inside each variant.</p>
-                        {editVariantError ? <p className="text-xs font-medium text-destructive">{editVariantError}</p> : null}
-                      </div>
-                      {editVariantGroups.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">No variants yet.</p>
-                      ) : (
-                        editVariantGroups.map((group, index) => (
-                          <div key={`edit-group-${group.key}-${index}`} className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-2">
-                            <div>
-                              <p className="text-sm font-medium">{group.label}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {editVariantTierCount === 2 ? `${group.indexes.length} ${editTierTwoLabel.toLowerCase()} options` : "1 option"}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {group.indexes.some((variantIndex) => editVariants[variantIndex]?.status === "archived") ? (
-                                <Badge variant="secondary">archived</Badge>
-                              ) : null}
-                              <Button type="button" variant="outline" size="sm" onClick={() => openEditVariantEditor(group.indexes[0] ?? 0)}>
-                                Edit
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() =>
-                                  updateEditVariantStatuses(
-                                    group.indexes,
-                                    group.indexes.some((variantIndex) => editVariants[variantIndex]?.status === "archived")
-                                      ? "active"
-                                      : "archived"
-                                  )
-                                }
-                              >
-                                {group.indexes.some((variantIndex) => editVariants[variantIndex]?.status === "archived")
-                                  ? "Unarchive"
-                                  : "Archive"}
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                onClick={() => removeEditVariants(group.indexes, `variant "${group.label}"`)}
-                              >
-                                Delete
-                              </Button>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
+                  <VariantsLister
+                    groups={editVariantGroups.map((group) => ({
+                      key: group.key,
+                      label: group.label,
+                      optionCount: group.indexes.length,
+                      archived: group.indexes.some((variantIndex) => editVariants[variantIndex]?.status === "archived"),
+                    }))}
+                    optionNoun={(group) =>
+                      editVariantTierCount === 2 ? `${group.optionCount} ${editTierTwoLabel.toLowerCase()} options` : "1 option"
+                    }
+                    error={editVariantError}
+                    onAdd={addEditVariantFromProductView}
+                    onEdit={(index) => openEditVariantEditor(editVariantGroups[index]?.indexes[0] ?? 0)}
+                    onToggleArchived={(index) => {
+                      const group = editVariantGroups[index];
+                      if (!group) return;
+                      const archived = group.indexes.some((variantIndex) => editVariants[variantIndex]?.status === "archived");
+                      updateEditVariantStatuses(group.indexes, archived ? "active" : "archived");
+                    }}
+                    onDelete={(index) => {
+                      const group = editVariantGroups[index];
+                      if (!group) return;
+                      void removeEditVariants(group.indexes, `variant "${group.label}"`);
+                    }}
+                  />
                 ) : (
                   <div className="space-y-3">
                     <FormField label="SKU">
@@ -4336,6 +4488,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         onChange={(event) => setEditSku(event.target.value)}
                       />
                     </FormField>
+                    {renderEditDigitalFiles(null)}
                     {editProductType === "physical" ? (
                       <>
                         <FormField label="Inventory">
@@ -4449,35 +4602,25 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                       <div className="flex flex-wrap gap-2">
                         {activeEditVariantImageUrls.map((imageUrl, imageIndex) => (
                           <div key={`edit-variant-group-image-preview-${imageUrl}-${imageIndex}`} className="group relative h-24 w-24 overflow-hidden rounded-md border border-border bg-muted/15">
-                            <Image src={imageUrl} alt="Variant image preview" fill unoptimized className="object-cover" />
                             <button
                               type="button"
-                              className="absolute right-1 top-1 rounded-full bg-red-600 p-1 text-white transition hover:bg-red-700"
-                              onClick={() =>
-                                setEditVariants((current) =>
-                                  normalizeVariantDefaults(
-                                    current.map((variant, index) =>
-                                      activeEditHasSubOptions
-                                        ? activeEditGroupIndexes.includes(index)
-                                          ? {
-                                              ...variant,
-                                              groupImageUrls: (variant.groupImageUrls ?? []).filter((_, currentIndex) => currentIndex !== imageIndex)
-                                            }
-                                          : variant
-                                        : index === editActiveVariantIndex
-                                          ? {
-                                              ...variant,
-                                              imageUrls: (variant.imageUrls ?? []).filter((_, currentIndex) => currentIndex !== imageIndex)
-                                            }
-                                          : variant
-                                    )
-                                  )
-                                )
-                              }
-                              aria-label="Remove variant image"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
+                              className="absolute inset-0 z-0"
+                              aria-label={`View variant image ${imageIndex + 1}`}
+                              onClick={() => setViewingImage({ url: imageUrl, label: `Variant image ${imageIndex + 1}` })}
+                            />
+                            <div className="pointer-events-none absolute inset-0 bg-black/25 opacity-0 transition-opacity group-hover:opacity-100" />
+                            <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+                              <Maximize2 className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]" aria-hidden="true" />
+                            </div>
+                            <Image src={imageUrl} alt="Variant image preview" fill unoptimized className="pointer-events-none object-cover" />
+                            <ProductImageActions
+                              imageUrl={imageUrl}
+                              label={`variant image ${imageIndex + 1}`}
+                              isFeatured={imageIndex === 0}
+                              onFeature={() => updateActiveVariantImages("edit", (urls) => promotePrimaryImage(urls, imageIndex))}
+                              onWatermarked={(publicUrl) => updateActiveVariantImages("edit", (urls) => urls.map((entry, index) => (index === imageIndex ? publicUrl : entry)))}
+                              onRemove={() => updateActiveVariantImages("edit", (urls) => urls.filter((_, index) => index !== imageIndex))}
+                            />
                           </div>
                         ))}
                         <label
@@ -4489,25 +4632,24 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                       </div>
                     </FormField>
                     <div className="flex items-center justify-between">
-                      <label className="flex items-center gap-2">
+                      <HintTooltip
+                        hint={
+                          editActiveVariantFilesBlockOptions
+                            ? "Remove this variant's customer downloads to enable options. Files are attached to whichever unit a buyer buys, so they would move to the options."
+                            : undefined
+                        }
+                      >
+                      <label
+                        className={`flex items-center gap-2 ${editActiveVariantFilesBlockOptions ? "cursor-not-allowed opacity-60" : ""}`}
+                      >
                         <Checkbox
                           checked={activeEditHasSubOptions}
-                          disabled={activeEditGroupHasOrderedVariant}
+                          disabled={activeEditGroupHasOrderedVariant || editActiveVariantFilesBlockOptions}
                           onChange={(event) => setEditSubOptionsEnabled(event.target.checked)}
                         />
                         <span className="text-sm font-medium">Has options</span>
                       </label>
-                      {activeEditHasSubOptions ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={addEditTierTwoOption}
-                          disabled={activeEditGroupHasOrderedVariant}
-                        >
-                          Add option
-                        </Button>
-                      ) : null}
+                      </HintTooltip>
                     </div>
                     {!activeEditHasSubOptions ? (
                       <>
@@ -4577,6 +4719,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                             <p className="mt-1 text-xs text-muted-foreground">SKU is locked because this variant has orders.</p>
                           ) : null}
                         </FormField>
+                        {renderEditVariantFulfillment()}
+                        {renderEditDigitalFilesForVariant(activeEditVariant, "variant")}
                         <FormField label="Price">
                           <Input
                             inputMode="decimal"
@@ -4593,7 +4737,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                             }
                           />
                         </FormField>
-                        {editProductType === "physical" ? <FormField label="Inventory">
+                        {draftFulfillment(activeEditVariant) === "physical" ? <FormField label="Inventory">
                           <Input
                             inputMode="numeric"
                             placeholder="0"
@@ -4609,7 +4753,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                             }
                           />
                         </FormField> : null}
-                        {editProductType === "physical" ? <label className="flex items-center gap-2">
+                        {draftFulfillment(activeEditVariant) === "physical" ? <label className="flex items-center gap-2">
                           <Checkbox
                             checked={activeEditVariant.isMadeToOrder}
                             onChange={(event) =>
@@ -4626,60 +4770,32 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         </label> : null}
                       </>
                     ) : (
-                      <div className="space-y-3 rounded-md border border-border bg-white p-3">
-                        <p className="text-sm font-medium">Options</p>
-                        <p className="text-sm text-muted-foreground">{variantOptionInstruction(editProductType)}</p>
-                        <div className="space-y-2">
-                          {activeEditSubOptionIndexes.length === 0 ? (
-                            <p className="text-xs text-muted-foreground">No options yet.</p>
-                          ) : null}
-                          {activeEditSubOptionIndexes.map((index) => {
-                            const option = editVariants[index];
-                            if (!option) {
-                              return null;
-                            }
-
-                            return (
-                              <div key={`edit-tier2-${index}`} className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-2">
-                                <div>
-                                  <p className="text-sm font-medium">{getOptionValue(option, activeEditLevelTwoName) || `${activeEditLevelTwoName} option`}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {variantOptionSummary(editProductType, option)}
-                                  </p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <Button type="button" variant="outline" size="sm" onClick={() => openEditOptionEditor(index)}>
-                                    Edit
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => updateEditVariantStatuses([index], option.status === "archived" ? "active" : "archived")}
-                                  >
-                                    {option.status === "archived" ? "Unarchive" : "Archive"}
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    className="border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                    onClick={() => {
-                                      if (activeEditSubOptionIndexes.length <= 1) {
-                                        setEditSubOptionsEnabled(false);
-                                        return;
-                                      }
-                                      void removeEditVariants([index], "option");
-                                    }}
-                                  >
-                                    Delete
-                                  </Button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
+                      <OptionsLister
+                        description={variantOptionInstruction(editProductType)}
+                        addDisabled={activeEditGroupHasOrderedVariant}
+                        onAdd={addEditTierTwoOption}
+                        onEdit={(index) => openEditOptionEditor(index)}
+                        onToggleArchived={(index) =>
+                          updateEditVariantStatuses([index], editVariants[index]?.status === "archived" ? "active" : "archived")
+                        }
+                        onDelete={(index) => {
+                          if (activeEditSubOptionIndexes.length <= 1) {
+                            setEditSubOptionsEnabled(false);
+                            return;
+                          }
+                          void removeEditVariants([index], "option");
+                        }}
+                        options={activeEditSubOptionIndexes.flatMap((index) => {
+                          const option = editVariants[index];
+                          if (!option) return [];
+                          return [{
+                            index,
+                            label: getOptionValue(option, activeEditLevelTwoName) || `${activeEditLevelTwoName} option`,
+                            summary: variantOptionSummary(draftFulfillment(option), option),
+                            archived: option.status === "archived",
+                          }];
+                        })}
+                      />
                     )}
                   </>
                 ) : (
@@ -4776,25 +4892,25 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                           <div className="flex flex-wrap gap-2">
                             {activeEditVariant.imageUrls.map((imageUrl, imageIndex) => (
                               <div key={`edit-option-image-preview-${imageUrl}-${imageIndex}`} className="group relative h-24 w-24 overflow-hidden rounded-md border border-border bg-muted/15">
-                                <Image src={imageUrl} alt="Option image preview" fill unoptimized className="object-cover" />
-                                <button
-                                  type="button"
-                                  className="absolute right-1 top-1 rounded-full bg-red-600 p-1 text-white transition hover:bg-red-700"
-                                  onClick={() =>
-                                    setEditVariants((current) =>
-                                      normalizeVariantDefaults(
-                                        current.map((variant, index) =>
-                                          index === editActiveVariantIndex
-                                            ? { ...variant, imageUrls: (variant.imageUrls ?? []).filter((_, currentIndex) => currentIndex !== imageIndex) }
-                                            : variant
-                                        )
-                                      )
-                                    )
-                                  }
-                                  aria-label="Remove option image"
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
+                            <button
+                              type="button"
+                              className="absolute inset-0 z-0"
+                              aria-label={`View option image ${imageIndex + 1}`}
+                              onClick={() => setViewingImage({ url: imageUrl, label: `Option image ${imageIndex + 1}` })}
+                            />
+                            <div className="pointer-events-none absolute inset-0 bg-black/25 opacity-0 transition-opacity group-hover:opacity-100" />
+                            <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+                              <Maximize2 className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]" aria-hidden="true" />
+                            </div>
+                                <Image src={imageUrl} alt="Option image preview" fill unoptimized className="pointer-events-none object-cover" />
+                                <ProductImageActions
+                                  imageUrl={imageUrl}
+                                  label={`option image ${imageIndex + 1}`}
+                                  isFeatured={imageIndex === 0}
+                                  onFeature={() => updateActiveOptionImages("edit", (urls) => promotePrimaryImage(urls, imageIndex))}
+                                  onWatermarked={(publicUrl) => updateActiveOptionImages("edit", (urls) => urls.map((entry, index) => (index === imageIndex ? publicUrl : entry)))}
+                                  onRemove={() => updateActiveOptionImages("edit", (urls) => urls.filter((_, index) => index !== imageIndex))}
+                                />
                               </div>
                             ))}
                             <label
@@ -4873,6 +4989,8 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         <p className="mt-1 text-xs text-muted-foreground">SKU is locked because this variant has orders.</p>
                       ) : null}
                     </FormField>
+                    {renderEditVariantFulfillment()}
+                    {renderEditDigitalFilesForVariant(activeEditVariant, "option")}
                     <FormField label="Price">
                       <Input
                         inputMode="decimal"
@@ -4889,7 +5007,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         }
                       />
                     </FormField>
-                    {editProductType === "physical" ? <FormField label="Inventory">
+                    {draftFulfillment(activeEditVariant) === "physical" ? <FormField label="Inventory">
                       <Input
                         inputMode="numeric"
                         placeholder="0"
@@ -4905,7 +5023,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         }
                       />
                     </FormField> : null}
-                    {editProductType === "physical" ? <label className="flex items-center gap-2">
+                    {draftFulfillment(activeEditVariant) === "physical" ? <label className="flex items-center gap-2">
                       <Checkbox
                         checked={activeEditVariant.isMadeToOrder}
                         onChange={(event) =>
@@ -4941,8 +5059,10 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
         }}
       >
         <DialogPrimitive.Portal>
-          <DialogPrimitive.Overlay className="fixed inset-0 z-[60] bg-black/45 data-[state=open]:animate-in data-[state=closed]:animate-out" />
-          <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-[61] w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-white p-6 shadow-lg">
+          {/* Above the editor sheet (z-[80]/[81]); below it the sheet's own
+              backdrop covers this prompt and swallows every click on it. */}
+          <DialogPrimitive.Overlay className="fixed inset-0 z-[90] bg-black/45 data-[state=open]:animate-in data-[state=closed]:animate-out" />
+          <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-[91] w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-white p-6 shadow-lg">
             <DialogPrimitive.Title className="text-lg font-semibold text-foreground">Adjust inventory</DialogPrimitive.Title>
             <DialogPrimitive.Description className="mt-2 text-sm text-muted-foreground">
               {inventoryAdjustDraft ? `Update stock for ${inventoryAdjustDraft.variantLabel}.` : "Update stock for this variant."}
@@ -5018,6 +5138,12 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
 
+      <ImageViewerDialog
+        imageUrl={viewingImage?.url ?? null}
+        title={viewingImage?.label ?? "Product image"}
+        onClose={() => setViewingImage(null)}
+      />
+
       <DialogPrimitive.Root
         open={isDeleteConfirmOpen}
         onOpenChange={(open) => {
@@ -5027,8 +5153,10 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
         }}
       >
         <DialogPrimitive.Portal>
-          <DialogPrimitive.Overlay className="fixed inset-0 z-[60] bg-black/45 data-[state=open]:animate-in data-[state=closed]:animate-out" />
-          <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-[61] w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-white p-6 shadow-lg">
+          {/* Above the editor sheet (z-[80]/[81]); below it the sheet's own
+              backdrop covers this prompt and swallows every click on it. */}
+          <DialogPrimitive.Overlay className="fixed inset-0 z-[90] bg-black/45 data-[state=open]:animate-in data-[state=closed]:animate-out" />
+          <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-[91] w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-white p-6 shadow-lg">
             <DialogPrimitive.Title className="text-lg font-semibold text-foreground">{deleteConfirmTitle}</DialogPrimitive.Title>
             <DialogPrimitive.Description className="mt-2 text-sm text-muted-foreground">{deleteConfirmDescription}</DialogPrimitive.Description>
             <div className="mt-5 flex justify-end gap-2">

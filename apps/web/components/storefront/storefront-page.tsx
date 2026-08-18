@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { buildStorefrontThemeStyle, resolveStorefrontThemeConfig, type StorefrontThemeConfig } from "@/lib/theme/storefront-theme";
+import { resolveBuyerProductImages } from "@/lib/storefront/buyer-product-images";
 import { formatVariantLabel } from "@/lib/products/variants";
 import { StorefrontHeader } from "@/components/storefront/storefront-header";
 import { StorefrontImageCarousel } from "@/components/storefront/storefront-image-carousel";
@@ -63,6 +64,8 @@ type StorefrontVariant = {
   status: "active" | "archived";
   sort_order: number;
   created_at: string;
+  /** How this variant reaches the buyer; null inherits the product's. */
+  fulfillment_type?: "physical" | "digital" | null;
 };
 
 type StorefrontProduct = {
@@ -79,6 +82,9 @@ type StorefrontProduct = {
   price_cents: number;
   inventory_qty: number;
   product_type?: "physical" | "digital";
+  digital_summary?: {
+    publicPreviewUrl: string | null;
+  } | null;
   product_variants: StorefrontVariant[];
   product_option_axes?: Array<{
     id: string;
@@ -202,23 +208,17 @@ function getVariantOptionNames(product: StorefrontProduct, variants: StorefrontV
 }
 
 function getVariantImages(variant: StorefrontVariant | null, product: StorefrontProduct) {
-  const ordered = [...(variant?.image_urls ?? []), ...(variant?.group_image_urls ?? []), ...(product.image_urls ?? [])].filter(
-    (image): image is string => Boolean(image)
-  );
-
-  const unique: string[] = [];
-  const seen = new Set<string>();
-
-  for (const image of ordered) {
-    if (seen.has(image)) {
-      continue;
-    }
-    seen.add(image);
-    unique.push(image);
-  }
-
-  return unique;
+  return resolveBuyerProductImages({
+    productType: product.product_type,
+    // With a variant on show its own fulfillment decides; without one, the
+    // product only withholds its images when every variant is a download.
+    ...(variant ? { variantFulfillmentType: variant.fulfillment_type ?? null } : {}),
+    variantFulfillmentTypes: (product.product_variants ?? []).map((entry) => entry.fulfillment_type ?? null),
+    digitalPreviewUrl: product.digital_summary?.publicPreviewUrl,
+    candidates: [...(variant?.image_urls ?? []), ...(variant?.group_image_urls ?? []), ...(product.image_urls ?? [])],
+  });
 }
+
 
 function getPriceRange(variants: StorefrontVariant[]) {
   if (variants.length === 0) {

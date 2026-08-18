@@ -1,3 +1,4 @@
+import { resolveVariantFulfillment } from "./fulfillment";
 import type {
   DigitalAssetStatus,
   DigitalPreviewStatus,
@@ -49,7 +50,20 @@ function hasReadyVersion(asset: DigitalProductReadinessAsset) {
 export function resolveDigitalProductReadiness(
   input: DigitalProductReadinessInput,
 ): DigitalProductReadiness {
-  if (input.product.product_type === "physical") {
+  const activeVariants = input.variants.filter((variant) => variant.status === "active");
+  // Only the variants actually delivered as downloads need files, rights, or a
+  // buyer preview. A painting sold as a download, a print, and the original
+  // canvas must not be held back because its print has no file attached.
+  const digitalVariants = activeVariants.filter(
+    (variant) =>
+      resolveVariantFulfillment(input.product.product_type, variant.fulfillmentType) === "digital",
+  );
+  const involvesDigital =
+    activeVariants.length > 0
+      ? digitalVariants.length > 0
+      : input.product.product_type === "digital";
+
+  if (!involvesDigital) {
     return {
       ready: true,
       reasons: [],
@@ -59,11 +73,8 @@ export function resolveDigitalProductReadiness(
   }
 
   const reasons: DigitalProductReadiness["reasons"] = [];
-  const activeVariantIds = new Set(
-    input.variants
-      .filter((variant) => variant.status === "active")
-      .map((variant) => variant.id),
-  );
+  const activeVariantIds = new Set(activeVariants.map((variant) => variant.id));
+  const digitalVariantIds = new Set(digitalVariants.map((variant) => variant.id));
   const applicableAssets = input.assets.filter(
     (asset) =>
       asset.active &&
@@ -84,7 +95,7 @@ export function resolveDigitalProductReadiness(
       reasons.push("product_missing_file");
     }
   } else {
-    for (const variantId of activeVariantIds) {
+    for (const variantId of digitalVariantIds) {
       const hasApplicableFile = applicableAssets.some(
         (asset) =>
           asset.productVariantId === null ||

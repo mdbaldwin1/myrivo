@@ -166,7 +166,9 @@ describe("digital catalog overview and media", () => {
     await user.click(within(readiness).getByRole("button", { name: "Finish storefront preview" }));
     expect(onNavigate).toHaveBeenCalledWith("media", "preview");
     await user.click(within(readiness).getByRole("button", { name: "Attach a file to Square" }));
-    expect(onNavigate).toHaveBeenCalledWith("files", VARIANT_ID);
+    // Files are provided beside the SKU for the unit that owns them, so this
+    // blocker opens the product editor at that variant rather than a tab.
+    expect(onNavigate).toHaveBeenCalledWith("editor", VARIANT_ID);
     expect(within(readiness).getByRole("button", { name: "Publish product" }).hasAttribute("disabled")).toBe(true);
   });
 
@@ -374,14 +376,20 @@ describe("ProductManager digital catalog integration", () => {
     expect(within(table).queryByRole("button", { name: /Adjust inventory/i })).toBeNull();
 
     const tabs = screen.getByRole("tablist", { name: "Product details" });
-    expect(within(tabs).getByRole("tab", { name: "Files" })).toBeTruthy();
+    // Files live beside the SKU in the product editor, not in their own tab.
+    expect(within(tabs).queryByRole("tab", { name: "Files" })).toBeNull();
     expect(within(tabs).queryByRole("tab", { name: "Inventory" })).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Edit" }));
-    expect(screen.getByText(/Files are attached after this draft is created/i)).toBeTruthy();
+    // The editor holds the files themselves, so it no longer tells the merchant
+    // to go somewhere else to attach them.
+    expect(screen.queryByText(/attached after this draft is created/i)).toBeNull();
+    expect(screen.queryByText(/Files tab/i)).toBeNull();
     expect(screen.queryByText("Enable made to order")).toBeNull();
     expect(screen.queryByText("Inventory")).toBeNull();
-    expect(screen.getByRole("checkbox", { name: /I own or control the rights/i })).toBeTruthy();
+    // Rights are affirmed against the files themselves, not by a checkbox
+    // signed before any file exists.
+    expect(screen.queryByRole("checkbox", { name: /I own or control the rights/i })).toBeNull();
   });
 
   test("keeps physical inventory controls unchanged", () => {
@@ -426,7 +434,6 @@ describe("ProductManager digital catalog integration", () => {
     await user.click(fulfillment);
     await user.click(screen.getByRole("option", { name: "Digital download" }));
 
-    expect(screen.getByRole("checkbox", { name: /I own or control the rights/i }).getAttribute("aria-checked")).toBe("false");
     await user.click(screen.getByRole("button", { name: "Save product" }));
     expect(putBodies[0]?.digitalRightsAffirmed).toBe(false);
   });
@@ -478,7 +485,6 @@ describe("ProductManager digital catalog integration", () => {
     render(<ProductManager initialProducts={[starting]} />);
 
     await user.click(screen.getByRole("button", { name: "Edit" }));
-    await user.click(screen.getByRole("checkbox", { name: /I own or control the rights/i }));
     await user.click(screen.getByRole("button", { name: "Save product" }));
 
     const readiness = await screen.findByRole("region", { name: "Publishing readiness" });
@@ -558,13 +564,22 @@ describe("ProductManager digital catalog integration", () => {
       json: () => catalogBody,
     }) as Response));
     const user = userEvent.setup();
-    render(<ProductManager initialProducts={[product(), productB]} />);
+    // A single unstructured variant keeps the SKU - and therefore the files
+    // manager - at the product level, which is what this test drives.
+    const productA = product({
+      product_variants: [{ ...product().product_variants[0]!, option_values: {} }],
+    });
+    render(<ProductManager initialProducts={[productA, productB]} />);
 
-    await user.click(screen.getByRole("tab", { name: "Files" }));
+    // The files manager now lives in the product editor beside the SKU.
+    await user.click(screen.getByRole("button", { name: "Edit" }));
     await user.click(screen.getByRole("button", { name: `Refresh files catalog for ${PRODUCT_ID}` }));
     await waitFor(() => expect(filesMockState.signals).toHaveLength(1));
     expect(filesMockState.signals[0]?.aborted).toBe(false);
 
+    // The editor is modal, so leaving it is how a merchant reaches another
+    // product; that unmount is what must abort the in-flight refresh.
+    await user.keyboard("{Escape}");
     await user.click(screen.getByText("Product B"));
     await waitFor(() => expect(filesMockState.signals[0]?.aborted).toBe(true));
 
@@ -625,5 +640,26 @@ describe("ProductManager digital catalog integration", () => {
     expect(screen.getByRole("heading", { level: 3, name: "Product B" })).toBeTruthy();
     expect(screen.queryByText("Stale product A")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+  test("explains on the image field that buyers only ever see a watermarked version", async () => {
+    // Opening the editor fires background catalog requests; without a stub the
+    // relative URLs escape as unhandled rejections.
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({}), { status: 200 })));
+    const user = userEvent.setup();
+    render(<ProductManager initialProducts={[product()]} />);
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const guidance = screen.getByText(/Buyers only ever see a watermarked version/i);
+    expect(guidance.textContent).toMatch(/generated from the file automatically/i);
+    expect(guidance.textContent).toMatch(/watermarked before the storefront shows it/i);
+
+    // Rendered as the field's description, so assistive technology announces it
+    // with the control rather than as loose text nearby.
+    expect(guidance.getAttribute("id")).toMatch(/-description$/);
+  });
+
+  test("does not claim watermarking on a physical product's image field", () => {
+    render(<ProductManager initialProducts={[product({ product_type: "physical", digital_readiness: null, digital_preview: null, digital_rights_affirmed_at: null })]} />);
+    expect(screen.queryByText(/Buyers only ever see a watermarked version/i)).toBeNull();
   });
 });

@@ -5,130 +5,63 @@ import {
   resolveStoreDigitalProductsAccess,
 } from "@/lib/digital-products/feature-gating";
 
-function buildAccessClient(input: {
-  storeFlag?: boolean | null;
-  planFlags?: Record<string, unknown> | null;
-  planActive?: boolean;
-  profileExists?: boolean;
-}) {
+function buildAccessClient(input: { storeFlag?: boolean | null; error?: string }) {
   const from = vi.fn((table: string) => {
-    if (table === "store_feature_flags") {
-      const query = {
-        select: vi.fn(() => query),
-        eq: vi.fn(() => query),
-        maybeSingle: vi.fn(async () => ({
-          data:
-            input.storeFlag === undefined
-              ? null
-              : { digital_products: input.storeFlag },
-          error: null,
-        })),
-      };
-      return query;
+    if (table !== "store_feature_flags") {
+      throw new Error(`Unexpected table ${table}`);
     }
-
-    if (table === "store_billing_profiles") {
-      const query = {
-        select: vi.fn(() => query),
-        eq: vi.fn(() => query),
-        maybeSingle: vi.fn(async () => ({
-          data:
-            input.profileExists === false
-              ? null
-              : {
-                  billing_plans: {
-                    key: "standard",
-                    active: input.planActive ?? true,
-                    feature_flags_json: input.planFlags ?? null,
-                  },
-                },
-          error: null,
-        })),
-      };
-      return query;
-    }
-
-    throw new Error(`Unexpected table ${table}`);
+    const query = {
+      select: vi.fn(() => query),
+      eq: vi.fn(() => query),
+      maybeSingle: vi.fn(async () => ({
+        data: input.storeFlag === undefined ? null : { digital_products: input.storeFlag },
+        error: input.error ? { message: input.error } : null,
+      })),
+    };
+    return query;
   });
 
-  return { from };
+  return { client: { from }, from };
 }
 
 describe("digital product rollout feature gating", () => {
-  test("uses the dedicated camel-case plan key and defaults every missing layer off", async () => {
+  test("exposes the dedicated camel-case plan key", () => {
     expect(DIGITAL_PRODUCTS_FEATURE_KEY).toBe("digitalProducts");
-    expect(isDigitalProductsEnabled(undefined, undefined)).toBe(false);
-    expect(isDigitalProductsEnabled({}, { digital_products: true })).toBe(false);
-    expect(
-      isDigitalProductsEnabled(
-        { digitalProducts: true },
-        undefined,
-      ),
-    ).toBe(false);
-
-    await expect(
-      resolveStoreDigitalProductsAccess(
-        buildAccessClient({
-          storeFlag: undefined,
-          planFlags: { digitalProducts: true },
-        }),
-        "10000000-0000-4000-8000-000000000001",
-      ),
-    ).resolves.toEqual({
-      enabled: false,
-      planEligible: true,
-      storeEnabled: false,
-      planKey: "standard",
-    });
   });
 
-  test("enables a store only when its plan and store rollout flag are both true", async () => {
-    await expect(
-      resolveStoreDigitalProductsAccess(
-        buildAccessClient({
-          storeFlag: true,
-          planFlags: { digitalProducts: true },
-        }),
-        "10000000-0000-4000-8000-000000000001",
-      ),
-    ).resolves.toEqual({
-      enabled: true,
-      planEligible: true,
-      storeEnabled: true,
-      planKey: "standard",
-    });
+  test("treats a store as enabled unless it has explicitly opted out", () => {
+    expect(isDigitalProductsEnabled({ digital_products: true })).toBe(true);
+    expect(isDigitalProductsEnabled(undefined)).toBe(true);
+    expect(isDigitalProductsEnabled(null)).toBe(true);
+    expect(isDigitalProductsEnabled({})).toBe(true);
+    expect(isDigitalProductsEnabled({ digital_products: false })).toBe(false);
   });
 
-  test("keeps an inactive billing plan disabled even when both rollout flags are true", async () => {
+  test("enables a store that has no rollout row yet", async () => {
+    const { client } = buildAccessClient({});
     await expect(
-      resolveStoreDigitalProductsAccess(
-        buildAccessClient({
-          storeFlag: true,
-          planActive: false,
-          planFlags: { digitalProducts: true },
-        }),
-        "10000000-0000-4000-8000-000000000001",
-      ),
-    ).resolves.toEqual({
-      enabled: false,
-      planEligible: false,
-      storeEnabled: true,
-      planKey: "standard",
-    });
+      resolveStoreDigitalProductsAccess(client, "10000000-0000-4000-8000-000000000001"),
+    ).resolves.toEqual({ enabled: true, planEligible: true, storeEnabled: true, planKey: null });
   });
 
-  test("keeps malformed and truthy non-boolean plan flags disabled", () => {
-    expect(
-      isDigitalProductsEnabled(
-        { digitalProducts: "true" },
-        { digital_products: true },
-      ),
-    ).toBe(false);
-    expect(
-      isDigitalProductsEnabled(
-        { digitalProducts: true },
-        { digital_products: false },
-      ),
-    ).toBe(false);
+  test("disables only a store whose flag is explicitly false", async () => {
+    const { client } = buildAccessClient({ storeFlag: false });
+    await expect(
+      resolveStoreDigitalProductsAccess(client, "10000000-0000-4000-8000-000000000001"),
+    ).resolves.toEqual({ enabled: false, planEligible: true, storeEnabled: false, planKey: null });
+  });
+
+  test("does not consult billing plans", async () => {
+    const { client, from } = buildAccessClient({ storeFlag: true });
+    await resolveStoreDigitalProductsAccess(client, "10000000-0000-4000-8000-000000000001");
+    expect(from).toHaveBeenCalledTimes(1);
+    expect(from).toHaveBeenCalledWith("store_feature_flags");
+  });
+
+  test("surfaces a configuration read failure rather than guessing", async () => {
+    const { client } = buildAccessClient({ error: "rollout lookup failed" });
+    await expect(
+      resolveStoreDigitalProductsAccess(client, "10000000-0000-4000-8000-000000000001"),
+    ).rejects.toThrow(/rollout lookup failed/i);
   });
 });

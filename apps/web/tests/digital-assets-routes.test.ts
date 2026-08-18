@@ -451,6 +451,21 @@ describe("transactional digital asset service", () => {
     );
   });
 
+  it("explains why a live product refuses to give up its last file", async () => {
+    // The database keeps an active digital product deliverable; without this
+    // mapping the merchant only saw a generic 500.
+    const { admin } = buildAdmin(async () => ({
+      data: null,
+      error: { message: "Active digital product is not ready", code: "23514" },
+    }));
+
+    await expect(removeAsset({ admin, storeId: STORE_ID, assetId: ASSET_ID })).rejects.toMatchObject({
+      status: 409,
+      publicMessage:
+        "This product is live and needs at least one ready file. Add a replacement first, or unpublish the product before removing this file.",
+    });
+  });
+
   it("normalizes the database's concurrent 21st-file rejection", async () => {
     const { admin } = buildAdmin(async () => ({
       data: null,

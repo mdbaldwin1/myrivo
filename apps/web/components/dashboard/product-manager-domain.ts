@@ -16,6 +16,8 @@ export type ProductVariantListItem = {
   is_default: boolean;
   status: "active" | "archived";
   sort_order: number;
+  /** How this variant reaches the buyer; null inherits the product's. */
+  fulfillment_type?: "physical" | "digital" | null;
   created_at: string;
 };
 
@@ -70,6 +72,10 @@ export type OptionPairDraft = {
 
 export type VariantDraft = {
   id?: string;
+  /** Identifies a draft that has no row yet, so staged files can follow it. */
+  draftKey?: string;
+  /** Overrides the product's fulfillment for this variant; null inherits it. */
+  fulfillmentType?: "physical" | "digital" | null;
   title: string;
   sku: string;
   skuMode: "auto" | "manual";
@@ -95,12 +101,13 @@ export function buildDigitalPublishReadinessView(readiness: DigitalProductReadin
   };
 }
 
-export type CatalogInspectorTab = "overview" | "variants" | "inventory" | "files" | "media";
+export type CatalogInspectorTab = "overview" | "variants" | "inventory" | "media";
 
 export type DigitalReadinessAction = {
   reason: DigitalProductReadiness["reasons"][number];
   label: string;
-  tab: "files" | "media" | null;
+  /** "editor" opens the product editor at the unit that owns the file. */
+  tab: "editor" | "media" | null;
   target: string;
 };
 
@@ -116,14 +123,14 @@ export function buildDigitalReadinessActions(
       return { reason, label: "Finish storefront preview", tab: "media", target: "preview" };
     }
     if (reason === "product_missing_file") {
-      return { reason, label: "Attach a customer file", tab: "files", target: "upload" };
+      return { reason, label: "Attach a customer file", tab: "editor", target: "product" };
     }
     const variantId = reason.slice("variant_missing_file:".length);
     const variant = product.product_variants.find((candidate) => candidate.id === variantId);
     return {
       reason,
       label: `Attach a file to ${variant ? formatVariantLabelForReadiness(variant) : "the active variant"}`,
-      tab: "files",
+      tab: "editor",
       target: variantId,
     };
   });
@@ -135,8 +142,10 @@ function formatVariantLabelForReadiness(variant: ProductVariantListItem) {
 }
 
 export function inspectorTabsForProduct(productType: ProductListItem["product_type"]): CatalogInspectorTab[] {
+  // Customer files are provided beside the SKU for the unit they belong to,
+  // so digital products no longer carry a separate files tab.
   return productType === "digital"
-    ? ["overview", "variants", "files", "media"]
+    ? ["overview", "variants", "media"]
     : ["overview", "variants", "inventory", "media"];
 }
 
@@ -196,9 +205,14 @@ export function sortVariants(variants: ProductVariantListItem[]) {
   });
 }
 
+let draftKeyCounter = 0;
+
 export function createBlankVariant(isDefault = false): VariantDraft {
+  draftKeyCounter += 1;
   return {
     id: undefined,
+    draftKey: `draft-${draftKeyCounter}`,
+    fulfillmentType: null,
     title: "",
     sku: "",
     skuMode: "auto",

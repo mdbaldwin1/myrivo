@@ -14,6 +14,8 @@ export type VariantInput = {
   status?: VariantStatus;
   isDefault?: boolean;
   sortOrder?: number;
+  /** Overrides the product's fulfillment for this variant; null inherits it. */
+  fulfillmentType?: "physical" | "digital" | null;
   optionValues?: Record<string, string>;
 };
 
@@ -30,6 +32,7 @@ export type NormalizedVariantInput = {
   status: VariantStatus;
   is_default: boolean;
   sort_order: number;
+  fulfillment_type: "physical" | "digital" | null;
   option_values: Record<string, string>;
 };
 
@@ -127,6 +130,7 @@ export function normalizeVariantInputs(
       status: (variant.status === "archived" ? "archived" : "active") as VariantStatus,
       is_default: index === explicitDefaultIndex,
       sort_order: Number.isInteger(variant.sortOrder) ? (variant.sortOrder as number) : index,
+      fulfillment_type: variant.fulfillmentType ?? null,
       option_values: sanitizeOptionValues(variant.optionValues)
     };
   });

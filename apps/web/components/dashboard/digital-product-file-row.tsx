@@ -1,10 +1,18 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { ArrowDown, ArrowUp, MoreHorizontal } from "lucide-react";
+import { ArrowDown, ArrowUp } from "lucide-react";
+import {
+  ListerActionsMenu,
+  ListerRow,
+  ListerRowBody,
+  ListerRowControls,
+  ListerRowLabel,
+  ListerRowMain,
+  ListerRowMeta,
+} from "@/components/dashboard/lister";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import type {
@@ -16,6 +24,8 @@ import { DIGITAL_PRODUCT_CONFIG } from "@/lib/digital-products/config";
 type DigitalProductFileRowProps = {
   asset: DigitalProductAsset;
   variants: DigitalProductFileVariant[];
+  /** Placement already fixes which unit this file belongs to. */
+  scopeLocked?: boolean;
   index: number;
   count: number;
   busy: boolean;
@@ -58,6 +68,7 @@ export function DigitalProductFileRow({
   busy,
   onRename,
   onAssign,
+  scopeLocked = false,
   onMove,
   onReplace,
   onRemove,
@@ -68,13 +79,10 @@ export function DigitalProductFileRow({
   const replacementRef = useRef<HTMLInputElement | null>(null);
   const actionsRef = useRef<HTMLButtonElement | null>(null);
   return (
-    <li
-      aria-label={asset.label}
-      className="rounded-xl border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md"
-    >
-      <div className="flex flex-col gap-4">
-        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0 space-y-1">
+    <ListerRow label={asset.label}>
+      <div className="flex flex-col gap-2">
+        <ListerRowBody>
+          <ListerRowMain>
             {renaming ? (
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
                 <label className="min-w-0 flex-1 text-xs font-medium text-muted-foreground">
@@ -121,7 +129,9 @@ export function DigitalProductFileRow({
             ) : (
               <>
                 <div className="flex flex-wrap items-center gap-2">
-                  <h5 className="truncate font-medium">{asset.label}</h5>
+                  <ListerRowLabel title="Rename this file" disabled={busy} onClick={() => setRenaming(true)}>
+                    {asset.label}
+                  </ListerRowLabel>
                   {version ? (
                     <Badge
                       variant="outline"
@@ -137,18 +147,17 @@ export function DigitalProductFileRow({
                     </Badge>
                   ) : null}
                 </div>
-                <p className="truncate text-sm text-foreground">{version?.customer_filename ?? "Preparing file metadata"}</p>
-                {version ? (
-                  <p className="text-xs text-muted-foreground">
-                    {fileTypeLabel(version.mime_type)} · {fileSizeLabel(version.byte_size)} · Version {version.version_number}
-                  </p>
-                ) : null}
+                <ListerRowMeta>
+                  {version
+                    ? `${version.customer_filename} · ${fileTypeLabel(version.mime_type)} · ${fileSizeLabel(version.byte_size)} · v${version.version_number}`
+                    : "Preparing file metadata"}
+                </ListerRowMeta>
                 {version?.failure_reason ? <p className="text-xs text-destructive">{version.failure_reason}</p> : null}
               </>
             )}
-          </div>
+          </ListerRowMain>
 
-          <div className="flex shrink-0 flex-wrap items-center gap-1">
+          <ListerRowControls>
             <Button
               type="button"
               size="icon"
@@ -171,60 +180,57 @@ export function DigitalProductFileRow({
             >
               <ArrowDown className="h-4 w-4" aria-hidden="true" />
             </Button>
-          </div>
-        </div>
-
-        <div className="grid gap-3 border-t border-border/70 pt-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-          <label htmlFor={`digital-file-scope-${asset.id}`} className="text-xs font-medium text-muted-foreground">
-            File availability
-            <Select
-              id={`digital-file-scope-${asset.id}`}
-              value={asset.product_variant_id ?? "all"}
+            <ListerActionsMenu
+              label={asset.label}
               disabled={busy}
-              onChange={(event) => void onAssign(event.target.value === "all" ? null : event.target.value)}
-              className="mt-1"
-            >
-              <option value="all">All variants</option>
-              {variants.map((variant) => (
-                <option key={variant.id} value={variant.id}>
-                  {variant.label}{variant.status === "archived" ? " (archived)" : ""}
-                </option>
-              ))}
-            </Select>
-          </label>
-
-          <div className="flex flex-wrap gap-2">
-            <input
-              ref={replacementRef}
-              type="file"
-              className="sr-only"
-              accept={Object.keys(DIGITAL_PRODUCT_CONFIG.acceptedFiles).join(",")}
-              aria-label={`Choose a replacement for ${asset.label}`}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) onReplace(file, actionsRef.current);
-                event.target.value = "";
-              }}
+              triggerRef={actionsRef}
+              actions={[
+                { label: "Rename", onSelect: () => setRenaming(true) },
+                { label: "Replace file", onSelect: () => replacementRef.current?.click() },
+                { label: "Remove file", onSelect: onRemove, destructive: true },
+              ]}
             />
-            {/* Non-modal: menu items open a confirmation dialog, and a modal
-                menu's pointer-events lock can outlive the menu when a dialog
-                mounts during its close transition, leaving the page unclickable. */}
-            <DropdownMenu modal={false}>
-              <DropdownMenuTrigger asChild>
-                <Button ref={actionsRef} type="button" size="sm" variant="outline" disabled={busy} aria-label={`Manage ${asset.label}`}>
-                  Actions
-                  <MoreHorizontal className="ml-1.5 h-4 w-4" aria-hidden="true" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setRenaming(true)}>Rename</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => replacementRef.current?.click()}>Replace file</DropdownMenuItem>
-                <DropdownMenuItem className="text-destructive focus:bg-destructive/10 focus:text-destructive" onClick={onRemove}>Remove file</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+          </ListerRowControls>
+        </ListerRowBody>
+
+        <input
+          ref={replacementRef}
+          type="file"
+          className="sr-only"
+          accept={Object.keys(DIGITAL_PRODUCT_CONFIG.acceptedFiles).join(",")}
+          aria-label={`Choose a replacement for ${asset.label}`}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) onReplace(file, actionsRef.current);
+            event.target.value = "";
+          }}
+        />
+
+        {/* Placement fixes the scope when this list belongs to one unit, so the
+            picker - and the rule it sat on - only appear in the unscoped list. */}
+        {scopeLocked ? null : (
+          <div className="border-t border-border/70 pt-3">
+            <label htmlFor={`digital-file-scope-${asset.id}`} className="text-xs font-medium text-muted-foreground">
+              File availability
+              <Select
+                id={`digital-file-scope-${asset.id}`}
+                value={asset.product_variant_id ?? "all"}
+                disabled={busy}
+                onChange={(event) => void onAssign(event.target.value === "all" ? null : event.target.value)}
+                className="mt-1"
+              >
+                <option value="all">All variants</option>
+                {variants.map((variant) => (
+                  <option key={variant.id} value={variant.id}>
+                    {variant.label}{variant.status === "archived" ? " (archived)" : ""}
+                  </option>
+                ))}
+              </Select>
+            </label>
           </div>
-        </div>
+        )}
+
       </div>
-    </li>
+    </ListerRow>
   );
 }

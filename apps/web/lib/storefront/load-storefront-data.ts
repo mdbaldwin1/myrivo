@@ -225,7 +225,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
     admin
       .from("products")
       .select(
-        "id,title,description,slug,image_urls,image_alt_text,seo_title,seo_description,is_featured,created_at,price_cents,inventory_qty,product_type,product_variants(id,title,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_made_to_order,is_default,status,sort_order,created_at),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))"
+        "id,title,description,slug,image_urls,image_alt_text,seo_title,seo_description,is_featured,created_at,price_cents,inventory_qty,product_type,product_variants(id,title,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_made_to_order,is_default,status,sort_order,created_at,fulfillment_type),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))"
       )
       .eq("store_id", store.id)
       .in("status", [...visibleProductStatuses])
@@ -285,7 +285,7 @@ export async function loadStorefrontData(explicitStoreSlug?: string | null): Pro
     const legacyProducts = await admin
       .from("products")
       .select(
-        "id,title,description,image_urls,is_featured,created_at,price_cents,inventory_qty,product_variants(id,title,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_made_to_order,is_default,status,sort_order,created_at),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))"
+        "id,title,description,image_urls,is_featured,created_at,price_cents,inventory_qty,product_variants(id,title,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_made_to_order,is_default,status,sort_order,created_at,fulfillment_type),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))"
       )
       .eq("store_id", store.id)
       .in("status", [...visibleProductStatuses])

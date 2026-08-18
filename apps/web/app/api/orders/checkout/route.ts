@@ -39,6 +39,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isStorePaymentsReadyForLaunch, type StoreTaxCollectionMode } from "@/lib/stores/tax-compliance";
 import { enqueueDigitalDelivery } from "@/lib/digital-products/delivery-jobs";
 import { DIGITAL_PRODUCT_CONFIG } from "@/lib/digital-products/config";
+import { resolveVariantFulfillment } from "@/lib/digital-products/fulfillment";
 import {
   buildDigitalManifestStripeMetadata,
   createOrReuseCheckoutManifest,
@@ -110,6 +111,7 @@ type VariantRow = {
   inventory_qty: number;
   is_made_to_order: boolean;
   status: string;
+  fulfillment_type: "physical" | "digital" | null;
   option_values: Record<string, string> | null;
   products: VariantProductJoin | VariantProductJoin[] | null;
 };
@@ -291,7 +293,7 @@ async function resolveCheckoutCatalog({
 
   const { data: variants, error: variantsError } = await supabase
     .from("product_variants")
-    .select("id,product_id,title,price_cents,inventory_qty,is_made_to_order,status,option_values,products!inner(id,title,status,store_id,product_type)")
+    .select("id,product_id,title,price_cents,inventory_qty,is_made_to_order,status,fulfillment_type,option_values,products!inner(id,title,status,store_id,product_type)")
     .eq("store_id", storeId)
     .in("id", variantIds)
     .returns<VariantRow[]>();
@@ -317,11 +319,14 @@ async function resolveCheckoutCatalog({
     if (entry.productId && entry.productId !== product.id) {
       throw new CheckoutCatalogError("A selected variant does not match its product.");
     }
-    if (product.product_type === "digital" && entry.quantity !== 1) {
+    // Fulfillment is a property of the line, not the product: a painting can
+    // be bought as a download, as a print, or as the original canvas.
+    const fulfillmentType = resolveVariantFulfillment(product.product_type, variant.fulfillment_type);
+    if (fulfillmentType === "digital" && entry.quantity !== 1) {
       throw new CheckoutCatalogError("Digital products have a quantity of one.");
     }
     if (
-      product.product_type === "physical" &&
+      fulfillmentType === "physical" &&
       !variant.is_made_to_order &&
       variant.inventory_qty < entry.quantity
     ) {
@@ -343,7 +348,7 @@ async function resolveCheckoutCatalog({
       quantity: entry.quantity,
       variantLabel,
       productTitle: product.title,
-      productType: product.product_type,
+      productType: fulfillmentType,
       unitPriceCents: variant.price_cents
     });
   }
