@@ -1,54 +1,19 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
-
 ## [Unreleased]
 
-- Hardened digital-product acceptance with database-owned deployment configuration, canonical typed evidence, real Stripe test refunds, fail-closed dispute capability checks, and deeper keyboard/dynamic-state accessibility workflows.
-- Added signed scenario-specific provider evidence, mutually authenticated dispute-test helpers, exact webhook correlation, five-session grant-boundary checks, and immutable replacement buyer verification.
-- Redacted acceptance sessions with independent HMAC digests, added recursive evidence leak rejection, ledger-backed webhook signature proof, isolated dispute-opened coverage, and a nonproduction one-shot post-reservation signing fault.
-- Corrected grant-boundary evidence to compare exact IDs, verified final storage bytes and filenames beyond the 303 redirect, and expanded keyboard upload/publish/checkout and replacement-dialog accessibility coverage.
-- Separated issued download usage from released reservation audits, required successful post-fault retry evidence, and made zoom/download accessibility actions mandatory rather than conditional.
-- Unified the release CLI and application tests on one canonical signed-evidence verifier and added dynamic axe checks for signing, limit, delivery, refund, and dispute transitions.
-- Strengthened canonical verification across checkout manifests, issued grants, financial webhook/access state, Resend delivery timestamps, and exact delivery-attempt chronology.
-- Added full-scenario adversarial release evidence, immutable old/new replacement observations, normalized dispute access proofs, ordered delivery timestamps, persisted unique Resend message IDs, and mandatory mobile/desktop keyboard and live-region acceptance coverage.
-- Made the shared verifier the sole release semantic authority with actual CLI pass/fail integration, required released-grant/retry and persisted delivery-resend proof, corrected refund-versus-lost-dispute buyer copy, and expanded responsive failure/recovery accessibility coverage.
-- Pinned the five-grant acceptance boundary to the production `409 download_limit_reached` response and required delivery-retry evidence to prove a succeeded final job, exact attempt count, and persisted merchant-resend notification.
-
-- Bound acceptance observations to newly completed checkout orders, enabled tightly allowlisted preview builds, added Resend message/access-link retrieval, removed synthetic financial certification, and made unsupported provider scenarios fail the release gate.
-- Added a service-role-only, run/store/project-bound non-production acceptance controller with tamper-resistant audit, separate evidence signing credentials, valid image fixtures, and encoded Stripe-hosted digital/mixed checkout journeys.
-- Made digital-product promotion evidence current-run and signed, added a production-disabled acceptance control plane with independent state observations, moved core acceptance actions into the merchant/buyer UI, enforced unique migration versions with release/session privilege tests, and added retryable download network-timeout feedback.
-- Removed digital-download bearers from request paths and browser history through fragment-to-HttpOnly-session exchange, added a database-authoritative provider/reviewer rollout interlock and fail-closed release command, and improved reduced-motion and download-progress feedback.
-- Kept checkout and signed-in first access bearer-free by establishing download sessions server-side, made grant issuance a trusted-origin POST, made fragment exchange retry-safe, and bound acceptance to the exact release, evidence digest, origin, environment, and pre-merge promotion check.
-- Added production-readiness validation for digital products with release security contracts, gated end-to-end and responsive axe journeys, a complete operations/incident runbook, and explicit real Stripe/Resend acceptance evidence requirements.
-- Added store-scoped, default-off digital-product rollout controls with plan eligibility, database-authoritative catalog and checkout gates, Digital/Mixed Studio scenarios, editable safe delivery email copy, privacy-safe operational telemetry, and audited admin-only delivery health and repair actions.
-- Added native digital products with private multi-file delivery, watermarked image previews, digital-only and mixed checkout support, 48-hour secure access links, five atomic download grants per file with 60-second same-session retry grace, personal-use licensing, and refund/dispute access controls.
-- Hardened digital-product uploads with tenant-bound upload intents, streamed byte verification, immutable replacements, safe catalog removal, bounded metadata-free watermarked previews, and stable same-store preview overrides.
-- Prevented undeliverable digital products from publishing with transactional rights, preview, and per-variant file readiness checks plus safe fulfillment-type conversion rules.
-- Made paid digital delivery durable with transactionally queued manifest jobs, leased retries, bounded exponential backoff, atomic entitlement and purchase-token materialization, provider-idempotent email handoff, and merchant-visible terminal failures.
-- Added reliable digital order-delivery notifications with enriched order confirmations, attempt-by-attempt provider auditing, durable retries, neutral 48-hour access copy, and tenant-authorized idempotent merchant resend that rotates links without resetting download grants.
-- Completed customer digital access with anti-enumeration link recovery, transactionally queued 48-hour recovery emails, short authenticated order-history sessions, polished accessible download and recovery pages, and a versioned personal-use license.
-- Rebuilt the merchant catalog for digital products with fulfillment-first browsing, publish-readiness guidance, multi-file upload and lifecycle management, variant-scoped deliverables, and an exact public-preview workspace that keeps originals private.
-- Finished the digital buyer and order experience with safe variant file summaries, digital/physical cart grouping, post-payment first access, signed-in refund/dispute states, merchant delivery operations, and explicit digital refund consequences.
-
-### Fixed
-- Rejected JSON null and wrong-type values for every digital-product telemetry dimension, and kept delivery-failure telemetry on the bounded repair-generation attempt count so long-lived global attempt history cannot roll back a failure transition.
-- Closed digital-product rollout races by requiring active plan eligibility in the application, rechecking pending digital settlement inside the database transaction, preserving completed paid-order repair, resetting only an audited delivery repair budget, serializing duplicate operator actions, and enforcing event-specific typed telemetry dimensions.
-- Made refund and dispute digital-access transitions atomic, deterministically source-ordered, idempotent, audited, retryable, and reconcilable, with one-winner refund execution, capability-aware durable financial notifications, cumulative full-refund revocation, and dispute-specific suspension/restoration.
-- Kept digital checkout timeout recovery available when transient status responses are empty or malformed, while separating initial purchase-email state from later merchant resend notifications in order operations.
-- Made post-payment digital preparation resilient beyond the initial polling window with a safe manual retry, preserved physical next steps for mixed-order delivery failures, restored checkout form ownership and accessible pre-submit validation, and restricted fresh-link resend to completed eligible deliveries.
-- Kept merchant digital-product readiness authoritative after rights, file, and preview changes; isolated async catalog work across product switches; restored failed private uploads after reload; removed physical inventory language from digital variants; and enforced zero-stock/non-made-to-order digital invariants in both API and database writes.
-- Hardened digital-link recovery with platform-trusted keyed IP throttling that survives cookie resets, bounded quantized response envelopes plus audit-free database decoy work, and removal of UUID-derived order references from bearer responses.
-- Bound malformed digital-download reservation cleanup to caller-known request identity and authenticated opaque browser sessions so swapped responses and client-controlled cookies cannot release or bypass limits for another request.
-- Fixed digital storefront cart handling so zero-inventory downloads remain purchasable and visibly available in product grids, persisted carts are transactionally repaired from the active catalog, stale or mismatched selections are removed, duplicate digital quantities are constrained to one, and checkout type/composition snapshots are enforced against authoritative catalog data.
-- Made storefront checkout retries idempotent across double submits, reloads, legacy cart completion, mutable catalog or promotion changes, ambiguous Stripe responses, and checkout-session persistence failures; accepted Stripe session IDs are bound even without a redirect URL, paid sessions finalize from the immutable purchase snapshot regardless of later store status, and stub/free retries create one order.
-- Fixed shipping-order checkout capture so Stripe-collected shipping addresses are saved onto orders and shown in the merchant order flyout.
-- Fixed custom-domain storefront routing so verified domains keep clean paths like `/`, `/products`, `/about`, `/cart`, and `/checkout` instead of leaking back to `/s/:storeSlug/...`.
-- Fixed storefront cart/checkout accessibility metadata and stabilized merchant E2E flows so release validation matches the current store-scoped dashboard, onboarding, and draft/live storefront behavior.
-- Fixed merchant order flyouts so customer-entered order notes now appear in the order summary when present.
-- Fixed storefront product detail pricing so changing quantity updates the displayed total before the item is added to cart.
+## [0.2.0] - 2026-08-18
 
 ### Added
+- Made digital products generally available to every store, replacing the per-store opt-in and the release acceptance gate with an opt-out setting.
+- Let fulfillment belong to a variant rather than a whole product, so one painting can be sold as a download, as a print in the post, and as the original canvas from a single listing, with shipping charged and an address collected only for the parts that ship.
+- Moved customer downloads beside the SKU, at whichever unit a buyer actually buys - the product, a variant, or an option under a variant.
+- Held a new variant's files in the browser until the product is saved, so a whole variant can be built in one pass, and uploaded them with the save that creates it.
+- Let merchants watermark the storefront images buyers browse, and put the original back afterwards, so the picture on show can be the artwork being sold.
+- Opened product images at full size, and gathered featuring, replacing, watermarking, and removal into one menu on each image.
+- Asked merchants to confirm their right to sell each file once it is uploaded, rather than by a checkbox signed before any file exists.
+- Published version 2 of the platform and storefront terms and the storefront privacy notice, covering digital distribution rights, delivery, and refunds.
 - Added a preview-first store onboarding system with resumable setup sessions, onboarding-first first-product creation, AI/deterministic storefront generation, reveal-to-workspace handoff, launch-readiness guidance, and platform onboarding analytics.
 - Added configurable per-customer promotion redemption caps with race-safe checkout enforcement, redemption ledger tracking, and merchant promotion controls for unlimited, one-per-customer, or custom customer limits.
 - Added governance metadata to the Myrivo docs library, including documented ownership, review cadence, next-review dates, and an overdue-doc review process.
@@ -132,3 +97,61 @@ All notable changes to this project will be documented in this file.
 - Expanded Playwright coverage with dedicated settings/domain workflow and storefront visibility-gating scenarios.
 - Fixed draft-store UX so authenticated owners can preview `/s/[slug]` before activation, while public traffic remains restricted to active stores.
 - Hardened authenticated mutation APIs with same-origin request enforcement (CSRF mitigation) across store/product/promotion/order/inventory/subscription actions.
+
+### Changed
+- Judged publishing readiness by the variants that are downloads, so a product is not held back by variants that ship.
+- Showed buyers a digital variant only as its watermarked preview while still showing photographs of anything that ships, instead of hiding every image of a product that has a download.
+- Gave files, variants, and options one shared list and row, so an action means and looks the same wherever it appears.
+- Explained unavailable controls with the app's own tooltip rather than the browser's.
+- Hardened digital-product acceptance with database-owned deployment configuration, canonical typed evidence, real Stripe test refunds, fail-closed dispute capability checks, and deeper keyboard/dynamic-state accessibility workflows.
+- Added signed scenario-specific provider evidence, mutually authenticated dispute-test helpers, exact webhook correlation, five-session grant-boundary checks, and immutable replacement buyer verification.
+- Redacted acceptance sessions with independent HMAC digests, added recursive evidence leak rejection, ledger-backed webhook signature proof, isolated dispute-opened coverage, and a nonproduction one-shot post-reservation signing fault.
+- Corrected grant-boundary evidence to compare exact IDs, verified final storage bytes and filenames beyond the 303 redirect, and expanded keyboard upload/publish/checkout and replacement-dialog accessibility coverage.
+- Separated issued download usage from released reservation audits, required successful post-fault retry evidence, and made zoom/download accessibility actions mandatory rather than conditional.
+- Unified the release CLI and application tests on one canonical signed-evidence verifier and added dynamic axe checks for signing, limit, delivery, refund, and dispute transitions.
+- Strengthened canonical verification across checkout manifests, issued grants, financial webhook/access state, Resend delivery timestamps, and exact delivery-attempt chronology.
+- Added full-scenario adversarial release evidence, immutable old/new replacement observations, normalized dispute access proofs, ordered delivery timestamps, persisted unique Resend message IDs, and mandatory mobile/desktop keyboard and live-region acceptance coverage.
+- Made the shared verifier the sole release semantic authority with actual CLI pass/fail integration, required released-grant/retry and persisted delivery-resend proof, corrected refund-versus-lost-dispute buyer copy, and expanded responsive failure/recovery accessibility coverage.
+- Pinned the five-grant acceptance boundary to the production `409 download_limit_reached` response and required delivery-retry evidence to prove a succeeded final job, exact attempt count, and persisted merchant-resend notification.
+
+- Bound acceptance observations to newly completed checkout orders, enabled tightly allowlisted preview builds, added Resend message/access-link retrieval, removed synthetic financial certification, and made unsupported provider scenarios fail the release gate.
+- Added a service-role-only, run/store/project-bound non-production acceptance controller with tamper-resistant audit, separate evidence signing credentials, valid image fixtures, and encoded Stripe-hosted digital/mixed checkout journeys.
+- Made digital-product promotion evidence current-run and signed, added a production-disabled acceptance control plane with independent state observations, moved core acceptance actions into the merchant/buyer UI, enforced unique migration versions with release/session privilege tests, and added retryable download network-timeout feedback.
+- Removed digital-download bearers from request paths and browser history through fragment-to-HttpOnly-session exchange, added a database-authoritative provider/reviewer rollout interlock and fail-closed release command, and improved reduced-motion and download-progress feedback.
+- Kept checkout and signed-in first access bearer-free by establishing download sessions server-side, made grant issuance a trusted-origin POST, made fragment exchange retry-safe, and bound acceptance to the exact release, evidence digest, origin, environment, and pre-merge promotion check.
+- Added production-readiness validation for digital products with release security contracts, gated end-to-end and responsive axe journeys, a complete operations/incident runbook, and explicit real Stripe/Resend acceptance evidence requirements.
+- Added store-scoped, default-off digital-product rollout controls with plan eligibility, database-authoritative catalog and checkout gates, Digital/Mixed Studio scenarios, editable safe delivery email copy, privacy-safe operational telemetry, and audited admin-only delivery health and repair actions.
+- Added native digital products with private multi-file delivery, watermarked image previews, digital-only and mixed checkout support, 48-hour secure access links, five atomic download grants per file with 60-second same-session retry grace, personal-use licensing, and refund/dispute access controls.
+- Hardened digital-product uploads with tenant-bound upload intents, streamed byte verification, immutable replacements, safe catalog removal, bounded metadata-free watermarked previews, and stable same-store preview overrides.
+- Prevented undeliverable digital products from publishing with transactional rights, preview, and per-variant file readiness checks plus safe fulfillment-type conversion rules.
+- Made paid digital delivery durable with transactionally queued manifest jobs, leased retries, bounded exponential backoff, atomic entitlement and purchase-token materialization, provider-idempotent email handoff, and merchant-visible terminal failures.
+- Added reliable digital order-delivery notifications with enriched order confirmations, attempt-by-attempt provider auditing, durable retries, neutral 48-hour access copy, and tenant-authorized idempotent merchant resend that rotates links without resetting download grants.
+- Completed customer digital access with anti-enumeration link recovery, transactionally queued 48-hour recovery emails, short authenticated order-history sessions, polished accessible download and recovery pages, and a versioned personal-use license.
+- Rebuilt the merchant catalog for digital products with fulfillment-first browsing, publish-readiness guidance, multi-file upload and lifecycle management, variant-scoped deliverables, and an exact public-preview workspace that keeps originals private.
+- Finished the digital buyer and order experience with safe variant file summaries, digital/physical cart grouping, post-payment first access, signed-in refund/dispute states, merchant delivery operations, and explicit digital refund consequences.
+
+### Fixed
+- Kept a mixed product's rights affirmation and its printed stock, which older rules erased whenever a product's own default disagreed with one of its variants.
+- Closed a gap where a product that ships by default but sells one download escaped the digital publishing rules entirely, and could go live with no file, no rights, and no buyer preview.
+- Allowed files to be attached to a download sold from an otherwise physical product.
+- Paired staged files with the variant they were staged on by position rather than by a SKU that is regenerated on save.
+- Explained why a live product refuses to give up its last file instead of failing with a generic server error.
+- Raised the editor's own prompts, menus, and tooltips above the sheet that opens them, where a backdrop had been swallowing every click.
+- Stopped a click on an image's menu from also opening the file picker behind it.
+- Let an account be erased without losing the consent record the platform must retain.
+- Kept end-to-end test runs away from shared backends.
+- Rejected JSON null and wrong-type values for every digital-product telemetry dimension, and kept delivery-failure telemetry on the bounded repair-generation attempt count so long-lived global attempt history cannot roll back a failure transition.
+- Closed digital-product rollout races by requiring active plan eligibility in the application, rechecking pending digital settlement inside the database transaction, preserving completed paid-order repair, resetting only an audited delivery repair budget, serializing duplicate operator actions, and enforcing event-specific typed telemetry dimensions.
+- Made refund and dispute digital-access transitions atomic, deterministically source-ordered, idempotent, audited, retryable, and reconcilable, with one-winner refund execution, capability-aware durable financial notifications, cumulative full-refund revocation, and dispute-specific suspension/restoration.
+- Kept digital checkout timeout recovery available when transient status responses are empty or malformed, while separating initial purchase-email state from later merchant resend notifications in order operations.
+- Made post-payment digital preparation resilient beyond the initial polling window with a safe manual retry, preserved physical next steps for mixed-order delivery failures, restored checkout form ownership and accessible pre-submit validation, and restricted fresh-link resend to completed eligible deliveries.
+- Kept merchant digital-product readiness authoritative after rights, file, and preview changes; isolated async catalog work across product switches; restored failed private uploads after reload; removed physical inventory language from digital variants; and enforced zero-stock/non-made-to-order digital invariants in both API and database writes.
+- Hardened digital-link recovery with platform-trusted keyed IP throttling that survives cookie resets, bounded quantized response envelopes plus audit-free database decoy work, and removal of UUID-derived order references from bearer responses.
+- Bound malformed digital-download reservation cleanup to caller-known request identity and authenticated opaque browser sessions so swapped responses and client-controlled cookies cannot release or bypass limits for another request.
+- Fixed digital storefront cart handling so zero-inventory downloads remain purchasable and visibly available in product grids, persisted carts are transactionally repaired from the active catalog, stale or mismatched selections are removed, duplicate digital quantities are constrained to one, and checkout type/composition snapshots are enforced against authoritative catalog data.
+- Made storefront checkout retries idempotent across double submits, reloads, legacy cart completion, mutable catalog or promotion changes, ambiguous Stripe responses, and checkout-session persistence failures; accepted Stripe session IDs are bound even without a redirect URL, paid sessions finalize from the immutable purchase snapshot regardless of later store status, and stub/free retries create one order.
+- Fixed shipping-order checkout capture so Stripe-collected shipping addresses are saved onto orders and shown in the merchant order flyout.
+- Fixed custom-domain storefront routing so verified domains keep clean paths like `/`, `/products`, `/about`, `/cart`, and `/checkout` instead of leaking back to `/s/:storeSlug/...`.
+- Fixed storefront cart/checkout accessibility metadata and stabilized merchant E2E flows so release validation matches the current store-scoped dashboard, onboarding, and draft/live storefront behavior.
+- Fixed merchant order flyouts so customer-entered order notes now appear in the order summary when present.
+- Fixed storefront product detail pricing so changing quantity updates the displayed total before the item is added to cart.

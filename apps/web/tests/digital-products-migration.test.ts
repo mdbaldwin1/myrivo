@@ -793,45 +793,30 @@ describe("digital product store rollout controls", () => {
     );
   }
 
-  it("defaults off and requires both plan eligibility and a store enablement", () => {
+  it("is on unless a store explicitly opts out, regardless of billing plan", () => {
+    // No flag row at all: generally available.
+    runSql("full_chain", `delete from public.store_feature_flags where store_id = '${ids.manifestStore}'`);
     expect(
-      runSql(
-        "full_chain",
-        `select public.is_store_digital_products_enabled('${ids.manifestStore}')::text`,
-      ),
-    ).toBe("false");
-
-    enableRollout();
-
-    expect(
-      runSql(
-        "full_chain",
-        `select public.is_store_digital_products_enabled('${ids.manifestStore}')::text`,
-      ),
+      runSql("full_chain", `select public.is_store_digital_products_enabled('${ids.manifestStore}')::text`),
     ).toBe("true");
 
-    runSql(
-      "full_chain",
-      `update public.billing_plans set active = false
-       where id = (
-         select billing_plan_id from public.store_billing_profiles
-         where store_id = '${ids.manifestStore}'
-       )`,
-    );
+    // An explicit opt-out is the only thing that disables it.
+    runSql("full_chain", `insert into public.store_feature_flags(store_id, digital_products)
+      values ('${ids.manifestStore}', false)
+      on conflict (store_id) do update set digital_products = false`);
     expect(
-      runSql(
-        "full_chain",
-        `select public.is_store_digital_products_enabled('${ids.manifestStore}')::text`,
-      ),
+      runSql("full_chain", `select public.is_store_digital_products_enabled('${ids.manifestStore}')::text`),
     ).toBe("false");
-    runSql(
-      "full_chain",
-      `update public.billing_plans set active = true
-       where id = (
-         select billing_plan_id from public.store_billing_profiles
-         where store_id = '${ids.manifestStore}'
-       )`,
-    );
+
+    // Billing plan state no longer participates in the decision.
+    runSql("full_chain", `update public.store_feature_flags set digital_products = true where store_id = '${ids.manifestStore}';
+      update public.billing_plans set active = false
+      where id = (select billing_plan_id from public.store_billing_profiles where store_id = '${ids.manifestStore}')`);
+    expect(
+      runSql("full_chain", `select public.is_store_digital_products_enabled('${ids.manifestStore}')::text`),
+    ).toBe("true");
+    runSql("full_chain", `update public.billing_plans set active = true
+      where id = (select billing_plan_id from public.store_billing_profiles where store_id = '${ids.manifestStore}')`);
   });
 
   it("authoritatively blocks new digital catalog and checkout state while physical sales remain available", () => {

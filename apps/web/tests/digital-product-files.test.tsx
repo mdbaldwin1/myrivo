@@ -139,8 +139,8 @@ describe("DigitalProductFiles", () => {
 
     const list = await screen.findByRole("list", { name: "Customer download files" });
     const poster = within(list).getByRole("listitem", { name: "Printable poster" });
-    expect(within(poster).getByText("sunrise-poster.pdf")).toBeTruthy();
-    expect(within(poster).getByText("PDF · 2 MB · Version 2")).toBeTruthy();
+    // Filename and metadata share one compact line so rows stay short.
+    expect(within(poster).getByText("sunrise-poster.pdf · PDF · 2 MB · v2")).toBeTruthy();
     expect(within(poster).getByRole("combobox", { name: "File availability" })).toBeTruthy();
     expect(within(poster).getByText("Ready")).toBeTruthy();
 
@@ -295,7 +295,7 @@ describe("DigitalProductFiles", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<DigitalProductFiles productId={PRODUCT_ID} />);
-    await screen.findByText("No customer files yet");
+    await screen.findByText(/No files yet/i);
 
     await user.upload(screen.getByLabelText("Add customer download files"), new File(["retry"], "retry.pdf", { type: "application/pdf" }));
     const retry = await screen.findByRole("button", { name: "Retry upload" });
@@ -399,7 +399,7 @@ describe("DigitalProductFiles", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     const { rerender } = render(<DigitalProductFiles productId={PRODUCT_ID} onCatalogChange={onCatalogChange} />);
-    await screen.findByText("No customer files yet");
+    await screen.findByText(/No files yet/i);
 
     await user.upload(
       screen.getByLabelText("Add customer download files"),
@@ -408,7 +408,7 @@ describe("DigitalProductFiles", () => {
     expect(await screen.findByRole("status", { name: "Upload progress for product-a.pdf" })).toBeTruthy();
     await waitFor(() => expect(uploadSignal).not.toBeNull());
     rerender(<DigitalProductFiles productId={PRODUCT_B_ID} onCatalogChange={onCatalogChange} />);
-    expect(await screen.findByText("No customer files yet")).toBeTruthy();
+    expect(await screen.findByText(/No files yet/i)).toBeTruthy();
     try {
       await waitFor(() => expect(uploadSignal?.aborted).toBe(true));
     } finally {
@@ -419,5 +419,74 @@ describe("DigitalProductFiles", () => {
     expect(completedIntents).toEqual([]);
     expect(onCatalogChange).not.toHaveBeenCalled();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+  test("scoped to one sellable unit: shows only that unit's files and drops the availability pickers", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).startsWith(`/api/products/digital-assets?productId=${PRODUCT_ID}`)) {
+        return json({ assets: readyAssets() });
+      }
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }));
+
+    render(
+      <DigitalProductFiles
+        productId={PRODUCT_ID}
+        variants={variants}
+        scope={{ productVariantId: VARIANT_ID }}
+        productImageUrls={["https://images.example/a.jpg"]}
+      />,
+    );
+
+    const list = await screen.findByRole("list", { name: "Customer download files" });
+    // Only the file belonging to this variant, and no scope pickers at all:
+    // placement already decides where the file belongs.
+    expect(within(list).getByText("Square artwork")).toBeTruthy();
+    expect(within(list).queryByText("Printable poster")).toBeNull();
+    expect(screen.queryByLabelText(/Applies to/i)).toBeNull();
+    expect(screen.queryByLabelText(/File availability/i)).toBeNull();
+  });
+
+  test("requires a product image when the original cannot be watermarked", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).startsWith(`/api/products/digital-assets?productId=${PRODUCT_ID}`)) {
+        return json({ assets: readyAssets() });
+      }
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }));
+
+    // The product-level file is a PDF, which cannot carry a watermark.
+    const { unmount } = render(
+      <DigitalProductFiles productId={PRODUCT_ID} variants={variants} scope={{ productVariantId: null }} productImageUrls={[]} />,
+    );
+    expect(await screen.findByText("Add a product image before publishing")).toBeTruthy();
+    unmount();
+
+    // Supplying a storefront image satisfies it.
+    render(
+      <DigitalProductFiles
+        productId={PRODUCT_ID}
+        variants={variants}
+        scope={{ productVariantId: null }}
+        productImageUrls={["https://images.example/a.jpg"]}
+      />,
+    );
+    await screen.findByRole("list", { name: "Customer download files" });
+    expect(screen.queryByText("Add a product image before publishing")).toBeNull();
+  });
+
+  test("a watermarkable original needs no stand-in image", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).startsWith(`/api/products/digital-assets?productId=${PRODUCT_ID}`)) {
+        return json({ assets: readyAssets() });
+      }
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    }));
+
+    // The variant-scoped file is a PNG.
+    render(
+      <DigitalProductFiles productId={PRODUCT_ID} variants={variants} scope={{ productVariantId: VARIANT_ID }} productImageUrls={[]} />,
+    );
+    await screen.findByRole("list", { name: "Customer download files" });
+    expect(screen.queryByText("Add a product image before publishing")).toBeNull();
   });
 });

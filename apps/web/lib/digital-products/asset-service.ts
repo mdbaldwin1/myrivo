@@ -67,6 +67,15 @@ function firstRow<T>(data: unknown): T | null {
 
 function throwDatabaseError(error: DatabaseError | null): never {
   const normalized = error?.message.toLowerCase() ?? "";
+  // A live digital product must keep a deliverable: the database refuses to
+  // leave an active product with nothing ready to send a buyer.
+  if (normalized.includes("active digital product is not ready")) {
+    throw new AssetLifecycleError(
+      409,
+      "This product is live and needs at least one ready file. Add a replacement first, or unpublish the product before removing this file.",
+      "active_product_needs_file",
+    );
+  }
   if (normalized.includes("active file limit")) {
     throw new AssetLifecycleError(
       409,

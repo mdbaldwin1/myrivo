@@ -78,6 +78,8 @@ export type DigitalProductReadinessInput = {
   readonly variants: ReadonlyArray<{
     readonly id: string;
     readonly status: ProductVariantStatus;
+    /** Overrides the product's fulfillment for this variant; null inherits it. */
+    readonly fulfillmentType?: "physical" | "digital" | null;
   }>;
   readonly assets: ReadonlyArray<DigitalProductReadinessAsset>;
 };

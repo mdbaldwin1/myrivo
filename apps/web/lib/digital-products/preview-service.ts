@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
 import sharp from "sharp";
+import {
+  WATERMARKED_FOLDER,
+  imageBaseName,
+  isWatermarkedProductImage,
+  splitWatermarkedPath,
+} from "@/lib/digital-products/watermarked-images";
 import { DIGITAL_ASSET_BUCKET, DIGITAL_PREVIEW_BUCKET } from "./assets";
 import { DIGITAL_PRODUCT_CONFIG } from "./config";
 import type { AssetAdminClient } from "./asset-service";
@@ -383,3 +389,103 @@ export async function setPreviewOverride(input: {
     throw new PreviewLifecycleError(500, "Unable to set preview image.", "preview_override_failed");
   }
 }
+
+/**
+ * Burns a watermark into one of a product's own storefront images, in place.
+ *
+ * A merchant selling artwork often wants the picture buyers browse to be the
+ * picture they are buying. This lets them keep that image and still hand out a
+ * copy nobody would want instead of the original, without going anywhere near
+ * the private deliverable.
+ */
+export async function watermarkProductImage(input: {
+  admin: PreviewAdminClient;
+  storeId: string;
+  sourceUrl: string;
+  storeName: string;
+  fetcher?: typeof fetch;
+}): Promise<{ publicUrl: string }> {
+  const source = parsePublicProductImage(input.sourceUrl, input.storeId);
+  if (!source) {
+    throw new PreviewLifecycleError(404, "That image is unavailable.", "preview_source_unavailable");
+  }
+  if (isWatermarkedProductImage(input.sourceUrl)) {
+    // Stamping a stamped copy would bury the original a second time.
+    throw new PreviewLifecycleError(409, "This image is already watermarked.", "preview_source_unavailable");
+  }
+
+  const storage = input.admin.storage.from("store-products");
+  const listed = await storage.list?.(source.directory, { search: source.name, limit: 2 });
+  if (!listed || listed.error || !listed.data?.some((object) => object.name === source.name)) {
+    throw new PreviewLifecycleError(404, "That image is unavailable.", "preview_source_unavailable");
+  }
+  const canonicalUrl = storage.getPublicUrl?.(source.path).data.publicUrl;
+  const canonical = canonicalUrl ? parsePublicProductImage(canonicalUrl, input.storeId) : null;
+  if (!canonical || canonical.normalizedUrl !== source.normalizedUrl) {
+    throw new PreviewLifecycleError(404, "That image is unavailable.", "preview_source_unavailable");
+  }
+
+  try {
+    const response = await (input.fetcher ?? fetch)(canonical.normalizedUrl, {
+      cache: "no-store",
+      redirect: "error",
+    });
+    const rendered = await renderWatermarkedPreview(response, {
+      storeName: input.storeName,
+      maxSourceBytes: DIGITAL_PRODUCT_CONFIG.previewOverrideMaxSourceBytes,
+    });
+    // Named after its source rather than hashed from it: filenames are already
+    // unique within a folder, and this way the original can always be found
+    // again. A hash would be one-way, stranding the merchant on the stamped
+    // copy the moment they saved.
+    const publicPath = `${source.directory}/${WATERMARKED_FOLDER}/${imageBaseName(source.name)}.jpg`;
+    const uploaded = await storage.upload?.(publicPath, rendered.bytes, {
+      contentType: "image/jpeg",
+      cacheControl: "31536000, immutable",
+      upsert: true,
+    });
+    if (!uploaded || uploaded.error) throw new Error("Watermarked image upload failed");
+    const publicUrl = storage.getPublicUrl?.(publicPath).data.publicUrl;
+    if (!publicUrl) throw new Error("Watermarked image is unreachable");
+    return { publicUrl };
+  } catch (error) {
+    if (error instanceof PreviewLifecycleError) throw error;
+    throw new PreviewLifecycleError(500, "Unable to watermark this image.", "preview_override_failed");
+  }
+}
+
+/**
+ * Puts back the image a watermarked copy was made from.
+ *
+ * A watermark is burned into the pixels, so it can never be lifted from the
+ * copy itself - the only way back is the original, which is why watermarking
+ * writes beside it rather than over it.
+ */
+export async function removeProductImageWatermark(input: {
+  admin: PreviewAdminClient;
+  storeId: string;
+  sourceUrl: string;
+}): Promise<{ publicUrl: string }> {
+  const watermarked = parsePublicProductImage(input.sourceUrl, input.storeId);
+  const split = watermarked ? splitWatermarkedPath(watermarked.path) : null;
+  if (!watermarked || !split) {
+    throw new PreviewLifecycleError(400, "That image has no watermark to remove.", "preview_source_unavailable");
+  }
+
+  const storage = input.admin.storage.from("store-products");
+  const listed = await storage.list?.(split.sourceDirectory, { search: split.base, limit: 20 });
+  if (listed?.error) {
+    throw new PreviewLifecycleError(404, "The original image is no longer available.", "preview_source_unavailable");
+  }
+  const original = (listed?.data ?? []).find((object) => imageBaseName(object.name) === split.base);
+  if (!original) {
+    throw new PreviewLifecycleError(404, "The original image is no longer available.", "preview_source_unavailable");
+  }
+
+  const publicUrl = storage.getPublicUrl?.(`${split.sourceDirectory}/${original.name}`).data.publicUrl;
+  if (!publicUrl) {
+    throw new PreviewLifecycleError(404, "The original image is no longer available.", "preview_source_unavailable");
+  }
+  return { publicUrl };
+}
+

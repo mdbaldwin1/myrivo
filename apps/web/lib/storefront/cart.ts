@@ -1,4 +1,5 @@
 import type { StorefrontAttributionSnapshot } from "@/lib/analytics/attribution";
+import { resolveVariantFulfillment } from "@/lib/digital-products/fulfillment";
 
 export const STOREFRONT_CART_STORAGE_KEY = "aha-cart:single-store";
 export const STOREFRONT_CART_UPDATED_EVENT = "myrivo:storefront-cart-updated";
@@ -15,6 +16,7 @@ export type StorefrontCartProduct = {
   product_variants: ReadonlyArray<{
     id: string;
     status: "active" | "archived";
+    fulfillment_type?: "physical" | "digital" | null;
   }>;
 };
 
@@ -26,9 +28,11 @@ export function normalizeStorefrontCart(
   for (const product of products) {
     for (const variant of product.product_variants) {
       if (variant.status === "active") {
+        // Quantity is clamped for downloads, and a variant decides whether
+        // this particular line is one.
         activeSelections.set(
           `${product.id}:${variant.id}`,
-          product.product_type ?? "physical"
+          resolveVariantFulfillment(product.product_type, variant.fulfillment_type)
         );
       }
     }

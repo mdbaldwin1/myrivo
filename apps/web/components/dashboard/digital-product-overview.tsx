@@ -6,7 +6,7 @@ import { resolvePriceRange, type ProductListItem } from "@/components/dashboard/
 
 type DigitalProductOverviewProps = {
   product: ProductListItem;
-  onNavigate: (tab: "files" | "media", target: string) => void;
+  onNavigate: (tab: "editor" | "media", target: string) => void;
   onEdit: (target: "rights") => void;
   onPublish: () => void | Promise<void>;
 };

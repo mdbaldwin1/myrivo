@@ -1,11 +1,15 @@
 "use client";
 
+import { Plus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DigitalProductFileRow } from "@/components/dashboard/digital-product-file-row";
+import { Lister, ListerEmpty, ListerRows } from "@/components/dashboard/lister";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Select } from "@/components/ui/select";
+import { HintTooltip } from "@/components/ui/tooltip";
 import { DIGITAL_PRODUCT_CONFIG } from "@/lib/digital-products/config";
+import { digitalFileLabel as fileLabel, validateDigitalFile as validateFile } from "@/lib/digital-products/upload-asset";
 import { notify } from "@/lib/feedback/toast";
 
 export type DigitalAssetVersion = {
@@ -68,6 +72,7 @@ type UploadJob = {
 type PendingConfirmation =
   | { type: "replace"; asset: DigitalProductAsset; file: File; returnFocus: HTMLButtonElement | null }
   | { type: "remove"; asset: DigitalProductAsset }
+  | { type: "rights"; fileName: string }
   | null;
 
 type DigitalProductFilesProps = {
@@ -75,6 +80,19 @@ type DigitalProductFilesProps = {
   variants?: DigitalProductFileVariant[];
   focusTarget?: string | null;
   onCatalogChange?: (signal?: AbortSignal) => void | Promise<void>;
+  /**
+   * Locks this list to one sellable unit, matching where the SKU for that unit
+   * is edited: the product itself when it has no variants, otherwise the
+   * variant or option being edited. Undefined keeps the unscoped list.
+   */
+  scope?: { productVariantId: string | null };
+  /** Reports every asset on the product, so the editor can tell which units
+      already carry files and must not be restructured underneath them. */
+  onAssetsChange?: (assets: DigitalProductAsset[]) => void;
+  /** Storefront images available to stand in as the buyer preview. */
+  productImageUrls?: string[];
+  /** Whether the merchant has affirmed the right to sell this product's files. */
+  rightsAffirmed?: boolean;
 };
 
 function parseError(payload: unknown, fallback: string) {
@@ -93,20 +111,6 @@ async function responseJson(response: Response) {
   }
 }
 
-function fileLabel(fileName: string) {
-  return fileName.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").trim() || "Customer file";
-}
-
-function validateFile(file: File) {
-  const extension = `.${file.name.split(".").pop()?.toLowerCase() ?? ""}` as keyof typeof DIGITAL_PRODUCT_CONFIG.acceptedFiles;
-  if (DIGITAL_PRODUCT_CONFIG.acceptedFiles[extension] !== file.type) {
-    return "Unsupported file type. Use JPG, PNG, PDF, or ZIP.";
-  }
-  if (file.size <= 0 || file.size > DIGITAL_PRODUCT_CONFIG.maxFileBytes) {
-    return "File must be between 1 byte and 250 MB.";
-  }
-  return null;
-}
 
 function isAbortError(error: unknown, signal: AbortSignal) {
   return signal.aborted || (error instanceof Error && error.name === "AbortError");
@@ -116,7 +120,7 @@ function sortAssets(assets: DigitalProductAsset[]) {
   return [...assets].sort((left, right) => left.sort_order - right.sort_order);
 }
 
-export function DigitalProductFiles({ productId, variants = [], focusTarget, onCatalogChange }: DigitalProductFilesProps) {
+export function DigitalProductFiles({ productId, variants = [], focusTarget, onCatalogChange, scope, productImageUrls = [], rightsAffirmed = true, onAssetsChange }: DigitalProductFilesProps) {
   const [assets, setAssets] = useState<DigitalProductAsset[]>([]);
   const [failedUploads, setFailedUploads] = useState<PersistedFailedUpload[]>([]);
   const [uploads, setUploads] = useState<UploadJob[]>([]);
@@ -140,6 +144,29 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
 
   function finishOperation(controller: AbortController) {
     operationControllersRef.current.delete(controller);
+  }
+
+  async function affirmRights() {
+    const controller = beginOperation();
+    try {
+      const response = await fetch("/api/products", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId, digitalRightsAffirmed: true }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        showError(parseError(await responseJson(response), "Unable to record your rights confirmation."));
+        return;
+      }
+      notify.success("Rights confirmed for this product.");
+      await onCatalogChange?.(controller.signal);
+    } catch (affirmError) {
+      if (isAbortError(affirmError, controller.signal)) return;
+      showError(affirmError instanceof Error ? affirmError.message : "Unable to record your rights confirmation.");
+    } finally {
+      finishOperation(controller);
+    }
   }
 
   const showError = useCallback((message: string) => {
@@ -259,7 +286,7 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         productId,
-        productVariantId: uploadScope === "all" ? null : uploadScope,
+        productVariantId: scope ? scope.productVariantId : uploadScope === "all" ? null : uploadScope,
         label: job.label,
         fileName: job.file.name,
         mimeType: job.file.type,
@@ -381,6 +408,9 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
       if (result.ok || (result.assetId && refreshed.some((asset) => asset.id === result.assetId))) {
         setUploads((current) => current.filter((candidate) => candidate.id !== job.id));
         notify.success("Customer file is ready.");
+        // Rights are affirmed against the file that was actually uploaded,
+        // while the merchant still has it in mind.
+        setPendingConfirmation({ type: "rights", fileName: job.file.name });
         await onCatalogChange?.(controller.signal);
       } else {
         updateJob(job.id, { phase: "failed", progress: 100, message: result.message });
@@ -659,29 +689,51 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
   }
 
   const activeUploadCount = uploads.filter((job) => job.phase !== "failed").length;
+  useEffect(() => {
+    onAssetsChange?.(assets);
+  }, [assets, onAssetsChange]);
+
+  const scopedAssets = scope
+    ? assets.filter((asset) => (asset.product_variant_id ?? null) === scope.productVariantId)
+    : assets;
+
+  // Watermarked buyer previews are only generated from JPEG or PNG originals.
+  // Anything else needs a storefront image to stand in, or the product cannot
+  // be published.
+  const needsStandInPreview = scopedAssets.some((asset) =>
+    asset.digital_product_asset_versions.some(
+      (version) => version.retired_at === null && version.mime_type !== "image/jpeg" && version.mime_type !== "image/png",
+    ),
+  );
+  const missingProductImage = needsStandInPreview && productImageUrls.length === 0;
+
   const uploadDisabled = assets.length + activeUploadCount >= DIGITAL_PRODUCT_CONFIG.maxFilesPerProduct;
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/15 p-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="space-y-1">
-          <h4 className="font-medium">Customer download files</h4>
-          <p className="max-w-2xl text-xs text-muted-foreground">
-            Originals stay private. Buyers receive only the ready files that apply to their selected variant.
-          </p>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-          {variants.length > 0 ? (
+    <Lister
+      title="Customer downloads"
+      description={
+        scope
+          ? "Originals stay private. Buyers who purchase this option receive these files."
+          : "Originals stay private. Buyers receive only the ready files that apply to their selected variant."
+      }
+      meta={`${assets.length + activeUploadCount} of ${DIGITAL_PRODUCT_CONFIG.maxFilesPerProduct} files · JPG, PNG, PDF, or ZIP · 250 MB each`}
+      addControl={
+        <div className="flex shrink-0 items-center gap-2">
+          {!scope && variants.length > 0 ? (
             <label className="space-y-1 text-xs font-medium">
-              Applies to
-              <Select value={uploadScope} onChange={(event) => setUploadScope(event.target.value)}>
+              <span className="sr-only">Applies to</span>
+              <Select value={uploadScope} onChange={(event) => setUploadScope(event.target.value)} aria-label="Applies to">
                 <option value="all">All variants</option>
                 {variants.map((variant) => <option key={variant.id} value={variant.id}>{variant.label}</option>)}
               </Select>
             </label>
           ) : null}
-          <label className="inline-flex h-9 cursor-pointer items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2">
-            Add files
+          <HintTooltip hint="Add files">
+          <label
+            className={`inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background transition hover:bg-muted focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${uploadDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
             <input
               ref={uploadInputRef}
               type="file"
@@ -697,13 +749,10 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
               }}
             />
           </label>
+          </HintTooltip>
         </div>
-      </div>
-
-      <p className="text-xs text-muted-foreground">
-        {assets.length + activeUploadCount} of {DIGITAL_PRODUCT_CONFIG.maxFilesPerProduct} files · JPG, PNG, PDF, or ZIP · 250 MB each
-      </p>
-
+      }
+    >
       {error ? (
         <div
           ref={errorRef}
@@ -784,22 +833,42 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
       ) : null}
 
       {loading ? <p role="status" className="text-sm text-muted-foreground">Loading customer files…</p> : null}
-      {!loading && assets.length === 0 && uploads.length === 0 && failedUploads.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border p-6 text-center">
-          <p className="text-sm font-medium">No customer files yet</p>
-          <p className="mt-1 text-xs text-muted-foreground">Add at least one ready file before publishing this digital product.</p>
+      {!rightsAffirmed && scopedAssets.length > 0 ? (
+        <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <p>
+            <span className="font-medium">Confirm you can sell these files.</span>{" "}
+            Myrivo&apos;s terms require you to hold the rights to distribute and sell everything you upload.
+          </p>
+          <Button type="button" size="sm" variant="outline" onClick={() => void affirmRights()}>
+            I hold the rights
+          </Button>
         </div>
       ) : null}
 
-      {assets.length > 0 ? (
-        <ul aria-label="Customer download files" className="space-y-3">
-          {assets.map((asset, index) => (
+      {missingProductImage ? (
+        <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <p className="font-medium">Add a product image before publishing</p>
+          <p className="mt-1 text-xs">
+            Buyer previews are watermarked from the original file, which only works for JPG and PNG. This file type needs a
+            storefront image to show buyers instead — add one in the product&apos;s images, then choose it as the buyer preview.
+          </p>
+        </div>
+      ) : null}
+
+      {!loading && scopedAssets.length === 0 && uploads.length === 0 && failedUploads.length === 0 ? (
+        <ListerEmpty>No files yet. Add at least one ready file before publishing this digital product.</ListerEmpty>
+      ) : null}
+
+      {scopedAssets.length > 0 ? (
+        <ListerRows label="Customer download files">
+          {scopedAssets.map((asset, index) => (
             <DigitalProductFileRow
               key={asset.id}
               asset={asset}
               variants={variants}
+              scopeLocked={Boolean(scope)}
               index={index}
-              count={assets.length}
+              count={scopedAssets.length}
               busy={busyAssetIds.has(asset.id)}
               onRename={(label) => updateAsset(asset.id, { label })}
               onAssign={(productVariantId) => updateAsset(asset.id, { productVariantId })}
@@ -808,7 +877,7 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
               onRemove={() => setPendingConfirmation({ type: "remove", asset })}
             />
           ))}
-        </ul>
+        </ListerRows>
       ) : null}
 
       {pendingConfirmation?.type === "replace" ? (
@@ -831,6 +900,21 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
           }}
         />
       ) : null}
+      {pendingConfirmation?.type === "rights" ? (
+        <ConfirmDialog
+          open
+          title="Confirm you can sell this file"
+          description={`Myrivo's terms require you to hold the rights to distribute and sell every file you upload. Confirm that you own "${pendingConfirmation.fileName}" or are authorised by the rights holder to sell it.`}
+          confirmLabel="I hold the rights"
+          cancelLabel="Not yet"
+          onCancel={() => setPendingConfirmation(null)}
+          onConfirm={() => {
+            setPendingConfirmation(null);
+            void affirmRights();
+          }}
+        />
+      ) : null}
+
       {pendingConfirmation?.type === "remove" ? (
         <ConfirmDialog
           open
@@ -846,6 +930,6 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
           }}
         />
       ) : null}
-    </div>
+    </Lister>
   );
 }

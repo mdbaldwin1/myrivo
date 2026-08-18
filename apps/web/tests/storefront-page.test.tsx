@@ -301,4 +301,79 @@ describe("StorefrontPage quick add", () => {
     expect(screen.getByRole("link", { name: "Printable pack" })).toBeTruthy();
     expect(screen.queryByText("No products match your filters.")).toBeNull();
   });
+  test("represents a digital product with its watermarked preview, never its own uploaded artwork", () => {
+    function digitalProduct(overrides: Record<string, unknown>) {
+      return {
+        id: "product-digital",
+        title: "Sunrise print",
+        description: "A printable.",
+        slug: "sunrise-print",
+        image_urls: [],
+        image_alt_text: null,
+        seo_title: null,
+        seo_description: null,
+        is_featured: false,
+        created_at: "2026-03-31T00:00:00.000Z",
+        price_cents: 2500,
+        inventory_qty: 0,
+        product_type: "digital" as const,
+        product_variants: [
+          {
+            id: "variant-digital",
+            title: "Default",
+            image_urls: [],
+            group_image_urls: [],
+            option_values: {},
+            price_cents: 2500,
+            inventory_qty: 0,
+            is_made_to_order: false,
+            is_default: true,
+            status: "active" as const,
+            sort_order: 0,
+            created_at: "2026-03-31T00:00:00.000Z"
+          }
+        ],
+        product_option_axes: [],
+        ...overrides,
+      };
+    }
+
+    const settings = {
+      support_email: null, fulfillment_message: null, shipping_policy: null, return_policy: null,
+      announcement: null, footer_tagline: null, footer_note: null, instagram_url: null,
+      facebook_url: null, tiktok_url: null, email_capture_enabled: false, email_capture_heading: null,
+      email_capture_description: null, email_capture_success_message: null, storefront_copy_json: null,
+    };
+
+    const { rerender } = render(
+      <StorefrontPage
+        store={{ id: "store-1", name: "Shop", slug: "shop" }}
+        branding={null}
+        settings={settings}
+        contentBlocks={[]}
+        products={[digitalProduct({ digital_summary: { publicPreviewUrl: "https://cdn.example.test/watermarked.jpg" } })]}
+        view="products"
+      />,
+    );
+    expect(screen.getByText("https://cdn.example.test/watermarked.jpg")).toBeTruthy();
+
+    // Uploaded imagery is never shown for a digital product: it can be the
+    // artwork being sold, and a listing image is one right-click from a free
+    // copy. The watermarked preview stands in instead.
+    rerender(
+      <StorefrontPage
+        store={{ id: "store-1", name: "Shop", slug: "shop" }}
+        branding={null}
+        settings={settings}
+        contentBlocks={[]}
+        products={[digitalProduct({
+          image_urls: ["https://cdn.example.test/marketing.jpg"],
+          digital_summary: { publicPreviewUrl: "https://cdn.example.test/watermarked.jpg" },
+        })]}
+        view="products"
+      />,
+    );
+    expect(screen.queryByText("https://cdn.example.test/marketing.jpg")).toBeNull();
+    expect(screen.getByText("https://cdn.example.test/watermarked.jpg")).toBeTruthy();
+  });
 });

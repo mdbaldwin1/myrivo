@@ -28,3 +28,6 @@ pnpm-debug.log*
 
 .mynotes
 .superpowers/
+
+# e2e run bookkeeping
+apps/web/e2e/.created-identities.json

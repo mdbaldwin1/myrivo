@@ -27,7 +27,11 @@ export type ReadinessAdminClient = {
 export type ProposedDigitalProductState = {
   productType?: ProductType;
   rightsAffirmedAt?: string | null;
-  variants?: ReadonlyArray<{ id: string; status: "active" | "archived" }>;
+  variants?: ReadonlyArray<{
+    id: string;
+    status: "active" | "archived";
+    fulfillmentType?: "physical" | "digital" | null;
+  }>;
 };
 
 export type DigitalCatalogVariantMutation = {
@@ -44,6 +48,7 @@ export type DigitalCatalogVariantMutation = {
   is_default: boolean;
   status: "active" | "archived";
   sort_order: number;
+  fulfillment_type: "physical" | "digital" | null;
 };
 
 export type DigitalCatalogMutationResult = {
@@ -62,7 +67,11 @@ type ProductRow = {
   digital_rights_affirmed_at: string | null;
 };
 
-type VariantRow = { id: string; status: "active" | "archived" };
+type VariantRow = {
+  id: string;
+  status: "active" | "archived";
+  fulfillment_type: "physical" | "digital" | null;
+};
 
 type AssetRow = {
   id: string;
@@ -121,7 +130,7 @@ export async function loadDigitalProductReadiness(input: {
 
   const variantsResult = await input.admin
     .from("product_variants")
-    .select("id,status")
+    .select("id,status,fulfillment_type")
     .eq("product_id", input.productId)
     .eq("store_id", input.storeId)
     .returns();
@@ -149,7 +158,13 @@ export async function loadDigitalProductReadiness(input: {
           : product.digital_rights_affirmed_at,
     },
     previewStatus: preview?.status ?? "missing",
-    variants: proposed?.variants ?? variants,
+    variants:
+      proposed?.variants ??
+      variants.map((variant) => ({
+        id: variant.id,
+        status: variant.status,
+        fulfillmentType: variant.fulfillment_type ?? null,
+      })),
     assets: assets.map((asset) => ({
       id: asset.id,
       productVariantId: asset.product_variant_id,
@@ -176,9 +191,22 @@ export async function applyDigitalProductCatalogUpdate(input: {
   variants: DigitalCatalogVariantMutation[] | null;
   variantTierLevels: string[] | null;
 }): Promise<DigitalCatalogMutationResult> {
+  // A product is subject to the digital rules when anything about it is
+  // delivered as a download - the product by default, or one variant saying so.
+  // Asking only the product would let a shop that mostly posts things publish a
+  // download with no file, no rights, and no buyer preview.
+  const proposedVariants = input.variants?.map((variant) => ({
+    id: variant.id,
+    status: variant.status,
+    fulfillmentType: variant.fulfillment_type ?? null,
+  }));
+  const involvesDigital =
+    input.nextProductType === "digital" ||
+    (proposedVariants ?? []).some((variant) => variant.fulfillmentType === "digital");
+
   if (
     input.currentProductType === input.nextProductType &&
-    input.nextProductType === "digital" &&
+    involvesDigital &&
     input.nextStatus === "active"
   ) {
     const readiness = await loadDigitalProductReadiness({
@@ -188,14 +216,7 @@ export async function applyDigitalProductCatalogUpdate(input: {
       proposed: {
         productType: input.nextProductType,
         rightsAffirmedAt: input.nextRightsAffirmedAt,
-        ...(input.variants
-          ? {
-              variants: input.variants.map((variant) => ({
-                id: variant.id,
-                status: variant.status,
-              })),
-            }
-          : {}),
+        ...(proposedVariants ? { variants: proposedVariants } : {}),
       },
     });
     if (!readiness.ready) {

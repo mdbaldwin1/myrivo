@@ -6,7 +6,7 @@ import { buildDigitalReadinessActions, type ProductListItem } from "@/components
 
 type DigitalPublishReadinessProps = {
   product: ProductListItem;
-  onNavigate: (tab: "files" | "media", target: string) => void;
+  onNavigate: (tab: "editor" | "media", target: string) => void;
   onEdit: (target: "rights") => void;
   onPublish: () => void | Promise<void>;
 };

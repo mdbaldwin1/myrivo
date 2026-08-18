@@ -22,4 +22,16 @@ describe("pending store invite helpers", () => {
       })
     ).toBe("/profile");
   });
+  test("sends sellers to the dashboard when sign-in came from the public home page", () => {
+    expect(resolvePostAuthReturnTo("/", null)).toBe("/dashboard");
+    expect(resolvePostAuthReturnTo(null, null)).toBe("/dashboard");
+  });
+
+  test("still honours a pending invite over a home-page return", () => {
+    expect(
+      resolvePostAuthReturnTo("/", {
+        pending_store_invite_token: "abcdefghijklmnopqrstuvwxyz123456"
+      })
+    ).toBe("/invite/abcdefghijklmnopqrstuvwxyz123456");
+  });
 });

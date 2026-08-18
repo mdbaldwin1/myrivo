@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { buildStorefrontThemeStyle, resolveStorefrontThemeConfig } from "@/lib/theme/storefront-theme";
 import { formatVariantLabel } from "@/lib/products/variants";
+import { resolveBuyerProductImages } from "@/lib/storefront/buyer-product-images";
 import {
   normalizeStorefrontCart,
   readStorefrontCart,
@@ -52,6 +53,8 @@ type StorefrontVariant = {
   status: "active" | "archived";
   sort_order: number;
   created_at: string;
+  /** How this variant reaches the buyer; null inherits the product's. */
+  fulfillment_type?: "physical" | "digital" | null;
 };
 
 type StorefrontProduct = {
@@ -61,6 +64,9 @@ type StorefrontProduct = {
   image_urls?: string[] | null;
   image_alt_text?: string | null;
   product_type?: "physical" | "digital";
+  digital_summary?: {
+    publicPreviewUrl: string | null;
+  } | null;
   product_variants: StorefrontVariant[];
 };
 
@@ -796,10 +802,20 @@ export function StorefrontCartPage({ store, viewer, branding, settings, products
                         href={buildStorefrontProductPath(resolvedStore.slug, item.product.slug, routeBasePath)}
                         className={cn("relative block h-20 w-20 shrink-0 overflow-hidden border border-border/50 bg-muted/10 sm:h-24 sm:w-24", radiusClass)}
                       >
-                        {item.product.image_urls?.[0] ? (
+                        {resolveBuyerProductImages({
+                          productType: item.product.product_type,
+                          variantFulfillmentType: item.variant.fulfillment_type ?? null,
+                          digitalPreviewUrl: item.product.digital_summary?.publicPreviewUrl,
+                          candidates: item.product.image_urls ?? [],
+                        })[0] ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
-                            src={item.product.image_urls[0]}
+                            src={resolveBuyerProductImages({
+                              productType: item.product.product_type,
+                              variantFulfillmentType: item.variant.fulfillment_type ?? null,
+                              digitalPreviewUrl: item.product.digital_summary?.publicPreviewUrl,
+                              candidates: item.product.image_urls ?? [],
+                            })[0]}
                             alt={item.product.image_alt_text?.trim() || item.product.title}
                             className="h-full w-full object-cover"
                           />
