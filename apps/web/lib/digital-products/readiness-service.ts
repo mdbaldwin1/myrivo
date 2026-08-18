@@ -44,6 +44,7 @@ export type DigitalCatalogVariantMutation = {
   is_default: boolean;
   status: "active" | "archived";
   sort_order: number;
+  fulfillment_type: "physical" | "digital" | null;
 };
 
 export type DigitalCatalogMutationResult = {

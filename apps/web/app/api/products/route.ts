@@ -18,6 +18,7 @@ import { buildProductVariantRollup, normalizeVariantInputs, type VariantInput } 
 import { enforceTrustedOrigin } from "@/lib/security/request-origin";
 import { getOwnedStoreBundle } from "@/lib/stores/owner-store";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { resolveVariantFulfillment } from "@/lib/digital-products/fulfillment";
 import { isMissingColumnInSchemaCache } from "@/lib/supabase/error-classifiers";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -32,7 +33,8 @@ const nestedOptionSchema = z.object({
   isMadeToOrder: z.boolean().optional().default(false),
   status: z.enum(["active", "archived"]).optional().default("active"),
   isDefault: z.boolean().optional().default(false),
-  sortOrder: z.number().int().optional()
+  sortOrder: z.number().int().optional(),
+  fulfillmentType: z.enum(["physical", "digital"]).nullable().optional()
 });
 
 const nestedVariantSchema = z.object({
@@ -47,6 +49,7 @@ const nestedVariantSchema = z.object({
   status: z.enum(["active", "archived"]).optional().default("active"),
   isDefault: z.boolean().optional().default(false),
   sortOrder: z.number().int().optional(),
+  fulfillmentType: z.enum(["physical", "digital"]).nullable().optional(),
   options: z.array(nestedOptionSchema).optional().default([])
 });
 
@@ -99,9 +102,9 @@ const deleteProductSchema = z.object({
 });
 
 const productSelectWithVariantImages =
-  "id,title,description,slug,sku,image_urls,image_alt_text,seo_title,seo_description,is_featured,price_cents,inventory_qty,status,product_type,digital_rights_affirmed_at,created_at,product_variants(id,title,sku,sku_mode,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_made_to_order,is_default,status,sort_order,created_at),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))";
+  "id,title,description,slug,sku,image_urls,image_alt_text,seo_title,seo_description,is_featured,price_cents,inventory_qty,status,product_type,digital_rights_affirmed_at,created_at,product_variants(id,title,sku,sku_mode,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_made_to_order,is_default,status,sort_order,created_at,fulfillment_type),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))";
 const productSelectWithVariantImagesLegacy =
-  "id,title,description,sku,image_urls,is_featured,price_cents,inventory_qty,status,created_at,product_variants(id,title,sku,sku_mode,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_default,status,sort_order,created_at),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))";
+  "id,title,description,sku,image_urls,is_featured,price_cents,inventory_qty,status,created_at,product_variants(id,title,sku,sku_mode,image_urls,group_image_urls,option_values,price_cents,inventory_qty,is_default,status,sort_order,created_at,fulfillment_type),product_option_axes(id,name,sort_order,is_required,product_option_values(id,value,sort_order,is_active))";
 
 type ProductWithVariantsRow = {
   id: string;
@@ -134,6 +137,7 @@ type ProductWithVariantsRow = {
     is_default: boolean;
     status: "active" | "archived";
     sort_order: number;
+    fulfillment_type: "physical" | "digital" | null;
     created_at: string;
   }>;
   product_option_axes: Array<{
@@ -177,13 +181,16 @@ function toVariantInsertRow(storeId: string, productId: string, variant: ReturnT
     status: variant.status,
     is_default: variant.is_default,
     sort_order: variant.sort_order,
+    fulfillment_type: variant.fulfillment_type,
     option_values: variant.option_values
   };
 }
 
 function toVariantInsertRowLegacy(storeId: string, productId: string, variant: ReturnType<typeof normalizeVariantInputs>[number]) {
-  const { is_made_to_order, ...legacy } = toVariantInsertRow(storeId, productId, variant);
+  // The fallback for a schema that predates these columns entirely.
+  const { is_made_to_order, fulfillment_type, ...legacy } = toVariantInsertRow(storeId, productId, variant);
   void is_made_to_order;
+  void fulfillment_type;
   return legacy;
 }
 
@@ -250,6 +257,7 @@ function normalizeRequestVariantInputs(payload: {
         status: variant.status ?? "active",
         isDefault: variant.isDefault ?? index === 0,
         sortOrder: variant.sortOrder ?? index,
+        fulfillmentType: variant.fulfillmentType ?? null,
         optionValues: { [tierOneName]: optionOneValue }
       };
     });
@@ -274,6 +282,7 @@ function normalizeRequestVariantInputs(payload: {
         status: variant.status ?? "active",
         isDefault: variant.isDefault ?? variantIndex === 0,
         sortOrder: variant.sortOrder ?? variantIndex,
+        fulfillmentType: variant.fulfillmentType ?? null,
         optionValues: { [tierOneName]: optionOneValue }
       });
       return;
@@ -294,6 +303,7 @@ function normalizeRequestVariantInputs(payload: {
         status: option.status ?? variant.status ?? "active",
         isDefault: option.isDefault ?? ((variant.isDefault ?? false) && optionIndex === 0),
         sortOrder: option.sortOrder ?? flattened.length,
+        fulfillmentType: option.fulfillmentType ?? variant.fulfillmentType ?? null,
         optionValues: {
           [tierOneName]: optionOneValue,
           [tierTwoName]: optionTwoValue
@@ -505,16 +515,16 @@ function normalizePayloadVariants(payload: {
   });
 }
 
+/** Stock is meaningless for a download, so a digital variant never carries any. */
 function normalizeFulfillmentInventory(
   productType: "physical" | "digital",
   variants: ReturnType<typeof normalizeVariantInputs>,
 ) {
-  if (productType === "physical") return variants;
-  return variants.map((variant) => ({
-    ...variant,
-    inventory_qty: 0,
-    is_made_to_order: false,
-  }));
+  return variants.map((variant) =>
+    resolveVariantFulfillment(productType, variant.fulfillment_type) === "digital"
+      ? { ...variant, inventory_qty: 0, is_made_to_order: false }
+      : variant,
+  );
 }
 
 async function selectProductWithVariants(supabase: QueryClient, productId: string, storeId: string) {
@@ -1435,7 +1445,8 @@ export async function PATCH(request: NextRequest) {
         is_made_to_order: variant.is_made_to_order,
         is_default: variant.is_default,
         status: variant.status,
-        sort_order: variant.sort_order
+        sort_order: variant.sort_order,
+        fulfillment_type: variant.fulfillment_type ?? null
       }));
       normalizedVariantMutation = normalizeFulfillmentInventory(
         nextProductType,
