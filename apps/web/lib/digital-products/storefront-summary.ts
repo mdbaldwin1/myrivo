@@ -1,4 +1,5 @@
 import { DIGITAL_PREVIEW_BUCKET } from "@/lib/digital-products/assets";
+import { resolveVariantFulfillment } from "@/lib/digital-products/fulfillment";
 import type { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
@@ -44,8 +45,23 @@ function latestReadyVersion(value: AssetRow["digital_product_asset_versions"]) {
     .sort((left, right) => right.version_number - left.version_number)[0] ?? null;
 }
 
+function involvesDigitalDelivery(product: {
+  product_type?: "physical" | "digital";
+  product_variants?: ReadonlyArray<{ fulfillment_type?: "physical" | "digital" | null }> | null;
+}) {
+  const variants = product.product_variants ?? [];
+  if (variants.length === 0) return product.product_type === "digital";
+  return variants.some(
+    (variant) => resolveVariantFulfillment(product.product_type, variant.fulfillment_type) === "digital",
+  );
+}
+
 export async function enrichStorefrontDigitalProducts<
-  T extends { id: string; product_type?: "physical" | "digital" }
+  T extends {
+    id: string;
+    product_type?: "physical" | "digital";
+    product_variants?: ReadonlyArray<{ fulfillment_type?: "physical" | "digital" | null }> | null;
+  }
 >({
   admin,
   storeId,
@@ -55,9 +71,10 @@ export async function enrichStorefrontDigitalProducts<
   storeId: string;
   products: T[];
 }): Promise<Array<T & { digital_summary: StorefrontDigitalSummary | null }>> {
-  const digitalProductIds = products
-    .filter(({ product_type }) => product_type === "digital")
-    .map(({ id }) => id);
+  // A product needs its download summary when any variant is delivered as one,
+  // not only when the product as a whole is. A painting sold as a download, a
+  // print, and the original canvas still has downloads to describe.
+  const digitalProductIds = products.filter(involvesDigitalDelivery).map(({ id }) => id);
 
   if (digitalProductIds.length === 0) {
     return products.map((product) => ({ ...product, digital_summary: null }));
@@ -102,7 +119,7 @@ export async function enrichStorefrontDigitalProducts<
   }
 
   return products.map((product) => {
-    if (product.product_type !== "digital") {
+    if (!involvesDigitalDelivery(product)) {
       return { ...product, digital_summary: null };
     }
     const previewPath = previewPathByProduct.get(product.id) ?? null;

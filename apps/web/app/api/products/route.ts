@@ -1296,10 +1296,17 @@ export async function PATCH(request: NextRequest) {
 
   const { data: existingProduct, error: existingProductError } = await resolved.supabase
     .from("products")
-    .select("title,status,inventory_qty,product_type,digital_rights_affirmed_at")
+    .select("title,status,inventory_qty,product_type,digital_rights_affirmed_at,product_variants(fulfillment_type)")
     .eq("id", payload.data.productId)
     .eq("store_id", resolved.storeId)
-    .single<{ title: string; status: "draft" | "active" | "archived"; inventory_qty: number; product_type: "physical" | "digital"; digital_rights_affirmed_at: string | null }>();
+    .single<{
+      title: string;
+      status: "draft" | "active" | "archived";
+      inventory_qty: number;
+      product_type: "physical" | "digital";
+      digital_rights_affirmed_at: string | null;
+      product_variants: Array<{ fulfillment_type: "physical" | "digital" | null }> | null;
+    }>();
 
   if (existingProductError || !existingProduct) {
     return NextResponse.json({ error: "Product not found." }, { status: 404 });
@@ -1365,8 +1372,19 @@ export async function PATCH(request: NextRequest) {
 
   let rollupFromVariants: ReturnType<typeof buildProductVariantRollup> | null = null;
   let atomicDigitalUpdateApplied = false;
+  // The atomic path carries the readiness checks, so a product reaches it when
+  // anything about it is delivered as a download - including a single variant
+  // on an otherwise physical product.
+  const involvesDigitalVariant = (payload.data.variants ?? []).some(
+    (variant) =>
+      variant.fulfillmentType === "digital" ||
+      (variant.options ?? []).some((option) => option.fulfillmentType === "digital"),
+  );
   const usesAtomicDigitalMutation =
-    existingProduct.product_type === "digital" || nextProductType === "digital";
+    existingProduct.product_type === "digital" ||
+    nextProductType === "digital" ||
+    involvesDigitalVariant ||
+    (existingProduct.product_variants ?? []).some((variant) => variant.fulfillment_type === "digital");
 
   try {
     let normalizedVariantMutation: DigitalCatalogVariantMutation[] | null = null;

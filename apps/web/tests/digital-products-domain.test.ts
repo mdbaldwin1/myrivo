@@ -392,3 +392,95 @@ describe("digital product production contract", () => {
     );
   });
 });
+
+describe("readiness for a product sold more than one way", () => {
+  const rights = "2026-08-12T12:00:00.000Z";
+
+  it("asks only the download variant for a file", () => {
+    // A painting: one variant is the download, the other two are posted.
+    const readiness = resolveDigitalProductReadiness({
+      product: { product_type: "physical", digital_rights_affirmed_at: rights },
+      previewStatus: "ready",
+      variants: [
+        { id: "download", status: "active", fulfillmentType: "digital" },
+        { id: "print", status: "active", fulfillmentType: null },
+        { id: "original", status: "active", fulfillmentType: "physical" },
+      ],
+      assets: [
+        { id: "asset-download", productVariantId: "download", active: true, versions: [readyVersion] },
+      ],
+    });
+
+    expect(readiness).toEqual({
+      ready: true,
+      reasons: [],
+      applicableFileCount: 1,
+      previewStatus: "ready",
+    });
+  });
+
+  it("still names the download variant when its file is missing", () => {
+    const readiness = resolveDigitalProductReadiness({
+      product: { product_type: "physical", digital_rights_affirmed_at: rights },
+      previewStatus: "ready",
+      variants: [
+        { id: "download", status: "active", fulfillmentType: "digital" },
+        { id: "print", status: "active", fulfillmentType: null },
+      ],
+      assets: [],
+    });
+
+    expect(readiness.ready).toBe(false);
+    expect(readiness.reasons).toEqual(["variant_missing_file:download"]);
+  });
+
+  it("needs rights and a preview once any variant is a download", () => {
+    const readiness = resolveDigitalProductReadiness({
+      product: { product_type: "physical", digital_rights_affirmed_at: null },
+      previewStatus: "missing",
+      variants: [
+        { id: "download", status: "active", fulfillmentType: "digital" },
+        { id: "print", status: "active", fulfillmentType: null },
+      ],
+      assets: [
+        { id: "asset-download", productVariantId: "download", active: true, versions: [readyVersion] },
+      ],
+    });
+
+    expect(readiness.reasons).toEqual(["rights_missing", "preview_not_ready"]);
+  });
+
+  it("asks nothing of a digital product whose variants all ship", () => {
+    // Every variant opted out, so no download is involved despite the default.
+    const readiness = resolveDigitalProductReadiness({
+      product: { product_type: "digital", digital_rights_affirmed_at: null },
+      previewStatus: "missing",
+      variants: [
+        { id: "print", status: "active", fulfillmentType: "physical" },
+        { id: "original", status: "active", fulfillmentType: "physical" },
+      ],
+      assets: [],
+    });
+
+    expect(readiness).toEqual({
+      ready: true,
+      reasons: [],
+      applicableFileCount: 0,
+      previewStatus: "missing",
+    });
+  });
+
+  it("ignores an archived download variant", () => {
+    const readiness = resolveDigitalProductReadiness({
+      product: { product_type: "physical", digital_rights_affirmed_at: rights },
+      previewStatus: "ready",
+      variants: [
+        { id: "download", status: "archived", fulfillmentType: "digital" },
+        { id: "print", status: "active", fulfillmentType: null },
+      ],
+      assets: [],
+    });
+
+    expect(readiness.ready).toBe(true);
+  });
+});

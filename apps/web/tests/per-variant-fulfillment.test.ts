@@ -76,3 +76,62 @@ describe("fulfillment on the thing a buyer actually buys", () => {
     ]);
   });
 });
+
+describe("which products the digital rules apply to", () => {
+  test("a storefront summary follows the variants, not the product", async () => {
+    const { enrichStorefrontDigitalProducts } = await import("@/lib/digital-products/storefront-summary");
+    const calls: string[][] = [];
+    // The builder chains .eq() twice before .in(), so the stub keeps returning
+    // itself until asked for rows.
+    const chain: Record<string, unknown> = {};
+    chain.select = () => chain;
+    chain.eq = () => chain;
+    chain.in = (_column: string, ids: string[]) => {
+      calls.push(ids);
+      return chain;
+    };
+    chain.order = () => chain;
+    chain.returns = async () => ({ data: [], error: null });
+    const admin = {
+      from: () => chain,
+      storage: { from: () => ({ getPublicUrl: () => ({ data: { publicUrl: null } }) }) },
+    } as never;
+
+    const painting = {
+      id: "painting",
+      product_type: "physical" as const,
+      product_variants: [{ fulfillment_type: "digital" as const }, { fulfillment_type: null }],
+    };
+    const mug = { id: "mug", product_type: "physical" as const, product_variants: [{ fulfillment_type: null }] };
+
+    const enriched = await enrichStorefrontDigitalProducts({
+      admin,
+      storeId: "store-1",
+      products: [painting, mug],
+    });
+
+    // The painting sells a download, so it gets a summary; the mug does not.
+    expect(enriched.find((p) => p.id === "painting")?.digital_summary).not.toBeNull();
+    expect(enriched.find((p) => p.id === "mug")?.digital_summary).toBeNull();
+    expect(calls[0]).toEqual(["painting"]);
+  });
+
+  test("a digital product whose variants all ship needs no summary", async () => {
+    const { enrichStorefrontDigitalProducts } = await import("@/lib/digital-products/storefront-summary");
+    const admin = { from: () => { throw new Error("should not query"); } } as never;
+
+    const enriched = await enrichStorefrontDigitalProducts({
+      admin,
+      storeId: "store-1",
+      products: [
+        {
+          id: "prints-only",
+          product_type: "digital" as const,
+          product_variants: [{ fulfillment_type: "physical" as const }],
+        },
+      ],
+    });
+
+    expect(enriched[0]?.digital_summary).toBeNull();
+  });
+});
