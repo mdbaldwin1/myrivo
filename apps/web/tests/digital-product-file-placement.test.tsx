@@ -299,9 +299,10 @@ describe("where customer downloads are provided", () => {
 
     const hasVariants = screen.getByRole("checkbox", { name: /Has variants/i }) as HTMLInputElement;
     await waitFor(() => expect(hasVariants.disabled).toBe(true));
-    expect(hasVariants.closest("label")?.getAttribute("title")).toMatch(
-      /Remove this product's customer downloads to enable variants/i,
-    );
+
+    await user.hover(hasVariants.closest("label")!);
+    const hint = await screen.findByRole("tooltip");
+    expect(hint.textContent).toMatch(/Remove this product's customer downloads to enable variants/i);
 
     // Clicking it does nothing while the files are still attached: the product
     // keeps its own files and never grows a variants list.
@@ -321,7 +322,10 @@ describe("where customer downloads are provided", () => {
 
     const hasVariants = screen.getByRole("checkbox", { name: /Has variants/i }) as HTMLInputElement;
     expect(hasVariants.disabled).toBe(false);
-    expect(hasVariants.closest("label")?.getAttribute("title")).toBeNull();
+
+    // Nothing to explain, so no tooltip is attached at all.
+    await user.hover(hasVariants.closest("label")!);
+    expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
   test("will not split a variant that already holds files into options", async () => {
@@ -333,9 +337,10 @@ describe("where customer downloads are provided", () => {
 
     const hasOptions = screen.getByRole("checkbox", { name: /Has options/i }) as HTMLInputElement;
     await waitFor(() => expect(hasOptions.disabled).toBe(true));
-    expect(hasOptions.closest("label")?.getAttribute("title")).toMatch(
-      /Remove this variant's customer downloads to enable options/i,
-    );
+
+    await user.hover(hasOptions.closest("label")!);
+    const hint = await screen.findByRole("tooltip");
+    expect(hint.textContent).toMatch(/Remove this variant's customer downloads to enable options/i);
   });
 
   test("counts a new variant's staged files against its options toggle", async () => {

@@ -7,6 +7,7 @@ import { Lister, ListerEmpty, ListerRows } from "@/components/dashboard/lister";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Select } from "@/components/ui/select";
+import { HintTooltip } from "@/components/ui/tooltip";
 import { DIGITAL_PRODUCT_CONFIG } from "@/lib/digital-products/config";
 import { digitalFileLabel as fileLabel, validateDigitalFile as validateFile } from "@/lib/digital-products/upload-asset";
 import { notify } from "@/lib/feedback/toast";
@@ -728,8 +729,8 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
               </Select>
             </label>
           ) : null}
+          <HintTooltip hint="Add files">
           <label
-            title="Add files"
             className={`inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background transition hover:bg-muted focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${uploadDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
           >
             <Plus className="h-4 w-4" aria-hidden="true" />
@@ -748,6 +749,7 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
               }}
             />
           </label>
+          </HintTooltip>
         </div>
       }
     >

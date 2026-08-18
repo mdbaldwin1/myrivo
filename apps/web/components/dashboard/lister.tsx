@@ -3,6 +3,7 @@
 import { MoreHorizontal, Plus } from "lucide-react";
 import type { ReactNode, RefObject } from "react";
 import { Button } from "@/components/ui/button";
+import { HintTooltip } from "@/components/ui/tooltip";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 /**
@@ -48,18 +49,19 @@ export function Lister({
         <p className="text-sm font-medium">{title}</p>
         {addControl ??
           (onAdd ? (
-            <Button
-              type="button"
-              size="icon"
-              variant="outline"
-              className="h-8 w-8 shrink-0"
-              title={addLabel}
-              aria-label={addLabel}
-              disabled={addDisabled}
-              onClick={onAdd}
-            >
-              <Plus className="h-4 w-4" aria-hidden="true" />
-            </Button>
+            <HintTooltip hint={addLabel}>
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                className="h-8 w-8 shrink-0"
+                aria-label={addLabel}
+                disabled={addDisabled}
+                onClick={onAdd}
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            </HintTooltip>
           ) : null)}
       </div>
 

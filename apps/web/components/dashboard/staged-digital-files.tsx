@@ -16,6 +16,7 @@ import {
 } from "@/components/dashboard/lister";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { HintTooltip } from "@/components/ui/tooltip";
 import { DIGITAL_PRODUCT_CONFIG } from "@/lib/digital-products/config";
 import { digitalFileLabel, validateDigitalFile } from "@/lib/digital-products/upload-asset";
 
@@ -95,8 +96,8 @@ export function StagedDigitalFiles({ noun, files, onChange }: StagedDigitalFiles
       meta={`${files.length} of ${DIGITAL_PRODUCT_CONFIG.maxFilesPerProduct} files · JPG, PNG, PDF, or ZIP · 250 MB each`}
       error={error}
       addControl={
+        <HintTooltip hint="Add files">
         <label
-          title="Add files"
           className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-background transition hover:bg-muted focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${addDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
         >
           <Plus className="h-4 w-4" aria-hidden="true" />
@@ -114,6 +115,7 @@ export function StagedDigitalFiles({ noun, files, onChange }: StagedDigitalFiles
             }}
           />
         </label>
+        </HintTooltip>
       }
     >
       {files.length === 0 ? (

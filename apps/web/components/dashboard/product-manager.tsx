@@ -21,6 +21,7 @@ import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Select } from "@/components/ui/select";
+import { HintTooltip } from "@/components/ui/tooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   createBlankVariant,
@@ -4310,13 +4311,15 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                   </div>
                 </FormField>
                 <div className="flex items-center justify-between">
-                  <label
-                    className={`flex items-center gap-2 ${editProductLevelFileCount > 0 && !editHasVariants ? "cursor-not-allowed opacity-60" : ""}`}
-                    title={
+                  <HintTooltip
+                    hint={
                       editProductLevelFileCount > 0 && !editHasVariants
-                        ? "Remove this product's customer downloads to enable variants. Files are attached to whichever unit a buyer buys, so they move to the variants."
+                        ? "Remove this product's customer downloads to enable variants. Files are attached to whichever unit a buyer buys, so they would move to the variants."
                         : undefined
                     }
+                  >
+                  <label
+                    className={`flex items-center gap-2 ${editProductLevelFileCount > 0 && !editHasVariants ? "cursor-not-allowed opacity-60" : ""}`}
                   >
                     <Checkbox
                       checked={editHasVariants}
@@ -4351,6 +4354,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                     />
                     <span className="text-sm font-medium">Has variants</span>
                   </label>
+                  </HintTooltip>
                 </div>
 
                 {editHasVariants ? (
@@ -4542,13 +4546,15 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                       </div>
                     </FormField>
                     <div className="flex items-center justify-between">
-                      <label
-                        className={`flex items-center gap-2 ${editActiveVariantFilesBlockOptions ? "cursor-not-allowed opacity-60" : ""}`}
-                        title={
+                      <HintTooltip
+                        hint={
                           editActiveVariantFilesBlockOptions
-                            ? "Remove this variant's customer downloads to enable options. Files are attached to whichever unit a buyer buys, so they move to the options."
+                            ? "Remove this variant's customer downloads to enable options. Files are attached to whichever unit a buyer buys, so they would move to the options."
                             : undefined
                         }
+                      >
+                      <label
+                        className={`flex items-center gap-2 ${editActiveVariantFilesBlockOptions ? "cursor-not-allowed opacity-60" : ""}`}
                       >
                         <Checkbox
                           checked={activeEditHasSubOptions}
@@ -4557,6 +4563,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                         />
                         <span className="text-sm font-medium">Has options</span>
                       </label>
+                      </HintTooltip>
                     </div>
                     {!activeEditHasSubOptions ? (
                       <>
