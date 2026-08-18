@@ -88,9 +88,9 @@ export function ProductImageActions({
             tile behind the menu treats a menu click as a click on itself and
             opens its file picker. */}
         <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
-          <DropdownMenuItem disabled={isFeatured} onClick={onFeature}>
-            {isFeatured ? "Featured" : "Feature"}
-          </DropdownMenuItem>
+          {/* The star already says which image is featured; a dead menu entry
+              saying so again is noise. */}
+          {isFeatured ? null : <DropdownMenuItem onClick={onFeature}>Feature</DropdownMenuItem>}
           {onReplace ? <DropdownMenuItem onClick={onReplace}>Replace image</DropdownMenuItem> : null}
           <DropdownMenuItem onClick={() => void watermark()}>
             {busy ? "Adding watermark…" : "Add watermark"}

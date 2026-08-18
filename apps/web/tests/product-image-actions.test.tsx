@@ -86,12 +86,13 @@ describe("what a merchant can do with a storefront image", () => {
     expect(props.onRemove).toHaveBeenCalled();
   });
 
-  test("marks the featured image and cannot feature it twice", async () => {
+  test("marks the featured image with the star and drops the menu entry", async () => {
     setup({ isFeatured: true, label: "product image 1" });
     expect(screen.getByText("Featured image")).toBeTruthy();
 
     await userEvent.click(screen.getByRole("button", { name: "Manage product image 1" }));
-    expect((await screen.findByRole("menuitem", { name: "Featured" })).getAttribute("aria-disabled")).toBe("true");
+    await screen.findByRole("menuitem", { name: "Remove" });
+    expect(screen.queryByRole("menuitem", { name: /^Feature/ })).toBeNull();
   });
 
   test("offers replacing the image from the menu, not from the tile", async () => {
