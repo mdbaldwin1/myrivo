@@ -7,7 +7,7 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { MoreHorizontal, Pencil, Plus, RotateCcw, Search, Star, X } from "lucide-react";
 import { AppAlert } from "@/components/ui/app-alert";
 import { DigitalPreviewManager } from "@/components/dashboard/digital-preview-manager";
-import { DigitalProductFiles } from "@/components/dashboard/digital-product-files";
+import { DigitalProductFiles, type DigitalProductAsset } from "@/components/dashboard/digital-product-files";
 import { StagedDigitalFiles, type StagedDigitalFile } from "@/components/dashboard/staged-digital-files";
 import { OptionsLister, VariantsLister } from "@/components/dashboard/variant-listers";
 import { DigitalProductOverview } from "@/components/dashboard/digital-product-overview";
@@ -588,6 +588,9 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
   // the save that brings that variant into existence. Keyed by draft.
   const [editStagedFiles, setEditStagedFiles] = useState<Record<string, StagedDigitalFile[]>>({});
   const [editUploadingStaged, setEditUploadingStaged] = useState(false);
+  // Every file on the product being edited, so the editor knows which units
+  // already carry downloads.
+  const [editDigitalAssets, setEditDigitalAssets] = useState<DigitalProductAsset[]>([]);
   const [editVariantTierCount, setEditVariantTierCount] = useState<1 | 2>(1);
   const [editFlowStep, setEditFlowStep] = useState<"product" | "variant" | "option">("product");
   const [editStepDirection, setEditStepDirection] = useState<"forward" | "backward">("forward");
@@ -1765,6 +1768,7 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
     setEditVariantsSnapshotByMode(null);
     setEditOrderedVariantIds(new Set());
     setEditStagedFiles({});
+    setEditDigitalAssets([]);
     setEditError(null);
     setEditVariantError(null);
   }
@@ -2172,6 +2176,17 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
         ? activeEditVariant.imageUrls
         : activeEditVariant.groupImageUrls
       : [];
+  const editProductLevelFileCount = editFileCountFor(null);
+  // A variant that already carries files cannot be split into options: the
+  // files would be left on a unit that is no longer sold on its own. Staged
+  // files count too - they are attached, they just have not uploaded yet. A
+  // variant with no row yet can only have staged ones.
+  const editActiveVariantFileCount = activeEditVariant
+    ? (activeEditVariant.id ? editFileCountFor(activeEditVariant.id) : 0) +
+      (activeEditVariant.draftKey ? editStagedFiles[activeEditVariant.draftKey]?.length ?? 0 : 0)
+    : 0;
+  const editActiveVariantFilesBlockOptions = !activeEditHasSubOptions && editActiveVariantFileCount > 0;
+
   const activeEditSubOptionIndexes = activeEditGroupIndexes.filter((index) => {
     const variant = editVariants[index];
     return variant ? getOptionValue(variant, activeEditLevelTwoName).trim().length > 0 : false;
@@ -2331,16 +2346,28 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
 
   // Customer files belong to whichever unit carries the SKU: the product when
   // it has no variants, otherwise the variant or option being edited.
+  /**
+   * Files belong to whichever unit a buyer buys, so a unit that already holds
+   * them cannot be split into smaller ones underneath them - the files would
+   * be left pointing at something that is no longer sold on its own.
+   */
+  function editFileCountFor(productVariantId: string | null) {
+    return editDigitalAssets.filter(
+      (asset) => asset.active && (asset.product_variant_id ?? null) === productVariantId,
+    ).length;
+  }
+
   function renderEditDigitalFiles(productVariantId: string | null) {
     if (editProductType !== "digital" || !editingProductId) return null;
     if (productVariantId === null && editHasVariants) return null;
     return (
       <DigitalProductFiles
-          key={`${editingProductId}:${productVariantId ?? "product"}`}
-          productId={editingProductId}
-          scope={{ productVariantId }}
-          productImageUrls={editImageUrls}
-          rightsAffirmed={editDigitalRightsAffirmed}
+        key={`${editingProductId}:${productVariantId ?? "product"}`}
+        productId={editingProductId}
+        scope={{ productVariantId }}
+        productImageUrls={editImageUrls}
+        rightsAffirmed={editDigitalRightsAffirmed}
+        onAssetsChange={setEditDigitalAssets}
         onCatalogChange={async (signal) => { await refreshCatalogProducts({ signal }); }}
       />
     );
@@ -4283,9 +4310,17 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                   </div>
                 </FormField>
                 <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-2">
+                  <label
+                    className={`flex items-center gap-2 ${editProductLevelFileCount > 0 && !editHasVariants ? "cursor-not-allowed opacity-60" : ""}`}
+                    title={
+                      editProductLevelFileCount > 0 && !editHasVariants
+                        ? "Remove this product's customer downloads to enable variants. Files are attached to whichever unit a buyer buys, so they move to the variants."
+                        : undefined
+                    }
+                  >
                     <Checkbox
                       checked={editHasVariants}
+                      disabled={editProductLevelFileCount > 0 && !editHasVariants}
                       onChange={(event) => {
                         const nextValue = event.target.checked;
                         setEditHasVariants(nextValue);
@@ -4507,10 +4542,17 @@ export function ProductManager({ initialProducts }: ProductManagerProps) {
                       </div>
                     </FormField>
                     <div className="flex items-center justify-between">
-                      <label className="flex items-center gap-2">
+                      <label
+                        className={`flex items-center gap-2 ${editActiveVariantFilesBlockOptions ? "cursor-not-allowed opacity-60" : ""}`}
+                        title={
+                          editActiveVariantFilesBlockOptions
+                            ? "Remove this variant's customer downloads to enable options. Files are attached to whichever unit a buyer buys, so they move to the options."
+                            : undefined
+                        }
+                      >
                         <Checkbox
                           checked={activeEditHasSubOptions}
-                          disabled={activeEditGroupHasOrderedVariant}
+                          disabled={activeEditGroupHasOrderedVariant || editActiveVariantFilesBlockOptions}
                           onChange={(event) => setEditSubOptionsEnabled(event.target.checked)}
                         />
                         <span className="text-sm font-medium">Has options</span>

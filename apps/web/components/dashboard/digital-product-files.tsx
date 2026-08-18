@@ -85,6 +85,9 @@ type DigitalProductFilesProps = {
    * variant or option being edited. Undefined keeps the unscoped list.
    */
   scope?: { productVariantId: string | null };
+  /** Reports every asset on the product, so the editor can tell which units
+      already carry files and must not be restructured underneath them. */
+  onAssetsChange?: (assets: DigitalProductAsset[]) => void;
   /** Storefront images available to stand in as the buyer preview. */
   productImageUrls?: string[];
   /** Whether the merchant has affirmed the right to sell this product's files. */
@@ -116,7 +119,7 @@ function sortAssets(assets: DigitalProductAsset[]) {
   return [...assets].sort((left, right) => left.sort_order - right.sort_order);
 }
 
-export function DigitalProductFiles({ productId, variants = [], focusTarget, onCatalogChange, scope, productImageUrls = [], rightsAffirmed = true }: DigitalProductFilesProps) {
+export function DigitalProductFiles({ productId, variants = [], focusTarget, onCatalogChange, scope, productImageUrls = [], rightsAffirmed = true, onAssetsChange }: DigitalProductFilesProps) {
   const [assets, setAssets] = useState<DigitalProductAsset[]>([]);
   const [failedUploads, setFailedUploads] = useState<PersistedFailedUpload[]>([]);
   const [uploads, setUploads] = useState<UploadJob[]>([]);
@@ -685,6 +688,10 @@ export function DigitalProductFiles({ productId, variants = [], focusTarget, onC
   }
 
   const activeUploadCount = uploads.filter((job) => job.phase !== "failed").length;
+  useEffect(() => {
+    onAssetsChange?.(assets);
+  }, [assets, onAssetsChange]);
+
   const scopedAssets = scope
     ? assets.filter((asset) => (asset.product_variant_id ?? null) === scope.productVariantId)
     : assets;

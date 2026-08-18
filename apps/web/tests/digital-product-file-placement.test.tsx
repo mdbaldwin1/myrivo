@@ -29,11 +29,24 @@ vi.mock("@/components/ui/rich-text-editor", () => ({
   ),
 }));
 
-// The scope is the whole point of these tests, so the stand-in reports it.
+// The scope is the whole point of these tests, so the stand-in reports it - and
+// it reports assets upward exactly as the real component does.
+const mockAssets = vi.hoisted(() => ({ current: [] as Array<{ id: string; product_variant_id: string | null; active: boolean }> }));
+
 vi.mock("@/components/dashboard/digital-product-files", () => ({
-  DigitalProductFiles: ({ scope }: { scope?: { productVariantId: string | null } }) => (
-    <div data-testid="files-manager">Customer downloads for {scope?.productVariantId ?? "product"}</div>
-  ),
+  DigitalProductFiles: ({
+    scope,
+    onAssetsChange,
+  }: {
+    scope?: { productVariantId: string | null };
+    onAssetsChange?: (assets: unknown[]) => void;
+  }) => {
+    const assets = mockAssets.current;
+    React.useEffect(() => {
+      onAssetsChange?.(assets);
+    }, [assets, onAssetsChange]);
+    return <div data-testid="files-manager">Customer downloads for {scope?.productVariantId ?? "product"}</div>;
+  },
 }));
 
 vi.mock("@/lib/feedback/toast", () => ({
@@ -129,6 +142,7 @@ describe("where customer downloads are provided", () => {
   });
 
   beforeEach(() => {
+    mockAssets.current = [];
     stubBrowserAnimation();
     vi.stubGlobal(
       "fetch",
@@ -271,4 +285,74 @@ describe("where customer downloads are provided", () => {
     expect(screen.getByRole("button", { name: "Save product" })).toBeTruthy();
   });
 
+
+  test("will not split a unit that already holds files out from under them", async () => {
+    // Product-level downloads apply to the whole product; turning on variants
+    // would leave them attached to something a buyer no longer buys.
+    mockAssets.current = [{ id: "asset-1", product_variant_id: null, active: true }];
+    const single = product({ product_variants: [variant({ option_values: {} })] });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ products: [single] }), { status: 200 })));
+
+    const user = userEvent.setup();
+    render(<ProductManager initialProducts={[single]} />);
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    const hasVariants = screen.getByRole("checkbox", { name: /Has variants/i }) as HTMLInputElement;
+    await waitFor(() => expect(hasVariants.disabled).toBe(true));
+    expect(hasVariants.closest("label")?.getAttribute("title")).toMatch(
+      /Remove this product's customer downloads to enable variants/i,
+    );
+
+    // Clicking it does nothing while the files are still attached: the product
+    // keeps its own files and never grows a variants list.
+    await user.click(hasVariants);
+    expect(screen.queryByRole("button", { name: "Add variant" })).toBeNull();
+    expect(visibleFileScopes()).toEqual(["product"]);
+  });
+
+  test("frees the toggle again once those files are gone", async () => {
+    mockAssets.current = [];
+    const single = product({ product_variants: [variant({ option_values: {} })] });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ products: [single] }), { status: 200 })));
+
+    const user = userEvent.setup();
+    render(<ProductManager initialProducts={[single]} />);
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    const hasVariants = screen.getByRole("checkbox", { name: /Has variants/i }) as HTMLInputElement;
+    expect(hasVariants.disabled).toBe(false);
+    expect(hasVariants.closest("label")?.getAttribute("title")).toBeNull();
+  });
+
+  test("will not split a variant that already holds files into options", async () => {
+    mockAssets.current = [{ id: "asset-1", product_variant_id: VARIANT_ID, active: true }];
+    const user = userEvent.setup();
+    render(<ProductManager initialProducts={[product()]} />);
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.click(visible(screen.getAllByRole("button", { name: "Square" })));
+
+    const hasOptions = screen.getByRole("checkbox", { name: /Has options/i }) as HTMLInputElement;
+    await waitFor(() => expect(hasOptions.disabled).toBe(true));
+    expect(hasOptions.closest("label")?.getAttribute("title")).toMatch(
+      /Remove this variant's customer downloads to enable options/i,
+    );
+  });
+
+  test("counts a new variant's staged files against its options toggle", async () => {
+    // The files have not uploaded yet, but they are just as attached.
+    const user = userEvent.setup();
+    render(<ProductManager initialProducts={[product()]} />);
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("button", { name: "Add variant" }));
+
+    const hasOptions = screen.getByRole("checkbox", { name: /Has options/i }) as HTMLInputElement;
+    expect(hasOptions.disabled).toBe(false);
+
+    await user.upload(
+      visible(screen.getAllByLabelText("Add customer download files")) as HTMLInputElement,
+      new File(["artwork"], "sunrise-print.png", { type: "image/png" }),
+    );
+
+    await waitFor(() => expect((screen.getByRole("checkbox", { name: /Has options/i }) as HTMLInputElement).disabled).toBe(true));
+  });
 });
