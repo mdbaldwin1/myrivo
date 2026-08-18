@@ -81,7 +81,10 @@ export function ProductImageActions({
             <MoreHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        {/* A portal still bubbles through the React tree, so without this the
+            tile behind the menu treats a menu click as a click on itself and
+            opens its file picker. */}
+        <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
           <DropdownMenuItem disabled={isFeatured} onClick={onFeature}>
             {isFeatured ? "Featured" : "Feature"}
           </DropdownMenuItem>

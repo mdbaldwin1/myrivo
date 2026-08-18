@@ -93,4 +93,41 @@ describe("what a merchant can do with a storefront image", () => {
     await userEvent.click(screen.getByRole("button", { name: "Manage product image 1" }));
     expect((await screen.findByRole("menuitem", { name: "Featured" })).getAttribute("aria-disabled")).toBe("true");
   });
+
+  test("keeps a menu click off the tile behind it", async () => {
+    // The tile is itself a click target that opens a file picker, and a portal
+    // still bubbles through the React tree it was declared in.
+    const onTileClick = vi.fn();
+    const onFeature = vi.fn();
+    const onRemove = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ publicUrl: WATERMARKED }), { status: 200 })),
+    );
+
+    render(
+      <div onClick={onTileClick}>
+        <ProductImageActions
+          imageUrl={ORIGINAL}
+          label="product image 1"
+          isFeatured={false}
+          onFeature={onFeature}
+          onWatermarked={vi.fn()}
+          onRemove={onRemove}
+        />
+      </div>,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Manage product image 1" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Feature" }));
+
+    expect(onFeature).toHaveBeenCalled();
+    expect(onTileClick).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Manage product image 1" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Remove" }));
+
+    expect(onRemove).toHaveBeenCalled();
+    expect(onTileClick).not.toHaveBeenCalled();
+  });
 });
